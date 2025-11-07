@@ -1,0 +1,92 @@
+# Build directories
+build/
+*.build
+*.pro.user
+*.autosave
+
+# Compiled object files
+*.o
+*.obj
+*.ko
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Compiled dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+*.cmake
+!CMakeLists.txt
+/.cmake/
+/.qt/
+/.qtc_clangd/
+/.ninja_deps
+/.ninja_log
+build.ninja
+.ninja_deps
+.ninja_log
+
+# Qt
+moc_*
+qrc_*
+ui_*
+*.qmake.stash
+.qmake.stash
+*.qmlc
+*.jcc
+
+# QtCreator
+*.user
+CMakeLists.txt.user
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+
+# Auto-generated files
+*.autogen
+*_autogen/
+
+# Installer outputs and scripts
+installer_output/
+scripts/
+LivoxViewerQT_Setup.iss
+
+# Portable version
+LivoxViewerQT_Portable/
+
+# Log files
+lidar_log/
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*~
+*.tmp
+*.temp
