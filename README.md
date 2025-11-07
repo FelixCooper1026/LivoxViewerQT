@@ -1,4 +1,3 @@
-markdown
 # LivoxViewerQT
 
 ## 简介
