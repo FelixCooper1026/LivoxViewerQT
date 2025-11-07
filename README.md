@@ -135,7 +135,7 @@ LivoxViewerQT/
 ├── sdk_callbacks.cpp            # SDK 回调处理
 ├── point_visualize.cpp          # 点云可视化处理
 ├── resources/                   # 程序图标等资源文件
-├── pics/                       # 程序界面截图
+├── pics/                        # 程序界面截图
 │   ├── main_interface.png
 │   ├── pointcloud_display.png
 │   ├── device_management.png
