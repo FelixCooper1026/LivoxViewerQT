@@ -1,8 +1,23 @@
+markdown
 # LivoxViewerQT
 
 ## 简介
 **LivoxViewerQT** 是一个基于 **Qt 框架** 开发的 Livox 激光雷达 **可视化与控制软件**。  
 支持多种 Livox 雷达设备，提供 **实时点云显示、设备管理、数据记录** 和 **高级可视化功能**。
+
+## 功能界面展示
+
+### 主界面
+![主界面](pics/main_interface.png)
+
+### 点云可视化
+![点云显示](pics/pointcloud_display.png)
+
+### 设备管理
+![设备管理](pics/device_management.png)
+
+### 数据记录
+![数据记录](pics/data_recording.png)
 
 ---
 
@@ -121,6 +136,11 @@ LivoxViewerQT/
 ├── sdk_callbacks.cpp            # SDK 回调处理
 ├── point_visualize.cpp          # 点云可视化处理
 ├── resources/                   # 程序图标等资源文件
+├── pics/                       # 程序界面截图
+│   ├── main_interface.png
+│   ├── pointcloud_display.png
+│   ├── device_management.png
+│   └── data_recording.png
 ├── config.json                  # 配置文件（自动生成）
 ├── CMakeLists.txt               # CMake 构建配置
 ├── README.md                    # 项目说明
