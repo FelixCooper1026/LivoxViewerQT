@@ -964,7 +964,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.0.0</p>"
+                        "<p><b>版本:</b> 1.1.0</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
@@ -1664,6 +1664,11 @@ void MainWindow::onDeviceSelected()
         } else {
             if (statusLabel) statusLabel->setText("状态: 未连接");
         }
+    }
+    // 切换设备后，立即触发当前标签页的刷新逻辑
+    // 这会清空 updatedConfigKeys 并发送 QueryInternalInfo 命令，从而刷新所有 Tab 的参数显示
+    if (paramTabWidget) {
+        onTabChanged(paramTabWidget->currentIndex());
     }
 }
 

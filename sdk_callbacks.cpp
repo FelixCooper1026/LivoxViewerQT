@@ -210,7 +210,11 @@ void MainWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarEthernet
                 delete[] reinterpret_cast<uint8_t*>(packet_copy);
                 return;
             }
-            
+            // 仅处理当前选中设备的IMU数据
+            if (!window->currentDevice || window->currentDevice->handle != handle) {
+                delete[] reinterpret_cast<uint8_t*>(packet_copy);
+                return;
+            }
             // 限制处理的数据量
             uint32_t max_points = std::min<uint32_t>(packet_copy->dot_num, 3);
             

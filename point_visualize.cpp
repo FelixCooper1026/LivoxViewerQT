@@ -858,14 +858,33 @@ void MainWindow::onRenderTick()
 		pointCloudWidget->update();
 		return;
 	}
-	// 以固定刷新率合并滑动窗口内的点并渲染
-	uint64_t now_ns = 0;
-	{
-		QMutexLocker locker(&frameMutex);
-		for (auto it = lastSeenTimestamp.begin(); it != lastSeenTimestamp.end(); ++it) {
-			if (it.value() > now_ns) now_ns = it.value();
-		}
-	}
+
+    // 获取当前选中的设备句柄
+    uint32_t targetHandle = 0;
+    bool hasTarget = false;
+    {
+        // 加锁以安全访问 currentDevice
+        QMutexLocker devLocker(&deviceMutex);
+        if (currentDevice) {
+            targetHandle = currentDevice->handle;
+            hasTarget = true;
+        }
+    }
+
+// 计算当前显示时间戳（建议也改为只基于当前设备的时间戳，避免多设备时间不同步导致的滑动窗口异常）
+    uint64_t now_ns = 0;
+    {
+        QMutexLocker locker(&frameMutex);
+        // 修改：只获取目标设备的时间戳，如果没有目标设备则保持原有逻辑或跳过
+        if (hasTarget && lastSeenTimestamp.contains(targetHandle)) {
+            now_ns = lastSeenTimestamp[targetHandle];
+        } else if (!hasTarget) {
+            // 如果没有选中设备，保持原有逻辑寻找最大时间戳（或者直接 return）
+            for (auto it = lastSeenTimestamp.begin(); it != lastSeenTimestamp.end(); ++it) {
+                if (it.value() > now_ns) now_ns = it.value();
+            }
+        }
+    }
 	if (now_ns == 0) return;
 
 	uint64_t window_ns = frameIntervalMs * 1000000ULL;
@@ -879,6 +898,11 @@ void MainWindow::onRenderTick()
 	{
 		QMutexLocker locker(&frameMutex);
 		for (auto it = pendingFrames.begin(); it != pendingFrames.end(); ++it) {
+            // 过滤：如果有点中的设备，且当前迭代的设备句柄不等于选中设备的句柄，则跳过
+            if (hasTarget && it.key() != targetHandle) {
+                continue;
+            }
+            
 			QQueue<PointCloudFrame>& q = it.value();
 			while (!q.isEmpty() && q.head().timestamp < window_begin) {
 				q.dequeue();
