@@ -964,7 +964,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.1.0</p>"
+                        "<p><b>版本:</b> 1.1.1</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
@@ -1044,11 +1044,11 @@ void MainWindow::setupUI()
     // 采集动作：弹窗输入时长，顶部显示进度条（复用已有captureProgress，放在状态栏）
     connect(actionCaptureLog, &QAction::triggered, [this]() {
         bool ok = false;
-        int sec = QInputDialog::getInt(this, "LOG数据采集", "采集时长(秒):", 10, 1, 3600, 1, &ok);
+        int sec = QInputDialog::getInt(this, "LOG数据采集", "采集时长(秒):", 300, 10, 86400, 10, &ok);
         if (!ok) return;
         if (!captureDurationSpin) {
             captureDurationSpin = new QSpinBox(this);
-            captureDurationSpin->setRange(1, 3600);   // ⭐ 设置最大值为 3600
+            captureDurationSpin->setRange(10, 86400);   // ⭐ 设置最大值为 86400s (24 小时)
         }
         captureDurationSpin->setValue(sec);
         onStartCaptureLog();

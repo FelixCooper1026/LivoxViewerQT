@@ -360,7 +360,7 @@ void MainWindow::onActionCaptureImuTriggered()
     h2->setContentsMargins(0,0,0,0);
     QLabel* lblSec = new QLabel("保存时长(s):", row2);
     QSpinBox* spinSec = new QSpinBox(row2);
-    spinSec->setRange(10, 3600);
+    spinSec->setRange(10, 86400);
     spinSec->setSingleStep(10);
     spinSec->setValue(30);
     h2->addWidget(lblSec);
