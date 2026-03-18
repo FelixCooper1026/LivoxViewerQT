@@ -134,6 +134,11 @@ static QString nmeaChecksum(const QString& payload)
 
 void MainWindow::onGpsSimulateToggled(bool enabled)
 {
+    if (!currentDevice || !currentDevice->is_connected) {
+        gpsSimulateCheck->setChecked(false);
+        return;
+    }
+
     if (enabled) {
         gpsTimer->start(1000); // 1 Hz
         statusLabelBar->setText("GPS模拟输入已启用");

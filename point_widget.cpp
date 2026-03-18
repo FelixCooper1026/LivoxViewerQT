@@ -21,6 +21,7 @@ PointCloudWidget::PointCloudWidget(QWidget *parent)
     , m_selStart(QPoint())
     , m_selEnd(QPoint())
     , m_selectionModeEnabled(false)
+    , m_gridVisible(true)
 {
     setFocusPolicy(Qt::StrongFocus);
     // 默认视角：X 向上、Y 向左、Z 向外（绕 Z 轴 +90°）
@@ -80,6 +81,7 @@ void PointCloudWidget::initializeGL()
     setupShaders();
     setupBuffers();
     setupAxesBuffers();
+    setupGridBuffers();
 }
 
 void PointCloudWidget::setupShaders()
@@ -205,6 +207,60 @@ void PointCloudWidget::setupAxesBuffers()
     m_axesVbo.release();
 }
 
+void PointCloudWidget::setGridVisible(bool visible)
+{
+    if (m_gridVisible != visible) {
+        m_gridVisible = visible;
+        update(); // 触发重绘
+    }
+}
+
+void PointCloudWidget::setupGridBuffers()
+{
+    struct GridVertex {
+        float x, y, z;
+        float r, g, b;
+    };
+
+    std::vector<GridVertex> gridVertices;
+    
+    // 网格设置
+    const float range = 100.0f; // 网格范围：-100m 到 100m
+    const float step = 10.0f;   // 固定间距：10m
+    const float gray = 0.3f;    // 网格颜色：深灰色
+
+    // 生成线条
+    for (float i = -range; i <= range; i += step) {
+        // 平行于 Y 轴的线 (X 固定)
+        gridVertices.push_back({i, -range, 0.0f, gray, gray, gray});
+        gridVertices.push_back({i,  range, 0.0f, gray, gray, gray});
+
+        // 平行于 X 轴的线 (Y 固定)
+        gridVertices.push_back({-range, i, 0.0f, gray, gray, gray});
+        gridVertices.push_back({ range, i, 0.0f, gray, gray, gray});
+    }
+
+    m_gridVertexCount = gridVertices.size();
+
+    m_gridVao.create();
+    m_gridVao.bind();
+
+    m_gridVbo.create();
+    m_gridVbo.bind();
+    m_gridVbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    m_gridVbo.allocate(gridVertices.data(), int(gridVertices.size() * sizeof(GridVertex)));
+
+    // 复用现有 shader 的 layout (loc 0=pos, loc 1=color)
+    m_program->enableAttributeArray(0);
+    m_program->setAttributeBuffer(0, GL_FLOAT, 0, 3, sizeof(GridVertex));
+    
+    m_program->enableAttributeArray(1);
+    m_program->setAttributeBuffer(1, GL_FLOAT, 3 * sizeof(float), 3, sizeof(GridVertex));
+
+    m_gridVao.release();
+    m_gridVbo.release();
+}
+
 static QMatrix4x4 quaternionToMatrix(const QQuaternion& q)
 {
     QMatrix4x4 m;
@@ -289,6 +345,19 @@ void PointCloudWidget::paintGL()
     m_axesVao.release();
     glLineWidth(1.0f);
 
+    // 绘制网格 (仅当 m_gridVisible 为 true 时绘制)
+    glLineWidth(1.0f);
+    if (m_gridVisible) {  // <--- 增加这个判断
+        glLineWidth(1.0f); 
+        if (m_gridVertexCount > 0) {
+            m_gridVao.bind();
+            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
+            m_gridVao.release();
+        }
+    }
+    glLineWidth(1.0f);
+
+    
     // 拖拽时的屏幕框高亮
     if (m_selectionModeEnabled && m_selecting && !m_selectionLocked) {
         QRect sel = m_selectionRect();

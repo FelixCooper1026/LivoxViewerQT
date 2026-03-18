@@ -35,6 +35,9 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setupUI();
 
+    // 初始化网络接口列表
+    refreshNetworkInterfaces();
+
     // 启动设备发现，SDK初始化将在设备发现完成后进行
     startDeviceDiscovery();
 
@@ -80,7 +83,7 @@ void MainWindow::setupUI()
     QWidget* viewerToolbar = new QWidget(centralContainer);
     viewerToolbar->setObjectName("ViewerToolbar");
     QVBoxLayout* viewerLayout = new QVBoxLayout(viewerToolbar);
-    viewerLayout->setContentsMargins(8,4,8,4);
+    viewerLayout->setContentsMargins(8,8,8,8);
     viewerLayout->setSpacing(4);
     
     // 第一行工具栏
@@ -121,9 +124,18 @@ void MainWindow::setupUI()
     colorModeCombo->setToolTip("点云着色模式");
     connect(colorModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onColorModeChanged);
 
-    // 球坐标深度投影（移到第二行）
-    QLabel* lblSpherical = new QLabel("球面投影:", toolbarRow2);
-    projectionDepthCheck = new QCheckBox("启用", toolbarRow2);
+    // 网格显示控制 
+    QCheckBox* gridCheck = new QCheckBox("显示网格", toolbarRow2);
+    gridCheck->setChecked(true); // 默认勾选
+    gridCheck->setToolTip("显示/隐藏世界坐标网格 (10m间距)");
+    connect(gridCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (pointCloudWidget) {
+            pointCloudWidget->setGridVisible(checked); // 调用 PointCloudWidget 的控制函数
+        }
+    });
+
+    // 球坐标深度投影
+    projectionDepthCheck = new QCheckBox("球面投影", toolbarRow2);
     projectionDepthCheck->setChecked(projectionDepthEnabled);
     projectionDepthCheck->setToolTip("启用后按固定距离对深度进行投影，仅在球坐标点云时生效");
     connect(projectionDepthCheck, &QCheckBox::toggled, this, &MainWindow::onProjectionDepthToggled);
@@ -137,9 +149,8 @@ void MainWindow::setupUI()
     projectionDepthSpin->setToolTip("球坐标时，将depth投影到指定距离；0表示使用原始depth");
     connect(projectionDepthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onProjectionDepthChanged);
 
-    // 平面投影控制（移到第二行）
-    QLabel* lblPlanarProj = new QLabel("平面投影:", toolbarRow2);
-    planarProjectionCheck = new QCheckBox("启用", toolbarRow2);
+    // 平面投影控制
+    planarProjectionCheck = new QCheckBox("平面投影", toolbarRow2);
     planarProjectionCheck->setChecked(planarProjectionEnabled);
     planarProjectionCheck->setToolTip("启用平面投影模式，将半球面展开为平面图");
     connect(planarProjectionCheck, &QCheckBox::toggled, this, &MainWindow::onPlanarProjectionToggled);
@@ -152,8 +163,6 @@ void MainWindow::setupUI()
     planarRadiusSpin->setValue(planarProjectionRadius);
     planarRadiusSpin->setToolTip("平面投影的半径大小");
     connect(planarRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onPlanarProjectionRadiusChanged);
-
-
 
     // 纯色选择控件
     solidColorRow = new QWidget(toolbarRow1);
@@ -259,12 +268,12 @@ void MainWindow::setupUI()
     row1Layout->addStretch();
 
     // 拼装第二行工具栏
-    row2Layout->addWidget(lblSpherical);
+    row2Layout->addWidget(gridCheck);
+    row2Layout->addSpacing(8); // 增加一点间距
     row2Layout->addWidget(projectionDepthCheck);
     row2Layout->addWidget(lblProj);
     row2Layout->addWidget(projectionDepthSpin);
-    row2Layout->addSpacing(10);
-    row2Layout->addWidget(lblPlanarProj);
+    row2Layout->addSpacing(8);
     row2Layout->addWidget(planarProjectionCheck);
     row2Layout->addWidget(lblPlanarRadius);
     row2Layout->addWidget(planarRadiusSpin);
@@ -308,6 +317,24 @@ void MainWindow::setupUI()
     devicesLayout->setContentsMargins(8, 8, 8, 8);
     devicesLayout->setSpacing(8);
 
+    // 网络接口选择（放在设备管理dock上方）
+    QWidget* networkRow = new QWidget(devicesDockContent);
+    QHBoxLayout* hostnetworkLayout = new QHBoxLayout(networkRow);
+    hostnetworkLayout->setContentsMargins(0, 0, 0, 0);
+    hostnetworkLayout->setSpacing(6);
+    QLabel* networkLabel = new QLabel("网卡选择:", networkRow);
+    networkInterfaceCombo = new QComboBox(networkRow);
+    networkInterfaceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    networkInterfaceCombo->setToolTip("选择用于雷达通信的网络接口");
+    QPushButton* btnRefreshNetwork = new QPushButton("刷新", networkRow);
+    btnRefreshNetwork->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    hostnetworkLayout->addWidget(networkLabel);
+    hostnetworkLayout->addWidget(networkInterfaceCombo, 1);
+    hostnetworkLayout->addWidget(btnRefreshNetwork);
+    devicesLayout->addWidget(networkRow);
+    connect(networkInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onNetworkInterfaceChanged);
+    connect(btnRefreshNetwork, &QPushButton::clicked, this, &MainWindow::refreshNetworkInterfaces);
+
     QGroupBox* deviceGroup = new QGroupBox("设备管理", devicesDockContent);
     deviceGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
     QVBoxLayout* deviceLayout = new QVBoxLayout(deviceGroup);
@@ -327,6 +354,7 @@ void MainWindow::setupUI()
     deviceList->setMinimumHeight(120);
     deviceList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     deviceList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    deviceList->setSelectionMode(QAbstractItemView::ExtendedSelection); // 支持多选
     deviceLayout->addWidget(deviceList);
 
     // 状态行（缩小）
@@ -964,7 +992,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.1.1</p>"
+                        "<p><b>版本:</b> 1.1.3</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
@@ -1270,17 +1298,56 @@ void MainWindow::setupUI()
     }
 
     connect(actionUpgrade, &QAction::triggered, [this]() {
-        if (!currentDevice || !currentDevice->is_connected) {
-            QMessageBox::warning(this, "固件升级", "设备未连接");
+        // 获取所有选中的设备
+        QList<QListWidgetItem*> selectedItems = deviceList->selectedItems();
+        if (selectedItems.isEmpty()) {
+            QMessageBox::warning(this, "固件升级", "请至少选择一个设备");
             return;
         }
-                 // 记住上次选择的固件路径
-         QSettings settings("Livox", "LivoxViewerQT");
-         QString lastDir = settings.value("upgrade/lastFirmwareDir", QDir::homePath()).toString();
-         QString fw = QFileDialog::getOpenFileName(this, "选择固件文件", lastDir, "固件 (*.bin *.img);;所有文件 (*.*)");
-         if (fw.isEmpty()) return;
-         settings.setValue("upgrade/lastFirmwareDir", QFileInfo(fw).absolutePath());
-         // 设置升级路径为固件文件完整路径（本地分隔符 + 本地8位编码）
+        
+        // 收集选中设备的句柄并验证连接状态
+        QVector<uint32_t> selectedHandles;
+        QVector<QString> disconnectedDevices;
+        QMutexLocker locker(&deviceMutex);
+        
+        for (QListWidgetItem* item : selectedItems) {
+            uint32_t handle = item->data(Qt::UserRole).toUInt();
+            if (devices.contains(handle)) {
+                const DeviceInfo& device = devices[handle];
+                if (device.is_connected) {
+                    selectedHandles.append(handle);
+                } else {
+                    disconnectedDevices.append(device.sn);
+                }
+            }
+        }
+        locker.unlock();
+        
+        if (selectedHandles.isEmpty()) {
+            QString msg = disconnectedDevices.isEmpty() 
+                ? "没有可用的已连接设备" 
+                : QString("所选设备未连接: %1").arg(disconnectedDevices.join(", "));
+            QMessageBox::warning(this, "固件升级", msg);
+            return;
+        }
+        
+        if (!disconnectedDevices.isEmpty()) {
+            int ret = QMessageBox::warning(this, "固件升级", 
+                QString("以下设备未连接，将跳过: %1\n\n是否继续升级已连接的设备？").arg(disconnectedDevices.join(", ")),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (ret != QMessageBox::Yes) {
+                return;
+            }
+        }
+        
+        // 记住上次选择的固件路径
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastDir = settings.value("upgrade/lastFirmwareDir", QDir::homePath()).toString();
+        QString fw = QFileDialog::getOpenFileName(this, "选择固件文件", lastDir, "固件 (*.bin *.img);;所有文件 (*.*)");
+        if (fw.isEmpty()) return;
+        settings.setValue("upgrade/lastFirmwareDir", QFileInfo(fw).absolutePath());
+        
+        // 设置升级路径为固件文件完整路径（本地分隔符 + 本地8位编码）
         QFileInfo fi(fw);
         QString tryPath = fi.absoluteFilePath();
         QByteArray pathLocal = QDir::toNativeSeparators(tryPath).toLocal8Bit();
@@ -1289,27 +1356,90 @@ void MainWindow::setupUI()
             QMessageBox::critical(this, "固件升级", "设置固件路径失败，请确保选择单个固件文件，路径避免包含特殊字符");
             return;
         }
+        
+        // 初始化升级进度映射和总数
+        {
+            QMutexLocker locker(&upgradeProgressMutex);
+            upgradeProgressMap.clear();
+            for (uint32_t handle : selectedHandles) {
+                upgradeProgressMap[handle] = 0;
+            }
+            upgradeTotalDevices = selectedHandles.size();
+        }
+        
+        // 设置进度回调，支持多设备进度跟踪
         SetLivoxLidarUpgradeProgressCallback([](uint32_t handle, LivoxLidarUpgradeState state, void* client){
             MainWindow* w = static_cast<MainWindow*>(client);
             if (!w || !w->captureProgress) return;
-            QMetaObject::invokeMethod(w, [w, state]() {
-                w->captureProgress->setValue(state.progress);
-                w->captureProgress->setFormat(QString("升级进度 %1% ").arg(state.progress));
-                if (state.progress >= 100) {
-                    w->statusLabelBar->setText("升级完成");
+            QMetaObject::invokeMethod(w, [w, handle, state]() {
+                // 在锁内更新进度和计算统计信息
+                int avgProgress = 0;
+                int completedCount = 0;
+                int totalDevices = 0;
+                bool allComplete = false;
+                
+                {
+                    QMutexLocker locker(&w->upgradeProgressMutex);
+                    
+                    // 如果该设备不在映射中，可能是之前的升级残留，忽略
+                    if (!w->upgradeProgressMap.contains(handle)) {
+                        return;
+                    }
+                    
+                    // 更新该设备的进度
+                    // 检查状态事件：kLivoxLidarEventComplete = 4 表示完成
+                    bool isComplete = (state.state == 4) || (state.progress >= 100);
+                    w->upgradeProgressMap[handle] = isComplete ? 100 : state.progress;
+                    
+                    // 计算平均进度和已完成设备数
+                    totalDevices = w->upgradeTotalDevices;
+                    if (totalDevices == 0) {
+                        return;
+                    }
+                    
+                    int totalProgress = 0;
+                    // 遍历所有应该升级的设备（映射中应该包含所有设备）
+                    for (int progress : w->upgradeProgressMap.values()) {
+                        totalProgress += progress;
+                        if (progress >= 100) {
+                            completedCount++;
+                        }
+                    }
+                    
+                    // 计算平均进度：使用总设备数作为分母，确保即使某些设备未收到回调也能正确显示
+                    avgProgress = totalDevices > 0 ? (totalProgress / totalDevices) : 0;
+                    
+                    // 检查是否所有设备都完成
+                    allComplete = (completedCount == totalDevices);
+                    if (allComplete) {
+                        w->upgradeProgressMap.clear();
+                        w->upgradeTotalDevices = 0;
+                    }
+                } // 释放锁
+                
+                // 在锁外更新UI，避免长时间持有锁
+                w->captureProgress->setValue(avgProgress);
+                w->captureProgress->setFormat(QString("升级进度 %1% (%2/%3)").arg(avgProgress).arg(completedCount).arg(totalDevices));
+                
+                if (allComplete) {
+                    w->statusLabelBar->setText(QString("升级完成 (%1个设备)，请等待设备重启").arg(totalDevices));
+                    w->logMessage("固件升级已完成，请等待设备重启");
                 }
             });
         }, this);
-        // 直接启动升级（无需切换工作模式）
-        uint32_t handleArr[1] = { currentDevice->handle };
+        
+        // 准备设备句柄数组
+        QVector<uint32_t> handleArr = selectedHandles;
+        
         // 在后台线程执行升级，避免阻塞UI
-        std::thread([h=currentDevice->handle]() {
-            uint32_t arr[1] = { h };
-            UpgradeLivoxLidars(arr, 1);
+        std::thread([handleArr]() {
+            UpgradeLivoxLidars(handleArr.data(), handleArr.size());
         }).detach();
+        
         captureProgress->setValue(0);
-        captureProgress->setFormat("升级进度 0%");
-        statusLabelBar->setText("正在升级，请勿断电...");
+        captureProgress->setFormat(QString("升级进度 0% (0/%1)").arg(selectedHandles.size()));
+        statusLabelBar->setText(QString("正在升级 %1 个设备，请勿断电或进行操作").arg(selectedHandles.size()));
+        logMessage("正在进行固件升级，请勿断电或进行操作!!!");
     });
 
 
@@ -2026,4 +2156,158 @@ void MainWindow::updateNoiseFilterList()
     if (removeNoiseFilterButton) {
         removeNoiseFilterButton->setEnabled(!noiseFilterTags.isEmpty());
     }
+}
+
+void MainWindow::refreshNetworkInterfaces()
+{
+    if (!networkInterfaceCombo) return;
+    
+    QString currentSelection = selectedNetworkIP;
+    networkInterfaceCombo->clear();
+    
+    // 收集所有可用的网络接口
+    struct IfaceItem {
+        QString ip;
+        QString displayName; // "IP - 网卡名称"
+        QString humanName;   // iface.humanReadableName()
+        QString sysName;     // iface.name()
+    };
+    QList<IfaceItem> interfaces;
+    
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
+    {
+        if (!(iface.flags() & QNetworkInterface::IsUp) ||
+            !(iface.flags() & QNetworkInterface::IsRunning) ||
+            (iface.flags() & QNetworkInterface::IsLoopBack) ||
+            (iface.flags() & QNetworkInterface::IsPointToPoint))
+        {
+            continue;
+        }
+        
+        for (const QNetworkAddressEntry &entry : iface.addressEntries())
+        {
+            const QHostAddress &addr = entry.ip();
+            if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
+                addr.toString() != "0.0.0.0" &&
+                !addr.toString().startsWith("169.254."))
+            {
+                IfaceItem item;
+                item.ip = addr.toString();
+                item.humanName = iface.humanReadableName();
+                item.sysName = iface.name();
+                item.displayName = QString("%1").arg(item.ip, item.humanName);
+                interfaces.append(item);
+                break; // 每个接口只取第一个有效IPv4地址
+            }
+        }
+    }
+    
+    // 添加到下拉列表
+    int selectedIndex = -1;
+    for (int i = 0; i < interfaces.size(); ++i)
+    {
+        networkInterfaceCombo->addItem(interfaces[i].displayName);
+        // 用不同 role 保存 IP / 网卡名（显示文字保持简洁）
+        networkInterfaceCombo->setItemData(i, interfaces[i].ip, Qt::UserRole);
+        networkInterfaceCombo->setItemData(i, interfaces[i].humanName, Qt::UserRole + 1);
+        networkInterfaceCombo->setItemData(i, interfaces[i].sysName, Qt::UserRole + 2);
+
+        if (interfaces[i].ip == currentSelection || (selectedIndex == -1 && currentSelection.isEmpty()))
+        {
+            selectedIndex = i;
+        }
+    }
+    
+    // 设置默认选择（第一个或之前选择的）
+    if (selectedIndex >= 0)
+    {
+        networkInterfaceCombo->setCurrentIndex(selectedIndex);
+        selectedNetworkIP = interfaces[selectedIndex].ip;
+        selectedNetworkInterfaceHumanName = interfaces[selectedIndex].humanName;
+        selectedNetworkInterfaceSysName = interfaces[selectedIndex].sysName;
+    }
+    else if (interfaces.size() > 0)
+    {
+        networkInterfaceCombo->setCurrentIndex(0);
+        selectedNetworkIP = interfaces[0].ip;
+        selectedNetworkInterfaceHumanName = interfaces[0].humanName;
+        selectedNetworkInterfaceSysName = interfaces[0].sysName;
+    }
+    else
+    {
+        selectedNetworkIP = QString();
+        selectedNetworkInterfaceHumanName = QString();
+        selectedNetworkInterfaceSysName = QString();
+        logMessage("警告: 未找到可用的网络接口");
+    }
+    
+    if (!selectedNetworkIP.isEmpty())
+    {
+        logMessage(QString("已选择网络接口: %1 - %2").arg(selectedNetworkIP).arg(selectedNetworkInterfaceHumanName));
+    }
+}
+
+void MainWindow::onNetworkInterfaceChanged(int index)
+{
+    if (!networkInterfaceCombo || index < 0) return;
+    
+    QString newIP = networkInterfaceCombo->itemData(index, Qt::UserRole).toString();
+    QString newHumanName = networkInterfaceCombo->itemData(index, Qt::UserRole + 1).toString();
+    QString newSysName = networkInterfaceCombo->itemData(index, Qt::UserRole + 2).toString();
+    if (!newIP.isEmpty() && newIP != selectedNetworkIP)
+    {
+        QString oldIP = selectedNetworkIP;
+        selectedNetworkIP = newIP;
+        selectedNetworkInterfaceHumanName = newHumanName;
+        selectedNetworkInterfaceSysName = newSysName;
+        logMessage(QString("网络接口已切换: %1 -> %2").arg(oldIP, newIP));
+        
+        // 无论设备发现是否正在进行，都重新启动设备发现以使用新的网络接口
+        logMessage("检测到网卡切换，将重新启动设备发现...");
+        if (discoveryActive)
+        {
+            stopDeviceDiscovery();
+        }
+        QTimer::singleShot(1000, this, [this]() {
+            startDeviceDiscovery();
+        });
+    }
+}
+
+QString MainWindow::getSelectedHostIP() const
+{
+    if (!selectedNetworkIP.isEmpty())
+    {
+        return selectedNetworkIP;
+    }
+    
+    // 如果没有选择，回退到原来的逻辑（自动选择第一个非无线IPv4地址）
+    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
+    {
+        if ((iface.flags() & QNetworkInterface::IsUp) &&
+            (iface.flags() & QNetworkInterface::IsRunning) &&
+            !(iface.flags() & QNetworkInterface::IsLoopBack) &&
+            !(iface.flags() & QNetworkInterface::IsPointToPoint))
+        {
+            // 排除无线网口，只检测有线网口
+            QString ifaceName = iface.name().toLower();
+            if (ifaceName.contains("wlan") || ifaceName.contains("wifi") ||
+                ifaceName.contains("wireless") || ifaceName.contains("802.11"))
+            {
+                continue;
+            }
+
+            for (const QNetworkAddressEntry &entry : iface.addressEntries())
+            {
+                const QHostAddress &addr = entry.ip();
+                if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
+                    addr.toString() != "0.0.0.0" &&
+                    !addr.toString().startsWith("169.254."))
+                {
+                    return addr.toString();
+                }
+            }
+        }
+    }
+    return QString();
 }

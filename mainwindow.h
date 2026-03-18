@@ -159,6 +159,7 @@ public:
     explicit PointCloudWidget(QWidget *parent = nullptr);
     ~PointCloudWidget();
 
+    void setGridVisible(bool visible);
     void updatePointCloud(const PointCloudFrame& frame);
     void clearPointCloud();
     void resetView();
@@ -198,6 +199,7 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override; // 新增释放事件处理
     void wheelEvent(QWheelEvent *event) override;
+    void setupGridBuffers();
 
 private:
     void setupShaders();
@@ -219,6 +221,11 @@ private:
 
     QVector<Point3D> m_points;
     QMutex m_pointsMutex;
+
+    bool m_gridVisible;
+    QOpenGLVertexArrayObject m_gridVao; // 网格 VAO
+    QOpenGLBuffer m_gridVbo;            // 网格 VBO
+    int m_gridVertexCount = 0;          // 网格顶点数量
 
     // 相机控制
     float m_distance;
@@ -402,7 +409,11 @@ private:
     int captureSecondsRemaining = 0;
     int captureTotalSeconds = 0;
     enum CaptureType { CaptureNone, CaptureLog, CaptureDebug, CaptureLVX2, CaptureIMU } currentCapture = CaptureNone;
-// GPS RMC 模拟
+    // 多设备升级进度跟踪
+    QMap<uint32_t, int> upgradeProgressMap;
+    int upgradeTotalDevices = 0;  // 总设备数，用于进度显示
+    QMutex upgradeProgressMutex;  // 升级进度映射的互斥锁
+	// GPS RMC 模拟
     QCheckBox* gpsSimulateCheck = nullptr;
     QTimer* gpsTimer = nullptr;
     QLabel* imuGyroLabel = nullptr;
@@ -575,13 +586,26 @@ private:
     void onDeviceDiscoveryResponse(const QByteArray& data, const QHostAddress& sender);
     bool updateHostIPForDevice(const QString& deviceIP);
     bool updateConfigFileIP(const QString& newHostIP);
+    bool updateConfigFileDeviceTypeIfNeeded(const QString& configPath);
     QString calculateCompatibleHostIP(const QString& deviceIP);
     // void printPacketDetails(const QByteArray& data, const QHostAddress& sender);
+
+    // 网络接口选择相关
+    QComboBox* networkInterfaceCombo = nullptr;
+    QString selectedNetworkIP;
+    QString selectedNetworkInterfaceHumanName;
+    QString selectedNetworkInterfaceSysName;
+    void refreshNetworkInterfaces();
+    void onNetworkInterfaceChanged(int index);
+    QString getSelectedHostIP() const;
 
     // UDP socket for device discovery
     QUdpSocket* discoverySocket;
     QTimer* discoveryTimer;
     bool discoveryActive;
+    // 最近一次发现到的雷达型号（用于自动校正配置文件中的 Device type）
+    uint8_t lastDiscoveredDevType = 0;
+    bool hasLastDiscoveredDevType = false;
 
 private slots:
     void onParamQueryTimeout();

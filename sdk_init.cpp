@@ -35,8 +35,16 @@ bool isInSameSubnet(const QString &hostIP, const QString &currentIP, const QStri
 }
 
 // 获取当前主机IP地址（优先获取有线网口IP）
-QString getCurrentHostIP()
+// 如果提供了selectedIP参数，则直接返回该IP（用于用户选择的网卡）
+QString getCurrentHostIP(const QString& selectedIP = QString())
 {
+    // 如果提供了选择的IP，直接返回
+    if (!selectedIP.isEmpty())
+    {
+        return selectedIP;
+    }
+    
+    // 否则使用原来的自动选择逻辑
     for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
     {
         if ((iface.flags() & QNetworkInterface::IsUp) &&
@@ -125,7 +133,8 @@ static bool hasWiredNetworkDeviceConnected()
 }
 
 // 检查配置文件中的host_ip是否与当前主机IP完全一致；当不一致时将详细信息写入 details（若提供）
-bool checkConfigFileNetworkCompatibility(const QString &configPath, QString *details = nullptr)
+// selectedIP: 如果提供，则使用该IP进行比较；否则使用自动检测的IP
+bool checkConfigFileNetworkCompatibility(const QString &configPath, QString *details = nullptr, const QString &selectedIP = QString())
 {
     QFile configFile(configPath);
     if (!configFile.open(QIODevice::ReadOnly))
@@ -148,7 +157,7 @@ bool checkConfigFileNetworkCompatibility(const QString &configPath, QString *det
     QJsonObject configObj = doc.object();
 
     // 遍历所有设备块（如 HAP、MID360 等）的 host_net_info[*].host_ip
-    QString currentHostIP = getCurrentHostIP();
+    QString currentHostIP = getCurrentHostIP(selectedIP);
     if (currentHostIP.isEmpty())
     {
         qDebug() << "无法获取当前主机IP地址";
@@ -263,7 +272,7 @@ void MainWindow::setupLivoxSDK()
     }
 
     // 3) 检查网络状态
-    QString currentIP = getCurrentHostIP();
+    QString currentIP = getSelectedHostIP();
     if (currentIP.isEmpty())
     {
         logMessage("错误: 无法获取当前主机IP，SDK初始化失败");
@@ -368,53 +377,46 @@ void MainWindow::setupLivoxSDK()
 
     logMessage("找到配置文件: " + configPath);
 
-    // 2) 有线网口已连接设备：检查配置文件 IP 匹配
+    // 2) 有线网口已连接设备：检查配置文件 IP 匹配，如不一致则自动修正为当前主机IP
     logMessage("开始检查配置文件 IP 匹配...");
     {
         QString netCheckDetails;
-        bool ok = checkConfigFileNetworkCompatibility(configPath, &netCheckDetails);
+        bool ok = checkConfigFileNetworkCompatibility(configPath, &netCheckDetails, getSelectedHostIP());
         if (!ok)
         {
             if (!netCheckDetails.isEmpty())
                 logMessage(netCheckDetails);
             else
                 logMessage("配置文件中的host_ip与当前主机IP不一致");
+
+            const QString currentHostIP = getSelectedHostIP();
+            if (currentHostIP.isEmpty())
+            {
+                logMessage("错误: 无法获取当前主机IP，无法自动修正配置文件");
+                return;
+            }
+
+            logMessage(QString("检测到配置文件 host_ip 与当前主机 IP 不一致，将自动更新所有 host_ip 为: %1").arg(currentHostIP));
+            if (!updateConfigFileIP(currentHostIP))
+            {
+                logMessage("自动更新配置文件 host_ip 失败，如需手动调整可通过菜单“生成配置文件...”重新生成");
+            }
+            else
+            {
+                logMessage("已自动更新配置文件中的 host_ip 字段，将使用更新后的配置继续初始化 SDK");
+            }
         }
         else
         {
             if (!netCheckDetails.isEmpty())
                 logMessage(netCheckDetails);
         }
-        if (!ok)
-        {
-            logMessage("将打开配置向导重新生成配置文件");
+    }
 
-            if (!runConfigGeneratorDialog())
-            {
-                logMessage("已取消重新生成配置文件，SDK 初始化终止");
-                return;
-            }
-
-            // 重新生成后再次查找配置文件
-            QString regeneratedConfigPath;
-            for (const QString &path : configPaths)
-            {
-                if (QFile::exists(path))
-                {
-                    regeneratedConfigPath = path;
-                    break;
-                }
-            }
-            if (regeneratedConfigPath.isEmpty())
-            {
-                logMessage("错误: 重新生成配置文件后仍未找到");
-                return;
-            }
-
-            configPath = regeneratedConfigPath;
-            logMessage("使用新生成的配置文件，继续初始化 SDK: " + configPath);
-            // 不再阻断，直接继续后续 SDK 初始化流程
-        }
+    // 3) 根据已发现的雷达型号自动校正配置文件中的 Device type（顶层设备键）
+    if (!updateConfigFileDeviceTypeIfNeeded(configPath))
+    {
+        logMessage("自动校正配置文件 Device type 失败，继续使用原配置尝试初始化 SDK");
     }
 
     try
@@ -531,7 +533,7 @@ void MainWindow::startDeviceDiscovery()
     }
 
     // 获取有线网口的 IPv4（必须存在）
-    QString hwIp = getCurrentHostIP();
+    QString hwIp = getSelectedHostIP();
 
     // ✅ 如果没有有效IP（空或169.254.x.x），则自动为网口分配固定IP
     if (hwIp.isEmpty() || hwIp.startsWith("169.254."))
@@ -613,7 +615,7 @@ void MainWindow::startDeviceDiscovery()
                     for (int j = 0; j < 10; ++j)
                     {
                         QThread::msleep(500);
-                        QString refreshedIP = getCurrentHostIP();
+                        QString refreshedIP = getSelectedHostIP();
                         if (refreshedIP == newIP)
                         {
                             hwIp = refreshedIP;
@@ -625,7 +627,7 @@ void MainWindow::startDeviceDiscovery()
                     {
                         logMessage("警告: IP 已设置但系统尚未刷新，等待中...");
                         QThread::sleep(2);
-                        hwIp = getCurrentHostIP();
+                        hwIp = getSelectedHostIP();
                     }
 
                     ipSetSuccess = true;
@@ -753,7 +755,7 @@ void MainWindow::startDeviceDiscovery()
             }
 
             // === Step 5: 额外防护：当主机与设备IP完全一致时，禁止忽略 ===
-            QString currentHostIP = getCurrentHostIP();
+            QString currentHostIP = getSelectedHostIP();
             if (senderIP == currentHostIP) {
                 logMessage(QString("警告: 收到与主机相同IP(%1)的UDP包，可能是雷达设备冲突，仍尝试解析").arg(senderIP));
                 // 不continue，继续解析
@@ -933,6 +935,9 @@ void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAd
 
         // 解析雷达类型
         uint8_t devType = static_cast<unsigned char>(data[dataOffset + 1]);
+        // 记录最近一次发现到的雷达型号，用于后续自动校正配置文件中的 Device type
+        lastDiscoveredDevType = devType;
+        hasLastDiscoveredDevType = true;
         // logMessage(QString("雷达类型: 0x%1").arg(QString::number(devType, 16).toUpper().rightJustified(2, '0')));
 
         // 解析序列号 (16字节)
@@ -970,7 +975,7 @@ void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAd
         logMessage(QString("发现雷达: %1 (IP: %2)").arg(sender.toString()).arg(deviceIP));
 
         // 检查是否需要更新主机IP
-        QString currentHostIP = getCurrentHostIP();
+        QString currentHostIP = getSelectedHostIP();
         if (!currentHostIP.isEmpty())
         {
             // 检查是否在同一网段
@@ -1156,37 +1161,30 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
         return false;
     }
 
-    // 获取有线网口名称
-    QString wiredInterfaceName;
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
+    // 只更新“用户选择的网口”的 IP
+    // Windows 的 netsh 更偏好使用 humanReadableName（如“以太网”），Linux/mac 更适合使用系统名（如 eth0/enpXsY）
+    const QString selectedHumanName = selectedNetworkInterfaceHumanName;
+    const QString selectedSysName = selectedNetworkInterfaceSysName;
+
+    if (selectedNetworkIP.isEmpty())
     {
-        if ((iface.flags() & QNetworkInterface::IsUp) &&
-            (iface.flags() & QNetworkInterface::IsRunning) &&
-            !(iface.flags() & QNetworkInterface::IsLoopBack) &&
-            !(iface.flags() & QNetworkInterface::IsPointToPoint))
-        {
-
-            QString ifaceName = iface.name().toLower();
-            if (ifaceName.contains("wlan") || ifaceName.contains("wifi") ||
-                ifaceName.contains("wireless") || ifaceName.contains("802.11"))
-            {
-                continue;
-            }
-
-            wiredInterfaceName = iface.name();
-            break;
-        }
-    }
-
-    if (wiredInterfaceName.isEmpty())
-    {
-        logMessage("未找到有线网口");
+        logMessage("未选择网卡，无法更新主机IP");
         return false;
     }
 
 #ifdef _WIN32
+    const QString ifaceNameForNetsh = !selectedHumanName.isEmpty() ? selectedHumanName : selectedSysName;
+    if (ifaceNameForNetsh.isEmpty())
+    {
+        logMessage("未获取到所选网卡名称，无法更新主机IP");
+        return false;
+    }
+
     // Windows下尝试使用netsh命令（需要管理员权限）
-    logMessage(QString("准备更新有线网口 %1 的IP为: %2").arg(wiredInterfaceName).arg(newHostIP));
+    logMessage(QString("准备更新所选网口 \"%1\" (%2) 的IP为: %3")
+                   .arg(selectedHumanName.isEmpty() ? ifaceNameForNetsh : selectedHumanName)
+                   .arg(selectedNetworkIP)
+                   .arg(newHostIP));
     // ---- 检查冲突：防止同一网段中已有相同IP ----
     QString basePrefix = newHostIP.section('.', 0, 2); // 例如 "192.168.1"
     QString candidateIP = newHostIP;
@@ -1211,11 +1209,11 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
         newHostIP = candidateIP;
     }
 
-    logMessage(QString("最终准备设置接口 %1 的IP: %2").arg(wiredInterfaceName, newHostIP));
+    logMessage(QString("最终准备设置接口 %1 的IP: %2").arg(ifaceNameForNetsh, newHostIP));
     QProcess process;
     QStringList arguments;
     arguments << "interface" << "ip" << "set" << "address"
-              << "name=" + wiredInterfaceName
+              << "name=" + ifaceNameForNetsh
               << "static" << newHostIP << "255.255.255.0";
 
     process.start("netsh", arguments);
@@ -1233,9 +1231,16 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
     }
 #else
     // Linux/macOS下使用ip命令
+    const QString ifaceNameForIpCmd = selectedSysName;
+    if (ifaceNameForIpCmd.isEmpty())
+    {
+        logMessage("未获取到所选网卡系统名，无法更新主机IP");
+        return false;
+    }
+
     QProcess process;
     QStringList arguments;
-    arguments << "addr" << "add" << newHostIP + "/24" << "dev" << wiredInterfaceName;
+    arguments << "addr" << "add" << newHostIP + "/24" << "dev" << ifaceNameForIpCmd;
 
     process.start("ip", arguments);
     if (!process.waitForFinished(10000))
@@ -1259,7 +1264,7 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
     connect(checkTimer, &QTimer::timeout, this, [this, newHostIP, checkTimer]()
             {
         try {
-            QString currentIP = getCurrentHostIP();
+            QString currentIP = getSelectedHostIP();
             if (!currentIP.isEmpty() && currentIP != newHostIP) {
                 logMessage(QString("网络配置可能未完全生效，当前IP: %1，期望IP: %2").arg(currentIP).arg(newHostIP));
             } else {
@@ -1364,6 +1369,147 @@ bool MainWindow::updateConfigFileIP(const QString &newHostIP)
     configFile.close();
 
     logMessage(QString("配置文件已更新，所有host_ip设置为: %1").arg(newHostIP));
+    return true;
+}
+
+bool MainWindow::updateConfigFileDeviceTypeIfNeeded(const QString &configPath)
+{
+    // 若尚未记录到设备类型，则直接视为无需修改
+    if (!hasLastDiscoveredDevType)
+    {
+        qDebug() << "[DeviceTypeCheck] 未记录到最近的雷达型号，跳过 Device type 自动校正";
+        return true;
+    }
+
+    QString expectedKey;
+    switch (lastDiscoveredDevType)
+    {
+    case kLivoxLidarTypeMid360:
+        expectedKey = "MID360";
+        break;
+    case kLivoxLidarTypeMid360s:
+        expectedKey = "Mid360s";
+        break;
+    case kLivoxLidarTypeHAP:
+        expectedKey = "HAP";
+        break;
+    default:
+        qDebug() << "[DeviceTypeCheck] 当前雷达型号不在自动校正列表中，dev_type =" << lastDiscoveredDevType;
+        return true;
+    }
+
+    QFile configFile(configPath);
+    if (!configFile.open(QIODevice::ReadOnly))
+    {
+        logMessage("无法打开配置文件进行 Device type 校验");
+        return false;
+    }
+
+    QByteArray data = configFile.readAll();
+    configFile.close();
+
+    QJsonParseError parseError;
+    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
+    if (parseError.error != QJsonParseError::NoError)
+    {
+        logMessage("配置文件 JSON 解析错误（Device type 校验失败）");
+        return false;
+    }
+
+    QJsonObject root = doc.object();
+
+    // 收集设备配置块键（排除日志相关字段）
+    QStringList deviceKeys;
+    for (auto it = root.begin(); it != root.end(); ++it)
+    {
+        if (!it.value().isObject())
+            continue;
+        const QString key = it.key();
+        if (key == "lidar_log_enable" || key == "lidar_log_cache_size_MB" || key == "lidar_log_path")
+            continue;
+
+        QJsonObject obj = it.value().toObject();
+        if (obj.contains("host_net_info"))
+        {
+            deviceKeys.append(key);
+        }
+    }
+
+    if (deviceKeys.isEmpty())
+    {
+        qDebug() << "[DeviceTypeCheck] 配置文件中未找到设备配置块，跳过 Device type 自动校正";
+        return true;
+    }
+
+    // 已经包含期望的 Device type，则无需修改
+    if (deviceKeys.contains(expectedKey))
+    {
+        qDebug() << "[DeviceTypeCheck] 配置文件 Device type 已与当前雷达匹配:" << expectedKey;
+        return true;
+    }
+
+    // 仅在存在单一设备配置块时才尝试自动改名，避免误改多设备场景
+    if (deviceKeys.size() != 1)
+    {
+        logMessage("检测到配置文件包含多个设备配置块且均与当前雷达型号不匹配，暂不自动修改 Device type");
+        return true;
+    }
+
+    const QString oldKey = deviceKeys.first();
+    QJsonObject oldDevObj = root.value(oldKey).toObject();
+    if (!oldDevObj.contains("host_net_info") || !oldDevObj.value("host_net_info").isArray())
+    {
+        logMessage("配置文件设备块缺少 host_net_info，无法自动调整 Device type");
+        return false;
+    }
+
+    QJsonArray hostArr = oldDevObj.value("host_net_info").toArray();
+
+    // 按与配置向导一致的规则生成新的 lidar_net_info
+    QJsonObject lidarNet;
+    if (expectedKey == "MID360" || expectedKey == "Mid360s")
+    {
+        lidarNet.insert("cmd_data_port", 56100);
+        lidarNet.insert("push_msg_port", 56200);
+        lidarNet.insert("point_data_port", 56300);
+        lidarNet.insert("imu_data_port", 56400);
+        lidarNet.insert("log_data_port", 56500);
+    }
+    else
+    {
+        // HAP 或其他使用 HAP 的默认端口
+        lidarNet.insert("cmd_data_port", 56000);
+        lidarNet.insert("push_msg_port", 0);
+        lidarNet.insert("point_data_port", 57000);
+        lidarNet.insert("imu_data_port", 58000);
+        lidarNet.insert("log_data_port", 59000);
+    }
+
+    // 重新组装一个有序的根对象：先日志字段，再设备块
+    QJsonObject orderedRoot;
+    if (root.contains("lidar_log_enable"))
+        orderedRoot.insert("lidar_log_enable", root.value("lidar_log_enable"));
+    if (root.contains("lidar_log_cache_size_MB"))
+        orderedRoot.insert("lidar_log_cache_size_MB", root.value("lidar_log_cache_size_MB"));
+    if (root.contains("lidar_log_path"))
+        orderedRoot.insert("lidar_log_path", root.value("lidar_log_path"));
+
+    QJsonObject newDevObj;
+    newDevObj.insert("lidar_net_info", lidarNet);
+    newDevObj.insert("host_net_info", hostArr);
+    orderedRoot.insert(expectedKey, newDevObj);
+
+    QJsonDocument newDoc(orderedRoot);
+    if (!configFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
+    {
+        logMessage("无法写入配置文件（Device type 自动校正失败）");
+        return false;
+    }
+
+    configFile.write(newDoc.toJson(QJsonDocument::Indented));
+    configFile.close();
+
+    logMessage(QString("已自动将配置文件 Device type 从 \"%1\" 调整为 \"%2\"").arg(oldKey, expectedKey));
     return true;
 }
 
