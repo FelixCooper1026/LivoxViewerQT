@@ -18,6 +18,7 @@
 #include <QAbstractSocket>
 #include <QListWidget>
 #include <QDesktopServices>
+#include <QStandardPaths>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -34,6 +35,20 @@ MainWindow::MainWindow(QWidget *parent)
     , isRecordingParams(false)
 {
     setupUI();
+
+    // 网络自动配置开关（Linux 默认关闭）
+    {
+        QSettings settings("Livox", "LivoxViewerQT");
+#ifdef Q_OS_LINUX
+        const bool defaultAutoConfig = false;
+#else
+        const bool defaultAutoConfig = true;
+#endif
+        autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfig).toBool();
+        if (autoConfigHostIpCheck) {
+            autoConfigHostIpCheck->setChecked(autoConfigHostIpEnabled);
+        }
+    }
 
     // 初始化网络接口列表
     refreshNetworkInterfaces();
@@ -69,9 +84,11 @@ void MainWindow::setupUI()
 {
     // 设置应用程序字体，避免DirectWrite错误
     QFont appFont = QApplication::font();
-    appFont.setFamily("Microsoft YaHei"); // 使用微软雅黑字体
+#ifdef Q_OS_WIN
+    appFont.setFamily("Microsoft YaHei"); // Windows: DirectWrite 字体兼容
     appFont.setPointSize(9);
     QApplication::setFont(appFont);
+#endif
 
     // 中央视图：点云可视化
     QWidget* centralContainer = new QWidget(this);
@@ -334,6 +351,25 @@ void MainWindow::setupUI()
     devicesLayout->addWidget(networkRow);
     connect(networkInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onNetworkInterfaceChanged);
     connect(btnRefreshNetwork, &QPushButton::clicked, this, &MainWindow::refreshNetworkInterfaces);
+
+    // Linux 下默认不自动修改主机网口 IP（需要 root/sudo）；可由用户主动开启
+    {
+        QWidget* autoIpRow = new QWidget(devicesDockContent);
+        QHBoxLayout* h = new QHBoxLayout(autoIpRow);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(6);
+        autoConfigHostIpCheck = new QCheckBox("自动修改主机网口IP（需管理员/Root）", autoIpRow);
+        autoConfigHostIpCheck->setToolTip("开启后程序会尝试自动将所选网卡的 IPv4 配置到与雷达同网段。\nLinux 可能需要 sudo/root 权限；默认关闭以避免权限导致的失败。");
+        h->addWidget(autoConfigHostIpCheck, 1);
+        devicesLayout->addWidget(autoIpRow);
+
+        connect(autoConfigHostIpCheck, &QCheckBox::toggled, this, [this](bool enabled) {
+            autoConfigHostIpEnabled = enabled;
+            QSettings settings("Livox", "LivoxViewerQT");
+            settings.setValue("network/autoConfigHostIp", enabled);
+            logMessage(QString("自动修改主机IP: %1").arg(enabled ? "已启用" : "已关闭"));
+        });
+    }
 
     QGroupBox* deviceGroup = new QGroupBox("设备管理", devicesDockContent);
     deviceGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
@@ -992,7 +1028,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.1.3</p>"
+                        "<p><b>版本:</b> 1.2.0</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
@@ -1005,7 +1041,7 @@ void MainWindow::setupUI()
                         "<li>设备LOG数据采集与保存</li>"
                         "<li>设备固件升级</li>"
                         "</ul>"
-                        "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 v1.3.0 开发</p>");
+                        "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>");
     });
 
     // Livox 官网
@@ -1133,7 +1169,8 @@ void MainWindow::setupUI()
         v->addWidget(box);
 
         connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", QDir::homePath());
+            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
             if (!dir.isEmpty()) editPath->setText(dir);
         });
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -1196,7 +1233,8 @@ void MainWindow::setupUI()
         v->addWidget(box);
 
         connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", QDir::homePath());
+            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
             if (!dir.isEmpty()) editPath->setText(dir);
         });
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -1258,7 +1296,8 @@ void MainWindow::setupUI()
         v->addWidget(box);
 
         connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", QDir::homePath());
+            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
             if (!dir.isEmpty()) editPath->setText(dir);
         });
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -1342,7 +1381,8 @@ void MainWindow::setupUI()
         
         // 记住上次选择的固件路径
         QSettings settings("Livox", "LivoxViewerQT");
-        QString lastDir = settings.value("upgrade/lastFirmwareDir", QDir::homePath()).toString();
+        const QString docs = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+        QString lastDir = settings.value("upgrade/lastFirmwareDir", docs.isEmpty() ? QDir::homePath() : docs).toString();
         QString fw = QFileDialog::getOpenFileName(this, "选择固件文件", lastDir, "固件 (*.bin *.img);;所有文件 (*.*)");
         if (fw.isEmpty()) return;
         settings.setValue("upgrade/lastFirmwareDir", QFileInfo(fw).absolutePath());
@@ -2095,7 +2135,20 @@ bool MainWindow::runConfigGeneratorDialog()
     }
 
 
-    QString outPath = QApplication::applicationDirPath() + "/config.json";
+    QString outPath;
+    {
+        QString cfgDir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        if (cfgDir.isEmpty()) {
+            cfgDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        }
+        if (!cfgDir.isEmpty()) {
+            QDir().mkpath(cfgDir);
+            outPath = QDir(cfgDir).filePath("config.json");
+        } else {
+            // 回退：仍写入程序目录（便于便携运行）
+            outPath = QApplication::applicationDirPath() + "/config.json";
+        }
+    }
     QFile f(outPath);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         QMessageBox::critical(this, "生成配置文件", QString("无法写入: %1").arg(QDir::toNativeSeparators(outPath)));

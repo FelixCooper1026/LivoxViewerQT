@@ -14,6 +14,13 @@
 #include <QUdpSocket>
 #include <QTimer>
 #include <QProcess>
+#include <QStandardPaths>
+
+#ifndef _WIN32
+#include <sys/socket.h>
+#include <net/if.h>
+#include <cerrno>
+#endif
 
 // 添加网段检查的辅助函数
 bool isInSameSubnet(const QString &hostIP, const QString &currentIP, const QString &subnetMask)
@@ -94,15 +101,18 @@ static bool hasWiredNetworkDeviceConnected()
             (flags & QNetworkInterface::IsPointToPoint))
             continue;
 
-        // 排除无线、蓝牙、虚拟网卡
+        // 排除无线/蓝牙（名称判断仅作弱信号，避免依赖中文 UI 名称）
         if (name.contains("wifi") || name.contains("wi-fi") || name.contains("wlan") ||
-            name.contains("wireless") || name.contains("蓝牙") ||
-            sysName.contains("wifi") || sysName.contains("wireless") || sysName.contains("wlan"))
+            name.contains("wireless") || name.contains("bluetooth") || name.contains("bt") ||
+            sysName.contains("wifi") || sysName.contains("wireless") || sysName.contains("wlan") ||
+            sysName.contains("bt") || sysName.contains("bluetooth"))
             continue;
 
-        // Windows: “以太网” / “以太网 2” / “以太网 4” 都属于有线接口
-        // Qt 给的 name 通常是 ethernet_xxxxxx
-        if (!(sysName.startsWith("ethernet") || name.contains("以太网") || name.contains("ethernet")))
+        // 排除常见虚拟网卡/隧道/容器桥接（Linux/Windows 都可能出现）
+        if (sysName.contains("docker") || sysName.contains("veth") || sysName.startsWith("br-") ||
+            sysName.contains("virbr") || sysName.contains("vmnet") || sysName.contains("vboxnet") ||
+            sysName.contains("tap") || sysName.contains("tun") ||
+            sysName.contains("loopback") || name.contains("virtual"))
             continue;
 
         // 检查是否有有效 IPv4
@@ -132,6 +142,76 @@ static bool hasWiredNetworkDeviceConnected()
     return false;
 }
 
+static QString defaultConfigDir()
+{
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+    if (dir.isEmpty()) {
+        dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    }
+    return dir;
+}
+
+static QString resolveConfigJsonPath(QString* migrationNote = nullptr)
+{
+    const QString cfgDir = defaultConfigDir();
+    const QString standardPath = cfgDir.isEmpty() ? QString() : QDir(cfgDir).filePath("config.json");
+
+    // 1) 标准位置优先：如果文件已存在，直接返回
+    if (!standardPath.isEmpty() && QFile::exists(standardPath)) {
+        return standardPath;
+    }
+
+    // 2) 兼容旧位置（程序目录/工作目录）
+    const QString appDirPath = QCoreApplication::applicationDirPath();
+    const QStringList legacyCandidates = {
+        QDir::currentPath() + "/config.json",
+        appDirPath + "/config.json",
+        appDirPath + "/../config.json",
+    };
+    
+    QString legacyFound;
+    for (const QString& p : legacyCandidates) {
+        if (QFile::exists(p)) {
+            legacyFound = p;
+            break;
+        }
+    }
+
+    // 3) 若找到旧配置且标准目录可用：迁移/复制到标准路径
+    if (!legacyFound.isEmpty() && !standardPath.isEmpty()) {
+        // 确保标准目录存在
+        QDir().mkpath(QFileInfo(standardPath).absolutePath());
+        
+        if (!QFile::exists(standardPath)) {
+            if (QFile::copy(legacyFound, standardPath)) {
+                if (migrationNote) {
+                    *migrationNote = QString("已将配置文件迁移到标准目录: %1").arg(QDir::toNativeSeparators(standardPath));
+                }
+                return standardPath;
+            }
+        }
+        // 复制失败或标准位置已有文件：继续使用旧配置
+        if (migrationNote) {
+            *migrationNote = QString("使用旧配置文件路径: %1").arg(QDir::toNativeSeparators(legacyFound));
+        }
+        return legacyFound;
+    }
+
+    // 4) 无标准目录时：直接返回旧路径（若有）
+    if (!legacyFound.isEmpty()) {
+        if (migrationNote) {
+            *migrationNote = QString("使用旧配置文件路径: %1").arg(QDir::toNativeSeparators(legacyFound));
+        }
+        return legacyFound;
+    }
+
+    // 5) 都没有：返回标准路径（关键：提前创建父目录，确保后续 File.open 能成功）
+    if (!standardPath.isEmpty()) {
+        QDir().mkpath(QFileInfo(standardPath).absolutePath());
+    }
+    
+    return standardPath;
+}
 // 检查配置文件中的host_ip是否与当前主机IP完全一致；当不一致时将详细信息写入 details（若提供）
 // selectedIP: 如果提供，则使用该IP进行比较；否则使用自动检测的IP
 bool checkConfigFileNetworkCompatibility(const QString &configPath, QString *details = nullptr, const QString &selectedIP = QString())
@@ -334,50 +414,34 @@ void MainWindow::setupLivoxSDK()
         return;
     }
 
-    // 查找配置文件（仅支持 config.json）
-    QStringList configPaths = {
-        QDir::currentPath() + "/config.json",
-        QApplication::applicationDirPath() + "/config.json",
-        QApplication::applicationDirPath() + "/../config.json"};
-
-    QString configPath;
-    for (const QString &path : configPaths)
-    {
-        if (QFile::exists(path))
-        {
-            configPath = path;
-            break;
-        }
+    // 4) 查找配置文件（修复逻辑：增加 exists 校验）
+    QString migrationNote;
+    QString configPath = resolveConfigJsonPath(&migrationNote);
+    if (!migrationNote.isEmpty()) {
+        logMessage(migrationNote);
     }
 
-    if (configPath.isEmpty())
+    // 即使路径不为空，如果文件不存在，也要进入向导
+    if (configPath.isEmpty() || !QFile::exists(configPath))
     {
-        // 未找到 config.json，提示并弹出配置向导
         logMessage("未找到配置文件 config.json，将打开配置向导");
         if (!runConfigGeneratorDialog())
         {
             logMessage("已取消生成配置文件，SDK 初始化终止");
             return;
         }
-        // 生成后再次查找
-        for (const QString &path : configPaths)
+        
+        // 生成后再次尝试解析（或直接使用之前的 configPath，因为 resolve 已经创建了目录）
+        if (!QFile::exists(configPath))
         {
-            if (QFile::exists(path))
-            {
-                configPath = path;
-                break;
-            }
-        }
-        if (configPath.isEmpty())
-        {
-            logMessage("错误: 仍未找到 config.json");
+            logMessage("错误: 配置向导运行后仍未检测到生成的 config.json");
             return;
         }
     }
 
     logMessage("找到配置文件: " + configPath);
 
-    // 2) 有线网口已连接设备：检查配置文件 IP 匹配，如不一致则自动修正为当前主机IP
+    // 5) 自动更新配置：检查配置文件 IP 匹配，如不一致则自动修正为当前主机IP
     logMessage("开始检查配置文件 IP 匹配...");
     {
         QString netCheckDetails;
@@ -413,7 +477,7 @@ void MainWindow::setupLivoxSDK()
         }
     }
 
-    // 3) 根据已发现的雷达型号自动校正配置文件中的 Device type（顶层设备键）
+    // 6) 根据已发现的雷达型号自动校正配置文件中的 Device type（顶层设备键）并初始化 SDK
     if (!updateConfigFileDeviceTypeIfNeeded(configPath))
     {
         logMessage("自动校正配置文件 Device type 失败，继续使用原配置尝试初始化 SDK");
@@ -666,35 +730,45 @@ void MainWindow::startDeviceDiscovery()
     // 创建UDP socket
     discoverySocket = new QUdpSocket(this);
 
-    // 尝试绑定到有线 IP 的 56000 端口，重试10次，每次间隔1秒
+    // 尝试绑定到 56000 端口，重试5次，每次间隔1秒
     int retryCount = 5;
     bool bindOk = false;
     for (int i = 0; i < retryCount; ++i)
     {
+    #ifdef _WIN32
+        // Windows 原有逻辑：绑定到具体的有线网口 IP
         bindOk = discoverySocket->bind(QHostAddress(hwIp), 56000,
-                                       QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+                                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+    #else
+        // Linux 修复逻辑：绑定到 AnyIPv4 以接收设备广播的 ACK
+        bindOk = discoverySocket->bind(QHostAddress::AnyIPv4, 56000,
+                                    QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint);
+    #endif
+
         if (bindOk)
         {
             break;
         }
         else
         {
+    #ifdef _WIN32
             logMessage(QString("警告: 绑定到 %1:56000 失败 (第%2次重试): %3")
-                           .arg(hwIp)
-                           .arg(i + 1)
-                           .arg(discoverySocket->errorString()));
-            // 等待1秒后重试
+                        .arg(hwIp).arg(i + 1).arg(discoverySocket->errorString()));
+    #else
+            logMessage(QString("警告: 绑定到 AnyIPv4:56000 失败 (第%1次重试): %2")
+                        .arg(i + 1).arg(discoverySocket->errorString()));
+    #endif
             QThread::sleep(1);
         }
     }
+
     if (!bindOk)
     {
-        logMessage(QString("警告: 绑定到 %1:56000 失败: %2")
-                       .arg(hwIp)
-                       .arg(discoverySocket->errorString()));
+    #ifdef _WIN32
+        logMessage(QString("警告: 绑定到 %1:56000 失败: %2").arg(hwIp).arg(discoverySocket->errorString()));
         // 最小回退：尝试绑定到 AnyIPv4
         if (!discoverySocket->bind(QHostAddress::AnyIPv4, 56000,
-                                   QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint))
+                                QUdpSocket::ShareAddress | QUdpSocket::ReuseAddressHint))
         {
             logMessage("警告: 回退绑定到 AnyIPv4 仍失败，无法启动设备发现");
             delete discoverySocket;
@@ -705,24 +779,35 @@ void MainWindow::startDeviceDiscovery()
         {
             logMessage("已回退绑定到 AnyIPv4:56000（注意：广播可能不会从有线接口发出）");
         }
+    #else
+        logMessage("错误: 绑定到 AnyIPv4:56000 失败: " + discoverySocket->errorString());
+        delete discoverySocket;
+        discoverySocket = nullptr;
+        return;
+    #endif
     }
     else
     {
-        logMessage(QString("已绑定 discovery socket 到 %1:56000（将使用该接口发送广播）")
-                       .arg(hwIp));
+    #ifdef _WIN32
+        logMessage(QString("已绑定 discovery socket 到 %1:56000（将使用该接口发送广播）").arg(hwIp));
+    #else
+        logMessage("已绑定 discovery socket 到 AnyIPv4:56000（准备监听雷达响应）");
+    #endif
     }
 
     // 连接readyRead信号
-    connect(discoverySocket, &QUdpSocket::readyRead, this, [this]() {
-        while (discoverySocket->hasPendingDatagrams()) {
+    // 注意：不要在此 lambda 中依赖成员 discoverySocket（stopDeviceDiscovery 可能将其置空）
+    QUdpSocket* sock = discoverySocket;
+    connect(sock, &QUdpSocket::readyRead, this, [this, sock]() {
+        while (sock && sock->hasPendingDatagrams()) {
             QByteArray datagram;
-            datagram.resize(discoverySocket->pendingDatagramSize());
+            datagram.resize(sock->pendingDatagramSize());
             QHostAddress sender;
             quint16 senderPort = 0;
-            discoverySocket->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
+            sock->readDatagram(datagram.data(), datagram.size(), &sender, &senderPort);
 
             QString senderIP = sender.toString();
-            QString localIP = discoverySocket->localAddress().toString();
+            QString localIP = sock->localAddress().toString();
 
             // === Step 1: 构建本机所有IPv4地址集合 ===
             static QSet<QString> localIPv4Set;
@@ -834,7 +919,8 @@ void MainWindow::sendBroadcastDiscovery()
     quint16 lp = discoverySocket->localPort();
     logMessage(QString("准备发送广播（socket local=%1:%2）").arg(la.toString()).arg(lp));
 
-    // 发送到广播地址255.255.255.255:56000
+#ifdef _WIN32
+    // Windows 原有逻辑：直接发送到全局广播地址255.255.255.255:56000
     qint64 sent = discoverySocket->writeDatagram(discoveryCmd, QHostAddress::Broadcast, 56000);
 
     if (sent == -1)
@@ -850,6 +936,56 @@ void MainWindow::sendBroadcastDiscovery()
             logMessage(QString("已发送广播发现命令 (%1 字节, UDP广播到255.255.255.255:56000)").arg(sent));
         }
     }
+#else
+    // Linux 优化逻辑：使用 SO_BINDTODEVICE 绑定网卡，并严格向 255.255.255.255 发送广播
+    qint64 totalSent = 0;
+
+    // 获取底层 socket 描述符
+    qintptr sockfd = discoverySocket->socketDescriptor();
+    if (sockfd != -1) {
+        // 获取当前选择的网卡系统名称 (例如 "eth0", "enp3s0")
+        QByteArray ifaceName = selectedNetworkInterfaceSysName.toLocal8Bit();
+
+        if (!ifaceName.isEmpty()) {
+            // 使用 SO_BINDTODEVICE 将 socket 绑定到特定网卡
+            if (setsockopt(sockfd, SOL_SOCKET, SO_BINDTODEVICE, ifaceName.constData(), ifaceName.length()) < 0) {
+                // 注意: SO_BINDTODEVICE 通常需要 root 权限或 CAP_NET_RAW 能力
+                logMessage(QString("警告: Linux 下 SO_BINDTODEVICE 绑定到 %1 失败 (可能需要 sudo)。错误码: %2").arg(selectedNetworkInterfaceSysName).arg(errno));
+            } else {
+                static int bindLogCount = 0;
+                if (bindLogCount == 0) {
+                    logMessage(QString("已成功将 Socket 物理绑定到网卡: %1").arg(selectedNetworkInterfaceSysName));
+                    bindLogCount++;
+                }
+            }
+
+            // 确保开启广播权限 (Qt QUdpSocket 通常默认开启，安全起见底层再确认一次)
+            int broadcastEnable = 1;
+            setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable));
+        } else {
+            logMessage("警告: 未获取到所选网卡名称，跳过 SO_BINDTODEVICE 绑定");
+        }
+    } else {
+        logMessage("警告: 无法获取底层的 socket 描述符");
+    }
+
+    // 严格发送到全局广播地址 255.255.255.255
+    totalSent = discoverySocket->writeDatagram(discoveryCmd, QHostAddress::Broadcast, 56000);
+
+    if (totalSent == -1)
+    {
+        logMessage("错误: 广播发现命令发送失败: " + discoverySocket->errorString());
+    }
+    else
+    {
+        static int sendCount = 0;
+        sendCount++;
+        if (sendCount <= 3)
+        {
+            logMessage(QString("已严格向全局广播 255.255.255.255 发送发现命令 (UDP端口:56000, 字节:%1)").arg(totalSent));
+        }
+    }
+#endif
 }
 
 void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAddress &sender)
@@ -999,7 +1135,22 @@ void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAd
                 if (!newHostIP.isEmpty()) {
                     logMessage(QString("建议主机IP: %1 (与设备IP %2 在同一网段)").arg(newHostIP).arg(deviceIP));
 
-                    if (updateHostIPForDevice(deviceIP)) {
+                    if (!autoConfigHostIpEnabled) {
+                        logMessage("已关闭“自动修改主机网口IP”，请手动修改网口IP后重启程序");
+                        logMessage(QString("手动设置步骤: 网口IP设为 %1，子网掩码设为 255.255.255.0").arg(newHostIP));
+
+                        const QString tipIp = newHostIP;
+                        QTimer::singleShot(0, this, [this, tipIp]() {
+                            if (manualNetworkConfigPromptActive) return;
+                            manualNetworkConfigPromptActive = true;
+                            QMessageBox::warning(this, "网络配置冲突",
+                                                 QString("检测到设备IP与主机IP冲突。\n"
+                                                         "请手动修改所选网卡 IPv4 后重启程序。\n\n"
+                                                         "建议主机IP: %1 / 掩码: 255.255.255.0").arg(tipIp));
+                            manualNetworkConfigPromptActive = false;
+                            stopDeviceDiscovery();
+                        });
+                    } else if (updateHostIPForDevice(deviceIP)) {
                         logMessage(QString("主机IP已自动更新为: %1").arg(newHostIP));
                     } else {
                         logMessage("自动更新主机IP失败，请手动修改网口IP后重启程序");
@@ -1037,6 +1188,25 @@ void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAd
                     }
 
                     // 尝试自动更新主机IP
+                    if (!autoConfigHostIpEnabled)
+                    {
+                        logMessage("已关闭“自动修改主机网口IP”，将不会自动修改网络配置");
+                        logMessage(QString("手动设置步骤: 网口IP设为 %1，子网掩码设为 255.255.255.0").arg(newHostIP));
+
+                        const QString tipIp = newHostIP;
+                        QTimer::singleShot(0, this, [this, tipIp]() {
+                            if (manualNetworkConfigPromptActive) return;
+                            manualNetworkConfigPromptActive = true;
+                            QMessageBox::warning(this, "需要手动配置网络",
+                                                 QString("设备与主机不在同一网段。\n"
+                                                         "请手动设置所选网卡 IPv4 后重启程序。\n\n"
+                                                         "建议主机IP: %1 / 掩码: 255.255.255.0").arg(tipIp));
+                            manualNetworkConfigPromptActive = false;
+                            stopDeviceDiscovery();
+                        });
+                        return;
+                    }
+
                     if (updateHostIPForDevice(deviceIP))
                     {
                         logMessage(QString("主机IP已自动更新为: %1").arg(newHostIP));
@@ -1155,6 +1325,12 @@ QString MainWindow::calculateCompatibleHostIP(const QString &deviceIP)
 
 bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
 {
+    if (!autoConfigHostIpEnabled)
+    {
+        logMessage("已关闭“自动修改主机网口IP”，跳过自动配置");
+        return false;
+    }
+
     QString newHostIP = calculateCompatibleHostIP(deviceIP);
     if (newHostIP.isEmpty())
     {
@@ -1229,32 +1405,38 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
         logMessage("请手动设置网口IP或使用管理员权限运行程序");
         return false;
     }
-#else
-    // Linux/macOS下使用ip命令
-    const QString ifaceNameForIpCmd = selectedSysName;
-    if (ifaceNameForIpCmd.isEmpty())
-    {
-        logMessage("未获取到所选网卡系统名，无法更新主机IP");
-        return false;
-    }
+    #else
+        const QString ifaceName = selectedSysName; // 例如 "ens33"
+        const QString mask = "24"; // 子网掩码 255.255.255.0
 
-    QProcess process;
-    QStringList arguments;
-    arguments << "addr" << "add" << newHostIP + "/24" << "dev" << ifaceNameForIpCmd;
+        logMessage(QString("正在强制修改网卡 %1 的主 IP 为: %2...").arg(ifaceName).arg(newHostIP));
 
-    process.start("ip", arguments);
-    if (!process.waitForFinished(10000))
-    {
-        logMessage("设置IP地址超时");
-        return false;
-    }
+        QProcess process;
 
-    if (process.exitCode() != 0)
-    {
-        logMessage(QString("设置IP地址失败: %1").arg(QString::fromLocal8Bit(process.readAllStandardError())));
-        return false;
-    }
-#endif
+        // 逻辑：
+        // 1. ip addr flush dev [网卡] : 清除该网卡上所有的 IP 地址
+        // 2. ip addr add [新IP] dev [网卡] : 添加新的主 IP
+        // 3. ip link set [网卡] up : 确保网卡是开启状态
+        QString cmd = QString("ip addr flush dev %1; ip addr add %2/%3 dev %1; ip link set %1 up")
+                          .arg(ifaceName).arg(newHostIP).arg(mask);
+
+        // 使用 pkexec 提权执行
+        process.start("pkexec", QStringList() << "sh" << "-c" << cmd);
+
+        if (!process.waitForFinished(30000)) {
+            logMessage("提权操作超时或用户取消");
+            return false;
+        }
+
+        if (process.exitCode() != 0) {
+            logMessage("修改主IP失败: " + QString::fromLocal8Bit(process.readAllStandardError()));
+            return false;
+        }
+
+        logMessage(QString("网卡 %1 地址已成功修改为 %2").arg(ifaceName).arg(newHostIP));
+
+        return true;
+    #endif
 
     logMessage(QString("主机IP已更新为: %1").arg(newHostIP));
 
@@ -1282,20 +1464,11 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
 
 bool MainWindow::updateConfigFileIP(const QString &newHostIP)
 {
-    // 查找配置文件
-    QStringList configPaths = {
-        QDir::currentPath() + "/config.json",
-        QApplication::applicationDirPath() + "/config.json",
-        QApplication::applicationDirPath() + "/../config.json"};
-
-    QString configPath;
-    for (const QString &path : configPaths)
-    {
-        if (QFile::exists(path))
-        {
-            configPath = path;
-            break;
-        }
+    // 查找配置文件（优先标准目录，其次兼容旧位置）
+    QString migrationNote;
+    QString configPath = resolveConfigJsonPath(&migrationNote);
+    if (!migrationNote.isEmpty()) {
+        logMessage(migrationNote);
     }
 
     if (configPath.isEmpty())

@@ -592,12 +592,16 @@ private:
 
     // 网络接口选择相关
     QComboBox* networkInterfaceCombo = nullptr;
+    QCheckBox* autoConfigHostIpCheck = nullptr;
     QString selectedNetworkIP;
     QString selectedNetworkInterfaceHumanName;
     QString selectedNetworkInterfaceSysName;
     void refreshNetworkInterfaces();
     void onNetworkInterfaceChanged(int index);
     QString getSelectedHostIP() const;
+
+    bool autoConfigHostIpEnabled = true;
+    bool manualNetworkConfigPromptActive = false;
 
     // UDP socket for device discovery
     QUdpSocket* discoverySocket;

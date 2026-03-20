@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.1.3
+    VERSION 1.2.0
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )
@@ -143,6 +143,7 @@ endif()
 # 基础源文件
 set(SOURCES
     main.cpp
+    sdk_init.cpp
     point_widget.cpp
     ui.cpp
     sdk_callbacks.cpp
@@ -154,17 +155,6 @@ set(SOURCES
 set(HEADERS
     mainwindow.h
 )
-
-# 平台特定的SDK源文件
-if(IS_LINUX AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mainwindow_sdk_linux.cpp")
-    list(APPEND SOURCES mainwindow_sdk_linux.cpp)
-    message(STATUS "Using Linux-specific SDK implementation")
-elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sdk_init.cpp")
-    list(APPEND SOURCES sdk_init.cpp)
-    message(STATUS "Using generic SDK implementation")
-else()
-    message(WARNING "No SDK implementation file found")
-endif()
 
 # 资源文件
 set(RESOURCE_FILES "")
@@ -267,6 +257,18 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
         _CRT_SECURE_NO_WARNINGS
         NOMINMAX
         WIN32_LEAN_AND_MEAN
+    )
+endif()
+
+# =============================================================================
+# Linux RPATH（避免依赖 LD_LIBRARY_PATH）
+# =============================================================================
+if(IS_LINUX)
+    # 运行时优先从可执行文件旁的 livox_sdk_qt/lib 查找动态库
+    set_target_properties(LivoxViewerQT PROPERTIES
+        BUILD_RPATH "\$ORIGIN/livox_sdk_qt/lib"
+        INSTALL_RPATH "\$ORIGIN/livox_sdk_qt/lib"
+        INSTALL_RPATH_USE_LINK_PATH TRUE
     )
 endif()
 

@@ -73,6 +73,21 @@
 4. 构建项目
 
 ```
+
+### Linux (Ubuntu/Debian)
+
+- **依赖**：Qt5/Qt6 开发包（Core/Widgets/OpenGL/Network/SerialPort/Charts）+ CMake 3.16+ + GCC/Clang
+- **编译**（示例）：
+
+```bash
+mkdir -p build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j
+```
+
+- **运行注意**：程序默认会在标准配置目录查找/创建 `config.json`（如果检测到旧位置的 `config.json` 会尝试迁移/继续兼容）。\n 
+- **动态库查找**：Linux 下已通过 RPATH 优先从可执行文件旁的 `livox_sdk_qt/lib` 查找 SDK 动态库，通常不需要再手动设置 `LD_LIBRARY_PATH`。\n 
+- **网络配置**：Linux 下“自动修改主机网口 IP”默认关闭（需要 root/sudo 权限）。如需自动修改，可在界面中勾选 **“自动修改主机网口IP（需管理员/Root）”**。
 ## 🚀 快速开始
 
 ### 首次运行配置
@@ -82,6 +97,8 @@
 - 检测连接的 Livox 雷达设备。  
 - 自动配置主机 IP 与雷达在同一网段（如有需要会提示修改或重启程序）。  
 - 生成或更新配置文件（`config.json`），保存当前网络与设备设置。  
+
+> Linux 提示：若设备与主机不在同一网段，程序会给出建议主机 IP，并提示你手动配置网卡 IPv4（默认不自动修改以避免权限问题）。
 
 ### 基本使用流程
 1. **连接设备**：使用网线将主机与 Livox 雷达连接。  
@@ -162,6 +179,12 @@ LivoxViewerQT/
 - 检查网线连接是否紧固。    
 - 检查防火墙或安全软件是否阻止 UDP 广播/接收端口（默认端口：56000 等）。  
 - 查看程序日志输出获取错误详情。
+
+**Linux 下无法自动修改网卡 IP**
+- 默认行为：Linux 下该功能默认关闭。\n
+- 若需开启：勾选界面中的 **“自动修改主机网口IP（需管理员/Root）”**。\n
+- 常见原因：缺少权限（需要 `sudo`），或系统不允许普通用户修改网络配置。\n
+- 你也可以手动执行（示例）：`sudo ip addr add <host_ip>/24 dev <iface>`，然后重启程序。
 
 **点云显示异常**
 - 确认显卡驱动支持 OpenGL 3.3+。  
