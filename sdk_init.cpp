@@ -843,7 +843,6 @@ void MainWindow::startDeviceDiscovery()
             QString currentHostIP = getSelectedHostIP();
             if (senderIP == currentHostIP) {
                 logMessage(QString("警告: 收到与主机相同IP(%1)的UDP包，可能是雷达设备冲突，仍尝试解析").arg(senderIP));
-                // 不continue，继续解析
             }
 
             // === Step 6: 正常解析 ===
@@ -1406,34 +1405,66 @@ bool MainWindow::updateHostIPForDevice(const QString &deviceIP)
         return false;
     }
     #else
-        const QString ifaceName = selectedSysName; // 例如 "ens33"
-        const QString mask = "24"; // 子网掩码 255.255.255.0
+        const QString deviceName = selectedSysName; // 传入的网卡名，例如 "ens33"
+        const QString newIpWithMask = newHostIP + "/24";
 
-        logMessage(QString("正在强制修改网卡 %1 的主 IP 为: %2...").arg(ifaceName).arg(newHostIP));
+        if (deviceName.isEmpty()) {
+            logMessage("错误: 未能获取到有效的网卡系统名称");
+            return false;
+        }
+
+        logMessage(QString("正在使用 nmcli 修改网卡 %1 的主 IP 为: %2...").arg(deviceName).arg(newHostIP));
+
+        // 1. 自动获取该设备对应的 Connection Name
+        // 命令解释：显示活跃连接，过滤出设备名为 ens33 的行，并提取连接名部分
+        QProcess getConnProcess;
+        QString findConnCmd = QString("nmcli -g DEVICE,NAME connection show --active | grep \"^%1:\" | cut -d: -f2").arg(deviceName);
+        getConnProcess.start("sh", QStringList() << "-c" << findConnCmd);
+        getConnProcess.waitForFinished(3000);
+
+        QString connectionName = QString::fromLocal8Bit(getConnProcess.readAllStandardOutput()).trimmed();
+
+        // 如果活跃连接里没找到，尝试从所有连接里找
+        if (connectionName.isEmpty()) {
+            findConnCmd = QString("nmcli -g DEVICE,NAME connection show | grep \"^%1:\" | cut -d: -f2").arg(deviceName);
+            getConnProcess.start("sh", QStringList() << "-c" << findConnCmd);
+            getConnProcess.waitForFinished(3000);
+            connectionName = QString::fromLocal8Bit(getConnProcess.readAllStandardOutput()).trimmed();
+        }
+
+        if (connectionName.isEmpty()) {
+            logMessage(QString("错误: 无法找到设备 %1 关联的 nmcli 连接配置").arg(deviceName));
+            return false;
+        }
+
+        logMessage(QString("识别到连接名: [%1], 准备执行持久化修改...").arg(connectionName));
+
+        // 2. 构造 nmcli 修改指令
+        // ipv4.method manual: 设为静态IP模式（否则会被DHCP覆盖）
+        // ipv4.addresses: 设置主IP
+        // connection up: 立即刷新生效
+        QString nmCmd = QString(
+                            "nmcli connection modify \"%1\" ipv4.addresses %2 ipv4.method manual && "
+                            "nmcli connection up \"%1\""
+                            ).arg(connectionName).arg(newIpWithMask);
 
         QProcess process;
+        // 使用 pkexec 提权执行复合指令
+        process.start("pkexec", QStringList() << "sh" << "-c" << nmCmd);
 
-        // 逻辑：
-        // 1. ip addr flush dev [网卡] : 清除该网卡上所有的 IP 地址
-        // 2. ip addr add [新IP] dev [网卡] : 添加新的主 IP
-        // 3. ip link set [网卡] up : 确保网卡是开启状态
-        QString cmd = QString("ip addr flush dev %1; ip addr add %2/%3 dev %1; ip link set %1 up")
-                          .arg(ifaceName).arg(newHostIP).arg(mask);
-
-        // 使用 pkexec 提权执行
-        process.start("pkexec", QStringList() << "sh" << "-c" << cmd);
-
-        if (!process.waitForFinished(30000)) {
-            logMessage("提权操作超时或用户取消");
+        if (!process.waitForFinished(45000)) {
+            logMessage("提权操作超时或用户取消（修改主IP）");
             return false;
         }
 
         if (process.exitCode() != 0) {
-            logMessage("修改主IP失败: " + QString::fromLocal8Bit(process.readAllStandardError()));
+            QString err = QString::fromLocal8Bit(process.readAllStandardError());
+            logMessage("nmcli 修改主IP失败: " + err);
             return false;
         }
 
-        logMessage(QString("网卡 %1 地址已成功修改为 %2").arg(ifaceName).arg(newHostIP));
+        logMessage(QString("成功！网卡 %1 (%2) 已修改为主 IP: %3")
+                       .arg(deviceName).arg(connectionName).arg(newHostIP));
 
         return true;
     #endif
@@ -1686,49 +1717,51 @@ bool MainWindow::updateConfigFileDeviceTypeIfNeeded(const QString &configPath)
     return true;
 }
 
-// void MainWindow::printPacketDetails(const QByteArray& data, const QHostAddress& sender)
-// {
-//     try {
-//         logMessage("=== 数据包原始16进制内容 ===");
-//         logMessage(QString("发送者: %1").arg(sender.toString()));
-//         logMessage(QString("总长度: %1 字节").arg(data.size()));
+/*
+void MainWindow::printPacketDetails(const QByteArray& data, const QHostAddress& sender)
+{
+    try {
+        logMessage("=== 数据包原始16进制内容 ===");
+        logMessage(QString("发送者: %1").arg(sender.toString()));
+        logMessage(QString("总长度: %1 字节").arg(data.size()));
 
-//     if (data.size() >= 24) {
-//         // 包头字段 (24字节)
-//         logMessage("--- 包头 (24字节) ---");
-//         logMessage(QString("SOF: %1").arg(data[0] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("版本: %1").arg(data[1] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("长度: %1 %2 (小端序)").arg(data[2] & 0xFF, 2, 16, QChar('0')).arg(data[3] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("序列号: %1 %2 %3 %4").arg(data[4] & 0xFF, 2, 16, QChar('0')).arg(data[5] & 0xFF, 2, 16, QChar('0')).arg(data[6] & 0xFF, 2, 16, QChar('0')).arg(data[7] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("命令ID: %1 %2").arg(data[8] & 0xFF, 2, 16, QChar('0')).arg(data[9] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("命令类型: %1").arg(data[10] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("发送者类型: %1").arg(data[11] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("保留: %1 %2 %3 %4 %5 %6").arg(data[12] & 0xFF, 2, 16, QChar('0')).arg(data[13] & 0xFF, 2, 16, QChar('0')).arg(data[14] & 0xFF, 2, 16, QChar('0')).arg(data[15] & 0xFF, 2, 16, QChar('0')).arg(data[16] & 0xFF, 2, 16, QChar('0')).arg(data[17] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("CRC16: %1 %2").arg(data[18] & 0xFF, 2, 16, QChar('0')).arg(data[19] & 0xFF, 2, 16, QChar('0')));
-//         logMessage(QString("CRC32: %1 %2 %3 %4").arg(data[20] & 0xFF, 2, 16, QChar('0')).arg(data[21] & 0xFF, 2, 16, QChar('0')).arg(data[22] & 0xFF, 2, 16, QChar('0')).arg(data[23] & 0xFF, 2, 16, QChar('0')));
-//     }
+    if (data.size() >= 24) {
+        // 包头字段 (24字节)
+        logMessage("--- 包头 (24字节) ---");
+        logMessage(QString("SOF: %1").arg(data[0] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("版本: %1").arg(data[1] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("长度: %1 %2 (小端序)").arg(data[2] & 0xFF, 2, 16, QChar('0')).arg(data[3] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("序列号: %1 %2 %3 %4").arg(data[4] & 0xFF, 2, 16, QChar('0')).arg(data[5] & 0xFF, 2, 16, QChar('0')).arg(data[6] & 0xFF, 2, 16, QChar('0')).arg(data[7] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("命令ID: %1 %2").arg(data[8] & 0xFF, 2, 16, QChar('0')).arg(data[9] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("命令类型: %1").arg(data[10] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("发送者类型: %1").arg(data[11] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("保留: %1 %2 %3 %4 %5 %6").arg(data[12] & 0xFF, 2, 16, QChar('0')).arg(data[13] & 0xFF, 2, 16, QChar('0')).arg(data[14] & 0xFF, 2, 16, QChar('0')).arg(data[15] & 0xFF, 2, 16, QChar('0')).arg(data[16] & 0xFF, 2, 16, QChar('0')).arg(data[17] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("CRC16: %1 %2").arg(data[18] & 0xFF, 2, 16, QChar('0')).arg(data[19] & 0xFF, 2, 16, QChar('0')));
+        logMessage(QString("CRC32: %1 %2 %3 %4").arg(data[20] & 0xFF, 2, 16, QChar('0')).arg(data[21] & 0xFF, 2, 16, QChar('0')).arg(data[22] & 0xFF, 2, 16, QChar('0')).arg(data[23] & 0xFF, 2, 16, QChar('0')));
+    }
 
-//     if (data.size() > 24) {
-//         // 数据段
-//         logMessage("--- 数据段 ---");
-//         QByteArray dataSegment = data.mid(32);
-//         logMessage(QString("长度: %1 字节").arg(dataSegment.size()));
-//         logMessage(QString("内容: %1").arg(dataSegment.toHex(' ')));
+    if (data.size() > 24) {
+        // 数据段
+        logMessage("--- 数据段 ---");
+        QByteArray dataSegment = data.mid(32);
+        logMessage(QString("长度: %1 字节").arg(dataSegment.size()));
+        logMessage(QString("内容: %1").arg(dataSegment.toHex(' ')));
 
-//         if (dataSegment.size() >= 24) {
-//             logMessage("--- 数据段字段 ---");
-//             logMessage(QString("返回码: %1").arg(dataSegment[0] & 0xFF, 2, 16, QChar('0')));
-//             logMessage(QString("雷达类型: %1").arg(dataSegment[1] & 0xFF, 2, 16, QChar('0')));
-//             logMessage(QString("序列号: %1").arg(dataSegment.mid(2, 16).toHex(' ')));
-//             logMessage(QString("IP地址: %1").arg(dataSegment.mid(18, 4).toHex(' ')));
-//             logMessage(QString("控制端口: %1").arg(dataSegment.mid(22, 2).toHex(' ')));
-//         }
-//     }
+        if (dataSegment.size() >= 24) {
+            logMessage("--- 数据段字段 ---");
+            logMessage(QString("返回码: %1").arg(dataSegment[0] & 0xFF, 2, 16, QChar('0')));
+            logMessage(QString("雷达类型: %1").arg(dataSegment[1] & 0xFF, 2, 16, QChar('0')));
+            logMessage(QString("序列号: %1").arg(dataSegment.mid(2, 16).toHex(' ')));
+            logMessage(QString("IP地址: %1").arg(dataSegment.mid(18, 4).toHex(' ')));
+            logMessage(QString("控制端口: %1").arg(dataSegment.mid(22, 2).toHex(' ')));
+        }
+    }
 
-//     logMessage("======================");
-//     } catch (const std::exception& e) {
-//         logMessage(QString("数据包分析异常: %1").arg(e.what()));
-//     } catch (...) {
-//         logMessage("数据包分析时发生未知异常");
-//     }
-// }
+    logMessage("======================");
+    } catch (const std::exception& e) {
+        logMessage(QString("数据包分析异常: %1").arg(e.what()));
+    } catch (...) {
+        logMessage("数据包分析时发生未知异常");
+    }
+}
+*/

@@ -1028,7 +1028,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.2.0</p>"
+                        "<p><b>版本:</b> 1.2.1</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
