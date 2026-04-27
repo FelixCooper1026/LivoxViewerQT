@@ -63,7 +63,7 @@ QString getCurrentHostIP(const QString& selectedIP = QString())
             // 排除无线网口，只检测有线网口
             QString ifaceName = iface.name().toLower();
             if (ifaceName.contains("wlan") || ifaceName.contains("wifi") ||
-                ifaceName.contains("wireless") || ifaceName.contains("802.11"))
+                ifaceName.contains("Wireless") || ifaceName.contains("802.11"))
             {
                 continue;
             }
@@ -360,61 +360,7 @@ void MainWindow::setupLivoxSDK()
     }
     logMessage(QString("当前主机IP: %1，继续SDK初始化...").arg(currentIP));
 
-    // 跨平台的SDK库文件检查
-    QStringList possiblePaths;
-
-#ifdef _WIN32
-    // Windows路径
-    possiblePaths = {
-        QDir::currentPath() + "/livox_sdk_qt/lib/livox_lidar_sdk_static.lib",
-        QDir::currentPath() + "/../livox_sdk_qt/lib/livox_lidar_sdk_static.lib",
-        QDir::currentPath() + "/../../livox_sdk_qt/lib/livox_lidar_sdk_static.lib",
-        QApplication::applicationDirPath() + "/livox_sdk_qt/lib/livox_lidar_sdk_static.lib",
-        QApplication::applicationDirPath() + "/../livox_sdk_qt/lib/livox_lidar_sdk_static.lib"};
-#elif defined(__APPLE__)
-    // macOS路径
-    possiblePaths = {
-        QDir::currentPath() + "/livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QDir::currentPath() + "/../livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QApplication::applicationDirPath() + "/livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QApplication::applicationDirPath() + "/../livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        "/usr/local/lib/liblivox_lidar_sdk_static.a",
-        "/opt/livox/lib/liblivox_lidar_sdk_static.a"};
-#else
-    // Linux路径
-    possiblePaths = {
-        QDir::currentPath() + "/livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QDir::currentPath() + "/../livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QDir::currentPath() + "/../../livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QApplication::applicationDirPath() + "/livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        QApplication::applicationDirPath() + "/../livox_sdk_qt/lib/liblivox_lidar_sdk_static.a",
-        // 系统路径
-        "/usr/local/lib/liblivox_lidar_sdk_static.a",
-        "/usr/lib/liblivox_lidar_sdk_static.a",
-        "/usr/lib/x86_64-linux-gnu/liblivox_lidar_sdk_static.a",
-        "/opt/livox/lib/liblivox_lidar_sdk_static.a",
-        // 动态库路径（如果有）
-        "/usr/local/lib/liblivox_lidar_sdk.so",
-        "/usr/lib/liblivox_lidar_sdk.so",
-        "/usr/lib/x86_64-linux-gnu/liblivox_lidar_sdk.so"};
-#endif
-
-    QString foundPath;
-    for (const QString &path : possiblePaths)
-    {
-        if (QFile::exists(path))
-        {
-            foundPath = path;
-            break;
-        }
-    }
-
-    if (foundPath.isEmpty())
-    {
-        return;
-    }
-
-    // 4) 查找配置文件（修复逻辑：增加 exists 校验）
+    // 3) 查找配置文件（修复逻辑：增加 exists 校验）
     QString migrationNote;
     QString configPath = resolveConfigJsonPath(&migrationNote);
     if (!migrationNote.isEmpty()) {
@@ -441,7 +387,7 @@ void MainWindow::setupLivoxSDK()
 
     logMessage("找到配置文件: " + configPath);
 
-    // 5) 自动更新配置：检查配置文件 IP 匹配，如不一致则自动修正为当前主机IP
+    // 4) 自动更新配置：检查配置文件 IP 匹配，如不一致则自动修正为当前主机IP
     logMessage("开始检查配置文件 IP 匹配...");
     {
         QString netCheckDetails;
@@ -477,7 +423,7 @@ void MainWindow::setupLivoxSDK()
         }
     }
 
-    // 6) 根据已发现的雷达型号自动校正配置文件中的 Device type（顶层设备键）并初始化 SDK
+    // 5) 根据已发现的雷达型号自动校正配置文件中的 Device type（顶层设备键）并初始化 SDK
     if (!updateConfigFileDeviceTypeIfNeeded(configPath))
     {
         logMessage("自动校正配置文件 Device type 失败，继续使用原配置尝试初始化 SDK");
@@ -1218,17 +1164,24 @@ void MainWindow::onDeviceDiscoveryResponse(const QByteArray &data, const QHostAd
                             // 停止设备发现，避免旧 socket 引发崩溃
                             stopDeviceDiscovery();
 
-                            // 提示重启
-                            QMessageBox::warning(this, "重新启动", "准备重新启动应用程序以应用新的网络配置");
+                            //打印sdk_initialized状态
+                            logMessage(QString("sdk_initialized:%1").arg(sdk_initialized));
 
-                            logMessage("正在重启程序，请稍候...");
 
-                            // 启动一个新的进程，运行当前应用
-                            QProcess::startDetached(QApplication::applicationFilePath(), QApplication::arguments());
+                            refreshNetworkInterfaces();
 
-                            // 退出当前进程
-                            QApplication::quit();
-                            return;
+                            startDeviceDiscovery();                            
+                            // // 提示重启
+                            // QMessageBox::warning(this, "重新启动", "准备重新启动应用程序以应用新的网络配置");
+
+                            // logMessage("正在重启程序，请稍候...");
+
+                            // // 启动一个新的进程，运行当前应用
+                            // QProcess::startDetached(QApplication::applicationFilePath(), QApplication::arguments());
+
+                            // // 退出当前进程
+                            // QApplication::quit();
+                            // return;
                         }
                         else
                         {
@@ -1597,6 +1550,9 @@ bool MainWindow::updateConfigFileDeviceTypeIfNeeded(const QString &configPath)
     case kLivoxLidarTypeHAP:
         expectedKey = "HAP";
         break;
+    case kLivoxLidarTypeAvia2:
+        expectedKey = "Avia2";
+        break;
     default:
         qDebug() << "[DeviceTypeCheck] 当前雷达型号不在自动校正列表中，dev_type =" << lastDiscoveredDevType;
         return true;
@@ -1671,7 +1627,7 @@ bool MainWindow::updateConfigFileDeviceTypeIfNeeded(const QString &configPath)
 
     // 按与配置向导一致的规则生成新的 lidar_net_info
     QJsonObject lidarNet;
-    if (expectedKey == "MID360" || expectedKey == "Mid360s")
+    if (expectedKey == "MID360" || expectedKey == "Mid360s" || expectedKey == "Avia2")
     {
         lidarNet.insert("cmd_data_port", 56100);
         lidarNet.insert("push_msg_port", 56200);

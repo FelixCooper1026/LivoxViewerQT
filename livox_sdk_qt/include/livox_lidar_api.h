@@ -358,6 +358,40 @@ livox_status StopForcedHeating(uint32_t handle, LivoxLidarAsyncControlCallback c
  */
 livox_status SetLivoxLidarEscMode(uint32_t handle, LivoxLidarEscMode esc_mode, LivoxLidarAsyncControlCallback cb, void* client_data);
 
+// mid360s support this function, other not support.
+/**
+ * Disable LiDAR force heat function.
+ * @param  handle                 device handle.
+ * @param  pps_sync_mode          pps sync mode 
+ * @param  cb                     callback for the command.
+ * @param  client_data            user data associated with the command.
+ * @return kStatusSuccess on successful return, see \ref LivoxStatus for other error code.
+ */
+ livox_status SetLivoxLidarPpsSyncMode(uint32_t handle, LivoxLidarPpsSyncMode pps_sync_mode, LivoxLidarAsyncControlCallback cb, void* client_data);
+ // mid360 and hap lidar does not support this function.
+
+// avia2 support this function, other not support.
+/**
+ * Disable LiDAR force heat function.
+ * @param  handle                 device handle.
+ * @param  fov_mode               lidar fov mode 
+ * @param  cb                     callback for the command.
+ * @param  client_data            user data associated with the command.
+ * @return kStatusSuccess on successful return, see \ref LivoxStatus for other error code.
+ */
+livox_status SetLivoxLidarFovMode(uint32_t handle, LivoxLidarFovMode fov_mode, LivoxLidarAsyncControlCallback cb, void* client_data);
+
+// avia2 support this function, other not support.
+/**
+ * Disable LiDAR force heat function.
+ * @param  handle                 device handle.
+ * @param  echo_mode              lidar echo mode 
+ * @param  cb                     callback for the command.
+ * @param  client_data            user data associated with the command.
+ * @return kStatusSuccess on successful return, see \ref LivoxStatus for other error code.
+ */
+livox_status SetLivoxLidarEchoMode(uint32_t handle, LivoxLidarEchoMode echo_mode, LivoxLidarAsyncControlCallback cb, void* client_data);
+
 /**
  * Set LiDAR glass heat.
  * @param  handle                 device handle.

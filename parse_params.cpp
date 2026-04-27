@@ -89,7 +89,7 @@ void MainWindow::onParamConfigChanged(uint16_t key)
                         success = (status == kLivoxLidarStatusSuccess);
                         newValue = combo->currentText();
                         if (!success) {
-                            logMessage(QString("探测模式设置失败，错误码: %1").arg(status));
+                            logMessage(QString("探测模式设置失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
                         }
                     }
                     break;
@@ -123,19 +123,56 @@ void MainWindow::onParamConfigChanged(uint16_t key)
                     newValue = combo->currentText();
                     break;
                 }
+                case kKeySetPpsSyncMode: {
+                    paramName = "异常时间过滤";
+                    LivoxLidarPpsSyncMode syncFilterMode;
+                    switch (index) {
+                        case 0: syncFilterMode = kLivoxPpsSyncNormal; break;
+                        case 1: syncFilterMode = kLivoxPpsSyncSpec; break;
+                        default: 
+                            logMessage(QString("异常时间过滤索引无效: %1").arg(index));
+                    }
+                    livox_status status = SetLivoxLidarPpsSyncMode(currentDevice->handle, syncFilterMode, onAsyncControlResponse, this);
+                    success = (status == kLivoxLidarStatusSuccess);
+                    newValue = combo->currentText();
+                    break;
+                    
+                }
+                case kKeySetFovMode: {
+                    paramName = "FOV模式";
+                    LivoxLidarFovMode fovMode;
+                    switch (index) {
+                        case 0: fovMode = kLivoxSmallFovMode; break;
+                        case 1: fovMode = kLivoxBigFovMode; break;
+                    }
+                    livox_status status = SetLivoxLidarFovMode(currentDevice->handle, fovMode, onAsyncControlResponse, this);
+                    success = (status == kLivoxLidarStatusSuccess);
+                    newValue = combo->currentText();
+                    break;
+                }
+                case kKeySetEchoMode: {
+                    paramName = "回波模式";
+                    LivoxLidarEchoMode echoMode;
+                    switch (index) {
+                        case 0: echoMode = kLivoxStrongEchoMode; break;
+                        case 1: echoMode = kLivoxFirstEchoMode; break;
+                    }
+                    livox_status status = SetLivoxLidarEchoMode(currentDevice->handle, echoMode, onAsyncControlResponse, this);
+                    success = (status == kLivoxLidarStatusSuccess);
+                    newValue = combo->currentText();
+                    break;
+                }
                 case kKeyImuDataEn: {
                     paramName = "IMU数据发送";
                     livox_status status;
                     if (index == 1) { // "开启"
                         status = EnableLivoxLidarImuData(currentDevice->handle, onAsyncControlResponse, this);
                         if (status != kLivoxLidarStatusSuccess) {
-                            logMessage(QString("启用IMU数据失败，错误码: %1").arg(status));
-                        }
+                            logMessage(QString("启用IMU数据失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));                        }
                     } else { // "关闭"
                         status = DisableLivoxLidarImuData(currentDevice->handle, onAsyncControlResponse, this);
                         if (status != kLivoxLidarStatusSuccess) {
-                            logMessage(QString("禁用IMU数据失败，错误码: %1").arg(status));
-                        }
+                            logMessage(QString("禁用IMU数据失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));                        }
                     }
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
@@ -163,11 +200,11 @@ void MainWindow::onParamConfigChanged(uint16_t key)
         
         // 记录配置日志
         if (success) {
-            logMessage(QString("配置成功: %1 -> %2").arg(paramName).arg(newValue));
+            logMessage(QString("发送命令: %1 -> %2").arg(paramName).arg(newValue));
             // 标记参数已更新，避免被定时器覆盖
             updatedConfigKeys.insert(key);
         } else {
-            logMessage(QString("配置失败: %1 -> %2").arg(paramName).arg(newValue));
+            logMessage(QString("发送命令失败: %1 -> %2").arg(paramName).arg(newValue));
         }
 
     } catch (const std::exception& e) {
@@ -175,6 +212,52 @@ void MainWindow::onParamConfigChanged(uint16_t key)
     } catch (...) {
         logMessage(QString("配置过程中发生未知异常: %1").arg(paramName));
     }
+}
+
+void MainWindow::onIpConfigResponse(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* response, void* client_data)
+{
+    MainWindow* window = static_cast<MainWindow*>(client_data);
+    if (!window || window->shutting_down) return;
+
+    const bool has_response = (response != nullptr);
+    const uint8_t ret_code = has_response ? response->ret_code : 0xFF;
+
+    QMetaObject::invokeMethod(window, [window, status, handle, ret_code, has_response]() {
+        // 1. 成功且设备确认执行：触发独有的重启逻辑
+        if (status == kLivoxLidarStatusSuccess && has_response && ret_code == 0x00) {
+            window->logMessage(QString("设备已确认IP配置，将请求重启雷达使配置生效 (handle=%1)").arg(handle));
+            window->updatedConfigKeys.insert(kKeyLidarIpCfg);
+
+            livox_status rebootStatus = LivoxLidarRequestReboot(handle, nullptr, window);
+            if (rebootStatus == kLivoxLidarStatusSuccess) {
+                window->logMessage("雷达正在重启，请等待设备以新配置上线...");
+                {
+                    QMutexLocker locker(&window->deviceMutex);
+                    window->devices.clear();
+                }
+                if (window->deviceList) window->updateDeviceList();
+                if (window->statusLabelBar) window->statusLabelBar->setText("等待设备重启上线...");
+            } else {
+                window->logMessage(QString("重启命令发送失败: %1").arg(getLivoxStatusString(rebootStatus)));
+            }
+            return;
+        }
+
+        // 2. 失败异常处理：直接调用提取的解析方法
+        if (status != kLivoxLidarStatusSuccess) {
+            window->logMessage(QString("设备未执行IP配置: %1 (handle=%2)")
+                                 .arg(getLivoxStatusString(status)).arg(handle));
+        } else if (!has_response) {
+            window->logMessage(QString("设备未执行IP配置: 回调返回为空 (handle=%1)").arg(handle));
+        } else {
+            window->logMessage(QString("设备未执行IP配置: ret_code=0x%1 (%2) (handle=%3)")
+                                 .arg(ret_code, 2, 16, QChar('0'))
+                                 .arg(getRetCodeString(ret_code))
+                                 .arg(handle));
+        }
+
+        if (window->statusLabelBar) window->statusLabelBar->setText("设备未执行配置");
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::applyIpConfig(uint16_t key, const QString& ip, const QString& mask, const QString& gateway)
@@ -210,25 +293,13 @@ void MainWindow::applyIpConfig(uint16_t key, const QString& ip, const QString& m
     std::strncpy(ipConfig.net_mask, maskBytes.constData(), sizeof(ipConfig.net_mask) - 1);
     std::strncpy(ipConfig.gw_addr, gwBytes.constData(), sizeof(ipConfig.gw_addr) - 1);
 
-    livox_status status = SetLivoxLidarIp(currentDevice->handle, &ipConfig, onAsyncControlResponse, this);
+    livox_status status = SetLivoxLidarIp(currentDevice->handle, &ipConfig, onIpConfigResponse, this);
     if (status == kLivoxLidarStatusSuccess) {
-        logMessage("雷达IP配置已发送，准备重启雷达使配置生效...");
-        updatedConfigKeys.insert(key);
-        livox_status rebootStatus = LivoxLidarRequestReboot(currentDevice->handle, nullptr, this);
-        if (rebootStatus == kLivoxLidarStatusSuccess) {
-        logMessage(QString("雷达IP已修改为[%1]，请等待雷达完成重启...").arg(ipClean));
-        // 清空设备缓存，等待设备以新 IP 回来
-        {
-            QMutexLocker locker(&deviceMutex);
-            devices.clear();
-        }
-        if (deviceList) updateDeviceList();
-        if (statusLabelBar) statusLabelBar->setText("等待设备重启上线...");
-    } else {
-            logMessage(QString("发送重启命令失败: %1").arg(rebootStatus));
-        }
-    } else {
-        logMessage(QString("雷达IP配置发送失败: %1").arg(status));
+        logMessage("已发送雷达IP配置命令，等待设备确认是否执行...");
+        if (statusLabelBar) statusLabelBar->setText("等待设备确认配置...");
+    }
+    else {
+        logMessage(QString("雷达IP配置命令发送失败: %1").arg(status));
     }
 }
 
@@ -283,11 +354,11 @@ void MainWindow::applyHostIpConfig(uint16_t key, const QString& ip, int port)
     }
     
     if (status == kLivoxLidarStatusSuccess) {
-        logMessage("目的IP配置已发送");
+        logMessage("已发送目的IP配置命令");
         // 标记参数已更新，避免被定时器覆盖
         updatedConfigKeys.insert(key);
     } else {
-        logMessage(QString("目的IP配置发送失败: %1").arg(status));
+        logMessage(QString("目的IP配置命令发送失败: %1").arg(status));
     }
 }
 
@@ -313,11 +384,11 @@ void MainWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, int pit
     }
     
     if (status == kLivoxLidarStatusSuccess) {
-        logMessage(QString("FOV%1配置已发送").arg(key == kKeyFovCfg0 ? "0" : "1"));
+        logMessage(QString("已发送FOV%1配置命令").arg(key == kKeyFovCfg0 ? "0" : "1"));
         // 标记参数已更新，避免被定时器覆盖
         updatedConfigKeys.insert(key);
     } else {
-        logMessage(QString("FOV%1配置发送失败: %2").arg(key == kKeyFovCfg0 ? "0" : "1").arg(status));
+        logMessage(QString("FOV%1配置命令发送失败: %2").arg(key == kKeyFovCfg0 ? "0" : "1").arg(status));
     }
 }
 
@@ -338,11 +409,11 @@ void MainWindow::applyAttitudeConfig(uint16_t key, double roll, double pitch, do
     
     livox_status status = SetLivoxLidarInstallAttitude(currentDevice->handle, &attitudeConfig, onAsyncControlResponse, this);
     if (status == kLivoxLidarStatusSuccess) {
-        logMessage("安装姿态配置已发送");
+        logMessage("已发送安装姿态配置命令");
         // 标记参数已更新，避免被定时器覆盖
         updatedConfigKeys.insert(key);
     } else {
-        logMessage(QString("安装姿态配置发送失败: %1").arg(status));
+        logMessage(QString("安装姿态配置命令发送失败: %1").arg(status));
     }
 }
 
@@ -393,7 +464,12 @@ void MainWindow::onParamQueryTimeout()
     livox_status status = QueryLivoxLidarInternalInfo(currentDevice->handle, onQueryInternalInfoResponse, this);
     
     if (status != kLivoxLidarStatusSuccess) {
-        logMessage(QString("查询雷达内部信息失败，错误码: %1").arg(status));
+        logMessage(QString("查询雷达内部信息失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
+        
+        // 如果是因为超时或未连接，可以在状态栏做简单提示
+        if (status == kLivoxLidarStatusTimeout && statusLabelBar) {
+            statusLabelBar->setText("查询超时，请检查网络连接");
+        }
     }
 }
 
@@ -561,6 +637,29 @@ QString MainWindow::parseParamValue(uint16_t key, uint8_t* value, uint16_t lengt
             }
             break;
         }
+        case kKeySetPpsSyncMode: { // 异常时间过滤
+            if (length >= 1) {
+                uint8_t mode = value[0];
+                switch (mode) {
+                    case 0x00: return "关闭异常时间过滤";
+                    case 0x01: return "开启异常时间过滤";
+                    default: return QString("未知模式: %1").arg(mode);
+                }
+            }
+            break;
+        }   
+        case kKeySetFovMode: { // FOV模式
+            if (length >= 1) {
+                return value[0] ? "Normal FOV" : "Focus FOV";
+            }
+            break;
+        }
+        case kKeySetEchoMode: { // 回波模式
+            if (length >= 1) {
+                return value[0] ? "第一回波" : "最强回波";
+            }
+            break;
+        }
         case kKeySn: { // 序列号
             if (length >= 16) {
                 return QString::fromLatin1(reinterpret_cast<char*>(value), 16).trimmed();
@@ -663,6 +762,7 @@ QString MainWindow::parseParamValue(uint16_t key, uint8_t* value, uint16_t lengt
                     case 0: return "无同步";
                     case 1: return "PTP同步";
                     case 2: return "GPS同步";
+                    case 5: return "NTP同步";
                     default: return QString("未知类型: %1").arg(type);
                 }
             }
@@ -680,83 +780,79 @@ QString MainWindow::parseParamValue(uint16_t key, uint8_t* value, uint16_t lengt
             break;
         }
         case kKeyHmsCode: { // HMS诊断码
-            if (length >= 32) { // 8 * 4 bytes (uint32_t[8])
-                QStringList faultInfo;
-                bool hasError = false;
-                
-                for (int i = 0; i < 8; ++i) {
-                    uint32_t hmsCode = *reinterpret_cast<uint32_t*>(&value[i * 4]);
-                    if (hmsCode != 0) {
-                        hasError = true;
-                        
-                        // 将32位故障码转换为8位十六进制字符串
-                        QString faultCode = QString("%1").arg(hmsCode, 8, 16, QChar('0')).toUpper();
-                        
-                        // 解析故障码格式：AABBCCDD (32位)
-                        // AA: 故障ID高字节 | BB: 故障ID低字节
-                        // CC: 保留字段     | DD: 故障等级
-                        QString faultId = faultCode.mid(0, 4);      // 前4位是故障ID
-                        QString reserved = faultCode.mid(4, 2);     // 中间2位是保留字段
-                        QString level = faultCode.mid(6, 2);        // 最后2位是故障等级
-                        
-                        // 获取故障级别描述
-                        QString levelDesc;
-                        if (level == "00") levelDesc = "无故障";
-                        else if (level == "01") levelDesc = "Info消息";
-                        else if (level == "02") levelDesc = "Warning警告";
-                        else if (level == "03") levelDesc = "Error错误";
-                        else if (level == "04") levelDesc = "Fatal严重错误";
-                        else levelDesc = "未知级别";
-                        
-                        // 获取故障描述
-                        QString faultDesc;
-                        if (faultId == "0000") faultDesc = "无故障";
-                        else if (faultId == "0102") faultDesc = "设备运行环境温度偏高;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0103") faultDesc = "设备运行环境温度较高;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0104") faultDesc = "设备球形光窗存在脏污,设备点云数据可信度较差;请及时清洗擦拭设备的球形光窗";
-                        else if (faultId == "0105") faultDesc = "设备升级过程中出现错误;请重新进行升级";
-                        else if (faultId == "0111") faultDesc = "设备内部器件温度异常;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0112") faultDesc = "设备内部器件温度异常;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0113") faultDesc = "设备内部IMU器件暂停工作;请重启设备恢复";
-                        else if (faultId == "0114") faultDesc = "设备运行环境温度高;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0115") faultDesc = "设备运行环境温度超过承受极限，设备已停止工作;请检查环境温度，或排查散热措施";
-                        else if (faultId == "0116") faultDesc = "设备外部电压异常;请检查外部电压";
-                        else if (faultId == "0117") faultDesc = "设备参数异常;请尝试重启设备恢复";
-                        else if (faultId == "0201") faultDesc = "扫描模块低温加热中";
-                        else if (faultId == "0210") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0211") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0212") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0213") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0214") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0215") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0216") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0217") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0218") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0219") faultDesc = "扫描模块异常，请等待，若长时间未恢复，请尝试重启";
-                        else if (faultId == "0401") faultDesc = "检测到以太网连接曾断开过，请检查以太网链路是否存在异常";
-                        else if (faultId == "0402") faultDesc = "ptp同步中断，或者时间跳变太大，请排查ptp时钟源是否工作正常";
-                        else if (faultId == "0403") faultDesc = "PTP版本为1588-V2.1版本，设备不支持该版本，请更换1588-V2.0版本进行同步";
-                        else if (faultId == "0404") faultDesc = "PPS同步异常，请检查PPS及GPS信号";
-                        else if (faultId == "0405") faultDesc = "时间同步曾经发生过异常，请检查发生异常原因";
-                        else if (faultId == "0406") faultDesc = "时间同步精度低，请检查同步源";
-                        else if (faultId == "0407") faultDesc = "缺失GPS信号导致GPS同步失败，请检查GPS信号";
-                        else if (faultId == "0408") faultDesc = "缺失PPS信号导致GPS同步失败，请检查PPS信号";
-                        else if (faultId == "0409") faultDesc = "GPS信号异常，请检查GPS信号源";
-                        else if (faultId == "040A") faultDesc = "PTP和gPTP信号同时存在，同步存在问题；请检查网络拓扑，单独使用PTP或gPTP同步";
-                        else faultDesc = "未知故障";
-                        
-                        faultInfo.append(QString("[%1] 0x%2 - %3: %4").arg(i).arg(faultCode).arg(levelDesc).arg(faultDesc));
-                    }
-                }
-                
-                if (!hasError) {
-                    return "无故障";
-                } else {
-                        // 每个HMS诊断码单独一行
-                        return faultInfo.join("\n");
-                    }
+            if (length < 32) { 
+                break; 
             }
-            break;
+
+            QStringList faultInfo;
+
+            for (int i = 0; i < 8; ++i) {
+                uint32_t hmsCode = *reinterpret_cast<const uint32_t*>(&value[i * 4]);
+                
+                if (hmsCode == 0) {
+                    continue;
+                }
+
+                // 使用位运算替代字符串截取
+                // 解析 AABBCCDD -> AA BB (高16位), DD (低8位)
+                uint16_t faultId = (hmsCode >> 16) & 0xFFFF; 
+                uint8_t level = hmsCode & 0xFF;              
+
+                // 解析故障级别
+                QString levelDesc;
+                switch (level) {
+                    case 0x00: levelDesc = "无故障"; break;
+                    case 0x01: levelDesc = "Info消息"; break;
+                    case 0x02: levelDesc = "Warning警告"; break;
+                    case 0x03: levelDesc = "Error错误"; break;
+                    case 0x04: levelDesc = "Fatal严重错误"; break;
+                    default:   levelDesc = "未知级别"; break;
+                }
+
+                // 解析故障描述
+                QString faultDesc;
+                switch (faultId) {
+                    case 0x0000: faultDesc = "无故障"; break;
+                    case 0x0102: faultDesc = "设备运行环境温度偏高;请检查环境温度，或排查散热措施"; break;
+                    case 0x0103: faultDesc = "设备运行环境温度较高;请检查环境温度，或排查散热措施"; break;
+                    case 0x0104: faultDesc = "设备球罩存在脏污或附近有遮挡物，请及时清洗擦拭设备球罩，或确保球罩0.1m范围内无遮挡物"; break;
+                    case 0x0105: faultDesc = "设备固件升级过程中出现错误;请重新进行固件升级"; break;
+                    case 0x0111: 
+                    case 0x0112: faultDesc = "设备内部器件温度异常;请检查环境温度，或排查散热措施"; break;
+                    case 0x0113: faultDesc = "设备内部IMU器件暂停工作;请重启设备恢复"; break;
+                    case 0x0114: faultDesc = "设备运行环境温度高;请检查环境温度，或排查散热措施"; break;
+                    case 0x0115: faultDesc = "设备运行环境温度超过承受极限，设备已停止工作;请检查环境温度，或排查散热措施"; break;
+                    case 0x0116: faultDesc = "设备外部电压异常;请检查外部电压"; break;
+                    case 0x0117: faultDesc = "设备参数异常;请尝试重启设备恢复"; break;
+                    case 0x0118: faultDesc = "设备内部器件损坏，无法正常工作，请联系维修人员"; break;
+                    case 0x0201: faultDesc = "扫描模块低温加热中"; break;
+                    // 利用 switch case 的穿透特性，将描述相同的故障码合并
+                    case 0x0210: case 0x0211: case 0x0212: case 0x0213: case 0x0214:
+                    case 0x0215: case 0x0216: case 0x0217: case 0x0218: case 0x0219:
+                                 faultDesc = "扫描模块异常，请尝试：1.检查供电是否正常 2.重启设备 3.更新最新固件"; break;
+                    case 0x0401: faultDesc = "检测到以太网连接曾经断开过，现已恢复正常，请检查以太网链路是否存在异常"; break;
+                    case 0x0402: faultDesc = "PTP同步中断，或者时间跳变太大，请排查PTP时钟源是否工作正常"; break;
+                    case 0x0403: faultDesc = "PTP版本为1588-V2.1版本，设备不支持该版本，请更换1588-V2.0版本进行同步"; break;
+                    case 0x0404: faultDesc = "PPS同步异常，请检查PPS及GPS信号"; break;
+                    case 0x0405: faultDesc = "时间同步曾经发生过异常，现已恢复正常，请检查发生异常原因"; break;
+                    case 0x0406: faultDesc = "时间同步精度低，请检查同步源"; break;
+                    case 0x0407: faultDesc = "缺失GPS信号导致GPS同步失败，请检查GPS信号"; break;
+                    case 0x0408: faultDesc = "缺失PPS信号导致GPS同步失败，请检查PPS信号"; break;
+                    case 0x0409: faultDesc = "GPS信号异常，请检查GPS信号源"; break;
+                    case 0x040A: faultDesc = "PTP和gPTP信号同时存在，同步存在问题；请检查网络拓扑，单独使用PTP或gPTP同步"; break;
+                    default:     faultDesc = "未知故障"; break;
+                }
+
+                QString faultCodeStr = QString("%1").arg(hmsCode, 8, 16, QChar('0')).toUpper();
+
+                faultInfo.append(QString("[%1] 0x%2 - %3: %4")
+                                 .arg(i)
+                                 .arg(faultCodeStr)
+                                 .arg(levelDesc)
+                                 .arg(faultDesc));
+            }
+
+            return faultInfo.isEmpty() ? "无故障" : faultInfo.join("\n");
         }
         case kKeyLidarDiagStatus: { // 雷达诊断状态
             if (length >= 2) {
@@ -831,7 +927,7 @@ void MainWindow::onRecordParamsClicked()
             kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode,
             kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
             kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
-            kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode
+            kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode
         };
 
         // 保存顺序
@@ -870,6 +966,9 @@ void MainWindow::onRecordParamsClicked()
                 case kKeyFovCfgEn: recordedParamKeys[key] = "FOV使能状态"; break;
                 case kKeyInstallAttitude: recordedParamKeys[key] = "安装姿态"; break;
                 case kKeySetEscMode: recordedParamKeys[key] = "电机转速"; break;
+                case kKeySetPpsSyncMode: recordedParamKeys[key] = "异常时间过滤"; break;
+                case kKeySetFovMode: recordedParamKeys[key] = "FOV模式"; break;
+                case kKeySetEchoMode: recordedParamKeys[key] = "回波模式"; break;
                 default: recordedParamKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
             }
         }

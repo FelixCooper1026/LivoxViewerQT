@@ -144,7 +144,7 @@ void MainWindow::setupUI()
     // 网格显示控制 
     QCheckBox* gridCheck = new QCheckBox("显示网格", toolbarRow2);
     gridCheck->setChecked(true); // 默认勾选
-    gridCheck->setToolTip("显示/隐藏世界坐标网格 (10m间距)");
+    gridCheck->setToolTip("显示/隐藏世界坐标网格 (1m间距)");
     connect(gridCheck, &QCheckBox::toggled, this, [this](bool checked) {
         if (pointCloudWidget) {
             pointCloudWidget->setGridVisible(checked); // 调用 PointCloudWidget 的控制函数
@@ -393,16 +393,9 @@ void MainWindow::setupUI()
     deviceList->setSelectionMode(QAbstractItemView::ExtendedSelection); // 支持多选
     deviceLayout->addWidget(deviceList);
 
-    // 状态行（缩小）
-
-
-
     // 设备管理区不再放置点云控制（移至顶部工具栏）
 
     devicesLayout->addWidget(deviceGroup);
-
-    // 移除原设备视图中的点属性表格（改为右侧点属性Dock）
-
 
     // GPS模拟与串口转发输入控件
     {
@@ -567,6 +560,30 @@ void MainWindow::setupUI()
     basicLayout->addRow("电机转速:", motorSpeedCombo);
     paramControls[kKeySetEscMode] = motorSpeedCombo;
     connect(motorSpeedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEscMode); });
+
+    QComboBox* syncFilterModeCombo = new QComboBox();
+    syncFilterModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    syncFilterModeCombo->addItems({"关闭", "开启"});
+    syncFilterModeCombo->setCurrentIndex(0);
+    basicLayout->addRow("异常时间过滤:", syncFilterModeCombo);
+    paramControls[kKeySetPpsSyncMode] = syncFilterModeCombo;
+    connect(syncFilterModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetPpsSyncMode); });
+
+    QComboBox* fovModeCombo = new QComboBox();
+    fovModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    fovModeCombo->addItems({"Focus FOV", "Normal FOV"});
+    fovModeCombo->setCurrentIndex(1);
+    basicLayout->addRow("FOV模式:", fovModeCombo);
+    paramControls[kKeySetFovMode] = fovModeCombo;
+    connect(fovModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetFovMode); });
+
+    QComboBox* echoModeCombo = new QComboBox();
+    echoModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    echoModeCombo->addItems({"最强回波", "第一回波"});
+    echoModeCombo->setCurrentIndex(0);
+    basicLayout->addRow("回波模式:", echoModeCombo);
+    paramControls[kKeySetEchoMode] = echoModeCombo;
+    connect(echoModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEchoMode); });
 
     paramTabWidget->addTab(basicTab, "基本配置");
 
@@ -949,13 +966,13 @@ void MainWindow::setupUI()
     QWidget* logDockContent = new QWidget(logDock);
     QVBoxLayout* logLayout = new QVBoxLayout(logDockContent);
     logText = new QTextEdit(logDockContent);
-    logText->setMinimumHeight(160);
+    logText->setMinimumHeight(50);
     QPushButton* clearLogButton = new QPushButton("清除日志", logDockContent);
     logLayout->addWidget(logText);
     logLayout->addWidget(clearLogButton);
     logDockContent->setLayout(logLayout);
     logDock->setWidget(logDockContent);
-    logDock->setMinimumHeight(160);
+    logDock->setMinimumHeight(50);
 
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
 
@@ -965,14 +982,6 @@ void MainWindow::setupUI()
     resizeDocks({logDock}, {240}, Qt::Vertical);
 
     // 顶部工具栏
-    // mainToolBar = addToolBar("主工具栏");
-    // mainToolBar->setObjectName("MainToolBar");
-    // mainToolBar->setMovable(true);
-    // actionStartSdk = mainToolBar->addAction("启动SDK");
-    // actionStopSdk = mainToolBar->addAction("停止SDK");
-    // mainToolBar->addSeparator();
-    // actionRefresh = mainToolBar->addAction("刷新设备");
-    // mainToolBar->addSeparator();
     actionClearCloud = new QAction("清除点云", this);
     actionResetView = new QAction("重置视图", this);
 
@@ -1028,7 +1037,7 @@ void MainWindow::setupUI()
     connect(aboutAction, &QAction::triggered, [this]() {
         QMessageBox::about(this, "关于 LivoxViewerQT",
                         "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.2.1</p>"
+                        "<p><b>版本:</b> 1.2.5</p>"
                         "<p><b>编译日期:</b> " __DATE__ " </p>"
                         "<p><b>作者:</b> FelixCooper1026</p>"
                         "<p><b>功能特性:</b></p>"
@@ -1889,10 +1898,15 @@ void MainWindow::logMessage(const QString& message)
 void MainWindow::onTabChanged(int index)
 {
     if (!currentDevice || !currentDevice->is_connected) return;
+
+    // 清除旧的配置标记，准备接受新一轮查询结果
     updatedConfigKeys.clear();
     livox_status status = QueryLivoxLidarInternalInfo(currentDevice->handle, onQueryInternalInfoResponse, this);
     if (status != kLivoxLidarStatusSuccess) {
-        logMessage(QString("标签页切换时查询设备参数失败，错误码: %1").arg(status));
+        logMessage(QString("切换至标签页[%1]时查询设备信息失败: %2 (错误码: %3)")
+                     .arg(index)
+                     .arg(getLivoxStatusString(status))
+                     .arg(static_cast<int>(status)));
     }
 }
 
@@ -1964,7 +1978,7 @@ bool MainWindow::runConfigGeneratorDialog()
 	};
 
 	auto createLidarNetDefaults = [&](const QString& type, QJsonObject& out) {
-        if (type == "MID360" || type == "Mid360s") {
+        if (type == "MID360" || type == "Mid360s" || type == "Avia2") {
 			out.insert("cmd_data_port", 56100);
 			out.insert("push_msg_port", 56200);
 			out.insert("point_data_port", 56300);
@@ -1980,7 +1994,7 @@ bool MainWindow::runConfigGeneratorDialog()
 	};
 
 	auto applyHostPortDefaults = [&](const QString& type, DeviceRow* row) {
-        if (type == "MID360" || type == "Mid360s") {
+        if (type == "MID360" || type == "Mid360s" || type == "Avia2") {
 			row->hp1->setValue(56101);
 			row->hp2->setValue(56201);
 			row->hp3->setValue(56301);
@@ -2025,7 +2039,7 @@ bool MainWindow::runConfigGeneratorDialog()
 		grid->setContentsMargins(0,0,0,0);
 
 		r->devType = new QComboBox(r->root);
-        r->devType->addItems({"MID360", "Mid360s", "HAP"});
+        r->devType->addItems({"MID360", "Mid360s", "Avia2", "HAP"});
         r->hostIp = new QComboBox(r->root);
 		populateHostIpsTo(r->hostIp);
 		r->mcIp = new QLineEdit(r->root);
@@ -2093,8 +2107,9 @@ bool MainWindow::runConfigGeneratorDialog()
 	root.insert("lidar_log_cache_size_MB", spinCache->value());
 	root.insert("lidar_log_path", "./");
 
-    QJsonArray hostArrMid;
+    QJsonArray hostArrMID360;
     QJsonArray hostArrMid360s;
+    QJsonArray hostArrAvia2;
     QJsonArray hostArrHap;
     for (DeviceRow* r : deviceRows) {
         QString type = r->devType->currentText();
@@ -2107,16 +2122,17 @@ bool MainWindow::runConfigGeneratorDialog()
         hostObj.insert("push_msg_port", r->hp2->value());
         hostObj.insert("log_data_port", r->hp5->value());
 
-        if (type == "MID360") hostArrMid.append(hostObj);
+        if (type == "MID360") hostArrMID360.append(hostObj);
         else if (type == "Mid360s") hostArrMid360s.append(hostObj);
+        else if (type == "Avia2") hostArrAvia2.append(hostObj);
         else hostArrHap.append(hostObj);
     }
 
-    if (!hostArrMid.isEmpty()) {
+    if (!hostArrMID360.isEmpty()) {
         QJsonObject devObj;
         QJsonObject lidarNet; createLidarNetDefaults("MID360", lidarNet);
         devObj.insert("lidar_net_info", lidarNet);
-        devObj.insert("host_net_info", hostArrMid);
+        devObj.insert("host_net_info", hostArrMID360);
         root.insert("MID360", devObj);
     }
     if (!hostArrMid360s.isEmpty()) {
@@ -2125,6 +2141,13 @@ bool MainWindow::runConfigGeneratorDialog()
         devObj.insert("lidar_net_info", lidarNet);
         devObj.insert("host_net_info", hostArrMid360s);
         root.insert("Mid360s", devObj);
+    }
+    if (!hostArrAvia2.isEmpty()) {
+        QJsonObject devObj;
+        QJsonObject lidarNet; createLidarNetDefaults("Avia2", lidarNet);
+        devObj.insert("lidar_net_info", lidarNet);
+        devObj.insert("host_net_info", hostArrAvia2);
+        root.insert("Avia2", devObj);
     }
     if (!hostArrHap.isEmpty()) {
         QJsonObject devObj;
@@ -2176,8 +2199,11 @@ bool MainWindow::runConfigGeneratorDialog()
     if (!hostArrMid360s.isEmpty()) {
         orderedRoot.insert("Mid360s", makeDeviceObject("Mid360s", hostArrMid360s));
     }
-    if (!hostArrMid.isEmpty()) {
-        orderedRoot.insert("MID360", makeDeviceObject("MID360", hostArrMid));
+    if (!hostArrMID360.isEmpty()) {
+        orderedRoot.insert("MID360", makeDeviceObject("MID360", hostArrMID360));
+    }
+    if (!hostArrAvia2.isEmpty()) {
+        orderedRoot.insert("Avia2", makeDeviceObject("Avia2", hostArrAvia2));
     }
     if (!hostArrHap.isEmpty()) {
         orderedRoot.insert("HAP", makeDeviceObject("HAP", hostArrHap));
@@ -2214,19 +2240,19 @@ void MainWindow::updateNoiseFilterList()
 void MainWindow::refreshNetworkInterfaces()
 {
     if (!networkInterfaceCombo) return;
-    
-    QString currentSelection = selectedNetworkIP;
+
     networkInterfaceCombo->clear();
-    
-    // 收集所有可用的网络接口
+
+    // 收集可用的网络接口
     struct IfaceItem {
         QString ip;
-        QString displayName; // "IP - 网卡名称"
-        QString humanName;   // iface.humanReadableName()
-        QString sysName;     // iface.name()
+        QString displayName;
+        QString humanName;
+        QString sysName;
     };
     QList<IfaceItem> interfaces;
-    
+    QSet<QString> currentSysNames;  // 本次检测到的网卡系统名称集合
+
     for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
     {
         if (!(iface.flags() & QNetworkInterface::IsUp) ||
@@ -2236,7 +2262,7 @@ void MainWindow::refreshNetworkInterfaces()
         {
             continue;
         }
-        
+
         for (const QNetworkAddressEntry &entry : iface.addressEntries())
         {
             const QHostAddress &addr = entry.ip();
@@ -2248,56 +2274,90 @@ void MainWindow::refreshNetworkInterfaces()
                 item.ip = addr.toString();
                 item.humanName = iface.humanReadableName();
                 item.sysName = iface.name();
-                item.displayName = QString("%1").arg(item.ip, item.humanName);
+                item.displayName = QString("%1 - %2").arg(item.ip, item.humanName);
                 interfaces.append(item);
-                break; // 每个接口只取第一个有效IPv4地址
+                currentSysNames.insert(item.sysName);
+                break;
             }
         }
     }
-    
-    // 添加到下拉列表
-    int selectedIndex = -1;
+
+    // 填充下拉列表
     for (int i = 0; i < interfaces.size(); ++i)
     {
         networkInterfaceCombo->addItem(interfaces[i].displayName);
-        // 用不同 role 保存 IP / 网卡名（显示文字保持简洁）
         networkInterfaceCombo->setItemData(i, interfaces[i].ip, Qt::UserRole);
         networkInterfaceCombo->setItemData(i, interfaces[i].humanName, Qt::UserRole + 1);
         networkInterfaceCombo->setItemData(i, interfaces[i].sysName, Qt::UserRole + 2);
+    }
 
-        if (interfaces[i].ip == currentSelection || (selectedIndex == -1 && currentSelection.isEmpty()))
+    // ---------- 新的选择策略 ----------
+    int selectedIndex = -1;
+    QString targetSysName;
+    QString selectedReason;  // 仅用于日志说明选中原因
+
+    // 1. 检测新增网卡（优先级最高）
+    bool hasNewInterface = false;
+    if (!lastKnownSysNames.isEmpty())
+    {
+        QSet<QString> added = currentSysNames - lastKnownSysNames;
+        if (!added.isEmpty())
         {
-            selectedIndex = i;
+            hasNewInterface = true;
+            targetSysName = *added.constBegin();  // 取第一个新增网卡
+            selectedReason = "检测到新增网卡";
         }
     }
-    
-    // 设置默认选择（第一个或之前选择的）
+
+    // 2. 无新增网卡时，尝试按系统名称恢复上次选中项（处理 IP 变更）
+    if (!hasNewInterface && !selectedNetworkInterfaceSysName.isEmpty() && 
+        currentSysNames.contains(selectedNetworkInterfaceSysName))
+    {
+        targetSysName = selectedNetworkInterfaceSysName;
+        selectedReason = "保留上次选中项";
+    }
+
+    // 3. 根据目标系统名称定位索引
+    if (!targetSysName.isEmpty())
+    {
+        for (int i = 0; i < interfaces.size(); ++i)
+        {
+            if (interfaces[i].sysName == targetSysName)
+            {
+                selectedIndex = i;
+                break;
+            }
+        }
+    }
+
+    // 4. 回退：若仍无匹配，选择第一个可用网卡
+    if (selectedIndex == -1 && !interfaces.isEmpty())
+    {
+        selectedIndex = 0;
+        selectedReason = "使用首个可用网卡";
+    }
+
+    // 5. 应用选中状态并更新成员变量
     if (selectedIndex >= 0)
     {
         networkInterfaceCombo->setCurrentIndex(selectedIndex);
         selectedNetworkIP = interfaces[selectedIndex].ip;
         selectedNetworkInterfaceHumanName = interfaces[selectedIndex].humanName;
         selectedNetworkInterfaceSysName = interfaces[selectedIndex].sysName;
-    }
-    else if (interfaces.size() > 0)
-    {
-        networkInterfaceCombo->setCurrentIndex(0);
-        selectedNetworkIP = interfaces[0].ip;
-        selectedNetworkInterfaceHumanName = interfaces[0].humanName;
-        selectedNetworkInterfaceSysName = interfaces[0].sysName;
+
+        if (!selectedReason.isEmpty())
+            logMessage(QString("%1: %2 (%3)").arg(selectedReason, selectedNetworkIP, selectedNetworkInterfaceHumanName));
     }
     else
     {
-        selectedNetworkIP = QString();
-        selectedNetworkInterfaceHumanName = QString();
-        selectedNetworkInterfaceSysName = QString();
+        selectedNetworkIP.clear();
+        selectedNetworkInterfaceHumanName.clear();
+        selectedNetworkInterfaceSysName.clear();
         logMessage("警告: 未找到可用的网络接口");
     }
-    
-    if (!selectedNetworkIP.isEmpty())
-    {
-        logMessage(QString("已选择网络接口: %1 - %2").arg(selectedNetworkIP).arg(selectedNetworkInterfaceHumanName));
-    }
+
+    // 6. 保存本次快照供下次刷新对比
+    lastKnownSysNames = currentSysNames;
 }
 
 void MainWindow::onNetworkInterfaceChanged(int index)

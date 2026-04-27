@@ -19,6 +19,130 @@
 #include <QDateTime>
 #include <QtEndian>
 #include <cstring>
+#include <QChartView>
+#include <QWheelEvent>
+#include <QMouseEvent>
+#include <QValueAxis>
+
+class YAxisZoomChartView : public QChartView {
+public:
+    explicit YAxisZoomChartView(QChart *chart, QWidget *parent = nullptr) 
+        : QChartView(chart, parent), m_isDragging(false) {
+        setRenderHint(QPainter::Antialiasing);
+        setMouseTracking(true); // 开启追踪，确保不按键移动时也能触发 MoveEvent 切换光标
+        
+        // 初始状态：张开的手
+        viewport()->setCursor(Qt::OpenHandCursor);
+    }
+
+protected:
+    // --- 缩放逻辑保持不变 ---
+    void wheelEvent(QWheelEvent *event) override {
+        QValueAxis *axisY = getYAxis();
+        if (axisY && chart()) {
+            QPointF mousePos = event->position();
+            if (!chart()->plotArea().contains(mousePos)) return;
+
+            double axisYHeight = chart()->plotArea().height();
+            double yMin = axisY->min();
+            double yMax = axisY->max();
+            double mouseValue = yMax - (mousePos.y() - chart()->plotArea().top()) * (yMax - yMin) / axisYHeight;
+            
+            double factor = (event->angleDelta().y() > 0) ? 0.8 : 1.25;
+            double currentRange = yMax - yMin;
+            double newRange = currentRange * factor;
+
+            if (newRange < 0.001 || newRange > 1000.0) return;
+
+            double relativePos = (mouseValue - yMin) / currentRange;
+            double newMin = mouseValue - (relativePos * newRange);
+            double newMax = newMin + newRange;
+
+            axisY->setRange(newMin, newMax);
+            event->accept();
+        }
+    }
+
+    // --- 鼠标按下：切换为闭合手势 ---
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            if (chart() && chart()->plotArea().contains(event->position())) {
+                m_isDragging = true;
+                m_lastMousePos = event->position();
+                
+                // 核心修改：切换为 ClosedHandCursor
+                viewport()->setCursor(Qt::ClosedHandCursor);
+                
+                event->accept();
+                return; 
+            }
+        }
+        QChartView::mousePressEvent(event);
+    }
+
+    // --- 鼠标移动：维持手势或处理平移 ---
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (m_isDragging) {
+            // 确保拖拽过程中一直是闭合手势
+            viewport()->setCursor(Qt::ClosedHandCursor);
+
+            QValueAxis *axisY = getYAxis();
+            if (axisY && chart()) {
+                QRectF plotArea = chart()->plotArea();
+                double axisYHeight = plotArea.height();
+                double yRange = axisY->max() - axisY->min();
+
+                double pixelDiff = event->position().y() - m_lastMousePos.y();
+                double valueDiff = (pixelDiff / axisYHeight) * yRange;
+
+                axisY->setRange(axisY->min() + valueDiff, axisY->max() + valueDiff);
+                m_lastMousePos = event->position();
+                event->accept();
+                return;
+            }
+        } else {
+            // 没有拖拽时，在绘图区显示张开的手
+            if (chart() && chart()->plotArea().contains(event->position())) {
+                viewport()->setCursor(Qt::OpenHandCursor);
+            } else {
+                viewport()->setCursor(Qt::ArrowCursor);
+            }
+        }
+        QChartView::mouseMoveEvent(event);
+    }
+
+    // --- 鼠标释放：恢复张开手势 ---
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            m_isDragging = false;
+            
+            // 核心修改：恢复为 OpenHandCursor
+            if (chart() && chart()->plotArea().contains(event->position())) {
+                viewport()->setCursor(Qt::OpenHandCursor);
+            }
+            
+            event->accept();
+        }
+        QChartView::mouseReleaseEvent(event);
+    }
+
+    // 当鼠标离开控件时，恢复标准箭头（防止光标样式污染其他 UI）
+    void leaveEvent(QEvent *event) override {
+        viewport()->setCursor(Qt::ArrowCursor);
+        QChartView::leaveEvent(event);
+    }
+
+private:
+    QValueAxis* getYAxis() {
+        if (!chart()) return nullptr;
+        auto axes = chart()->axes(Qt::Vertical);
+        if (axes.isEmpty()) return nullptr;
+        return qobject_cast<QValueAxis*>(axes.first());
+    }
+
+    bool m_isDragging;
+    QPointF m_lastMousePos;
+};
 
 // 数值排序项（整行排序时按数值比较当前列）
 class NumberItem : public QTableWidgetItem {
@@ -76,6 +200,7 @@ void MainWindow::onStartCaptureDebug()
     int sec = captureDurationSpin ? captureDurationSpin->value() : 10;
     captureSecondsRemaining = sec;
     captureTotalSeconds = sec;
+    logMessage(QString("开始采集Debug点云，时长: %1s").arg(sec));
     captureProgress->setValue(0);
     captureProgress->setFormat("Debug采集中 %p% (%v s)");
     // 开启Debug点云
@@ -90,10 +215,13 @@ void MainWindow::onCaptureTick()
         // 停止采集/录制
         if (currentCapture == CaptureLog) {
             LivoxLidarStopLogger(currentDevice->handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
+            logMessage("日志采集完成");
         } else if (currentCapture == CaptureDebug) {
             SetLivoxLidarDebugPointCloud(currentDevice->handle, false, DebugPointCloudCallback, this);
+            logMessage("Debug点云采集完成");
         } else if (currentCapture == CaptureLVX2) {
             stopLvx2Recording(true);
+            logMessage("LVX2数据保存完成");
         } else if (currentCapture == CaptureIMU) {
             {
                 QMutexLocker lk(&imuCsvMutex);
@@ -101,7 +229,7 @@ void MainWindow::onCaptureTick()
                 if (imuCsvFile.isOpen()) imuCsvFile.close();
             }
             imuSaveActive = false;
-            logMessage("IMU保存完成");
+            logMessage("IMU数据保存完成");
         }
         if (captureProgress) {
             captureProgress->setValue(100);
@@ -242,9 +370,9 @@ void MainWindow::onActionShowImuCharts()
 
     // Gyro chart
     gyroChart = new QChart();
-    gyroSeriesX = new QLineSeries(); gyroSeriesX->setName("gx");
-    gyroSeriesY = new QLineSeries(); gyroSeriesY->setName("gy");
-    gyroSeriesZ = new QLineSeries(); gyroSeriesZ->setName("gz");
+    gyroSeriesX = new QLineSeries(); gyroSeriesX->setName("gyro_x");
+    gyroSeriesY = new QLineSeries(); gyroSeriesY->setName("gyro_y");
+    gyroSeriesZ = new QLineSeries(); gyroSeriesZ->setName("gyro_z");
     gyroChart->addSeries(gyroSeriesX);
     gyroChart->addSeries(gyroSeriesY);
     gyroChart->addSeries(gyroSeriesZ);
@@ -254,14 +382,13 @@ void MainWindow::onActionShowImuCharts()
     gyroChart->addAxis(gyroAxisY, Qt::AlignLeft);
     for (auto s : {gyroSeriesX, gyroSeriesY, gyroSeriesZ}) { s->attachAxis(gyroAxisX); s->attachAxis(gyroAxisY); }
     gyroChart->legend()->setVisible(true);
-    gyroChartView = new QChartView(gyroChart, imuChartWindow);
-    gyroChartView->setRenderHint(QPainter::Antialiasing);
-
+    gyroChartView = new YAxisZoomChartView(gyroChart, imuChartWindow);
+    
     // Acc chart
     accChart = new QChart();
-    accSeriesX = new QLineSeries(); accSeriesX->setName("ax");
-    accSeriesY = new QLineSeries(); accSeriesY->setName("ay");
-    accSeriesZ = new QLineSeries(); accSeriesZ->setName("az");
+    accSeriesX = new QLineSeries(); accSeriesX->setName("acc_x");
+    accSeriesY = new QLineSeries(); accSeriesY->setName("acc_y");
+    accSeriesZ = new QLineSeries(); accSeriesZ->setName("acc_z");
     accChart->addSeries(accSeriesX);
     accChart->addSeries(accSeriesY);
     accChart->addSeries(accSeriesZ);
@@ -271,8 +398,7 @@ void MainWindow::onActionShowImuCharts()
     accChart->addAxis(accAxisY, Qt::AlignLeft);
     for (auto s : {accSeriesX, accSeriesY, accSeriesZ}) { s->attachAxis(accAxisX); s->attachAxis(accAxisY); }
     accChart->legend()->setVisible(true);
-    accChartView = new QChartView(accChart, imuChartWindow);
-    accChartView->setRenderHint(QPainter::Antialiasing);
+    accChartView = new YAxisZoomChartView(accChart, imuChartWindow);
 
     layout->addWidget(gyroChartView);
     layout->addWidget(accChartView);
@@ -623,6 +749,26 @@ void MainWindow::processPointCloudPacket(uint32_t handle, const LivoxLidarEthern
             point.tag = p_point_data[i].tag;
             
             frame.points.append(point);
+        }
+    }
+    else if (packet->data_type == kLivoxLidarDoubleEchoData) {
+        LivoxLidarDoubleEchoRawPoint *p_point_data = (LivoxLidarDoubleEchoRawPoint *)packet->data;
+        for (uint32_t i = 0; i < packet->dot_num; i++) {
+            Point3D point1;
+            Point3D point2;
+            point1.x = p_point_data[i].x1 / 1000.0f;
+            point1.y = p_point_data[i].y1 / 1000.0f;
+            point1.z = p_point_data[i].z1 / 1000.0f;
+            point1.reflectivity = p_point_data[i].reflectivity1;
+            point1.tag = p_point_data[i].tag1;
+            point2.x = p_point_data[i].x2 / 1000.0f;
+            point2.y = p_point_data[i].y2 / 1000.0f;
+            point2.z = p_point_data[i].z2 / 1000.0f;
+            point2.reflectivity = p_point_data[i].reflectivity2;
+            point2.tag = p_point_data[i].tag2;
+            
+            frame.points.append(point1);
+            frame.points.append(point2);
         }
     }
     
@@ -1194,21 +1340,31 @@ void MainWindow::updateSelectionTableAndLog()
 {
     QVector<Point3D> pts;
     if (pointCloudWidget->hasSelectionAabb()) {
-        pts = pointCloudWidget->pointsInPersistSelection(200000);
+        pts = pointCloudWidget->pointsInPersistSelection(20000000);
     } else {
         QRect sel = pointCloudWidget->currentSelectionRect();
-        if (!sel.isEmpty()) pts = pointCloudWidget->pointsInRect(sel, 200000);
+        if (!sel.isEmpty()) pts = pointCloudWidget->pointsInRect(sel, 20000000);
     }
 
     QTableWidget* table = attrTable ? attrTable : selectionTable;
     if (!table) return;
 
     if (!pts.isEmpty()) {
-        int count = pts.size();
-        if (count != lastSelectionCount) {
-            lastSelectionCount = count;
-            logMessage(QString("框选点个数: %1").arg(count));
+        int totalCount = pts.size();
+        int zeroCount = 0;
+        for (const Point3D& p : pts) {
+            if (p.x == 0.0f && p.y == 0.0f && p.z == 0.0f) {
+                ++zeroCount;
+            }
         }
+        int validCount = totalCount - zeroCount;
+
+        if (totalCount != lastSelectionCount) {
+            lastSelectionCount = totalCount;
+            logMessage(QString("框选点云个数: %1, 零点个数: %2, 总数: %3")
+                       .arg(validCount).arg(zeroCount).arg(totalCount));
+        }
+
         bool sorting = table->isSortingEnabled();
         table->setSortingEnabled(false);
         table->clearContents();
@@ -1267,6 +1423,7 @@ void MainWindow::startLvx2Recording(const QString& filePath, int durationSec)
     std::memset(dev.lidar_sn, 0, sizeof(dev.lidar_sn));
     std::memcpy(dev.lidar_sn, snb.constData(), std::min<size_t>(size_t(snb.size()), sizeof(dev.lidar_sn)));
     dev.lidar_id = currentDevice ? currentDevice->handle : 0;
+    dev.device_type = currentDevice ? currentDevice->dev_type : 0;
     lvx2File.write(reinterpret_cast<const char*>(&dev), sizeof(dev));
 
     lvx2SaveActive = true;

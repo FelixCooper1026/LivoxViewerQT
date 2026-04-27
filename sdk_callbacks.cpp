@@ -32,6 +32,7 @@ void MainWindow::onDeviceInfoChange(uint32_t handle, const LivoxLidarInfo* info,
         case kLivoxLidarTypeMid360s: deviceTypeName = "Mid360s"; break;
         case kLivoxLidarTypeHorizon: deviceTypeName = "Horizon"; break;
         case kLivoxLidarTypeAvia: deviceTypeName = "Avia"; break;
+        case kLivoxLidarTypeAvia2: deviceTypeName = "Avia2"; break;
         case kLivoxLidarTypeTele: deviceTypeName = "Tele"; break;
         case kLivoxLidarTypeHAP: deviceTypeName = "HAP"; break;
         case kLivoxLidarTypePA: deviceTypeName = "PA"; break;
@@ -73,7 +74,7 @@ void MainWindow::onDeviceInfoChange(uint32_t handle, const LivoxLidarInfo* info,
                 if (window->currentDevice && window->currentDevice->is_connected) {
                     livox_status status = QueryLivoxLidarInternalInfo(window->currentDevice->handle, onQueryInternalInfoResponse, window);
                     if (status != kLivoxLidarStatusSuccess) {
-                        window->logMessage(QString("查询设备配置参数失败，错误码: %1").arg(status));
+                        window->logMessage(QString("查询设备配置参数失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
                     }
                 }
             }
@@ -274,33 +275,83 @@ void MainWindow::onStatusInfo(uint32_t handle, uint8_t dev_type, const char* inf
     }
 }
 
+// 解析 livox_status
+QString MainWindow::getLivoxStatusString(livox_status status) {
+    switch (status) {
+        case kLivoxLidarStatusSuccess: return "操作成功";
+        case kLivoxLidarStatusFailure: return "操作失败";
+        case kLivoxLidarStatusNotConnected: return "设备未连接";
+        case kLivoxLidarStatusNotSupported: return "设备不支持此操作";
+        case kLivoxLidarStatusTimeout: return "操作超时";
+        case kLivoxLidarStatusNotEnoughMemory: return "内存不足";
+        case kLivoxLidarStatusChannelNotExist: return "通信通道不存在";
+        case kLivoxLidarStatusInvalidHandle: return "设备句柄无效";
+        case kLivoxLidarStatusHandlerImplNotExist: return "处理器实现不存在";
+        case kLivoxLidarStatusSendFailed: return "命令发送失败";
+        default: return QString("未知错误: %1").arg(status);
+    }
+}
+
+// 解析 ret_code
+QString MainWindow::getRetCodeString(uint8_t ret_code) {
+    switch (ret_code) {
+        case 0x00: return "执行成功";
+        case 0x01: return "执行失败";
+        case 0x02: return "当前状态不支持";
+        case 0x03: return "设置值超出范围";
+        case 0x20: return "参数不支持";
+        case 0x21: return "参数需重启生效";
+        case 0x22: return "参数只读，不支持写入";
+        case 0x23: return "请求参数长度错误/ack数据包超出最大长度";
+        case 0x24: return "参数 key_num 和 key_list 不匹配";
+        case 0x30: return "公钥签名验证错误";
+        case 0x31: return "固件摘要签名验证错误";
+        case 0x32: return "固件类型不匹配";
+        case 0x33: return "固件长度超出范围";
+        case 0x34: return "固件擦除中";
+        default: return QString("未知 ret_code");
+    }
+}
+
 void MainWindow::onAsyncControlResponse(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* response, void* client_data)
 {
-    // 由于不再使用EnableLivoxLidarPointSend/DisableLivoxLidarPointSend，
-    // 这个回调函数主要用于其他控制命令的响应
     MainWindow* window = static_cast<MainWindow*>(client_data);
-    if (window) {
-        QMetaObject::invokeMethod(window, [window, status, handle, response]() {
-            if (status == kLivoxLidarStatusSuccess) {
-                window->logMessage(QString("设备 %1 控制命令执行成功").arg(handle));
-            } else {
-                QString errorMsg;
-                switch (status) {
-                    case kLivoxLidarStatusFailure: errorMsg = "操作失败"; break;
-                    case kLivoxLidarStatusNotConnected: errorMsg = "设备未连接"; break;
-                    case kLivoxLidarStatusNotSupported: errorMsg = "设备不支持此操作"; break;
-                    case kLivoxLidarStatusTimeout: errorMsg = "操作超时"; break;
-                    case kLivoxLidarStatusNotEnoughMemory: errorMsg = "内存不足"; break;
-                    case kLivoxLidarStatusChannelNotExist: errorMsg = "通信通道不存在"; break;
-                    case kLivoxLidarStatusInvalidHandle: errorMsg = "设备句柄无效"; break;
-                    case kLivoxLidarStatusHandlerImplNotExist: errorMsg = "处理器实现不存在"; break;
-                    case kLivoxLidarStatusSendFailed: errorMsg = "命令发送失败"; break;
-                    default: errorMsg = QString("未知错误: %1").arg(status); break;
-                }
-                window->logMessage(QString("设备 %1 控制命令执行失败: %2").arg(handle).arg(errorMsg));
+    if (!window) return;
+
+    const bool has_response = (response != nullptr);
+    const uint8_t ret_code = has_response ? response->ret_code : 0xFF;
+    const uint16_t error_key = has_response ? response->error_key : 0;
+
+    QMetaObject::invokeMethod(window, [window, status, handle, has_response, ret_code, error_key]() {
+        if (status == kLivoxLidarStatusSuccess) {
+            if (!has_response) {
+                window->logMessage(QString("设备 %1 控制命令返回为空（ret_code未知）").arg(handle));
+                return;
             }
-        }, Qt::QueuedConnection);
-    }
+            if (ret_code == 0x00) {
+                window->logMessage(QString("设备 %1 控制命令执行成功").arg(handle));
+                return;
+            }
+
+            const QString errorKeyPart = (error_key != 0)
+                ? QString(" (命令参数编号=0x%1)").arg(error_key, 4, 16, QChar('0')) : QString();
+
+            // 复用辅助函数获取错误描述
+            QString retMsg = getRetCodeString(ret_code);
+            
+            if (ret_code == 0x21) {
+                window->logMessage(QString("设备 %1 控制命令下发成功，但参数需重启生效 (ret_code=0x%2)%3")
+                                     .arg(handle).arg(ret_code, 2, 16, QChar('0')).arg(errorKeyPart));
+            } else {
+                window->logMessage(QString("设备 %1 控制命令执行失败: ret_code=0x%2 (%3)%4")
+                                     .arg(handle).arg(ret_code, 2, 16, QChar('0')).arg(retMsg).arg(errorKeyPart));
+            }
+        } else {
+            // 复用辅助函数获取错误描述
+            QString errorMsg = getLivoxStatusString(status);
+            window->logMessage(QString("设备 %1 控制命令发送失败: %2").arg(handle).arg(errorMsg));
+        }
+    }, Qt::QueuedConnection);
 }
 
 void MainWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handle, LivoxLidarDiagInternalInfoResponse* response, void* client_data)
@@ -417,6 +468,15 @@ void MainWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handl
                                     } else if (key == kKeySetEscMode) {
                                         if (valueStr.contains("正常转速")) combo->setCurrentIndex(0);
                                         else if (valueStr.contains("低转速")) combo->setCurrentIndex(1);
+                                    }else if (key == kKeySetPpsSyncMode){
+                                        if (valueStr.contains("关闭异常时间过滤")) combo->setCurrentIndex(0);
+                                        else if (valueStr.contains("开启异常时间过滤")) combo->setCurrentIndex(1);
+                                    }else if (key == kKeySetFovMode) {
+                                        if (valueStr.contains("Focus FOV")) combo->setCurrentIndex(0);
+                                        else if (valueStr.contains("Normal FOV")) combo->setCurrentIndex(1);
+                                    } else if (key == kKeySetEchoMode) {
+                                        if (valueStr.contains("最强回波")) combo->setCurrentIndex(0);
+                                        else if (valueStr.contains("第一回波")) combo->setCurrentIndex(1);
                                     }
                                     
                                     // 恢复信号连接
@@ -513,7 +573,7 @@ void MainWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handl
                                                key == kKeyLidarImuHostIpCfg || 
                                                key == kKeyStateInfoHostIpCfg) {
                                         // 目的IP配置更新
-                                        // 格式: "Host:192.168.1.100:57000"
+                                        // 格式: "Host:192.168.1.100:56301"
                                         QRegularExpression hostRegex(R"(Host:(\d+\.\d+\.\d+\.\d+):(\d+))");
                                         QRegularExpressionMatch match = hostRegex.match(valueStr);
                                         if (match.hasMatch()) {

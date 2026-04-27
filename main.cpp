@@ -6,11 +6,9 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
-
-
     // 设置应用程序信息
     app.setApplicationName("LivoxViewerQT");
-    app.setApplicationVersion("1.2.0");
+    app.setApplicationVersion("1.2.5");
     app.setOrganizationName("FelixCooper1026");
     app.setWindowIcon(QIcon(":/resources/app_icon.ico"));
 

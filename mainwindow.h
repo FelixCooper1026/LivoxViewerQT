@@ -90,7 +90,7 @@ struct LVX2DeviceInfo {
     char hub_sn[16] = {};
     uint32_t lidar_id = 0;
     uint8_t lidar_type = 247;
-    uint8_t device_type = 9;
+    uint8_t device_type = 0;
     uint8_t extrinsic_enable = 1;
     float roll = 0.0f;
     float pitch = 0.0f;
@@ -215,6 +215,7 @@ private:
     // 坐标轴
     QOpenGLBuffer m_axesVbo;
     QOpenGLVertexArrayObject m_axesVao;
+    int m_axesVertexCount = 0;   // 记录坐标轴顶点总数
 
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelView;
@@ -310,8 +311,11 @@ private:
     static void onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarEthernetPacket* data, void* client_data);
     static void onStatusInfo(uint32_t handle, uint8_t dev_type, const char* info, void* client_data);
     static void onAsyncControlResponse(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* response, void* client_data);
+    static void onIpConfigResponse(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* response, void* client_data);
     static void onQueryInternalInfoResponse(livox_status status, uint32_t handle, LivoxLidarDiagInternalInfoResponse* response, void* client_data);
-
+    static QString getLivoxStatusString(livox_status status);
+    static QString getRetCodeString(uint8_t ret_code);
+    
     // UI components
     QListWidget* deviceList;
     QTabWidget* paramTabWidget;  // 添加QTabWidget成员变量
@@ -596,6 +600,7 @@ private:
     QString selectedNetworkIP;
     QString selectedNetworkInterfaceHumanName;
     QString selectedNetworkInterfaceSysName;
+    QSet<QString> lastKnownSysNames; // 记录上一次刷新时的网卡系统名称集合
     void refreshNetworkInterfaces();
     void onNetworkInterfaceChanged(int index);
     QString getSelectedHostIP() const;

@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.2.0
+    VERSION 1.2.5
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )
@@ -108,15 +108,11 @@ if(LIVOX_SDK_AVAILABLE)
         # Windows平台查找.lib文件
         set(LIVOX_LIB_CANDIDATES
             "${LIVOX_LIB_PATH}/livox_lidar_sdk_static.lib"
-            "${LIVOX_LIB_PATH}/livox_lidar_sdk.lib"
         )
     else()
-        # Linux/Unix平台查找.a或.so文件
+        # Linux/Unix平台查找.a文件
         set(LIVOX_LIB_CANDIDATES
             "${LIVOX_LIB_PATH}/liblivox_lidar_sdk_static.a"
-            "${LIVOX_LIB_PATH}/livox_lidar_sdk_static.a"
-            "${LIVOX_LIB_PATH}/liblivox_lidar_sdk.so"
-            "${LIVOX_LIB_PATH}/livox_lidar_sdk.so"
         )
     endif()
     

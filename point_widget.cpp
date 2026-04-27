@@ -88,70 +88,71 @@ void PointCloudWidget::setupShaders()
 {
     const char *vertexShaderSource = R"(
         #version 330 core
-        layout (location = 0) in vec3 position;
-        layout (location = 1) in vec3 color;
-        
+        layout(location = 0) in vec3 aPos;
+        layout(location = 1) in vec3 aColor;
+
+        // 正常渲染用的矩阵
         uniform mat4 modelView;
         uniform mat4 projection;
         uniform float uPointSize;
-        
-        out vec3 fragColor;
-        out vec3 vWorld;
-        
-        void main()
-        {
-            vWorld = position;
-            gl_Position = projection * modelView * vec4(position, 1.0);
+
+        // 框选专用的 Uniform (来自 m_selectionLocked == true 时)
+        uniform int uPersistEnabled;
+        uniform mat4 uSelMVP;       // C++端传来的 m_selProjection * m_selModelView
+        uniform vec4 uPersistRect;  // x0, y0, x1, y1
+        uniform vec2 uViewport;     // 宽度, 高度
+
+        // 传给片元着色器的变量
+        out vec3 vColor;
+        flat out int vIsSelected; // 【关键】flat 关键字表示这个整数不需要插值，原样传给片元
+
+        void main() {
+            // 1. 常规的顶点位置计算 (为了屏幕显示)
+            gl_Position = projection * modelView * vec4(aPos, 1.0);
             gl_PointSize = uPointSize;
-            fragColor = color;
+            vColor = aColor;
+            
+            // 2. 默认未选中
+            vIsSelected = 0;
+
+            // 3. 框选判断逻辑 (只在这里算一次！)
+            if (uPersistEnabled == 1) {
+                // 使用框选瞬间的视角矩阵计算该点的位置
+                vec4 selClip = uSelMVP * vec4(aPos, 1.0);
+                
+                // 排除在摄像机背后的点
+                if (selClip.w > 0.0) {
+                    // 转换为归一化设备坐标 (NDC)
+                    vec3 ndc = selClip.xyz / selClip.w;
+                    
+                    // 映射到屏幕坐标 (注意：这里的公式必须和 point_widget.cpp 中 pickNearestPoint 的逻辑完全一致)
+                    float screenX = (ndc.x * 0.5 + 0.5) * uViewport.x;
+                    float screenY = (1.0 - (ndc.y * 0.5 + 0.5)) * uViewport.y; // Y 轴翻转
+                    
+                    // 判断是否在鼠标画出的矩形范围内
+                    if (screenX >= uPersistRect.x && screenX <= uPersistRect.z &&
+                        screenY >= uPersistRect.y && screenY <= uPersistRect.w) {
+                        vIsSelected = 1; // 标记为选中
+                    }
+                }
+            }
         }
     )";
 
     const char *fragmentShaderSource = R"(
         #version 330 core
-        in vec3 fragColor;
-        in vec3 vWorld;
-        out vec4 outColor;
-        
-        uniform int uSelectionEnabled;
-        uniform vec4 uSelRect; // x0, y0, x1, y1 (pixels)
-        uniform int uPersistEnabled;
-        uniform vec4 uPersistRect; // selection-time rect in logical pixels
-        uniform mat4 uSelModelView;
-        uniform mat4 uSelProjection;
-        uniform vec2 uViewport; // width, height at selection time (logical)
-        uniform vec2 uDepthRange; // minZ, maxZ in view space at selection time
-        
-        float viewZ(mat4 mv, vec3 world) {
-            vec4 v = mv * vec4(world, 1.0);
-            return v.z; // right-handed view space, negative forward
-        }
-        
-        void main()
-        {
-            vec4 base = vec4(fragColor, 1.0);
-            bool selected = false;
-            if (uPersistEnabled == 1) {
-                // project with selection-time matrices
-                vec4 clip = uSelProjection * (uSelModelView * vec4(vWorld, 1.0));
-                if (clip.w != 0.0) {
-                    vec3 ndc = (clip.xyz / clip.w);
-                    float sx = (ndc.x * 0.5 + 0.5) * uViewport.x;
-                    float sy = (1.0 - (ndc.y * 0.5 + 0.5)) * uViewport.y;
-                    float vz = viewZ(uSelModelView, vWorld);
-                    if (sx >= uPersistRect.x && sx <= uPersistRect.z && sy >= uPersistRect.y && sy <= uPersistRect.w && vz >= uDepthRange.x && vz <= uDepthRange.y) {
-                        selected = true;
-                    }
-                }
+        in vec3 vColor;
+        flat in int vIsSelected; // 接收顶点着色器传来的判断结果
+
+        out vec4 FragColor;
+
+        void main() {
+            // 片元着色器只做最简单的 IF 判断，不涉及任何矩阵运算！
+            if (vIsSelected == 1) {
+                FragColor = vec4(1.0, 0.0, 0.0, 1.0); // 框选的点涂成纯红色
+            } else {
+                FragColor = vec4(vColor, 1.0);        // 没选中的点保持原色
             }
-            if (uSelectionEnabled == 1) {
-                float x = gl_FragCoord.x;
-                float y = gl_FragCoord.y;
-                if (x >= uSelRect.x && x <= uSelRect.z && y >= uSelRect.y && y <= uSelRect.w) {
-                    selected = true;
-                }
-            }
-            outColor = selected ? vec4(1.0, 0.0, 0.0, 1.0) : base;
         }
     )";
 
@@ -181,22 +182,103 @@ void PointCloudWidget::setupBuffers()
     m_vao.release();
 }
 
+//坐标轴属性
 void PointCloudWidget::setupAxesBuffers()
 {
     struct AxisVertex { float x, y, z, r, g, b; };
-    AxisVertex axes[6] = {
-        {0.f, 0.f, 0.f, 1.f, 0.f, 0.f}, {1.0f, 0.f, 0.f, 1.f, 0.f, 0.f}, // X
-        {0.f, 0.f, 0.f, 0.f, 1.f, 0.f}, {0.f, 1.0f, 0.f, 0.f, 1.f, 0.f}, // Y
-        {0.f, 0.f, 0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 1.0f, 0.f, 0.f, 1.f}, // Z
+    std::vector<AxisVertex> vertices;
+
+    const float axisLen = 1.0f;
+    const QColor colX(255, 0, 0), colY(0, 255, 0), colZ(0, 0, 255);
+
+    // 辅助 lambda：添加线段
+    auto addLine = [&](const QVector3D& p1, const QVector3D& p2, const QColor& c) {
+        vertices.push_back({p1.x(), p1.y(), p1.z(), c.redF(), c.greenF(), c.blueF()});
+        vertices.push_back({p2.x(), p2.y(), p2.z(), c.redF(), c.greenF(), c.blueF()});
     };
 
+    // 绘制轴线（从原点延伸到锥体底部）
+    const float coneHeight = 0.2f;
+    const float coneBasePos = axisLen - coneHeight;
+    addLine(QVector3D(0,0,0), QVector3D(coneBasePos, 0, 0), colX);
+    addLine(QVector3D(0,0,0), QVector3D(0, coneBasePos, 0), colY);
+    addLine(QVector3D(0,0,0), QVector3D(0, 0, coneBasePos), colZ);
+
+    // 锥体参数
+    const float coneRadius = 0.08f;
+    const int   coneSegments = 16;   // 十六边形底面
+    const float angleStep = 2.0f * M_PI / coneSegments;
+
+    // 生成锥体线框（X轴）
+    {
+        QVector3D tip(axisLen, 0, 0);
+        QVector3D baseCenter(coneBasePos, 0, 0);
+        QVector3D u(0, 1, 0), v(0, 0, 1); // 底面的两个正交轴
+        std::vector<QVector3D> basePts;
+        for (int i = 0; i < coneSegments; ++i) {
+            float angle = i * angleStep;
+            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
+            basePts.push_back(pt);
+        }
+        // 底面圆环线段
+        for (int i = 0; i < coneSegments; ++i) {
+            int j = (i + 1) % coneSegments;
+            addLine(basePts[i], basePts[j], colX);
+        }
+        // 侧棱（锥尖到各顶点）
+        for (const auto& pt : basePts) {
+            addLine(tip, pt, colX);
+        }
+    }
+
+    // Y轴锥体
+    {
+        QVector3D tip(0, axisLen, 0);
+        QVector3D baseCenter(0, coneBasePos, 0);
+        QVector3D u(1, 0, 0), v(0, 0, 1);
+        std::vector<QVector3D> basePts;
+        for (int i = 0; i < coneSegments; ++i) {
+            float angle = i * angleStep;
+            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
+            basePts.push_back(pt);
+        }
+        for (int i = 0; i < coneSegments; ++i) {
+            int j = (i + 1) % coneSegments;
+            addLine(basePts[i], basePts[j], colY);
+        }
+        for (const auto& pt : basePts) {
+            addLine(tip, pt, colY);
+        }
+    }
+
+    // Z轴锥体
+    {
+        QVector3D tip(0, 0, axisLen);
+        QVector3D baseCenter(0, 0, coneBasePos);
+        QVector3D u(1, 0, 0), v(0, 1, 0);
+        std::vector<QVector3D> basePts;
+        for (int i = 0; i < coneSegments; ++i) {
+            float angle = i * angleStep;
+            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
+            basePts.push_back(pt);
+        }
+        for (int i = 0; i < coneSegments; ++i) {
+            int j = (i + 1) % coneSegments;
+            addLine(basePts[i], basePts[j], colZ);
+        }
+        for (const auto& pt : basePts) {
+            addLine(tip, pt, colZ);
+        }
+    }
+
+    // 创建 VBO/VAO
     m_axesVao.create();
     m_axesVao.bind();
 
     m_axesVbo.create();
     m_axesVbo.bind();
     m_axesVbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
-    m_axesVbo.allocate(axes, sizeof(axes));
+    m_axesVbo.allocate(vertices.data(), int(vertices.size() * sizeof(AxisVertex)));
 
     m_program->enableAttributeArray(0);
     m_program->setAttributeBuffer(0, GL_FLOAT, 0, 3, sizeof(AxisVertex));
@@ -205,6 +287,8 @@ void PointCloudWidget::setupAxesBuffers()
 
     m_axesVao.release();
     m_axesVbo.release();
+
+    m_axesVertexCount = int(vertices.size());
 }
 
 void PointCloudWidget::setGridVisible(bool visible)
@@ -226,7 +310,7 @@ void PointCloudWidget::setupGridBuffers()
     
     // 网格设置
     const float range = 100.0f; // 网格范围：-100m 到 100m
-    const float step = 10.0f;   // 固定间距：10m
+    const float step = 1.0f;   // 固定间距：1m
     const float gray = 0.3f;    // 网格颜色：深灰色
 
     // 生成线条
@@ -303,7 +387,7 @@ void PointCloudWidget::paintGL()
     
     m_program->bind();
     
-    // 设置变换矩阵：平移 -> 缩放距离 -> 旋转(四元数)
+    // 1. 设置基础变换矩阵
     m_modelView.setToIdentity();
     m_modelView.translate(m_panOffset);
     m_modelView.translate(0, 0, -m_distance);
@@ -317,16 +401,43 @@ void PointCloudWidget::paintGL()
     m_program->setUniformValue("modelView", m_modelView);
     m_program->setUniformValue("projection", m_projection);
     m_program->setUniformValue("uPointSize", m_pointSize);
-    // 临时屏幕框选（拖拽中）
-    m_program->setUniformValue("uSelectionEnabled", 0);
-    m_program->setUniformValue("uSelRect", QVector4D(0, 0, 0, 0));
 
+    // ==========================================
+    // 2. 绘制基础图元：坐标轴与网格
+    // 强制关闭选择逻辑，确保它们保持原始颜色
+    // ==========================================
+    m_program->setUniformValue("uSelectionEnabled", 0);
+    m_program->setUniformValue("uPersistEnabled", 0);
+
+    // 绘制坐标轴
+    glLineWidth(2.0f);
+    m_axesVao.bind();
+    glDrawArrays(GL_LINES, 0, m_axesVertexCount);
+    m_axesVao.release();
+    glLineWidth(1.0f);
+
+    // 绘制网格
+    if (m_gridVisible) {
+        glLineWidth(1.0f); 
+        if (m_gridVertexCount > 0) {
+            m_gridVao.bind();
+            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
+            m_gridVao.release();
+        }
+    }
+    glLineWidth(1.0f);
+
+    // ==========================================
+    // 3. 准备绘制点云：恢复并设置点云的选择状态逻辑
+    // ==========================================
+    
     // 持久选择（使用选择当时的矩阵参数）
     if (m_selectionLocked) {
         m_program->setUniformValue("uPersistEnabled", 1);
         m_program->setUniformValue("uPersistRect", QVector4D(m_selRectLogical.left(), m_selRectLogical.top(), m_selRectLogical.right(), m_selRectLogical.bottom()));
-        m_program->setUniformValue("uSelModelView", m_selModelView);
-        m_program->setUniformValue("uSelProjection", m_selProjection);
+// 【优化】：在 CPU 端提前计算好 MVP 矩阵，只传一个矩阵给 GPU
+QMatrix4x4 selMVP = m_selProjection * m_selModelView;
+m_program->setUniformValue("uSelMVP", selMVP);
         m_program->setUniformValue("uViewport", QVector2D(float(m_selViewportW), float(m_selViewportH)));
         m_program->setUniformValue("uDepthRange", QVector2D(m_selViewZMin, m_selViewZMax));
     } else {
@@ -338,26 +449,6 @@ void PointCloudWidget::paintGL()
         m_program->setUniformValue("uDepthRange", QVector2D(0,0));
     }
 
-    // 先绘制坐标轴
-    glLineWidth(2.0f);
-    m_axesVao.bind();
-    glDrawArrays(GL_LINES, 0, 6);
-    m_axesVao.release();
-    glLineWidth(1.0f);
-
-    // 绘制网格 (仅当 m_gridVisible 为 true 时绘制)
-    glLineWidth(1.0f);
-    if (m_gridVisible) {  // <--- 增加这个判断
-        glLineWidth(1.0f); 
-        if (m_gridVertexCount > 0) {
-            m_gridVao.bind();
-            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
-            m_gridVao.release();
-        }
-    }
-    glLineWidth(1.0f);
-
-    
     // 拖拽时的屏幕框高亮
     if (m_selectionModeEnabled && m_selecting && !m_selectionLocked) {
         QRect sel = m_selectionRect();
@@ -372,9 +463,12 @@ void PointCloudWidget::paintGL()
             m_program->setUniformValue("uSelectionEnabled", 1);
             m_program->setUniformValue("uSelRect", QVector4D(x0, y0, x1, y1));
         }
+    } else {
+        // 确保未拖拽时关闭临时高亮
+        m_program->setUniformValue("uSelectionEnabled", 0);
     }
     
-    // 绘制点云
+    // 4. 绘制点云
     if (!m_points.isEmpty()) {
         m_vao.bind();
         glDrawArrays(GL_POINTS, 0, m_points.size());
@@ -382,6 +476,33 @@ void PointCloudWidget::paintGL()
     }
     
     m_program->release();
+
+    // ==========================================
+    // 5. 绘制 2D 叠加层 (文本、UI组件等)
+    // ==========================================
+
+    // 绘制坐标轴标签 "X", "Y", "Z"
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        painter.setPen(Qt::white);
+        QFont f = painter.font();
+        f.setBold(true);
+        painter.setFont(f);
+
+        QVector3D tips[] = { QVector3D(1.0f, 0, 0), QVector3D(0, 1.0f, 0), QVector3D(0, 0, 1.0f) };
+        QString labels[] = { "X", "Y", "Z" };
+
+        for (int i = 0; i < 3; ++i) {
+            QVector4D hp(tips[i], 1.0f);
+            QVector4D clip = m_projection * (m_modelView * hp);
+            if (clip.w() == 0.0f) continue;
+            QVector3D ndc = clip.toVector3DAffine();
+            int sx = int((ndc.x() * 0.5f + 0.5f) * width());
+            int sy = int((1.0f - (ndc.y() * 0.5f + 0.5f)) * height());
+            painter.drawText(sx + 8, sy - 8, labels[i]);
+        }
+    }
 
     // 2D 覆盖层：绘制测距点、连线与距离
     if (m_measureMode && (m_haveP1 || m_haveP2)) {
