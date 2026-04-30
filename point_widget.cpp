@@ -5,6 +5,10 @@
 #include <QPainter>
 #include <QLinearGradient>
 #include <QOpenGLFunctions>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QUrl>
 
 // PointCloudWidget 实现
 PointCloudWidget::PointCloudWidget(QWidget *parent)
@@ -13,7 +17,7 @@ PointCloudWidget::PointCloudWidget(QWidget *parent)
     , m_distance(10.0f)
     , m_rotation(0, 0, 0)
     , m_orientation() // identity
-    , m_panOffset(0, 0, 0)
+    , m_target(0, 0, 0)
     , m_activeButton(Qt::NoButton)
     , m_mousePressed(false)
     , m_pointSize(2.0f)
@@ -24,6 +28,7 @@ PointCloudWidget::PointCloudWidget(QWidget *parent)
     , m_gridVisible(true)
 {
     setFocusPolicy(Qt::StrongFocus);
+    setAcceptDrops(true);
     // 默认视角：X 向上、Y 向左、Z 向外（绕 Z 轴 +90°）
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
 }
@@ -68,6 +73,25 @@ bool PointCloudWidget::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, 
         }
     }
     return found;
+}
+
+void PointCloudWidget::mouseDoubleClickEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        QVector3D pickedWorld;
+        QPoint pickedScreen;
+        
+        // 调用你现有的拾取函数
+        if (pickNearestPoint(event->pos(), pickedWorld, pickedScreen)) {
+            // 核心改变：将双击的点设为新的旋转和缩放中心
+            m_target = pickedWorld;
+            
+            // 细节优化：双击通常是为了看局部，稍微拉近距离
+            m_distance = qMax(1.0f, m_distance * 0.5f); 
+            
+            update();
+        }
+    }
 }
 
 void PointCloudWidget::initializeGL()
@@ -299,6 +323,25 @@ void PointCloudWidget::setGridVisible(bool visible)
     }
 }
 
+void PointCloudWidget::setGridConfig(const GridConfig& config)
+{
+    GridConfig normalized = config;
+    normalized.range = std::max(1.0f, normalized.range);
+    normalized.step = std::max(0.1f, normalized.step);
+    if (!normalized.color.isValid()) {
+        normalized.color = QColor(77, 77, 77);
+    }
+
+    m_gridConfig = normalized;
+
+    if (context()) {
+        makeCurrent();
+        setupGridBuffers();
+        doneCurrent();
+    }
+    update();
+}
+
 void PointCloudWidget::setupGridBuffers()
 {
     struct GridVertex {
@@ -307,24 +350,47 @@ void PointCloudWidget::setupGridBuffers()
     };
 
     std::vector<GridVertex> gridVertices;
-    
-    // 网格设置
-    const float range = 100.0f; // 网格范围：-100m 到 100m
-    const float step = 1.0f;   // 固定间距：1m
-    const float gray = 0.3f;    // 网格颜色：深灰色
 
-    // 生成线条
-    for (float i = -range; i <= range; i += step) {
-        // 平行于 Y 轴的线 (X 固定)
-        gridVertices.push_back({i, -range, 0.0f, gray, gray, gray});
-        gridVertices.push_back({i,  range, 0.0f, gray, gray, gray});
+    const float range = std::max(1.0f, m_gridConfig.range);
+    const float step = std::max(0.1f, m_gridConfig.step);
+    const float r = float(m_gridConfig.color.redF());
+    const float g = float(m_gridConfig.color.greenF());
+    const float b = float(m_gridConfig.color.blueF());
+    const int ringSegments = 96;
+    const float pi = 3.14159265358979323846f;
 
-        // 平行于 X 轴的线 (Y 固定)
-        gridVertices.push_back({-range, i, 0.0f, gray, gray, gray});
-        gridVertices.push_back({ range, i, 0.0f, gray, gray, gray});
+    auto addLine = [&](const QVector3D& p1, const QVector3D& p2) {
+        gridVertices.push_back({p1.x(), p1.y(), p1.z(), r, g, b});
+        gridVertices.push_back({p2.x(), p2.y(), p2.z(), r, g, b});
+    };
+
+    if (m_gridConfig.type == GridConfig::ConcentricCircles) {
+        addLine(QVector3D(-range, 0.0f, 0.0f), QVector3D(range, 0.0f, 0.0f));
+        addLine(QVector3D(0.0f, -range, 0.0f), QVector3D(0.0f, range, 0.0f));
+
+        for (float radius = step; radius <= range + 1e-4f; radius += step) {
+            for (int i = 0; i < ringSegments; ++i) {
+                const float a0 = (2.0f * pi * float(i)) / float(ringSegments);
+                const float a1 = (2.0f * pi * float(i + 1)) / float(ringSegments);
+                addLine(QVector3D(radius * std::cos(a0), radius * std::sin(a0), 0.0f),
+                        QVector3D(radius * std::cos(a1), radius * std::sin(a1), 0.0f));
+            }
+        }
+    } else {
+        for (float i = -range; i <= range + 1e-4f; i += step) {
+            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f));
+            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f));
+        }
     }
 
-    m_gridVertexCount = gridVertices.size();
+    m_gridVertexCount = int(gridVertices.size());
+
+    if (m_gridVbo.isCreated()) {
+        m_gridVbo.destroy();
+    }
+    if (m_gridVao.isCreated()) {
+        m_gridVao.destroy();
+    }
 
     m_gridVao.create();
     m_gridVao.bind();
@@ -388,16 +454,26 @@ void PointCloudWidget::paintGL()
     m_program->bind();
     
     // 1. 设置基础变换矩阵
+    m_program->bind();
+    
+    // 1. 设置基础变换矩阵 (目标中心轨道相机模型)
     m_modelView.setToIdentity();
-    m_modelView.translate(m_panOffset);
-    m_modelView.translate(0, 0, -m_distance);
 
+    // 动作 3：最后，将整个场景沿着 Z 轴推远，为相机腾出视野空间 (Distance)
+    m_modelView.translate(0.0f, 0.0f, -m_distance);
+
+    // 动作 2：然后，围绕当前的原点进行旋转 (Rotation)
     QMatrix4x4 rot = quaternionToMatrix(m_orientation);
     m_modelView = m_modelView * rot;
-    
+
+    // 动作 1：首先，把我们要观察的“目标点”移动到世界坐标系的原点 (Translation)
+    m_modelView.translate(-m_target);
+
+    // 1. 设置基础变换矩阵    
     m_projection.setToIdentity();
-    m_projection.perspective(45.0f, float(width()) / float(height()), 0.1f, 1000.0f);
-    
+    const float nearPlane = 0.1f;
+    float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
+    m_projection.perspective(45.0f, float(width()) / float(height()), nearPlane, farPlane);    
     m_program->setUniformValue("modelView", m_modelView);
     m_program->setUniformValue("projection", m_projection);
     m_program->setUniformValue("uPointSize", m_pointSize);
@@ -495,8 +571,19 @@ m_program->setUniformValue("uSelMVP", selMVP);
 
         for (int i = 0; i < 3; ++i) {
             QVector4D hp(tips[i], 1.0f);
-            QVector4D clip = m_projection * (m_modelView * hp);
-            if (clip.w() == 0.0f) continue;
+            // 建议分步计算，以便检查视图坐标系下的 Z 值
+            QVector4D viewPos = m_modelView * hp;
+            
+            // 在 OpenGL 视图空间中，相机看向 -Z 方向。
+            // 如果 viewPos.z() > 0，说明点在相机后面，或者在近裁剪面外
+            if (viewPos.z() >= -0.1f) continue; 
+        
+            QVector4D clip = m_projection * viewPos;
+            
+            // 标准裁剪检查：NDC 坐标必须在 [-1, 1] 之间
+            if (clip.z() < -clip.w() || clip.z() > clip.w()) continue;
+            if (std::abs(clip.x()) > clip.w() || std::abs(clip.y()) > clip.w()) continue;
+        
             QVector3D ndc = clip.toVector3DAffine();
             int sx = int((ndc.x() * 0.5f + 0.5f) * width());
             int sy = int((1.0f - (ndc.y() * 0.5f + 0.5f)) * height());
@@ -720,12 +807,23 @@ void PointCloudWidget::mouseMoveEvent(QMouseEvent *event)
             m_orientation = dq * m_orientation;
         }
     } else if (m_activeButton == Qt::MiddleButton || m_activeButton == Qt::RightButton) {
+        // --- 新的平移逻辑 ---
         float aspect = (float)qMax(1, width()) / (float)qMax(1, height());
         float fovy_rad = 45.0f * float(M_PI) / 180.0f;
-        float worldPerPixelY = 2.0f * m_distance * std::tan(fovy_rad * 0.5f) / (float)qMax(1, height());
+        
+        // 计算当前距离下，屏幕像素对应的世界坐标尺寸
+        float factor = 2.0f * m_distance * std::tan(fovy_rad * 0.5f);
+        float worldPerPixelY = factor / (float)qMax(1, height());
         float worldPerPixelX = worldPerPixelY * aspect;
-        m_panOffset.setX(m_panOffset.x() + delta.x() * worldPerPixelX);
-        m_panOffset.setY(m_panOffset.y() - delta.y() * worldPerPixelY);
+
+        // 计算相机当前在世界坐标系下的局部坐标轴（右方向和上方向）
+        // 这里使用 m_orientation 的共轭来获取逆变换方向
+        QVector3D cameraRight = m_orientation.conjugated().rotatedVector(QVector3D(1, 0, 0));
+        QVector3D cameraUp    = m_orientation.conjugated().rotatedVector(QVector3D(0, 1, 0));
+
+        // 更新 m_target：鼠标向右，目标向左移；鼠标向上，目标向下移
+        m_target -= cameraRight * (delta.x() * worldPerPixelX);
+        m_target += cameraUp * (delta.y() * worldPerPixelY);
     }
     
     m_lastMousePos = event->pos();
@@ -785,9 +883,41 @@ void PointCloudWidget::mouseReleaseEvent(QMouseEvent *event)
 
 void PointCloudWidget::wheelEvent(QWheelEvent *event)
 {
-    m_distance -= event->angleDelta().y() * 0.01f;
-    m_distance = qMax(1.0f, m_distance);
+    const float factor = 1.0f - event->angleDelta().y() * 0.001f; // 每格约 1.5% 的比例变化
+    m_distance = qMax(0.1f, m_distance * factor);                  // 最小距离 0.1
     update();
+}
+
+void PointCloudWidget::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) {
+        return;
+    }
+
+    const QList<QUrl> urls = event->mimeData()->urls();
+    for (const QUrl& url : urls) {
+        if (url.isLocalFile() && url.toLocalFile().endsWith(".lvx2", Qt::CaseInsensitive)) {
+            event->acceptProposedAction();
+            return;
+        }
+    }
+}
+
+void PointCloudWidget::dropEvent(QDropEvent* event)
+{
+    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) {
+        return;
+    }
+
+    const QList<QUrl> urls = event->mimeData()->urls();
+    for (const QUrl& url : urls) {
+        const QString localFile = url.toLocalFile();
+        if (url.isLocalFile() && localFile.endsWith(".lvx2", Qt::CaseInsensitive)) {
+            emit lvx2FileDropped(localFile);
+            event->acceptProposedAction();
+            return;
+        }
+    }
 }
 
 void PointCloudWidget::updatePointCloud(const PointCloudFrame& frame)
@@ -811,10 +941,8 @@ void PointCloudWidget::clearPointCloud()
 void PointCloudWidget::resetView()
 {
     m_distance = 10.0f;
-    m_rotation = QVector3D(0, 0, 0);
-    // 重置视角：X 向上、Y 向左、Z 向外（绕 Z 轴 +90°）
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
-    m_panOffset = QVector3D(0, 0, 0);
+    m_target = QVector3D(0, 0, 0); // 重置观察中心
     update();
 }
 
@@ -835,12 +963,11 @@ void PointCloudWidget::setLegend(int mode, float minVal, float maxVal, bool visi
 
 void PointCloudWidget::setTopDownView()
 {
-    // 设置平面投影视角：Z轴朝上，Y轴朝向屏幕外，X轴朝右
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), 0.0f);
-    m_distance = 15.0f;  // 稍微拉远一点以便观察整个平面
-    m_panOffset = QVector3D(0, 0, 0);
+    m_distance = 15.0f;
+    m_target = QVector3D(0, 0, 0); // 重置观察中心
     update();
-} 
+}
 
 void PointCloudWidget::setSelectionModeEnabled(bool enabled)
 {

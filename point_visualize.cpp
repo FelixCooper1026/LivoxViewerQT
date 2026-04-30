@@ -23,6 +23,7 @@
 #include <QWheelEvent>
 #include <QMouseEvent>
 #include <QValueAxis>
+#include <QStandardPaths>
 
 class YAxisZoomChartView : public QChartView {
 public:
@@ -469,6 +470,11 @@ void MainWindow::onActionCaptureImuTriggered()
         QMessageBox::warning(this, "保存IMU数据", "IMU数据发送未开启！");
         return;
     }
+
+    QSettings settings("Livox", "LivoxViewerQT");
+    QString lastDir = settings.value("save/lastIMUDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) lastDir = QDir::homePath();
+
     QDialog dlg(this);
     dlg.setWindowTitle("保存IMU数据");
     QVBoxLayout* v = new QVBoxLayout(&dlg);
@@ -478,6 +484,7 @@ void MainWindow::onActionCaptureImuTriggered()
     h1->setContentsMargins(0,0,0,0);
     QLabel* lblPath = new QLabel("请选择保存路径:", row1);
     QLineEdit* editPath = new QLineEdit(row1);
+    editPath->setText(lastDir);   // 设置上次目录为默认
     QPushButton* btnBrowse = new QPushButton("选择", row1);
     h1->addWidget(lblPath);
     h1->addSpacing(8);
@@ -502,23 +509,34 @@ void MainWindow::onActionCaptureImuTriggered()
     // 按钮
     QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     v->addWidget(box);
-    connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-        QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", QDir::homePath());
+
+    // 浏览按钮：使用当前 editPath 文本或上次目录作为起始目录
+    connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, lastDir, this]() {
+        QString startDir = editPath->text().isEmpty() ? lastDir : editPath->text();
+        QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", startDir);
         if (!dir.isEmpty()) editPath->setText(dir);
     });
+
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
     if (dlg.exec() != QDialog::Accepted) return;
+
     QString baseDir = editPath->text().trimmed();
     if (baseDir.isEmpty()) {
         QMessageBox::warning(this, "保存IMU数据", "请选择保存路径");
         return;
     }
+
+    // 保存本次选择的目录
+    settings.setValue("save/lastIMUDir", baseDir);
+
     QString sn = currentDevice ? currentDevice->sn : QString("Unknown");
     QString targetDir = QDir(baseDir).filePath(QString("IMU_%1").arg(sn));
     QDir().mkpath(targetDir);
     QString startTime = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
     QString filePath = QDir(targetDir).filePath(QString("%1_%2.csv").arg(sn, startTime));
+
     // 打开CSV
     imuCsvFile.setFileName(filePath);
     if (!imuCsvFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
@@ -659,6 +677,20 @@ void MainWindow::onFrameIntervalChanged(int ms)
     if (ms < 50) ms = 50;
     frameIntervalMs = static_cast<uint64_t>(ms);
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
+    if (lvx2PlaybackActive) {
+        const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
+        lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+        if (lvx2PlaybackFrameCount <= 0) {
+            lvx2PlaybackFrameCount = 1;
+        }
+        const int targetFrame = std::clamp(lvx2PlaybackFrame, 0, lvx2PlaybackFrameCount - 1);
+        showLvx2PlaybackFrame(targetFrame);
+        if (lvx2PlaybackPlaying) {
+            setLvx2PlaybackPlaying(true);
+        } else {
+            updateLvx2PlaybackUi();
+        }
+    }
 }
 
 void MainWindow::processPointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet)
@@ -795,7 +827,114 @@ void MainWindow::publishPointCloudFrame(const PointCloudFrame& frame)
     // 在主线程中更新点云显示
     QMetaObject::invokeMethod(this, [this, frame]() {
         pointCloudWidget->updatePointCloud(frame);
+        if (lvx2PlaybackActive && selectionRealtimeEnabled && pointCloudWidget && (attrTable || selectionTable)) {
+            updateSelectionTableAndLog();
+        }
     }, Qt::QueuedConnection);
+}
+
+void MainWindow::applyRenderingPipeline(PointCloudFrame& frame)
+{
+    if (frame.points.isEmpty()) {
+        if (pointCloudWidget) {
+            pointCloudWidget->setLegend(colorMode == ColorSolid ? ColorSolid : colorMode, 0.0f, 1.0f, colorMode != ColorSolid);
+        }
+        frame.points = applyPointCloudFilters(frame.points);
+        return;
+    }
+
+    if (colorMode == ColorByReflectivity) {
+        for (Point3D& p : frame.points) {
+            calculatePointColor(p.reflectivity, p.tag, p.r, p.g, p.b);
+        }
+        if (pointCloudWidget) pointCloudWidget->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
+    } else if (colorMode == ColorByDistance) {
+        float minD = std::numeric_limits<float>::max();
+        float maxD = 0.0f;
+        for (const Point3D& p : frame.points) {
+            float d = std::sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+            if (d < minD) minD = d;
+            if (d > maxD) maxD = d;
+        }
+        if (!(maxD > minD)) { minD = 0.0f; maxD = 1.0f; }
+        for (Point3D& p : frame.points) {
+            float t = 0.0f;
+            const float d = std::sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
+            if (maxD > minD) t = (d - minD) / (maxD - minD);
+            t = std::clamp(t, 0.0f, 1.0f);
+            if (t < 0.25f)      { p.r = 0.0f;           p.g = t/0.25f;     p.b = 1.0f; }
+            else if (t < 0.5f)  { p.r = 0.0f;           p.g = 1.0f;        p.b = 1.0f - (t-0.25f)/0.25f; }
+            else if (t < 0.75f) { p.r = (t-0.5f)/0.25f; p.g = 1.0f;        p.b = 0.0f; }
+            else                { p.r = 1.0f;           p.g = 1.0f-(t-0.75f)/0.25f; p.b = 0.0f; }
+        }
+        if (pointCloudWidget) pointCloudWidget->setLegend(ColorByDistance, minD, maxD, true);
+    } else if (colorMode == ColorByElevation) {
+        float minZ = std::numeric_limits<float>::max();
+        float maxZ = std::numeric_limits<float>::lowest();
+        for (const Point3D& p : frame.points) {
+            if (p.z < minZ) minZ = p.z;
+            if (p.z > maxZ) maxZ = p.z;
+        }
+        if (!(maxZ > minZ)) { minZ = -1.0f; maxZ = 1.0f; }
+        for (Point3D& p : frame.points) {
+            float t = 0.0f;
+            if (maxZ > minZ) t = (p.z - minZ) / (maxZ - minZ);
+            t = std::clamp(t, 0.0f, 1.0f);
+            p.r = t; p.g = 0.0f; p.b = 1.0f - t;
+        }
+        if (pointCloudWidget) pointCloudWidget->setLegend(ColorByElevation, minZ, maxZ, true);
+    } else if (colorMode == ColorSolid) {
+        for (Point3D& p : frame.points) {
+            p.r = solidColor.redF();
+            p.g = solidColor.greenF();
+            p.b = solidColor.blueF();
+        }
+        if (pointCloudWidget) pointCloudWidget->setLegend(ColorSolid, 0.0f, 1.0f, false);
+    } else if (colorMode == ColorByPlanarProjection) {
+        float minX = std::numeric_limits<float>::max();
+        float maxX = std::numeric_limits<float>::lowest();
+        float minY = std::numeric_limits<float>::max();
+        float maxY = std::numeric_limits<float>::lowest();
+        for (const Point3D& p : frame.points) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+        }
+        if (!(maxX > minX)) { minX = -planarProjectionRadius; maxX = planarProjectionRadius; }
+        if (!(maxY > minY)) { minY = 0.0f; maxY = planarProjectionRadius; }
+        for (Point3D& p : frame.points) {
+            float tx = (p.x - minX) / (maxX - minX);
+            float ty = (p.y - minY) / (maxY - minY);
+            tx = std::clamp(tx, 0.0f, 1.0f);
+            ty = std::clamp(ty, 0.0f, 1.0f);
+            const float hue = tx * 360.0f;
+            const float saturation = 0.8f;
+            const float value = 0.5f + ty * 0.5f;
+            const float c = value * saturation;
+            const float x = c * (1.0f - std::abs(std::fmod(hue / 60.0f, 2.0f) - 1.0f));
+            const float m = value - c;
+            if (hue < 60.0f) {
+                p.r = c + m; p.g = x + m; p.b = m;
+            } else if (hue < 120.0f) {
+                p.r = x + m; p.g = c + m; p.b = m;
+            } else if (hue < 180.0f) {
+                p.r = m; p.g = c + m; p.b = x + m;
+            } else if (hue < 240.0f) {
+                p.r = m; p.g = x + m; p.b = c + m;
+            } else if (hue < 300.0f) {
+                p.r = x + m; p.g = m; p.b = c + m;
+            } else {
+                p.r = c + m; p.g = m; p.b = x + m;
+            }
+            p.r = std::clamp(p.r, 0.0f, 1.0f);
+            p.g = std::clamp(p.g, 0.0f, 1.0f);
+            p.b = std::clamp(p.b, 0.0f, 1.0f);
+        }
+        if (pointCloudWidget) pointCloudWidget->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
+    }
+
+    frame.points = applyPointCloudFilters(frame.points);
 }
 
 void MainWindow::calculatePointColor(uint8_t reflectivity, uint8_t tag, float& r, float& g, float& b)
@@ -984,6 +1123,18 @@ bool MainWindow::savePointCloudAsPCD(const QString& filePath, const QVector<Poin
 
 void MainWindow::onRenderTick()
 {
+    if (lvx2PlaybackActive) {
+        {
+            QMutexLocker locker(&frameMutex);
+            pendingFrames.clear();
+            lastSeenTimestamp.clear();
+        }
+        if (pointCloudWidget) {
+            pointCloudWidget->update();
+        }
+        return;
+    }
+
 	// 暂停可视化模式：停止更新点云缓冲，但仍按固定刷新率重绘以跟随相机/叠加层
 	if (!pointCloudVisualizationEnabled) {
 		{
@@ -1069,114 +1220,7 @@ void MainWindow::onRenderTick()
 	}
 
 	if (hasAnyPoint) {
-		if (colorMode == ColorByReflectivity) {
-			for (Point3D& p : merged.points) {
-				calculatePointColor(p.reflectivity, p.tag, p.r, p.g, p.b);
-			}
-			if (pointCloudWidget) pointCloudWidget->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
-		} else if (colorMode == ColorByDistance) {
-			float minD = std::numeric_limits<float>::max();
-			float maxD = 0.0f;
-			for (const Point3D& p : merged.points) {
-				float d = std::sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-				if (d < minD) minD = d;
-				if (d > maxD) maxD = d;
-			}
-			if (!(maxD > minD)) { minD = 0.0f; maxD = 1.0f; }
-			for (Point3D& p : merged.points) {
-				float r, g, b; (void)r; (void)g; (void)b;
-				const float dx = p.x, dy = p.y, dz = p.z;
-				float d = std::sqrt(dx*dx + dy*dy + dz*dz);
-				float t = 0.0f;
-				if (maxD > minD) t = (d - minD) / (maxD - minD);
-				t = std::clamp(t, 0.0f, 1.0f);
-				if (t < 0.25f)      { p.r = 0.0f;           p.g = t/0.25f;     p.b = 1.0f; }
-				else if (t < 0.5f)  { p.r = 0.0f;           p.g = 1.0f;        p.b = 1.0f - (t-0.25f)/0.25f; }
-				else if (t < 0.75f) { p.r = (t-0.5f)/0.25f; p.g = 1.0f;        p.b = 0.0f; }
-				else                { p.r = 1.0f;           p.g = 1.0f-(t-0.75f)/0.25f; p.b = 0.0f; }
-			}
-			if (pointCloudWidget) pointCloudWidget->setLegend(ColorByDistance, minD, maxD, true);
-		} else if (colorMode == ColorByElevation) {
-			float minZ = std::numeric_limits<float>::max();
-			float maxZ = std::numeric_limits<float>::lowest();
-			for (const Point3D& p : merged.points) {
-				if (p.z < minZ) minZ = p.z;
-				if (p.z > maxZ) maxZ = p.z;
-			}
-			if (!(maxZ > minZ)) { minZ = -1.0f; maxZ = 1.0f; }
-			for (Point3D& p : merged.points) {
-				float t = 0.0f;
-				if (maxZ > minZ) t = (p.z - minZ) / (maxZ - minZ);
-				t = std::clamp(t, 0.0f, 1.0f);
-				p.r = t; p.g = 0.0f; p.b = 1.0f - t;
-			}
-			if (pointCloudWidget) pointCloudWidget->setLegend(ColorByElevation, minZ, maxZ, true);
-		        } else if (colorMode == ColorSolid) {
-            for (Point3D& p : merged.points) {
-                p.r = solidColor.redF();
-                p.g = solidColor.greenF();
-                p.b = solidColor.blueF();
-            }
-            if (pointCloudWidget) pointCloudWidget->setLegend(ColorSolid, 0.0f, 1.0f, false);
-        } else if (colorMode == ColorByPlanarProjection) {
-            // 平面投影模式：根据点在平面上的位置着色
-            float minX = std::numeric_limits<float>::max();
-            float maxX = std::numeric_limits<float>::lowest();
-            float minY = std::numeric_limits<float>::max();
-            float maxY = std::numeric_limits<float>::lowest();
-            
-            // 计算平面坐标范围
-            for (const Point3D& p : merged.points) {
-                if (p.x < minX) minX = p.x;
-                if (p.x > maxX) maxX = p.x;
-                if (p.y < minY) minY = p.y;
-                if (p.y > maxY) maxY = p.y;
-            }
-            
-            if (!(maxX > minX)) { minX = -planarProjectionRadius; maxX = planarProjectionRadius; }
-            if (!(maxY > minY)) { minY = 0.0f; maxY = planarProjectionRadius; }
-            
-            for (Point3D& p : merged.points) {
-                // 根据平面位置着色
-                float tx = (p.x - minX) / (maxX - minX);
-                float ty = (p.y - minY) / (maxY - minY);
-                tx = std::clamp(tx, 0.0f, 1.0f);
-                ty = std::clamp(ty, 0.0f, 1.0f);
-                
-                // 使用HSV颜色空间创建渐变效果
-                float hue = tx * 360.0f;  // X轴对应色相
-                float saturation = 0.8f;  // 固定饱和度
-                float value = 0.5f + ty * 0.5f;  // Y轴对应明度
-                
-                // HSV转RGB
-                float c = value * saturation;
-                float x = c * (1.0f - std::abs(std::fmod(hue / 60.0f, 2.0f) - 1.0f));
-                float m = value - c;
-                
-                if (hue < 60.0f) {
-                    p.r = c + m; p.g = x + m; p.b = m;
-                } else if (hue < 120.0f) {
-                    p.r = x + m; p.g = c + m; p.b = m;
-                } else if (hue < 180.0f) {
-                    p.r = m; p.g = c + m; p.b = x + m;
-                } else if (hue < 240.0f) {
-                    p.r = m; p.g = x + m; p.b = c + m;
-                } else if (hue < 300.0f) {
-                    p.r = x + m; p.g = m; p.b = c + m;
-                } else {
-                    p.r = c + m; p.g = m; p.b = x + m;
-                }
-                
-                // 确保RGB值在[0,1]范围内
-                p.r = std::clamp(p.r, 0.0f, 1.0f);
-                p.g = std::clamp(p.g, 0.0f, 1.0f);
-                p.b = std::clamp(p.b, 0.0f, 1.0f);
-            }
-            if (pointCloudWidget) pointCloudWidget->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
-        }
-		        // 点云滤波处理
-        merged.points = applyPointCloudFilters(merged.points);
-        
+        applyRenderingPipeline(merged);
 
 		// 保存PCD：在渲染循环中，当开启保存任务时按帧保存
 		if (pcdSaveActive && pcdFramesRemaining > 0) {

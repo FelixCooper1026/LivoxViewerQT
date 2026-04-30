@@ -8,6 +8,7 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QJsonDocument>
@@ -19,6 +20,9 @@
 #include <QListWidget>
 #include <QDesktopServices>
 #include <QStandardPaths>
+#include <QRadioButton>
+
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -35,6 +39,7 @@ MainWindow::MainWindow(QWidget *parent)
     , isRecordingParams(false)
 {
     setupUI();
+    loadGridPreferences();
 
     // 网络自动配置开关（Linux 默认关闭）
     {
@@ -75,9 +80,141 @@ MainWindow::~MainWindow()
     QSettings settings("Livox", "LivoxViewerQT");
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState());
+    saveGridPreferences();
 
     stopDeviceDiscovery();
     cleanupLivoxSDK();
+}
+
+void MainWindow::loadGridPreferences()
+{
+    if (!pointCloudWidget) {
+        return;
+    }
+
+    QSettings settings("Livox", "LivoxViewerQT");
+    PointCloudWidget::GridConfig config = pointCloudWidget->gridConfig();
+    config.range = settings.value("grid/range", config.range).toFloat();
+    config.step = settings.value("grid/step", config.step).toFloat();
+    config.color = settings.value("grid/color", config.color).value<QColor>();
+    config.type = static_cast<PointCloudWidget::GridConfig::Type>(
+        settings.value("grid/type", int(config.type)).toInt());
+
+    if (config.type != PointCloudWidget::GridConfig::Square &&
+        config.type != PointCloudWidget::GridConfig::ConcentricCircles) {
+        config.type = PointCloudWidget::GridConfig::Square;
+    }
+
+    pointCloudWidget->setGridConfig(config);
+}
+
+void MainWindow::saveGridPreferences()
+{
+    if (!pointCloudWidget) {
+        return;
+    }
+
+    const PointCloudWidget::GridConfig config = pointCloudWidget->gridConfig();
+    QSettings settings("Livox", "LivoxViewerQT");
+    settings.setValue("grid/range", config.range);
+    settings.setValue("grid/step", config.step);
+    settings.setValue("grid/color", config.color);
+    settings.setValue("grid/type", int(config.type));
+}
+
+void MainWindow::showPreferencesDialog()
+{
+    if (!pointCloudWidget) {
+        return;
+    }
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("首选项");
+    dlg.resize(420, 220);
+
+    PointCloudWidget::GridConfig config = pointCloudWidget->gridConfig();
+    QColor selectedColor = config.color;
+
+    QVBoxLayout* layout = new QVBoxLayout(&dlg);
+    QFormLayout* form = new QFormLayout();
+
+    QDoubleSpinBox* rangeSpin = new QDoubleSpinBox(&dlg);
+    rangeSpin->setRange(1.0, 10000.0);
+    rangeSpin->setDecimals(1);
+    rangeSpin->setSingleStep(10.0);
+    rangeSpin->setSuffix(" m");
+    rangeSpin->setValue(config.range);
+
+    QDoubleSpinBox* stepSpin = new QDoubleSpinBox(&dlg);
+    stepSpin->setRange(0.1, 1000.0);
+    stepSpin->setDecimals(1);
+    stepSpin->setSingleStep(0.5);
+    stepSpin->setSuffix(" m");
+    stepSpin->setValue(config.step);
+
+    QWidget* colorRow = new QWidget(&dlg);
+    QHBoxLayout* colorLayout = new QHBoxLayout(colorRow);
+    colorLayout->setContentsMargins(0, 0, 0, 0);
+    colorLayout->setSpacing(8);
+    QFrame* colorPreview = new QFrame(colorRow);
+    colorPreview->setFixedSize(28, 20);
+    colorPreview->setFrameShape(QFrame::Box);
+    colorPreview->setLineWidth(1);
+    colorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedColor.name()));
+    QPushButton* colorButton = new QPushButton("选择颜色", colorRow);
+    colorLayout->addWidget(colorPreview);
+    colorLayout->addWidget(colorButton);
+    colorLayout->addStretch();
+    connect(colorButton, &QPushButton::clicked, &dlg, [&dlg, &selectedColor, colorPreview]() {
+        QColor color = QColorDialog::getColor(selectedColor, &dlg, "选择网格颜色");
+        if (!color.isValid()) {
+            return;
+        }
+        selectedColor = color;
+        colorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedColor.name()));
+    });
+
+    QWidget* typeRow = new QWidget(&dlg);
+    QHBoxLayout* typeLayout = new QHBoxLayout(typeRow);
+    typeLayout->setContentsMargins(0, 0, 0, 0);
+    typeLayout->setSpacing(12);
+    QRadioButton* squareRadio = new QRadioButton("方形", typeRow);
+    QRadioButton* circleRadio = new QRadioButton("同心圆", typeRow);
+    if (config.type == PointCloudWidget::GridConfig::ConcentricCircles) {
+        circleRadio->setChecked(true);
+    } else {
+        squareRadio->setChecked(true);
+    }
+    typeLayout->addWidget(squareRadio);
+    typeLayout->addWidget(circleRadio);
+    typeLayout->addStretch();
+
+    form->addRow("网格范围:", rangeSpin);
+    form->addRow("网格间距:", stepSpin);
+    form->addRow("网格颜色:", colorRow);
+    form->addRow("网格类型:", typeRow);
+
+    QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    layout->addLayout(form);
+    layout->addStretch();
+    layout->addWidget(box);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    config.range = float(rangeSpin->value());
+    config.step = float(stepSpin->value());
+    config.color = selectedColor;
+    config.type = circleRadio->isChecked()
+        ? PointCloudWidget::GridConfig::ConcentricCircles
+        : PointCloudWidget::GridConfig::Square;
+
+    pointCloudWidget->setGridConfig(config);
+    saveGridPreferences();
 }
 
 void MainWindow::setupUI()
@@ -304,8 +441,37 @@ void MainWindow::setupUI()
     pointCloudWidget = new PointCloudWidget(centralContainer);
     pointCloudWidget->setMinimumSize(800, 500);
     pointCloudWidget->setPointSize(pointSizePx);
+    connect(pointCloudWidget, &PointCloudWidget::lvx2FileDropped, this, &MainWindow::onLvx2PlaybackFileDropped);
+
+    lvx2PlaybackBar = new QWidget(centralContainer);
+    QHBoxLayout* playbackLayout = new QHBoxLayout(lvx2PlaybackBar);
+    playbackLayout->setContentsMargins(8, 4, 8, 4);
+    playbackLayout->setSpacing(6);
+    lvx2PlayPauseButton = new QPushButton("播放", lvx2PlaybackBar);
+    lvx2FirstFrameButton = new QPushButton("首帧", lvx2PlaybackBar);
+    lvx2PrevFrameButton = new QPushButton("上一帧", lvx2PlaybackBar);
+    lvx2NextFrameButton = new QPushButton("下一帧", lvx2PlaybackBar);
+    lvx2LastFrameButton = new QPushButton("尾帧", lvx2PlaybackBar);
+    lvx2ProgressSlider = new QSlider(Qt::Horizontal, lvx2PlaybackBar);
+    lvx2ProgressSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    lvx2SpeedCombo = new QComboBox(lvx2PlaybackBar);
+    lvx2SpeedCombo->addItems({"x0.1", "x0.5", "x1.0", "x2.0", "x4.0", "x8.0"});
+    lvx2SpeedCombo->setCurrentText("x1.0");
+    lvx2PlaybackLabel = new QLabel(lvx2PlaybackBar);
+    lvx2CloseButton = new QPushButton("关闭文件", lvx2PlaybackBar);
+    playbackLayout->addWidget(lvx2FirstFrameButton);
+    playbackLayout->addWidget(lvx2PrevFrameButton);
+    playbackLayout->addWidget(lvx2PlayPauseButton);
+    playbackLayout->addWidget(lvx2NextFrameButton);
+    playbackLayout->addWidget(lvx2LastFrameButton);
+    playbackLayout->addWidget(lvx2ProgressSlider, 1);
+    playbackLayout->addWidget(lvx2SpeedCombo);
+    playbackLayout->addWidget(lvx2PlaybackLabel);
+    playbackLayout->addWidget(lvx2CloseButton);
+    lvx2PlaybackBar->setVisible(false);
 
     centralLayout->addWidget(viewerToolbar);
+    centralLayout->addWidget(lvx2PlaybackBar);
     centralLayout->addWidget(pointCloudWidget, 1);
     setCentralWidget(centralContainer);
 
@@ -995,11 +1161,29 @@ void MainWindow::setupUI()
     helpMenu = menuBar->addMenu("帮助");
 
     QAction* actionGenerateConfig = fileMenu->addAction("生成配置文件...");
+    actionPlayLvx2 = fileMenu->addAction("播放LVX2点云...");
+    QAction* actionPreferences = fileMenu->addAction("首选项...");
+    fileMenu->addSeparator();
     exitAction = fileMenu->addAction("退出");
 
     connect(actionGenerateConfig, &QAction::triggered, this, [this]() {
         runConfigGeneratorDialog();
     });
+    connect(actionPlayLvx2, &QAction::triggered, [this]() {
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastDir = settings.value("playback/lastLVX2Dir",
+                                         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+        if (lastDir.isEmpty()) {
+            lastDir = QDir::homePath();
+        }
+        const QString filePath = QFileDialog::getOpenFileName(this, "选择LVX2点云文件", lastDir, "LVX2点云 (*.lvx2)");
+        if (filePath.isEmpty()) {
+            return;
+        }
+        settings.setValue("playback/lastLVX2Dir", QFileInfo(filePath).absolutePath());
+        loadLvx2PlaybackFile(filePath);
+    });
+    connect(actionPreferences, &QAction::triggered, this, &MainWindow::showPreferencesDialog);
 
     // 数据采集子菜单
     QMenu* captureMenu = toolsMenu->addMenu("数据采集");
@@ -1020,7 +1204,7 @@ void MainWindow::setupUI()
     // 2. Livox Wiki
     QAction* actionLivoxWiki = helpMenu->addAction("Livox Wiki");
     // 3. Mid-360 HMS 故障诊断码说明
-    QAction* actionHmsCode = helpMenu->addAction("Mid-360 故障诊断码说明");
+    QAction* actionHmsCode = helpMenu->addAction("HMS 故障诊断码说明");
     // 4. 时间同步说明
     QAction* actionTimeSync = helpMenu->addAction("时间同步说明");
     // 5. 产品知识库(暂未实现)
@@ -1035,22 +1219,28 @@ void MainWindow::setupUI()
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     // 关于
     connect(aboutAction, &QAction::triggered, [this]() {
-        QMessageBox::about(this, "关于 LivoxViewerQT",
-                        "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-                        "<p><b>版本:</b> 1.2.5</p>"
-                        "<p><b>编译日期:</b> " __DATE__ " </p>"
-                        "<p><b>作者:</b> FelixCooper1026</p>"
-                        "<p><b>功能特性:</b></p>"
-                        "<ul>"
-                        "<li>Livox 激光雷达设备连接与管理</li>"
-                        "<li>实时点云数据可视化</li>"
-                        "<li>设备参数配置与状态监控</li>"
-                        "<li>点云数据采集与保存</li>"
-                        "<li>IMU 数据显示与记录</li>"
-                        "<li>设备LOG数据采集与保存</li>"
-                        "<li>设备固件升级</li>"
-                        "</ul>"
-                        "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>");
+        QMessageBox msgBox(this);
+        msgBox.setWindowTitle("关于 LivoxViewerQT");
+        msgBox.setTextFormat(Qt::RichText);  // 支持富文本
+        msgBox.setText(
+            "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
+            "<p><b>版本:</b> 1.2.6</p>"
+            "<p><b>编译日期:</b> " __DATE__ " </p>"
+            "<p><b>作者:</b> FelixCooper1026</p>"
+            "<p><b>功能特性:</b></p>"
+            "<ul>"
+            "<li>Livox 激光雷达设备连接与管理</li>"
+            "<li>实时点云数据可视化</li>"
+            "<li>设备参数配置与状态监控</li>"
+            "<li>点云数据采集与保存</li>"
+            "<li>IMU 数据显示与记录</li>"
+            "<li>设备LOG数据采集与保存</li>"
+            "<li>设备固件升级</li>"
+            "</ul>"
+            "<p><b>项目地址:</b> <a href=\"https://github.com/FelixCooper1026/LivoxViewerQT\">https://github.com/FelixCooper1026/LivoxViewerQT</a></p>"
+            "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>"
+        );
+        msgBox.exec();
     });
 
     // Livox 官网
@@ -1112,8 +1302,6 @@ void MainWindow::setupUI()
         QDesktopServices::openUrl(QUrl("https://www.livoxtech.com/cn/downloads"));
     });
 
-
-
     // 采集动作：弹窗输入时长，顶部显示进度条（复用已有captureProgress，放在状态栏）
     connect(actionCaptureLog, &QAction::triggered, [this]() {
         bool ok = false;
@@ -1138,11 +1326,17 @@ void MainWindow::setupUI()
         onStartCaptureDebug();
     });
 
+    //保存PCD点云
     connect(actionCapturePCD, &QAction::triggered, [this]() {
         if (!currentDevice || !currentDevice->is_connected) {
             QMessageBox::warning(this, "保存PCD点云", "设备未连接");
             return;
         }
+
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastDir = settings.value("save/lastPCDDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+        if (lastDir.isEmpty()) lastDir = QDir::homePath();
+
         // 弹窗：保存路径 + 帧数
         QDialog dlg(this);
         dlg.setWindowTitle("保存PCD点云");
@@ -1152,6 +1346,7 @@ void MainWindow::setupUI()
         h1->setContentsMargins(0,0,0,0);
         QLabel* lblPath = new QLabel("请选择保存路径:", row1);
         QLineEdit* editPath = new QLineEdit(row1);
+        editPath->setText(lastDir);
         QPushButton* btnBrowse = new QPushButton("选择", row1);
         h1->addWidget(lblPath);
         h1->addSpacing(8);
@@ -1177,20 +1372,25 @@ void MainWindow::setupUI()
         QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         v->addWidget(box);
 
-        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
+        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, lastDir, this]() {
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", editPath->text().isEmpty() ? lastDir : editPath->text());
             if (!dir.isEmpty()) editPath->setText(dir);
         });
+    
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
         connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
+    
         if (dlg.exec() != QDialog::Accepted) return;
+    
         QString baseDir = editPath->text().trimmed();
         if (baseDir.isEmpty()) {
             QMessageBox::warning(this, "保存PCD点云", "请选择保存路径");
             return;
         }
+    
+        // 保存本次选择的目录
+        settings.setValue("save/lastPCDDir", baseDir);
+
         // 创建 PCD_雷达SN 目录
         QString sn = currentDevice ? currentDevice->sn : QString("Unknown");
         QString targetDir = QDir(baseDir).filePath(QString("PCD_%1").arg(sn));
@@ -1203,11 +1403,18 @@ void MainWindow::setupUI()
         logMessage(QString("PCD保存目录: %1").arg(QDir::toNativeSeparators(pcdSaveDir)));
     });
 
+    //保存LAS点云
     connect(actionCaptureLAS, &QAction::triggered, [this]() {
         if (!currentDevice || !currentDevice->is_connected) {
             QMessageBox::warning(this, "保存LAS点云", "设备未连接");
             return;
         }
+
+        // 读取上次目录
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastDir = settings.value("save/lastLASDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+        if (lastDir.isEmpty()) lastDir = QDir::homePath();
+
         QDialog dlg(this);
         dlg.setWindowTitle("保存LAS点云");
         QVBoxLayout* v = new QVBoxLayout(&dlg);
@@ -1216,6 +1423,7 @@ void MainWindow::setupUI()
         h1->setContentsMargins(0,0,0,0);
         QLabel* lblPath = new QLabel("请选择保存路径:", row1);
         QLineEdit* editPath = new QLineEdit(row1);
+        editPath->setText(lastDir);
         QPushButton* btnBrowse = new QPushButton("选择", row1);
         h1->addWidget(lblPath);
         h1->addSpacing(8);
@@ -1241,20 +1449,23 @@ void MainWindow::setupUI()
         QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         v->addWidget(box);
 
-        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
+        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, lastDir, this]() {
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", editPath->text().isEmpty() ? lastDir : editPath->text());
             if (!dir.isEmpty()) editPath->setText(dir);
         });
+    
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
         connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
+    
         if (dlg.exec() != QDialog::Accepted) return;
+    
         QString baseDir = editPath->text().trimmed();
         if (baseDir.isEmpty()) {
             QMessageBox::warning(this, "保存LAS点云", "请选择保存路径");
             return;
         }
+
+        settings.setValue("save/lastLASDir", baseDir);
         QString sn = currentDevice ? currentDevice->sn : QString("Unknown");
         QString targetDir = QDir(baseDir).filePath(QString("LAS_%1").arg(sn));
         QDir().mkpath(targetDir);
@@ -1266,11 +1477,17 @@ void MainWindow::setupUI()
         logMessage(QString("LAS保存目录: %1").arg(QDir::toNativeSeparators(lasSaveDir)));
     });
 
+    //保存LVX2点云
     connect(actionCaptureLVX2, &QAction::triggered, [this]() {
         if (!currentDevice || !currentDevice->is_connected) {
             QMessageBox::warning(this, "保存LVX2点云", "设备未连接");
             return;
         }
+        
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastDir = settings.value("save/lastLVX2Dir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+        if (lastDir.isEmpty()) lastDir = QDir::homePath();
+
         QDialog dlg(this);
         dlg.setWindowTitle("保存LVX2点云");
         QVBoxLayout* v = new QVBoxLayout(&dlg);
@@ -1279,6 +1496,7 @@ void MainWindow::setupUI()
         h1->setContentsMargins(0,0,0,0);
         QLabel* lblPath = new QLabel("请选择保存路径:", row1);
         QLineEdit* editPath = new QLineEdit(row1);
+        editPath->setText(lastDir);
         QPushButton* btnBrowse = new QPushButton("选择", row1);
         h1->addWidget(lblPath);
         h1->addSpacing(8);
@@ -1304,20 +1522,23 @@ void MainWindow::setupUI()
         QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
         v->addWidget(box);
 
-        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, this]() {
-            const QString base = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", base.isEmpty() ? QDir::homePath() : base);
+        connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, lastDir, this]() {
+            QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", editPath->text().isEmpty() ? lastDir : editPath->text());
             if (!dir.isEmpty()) editPath->setText(dir);
         });
+    
         connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
         connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
+    
         if (dlg.exec() != QDialog::Accepted) return;
+    
         QString baseDir = editPath->text().trimmed();
         if (baseDir.isEmpty()) {
             QMessageBox::warning(this, "保存LVX2点云", "请选择保存路径");
             return;
         }
+
+        settings.setValue("save/lastLVX2Dir", baseDir);
         QString sn = currentDevice ? currentDevice->sn : QString("Unknown");
         QString targetDir = QDir(baseDir).filePath(QString("LVX2_%1").arg(sn));
         QDir().mkpath(targetDir);
@@ -1567,6 +1788,9 @@ void MainWindow::setupUI()
     renderTimer->setTimerType(Qt::PreciseTimer);
     connect(renderTimer, &QTimer::timeout, this, &MainWindow::onRenderTick);
     renderTimer->start(33);
+    lvx2PlaybackTimer = new QTimer(this);
+    lvx2PlaybackTimer->setTimerType(Qt::PreciseTimer);
+    connect(lvx2PlaybackTimer, &QTimer::timeout, this, &MainWindow::onLvx2PlaybackTick);
     // 采集定时器
     captureTimer = new QTimer(this);
     connect(captureTimer, &QTimer::timeout, this, &MainWindow::onCaptureTick);
@@ -1575,6 +1799,69 @@ void MainWindow::setupUI()
     connect(gpsTimer, &QTimer::timeout, this, &MainWindow::onGpsTick);
 
     connect(actionSaveIMU, &QAction::triggered, this, &MainWindow::onActionCaptureImuTriggered);
+    connect(lvx2PlayPauseButton, &QPushButton::clicked, [this]() {
+        if (!lvx2PlaybackActive) {
+            return;
+        }
+        if (lvx2PlaybackPlaying) {
+            setLvx2PlaybackPlaying(false);
+            return;
+        }
+        if (lvx2PlaybackFrameCount <= 0) {
+            return;
+        }
+        if (lvx2PlaybackFrame < 0 || lvx2PlaybackFrame >= lvx2PlaybackFrameCount - 1) {
+            showLvx2PlaybackFrame(0);
+        }
+        setLvx2PlaybackPlaying(true);
+    });
+    connect(lvx2FirstFrameButton, &QPushButton::clicked, [this]() {
+        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(0);
+    });
+    connect(lvx2PrevFrameButton, &QPushButton::clicked, [this]() {
+        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(std::max(0, lvx2PlaybackFrame - 1));
+    });
+    connect(lvx2NextFrameButton, &QPushButton::clicked, [this]() {
+        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(std::min(lvx2PlaybackFrameCount - 1, lvx2PlaybackFrame + 1));
+    });
+    connect(lvx2LastFrameButton, &QPushButton::clicked, [this]() {
+        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(lvx2PlaybackFrameCount - 1);
+    });
+    connect(lvx2ProgressSlider, &QSlider::valueChanged, this, &MainWindow::onLvx2PlaybackSliderMoved);
+    connect(lvx2SpeedCombo, &QComboBox::currentTextChanged, [this](const QString& text) {
+        QString speedText = text;
+        speedText.remove('x');
+        bool ok = false;
+        const double speed = speedText.toDouble(&ok);
+        if (!ok || speed <= 0.0) {
+            return;
+        }
+        lvx2PlaybackSpeed = speed;
+        if (lvx2PlaybackPlaying) {
+            setLvx2PlaybackPlaying(true);
+        } else {
+            updateLvx2PlaybackUi();
+        }
+    });
+    connect(lvx2CloseButton, &QPushButton::clicked, [this]() {
+        closeLvx2Playback(true);
+    });
     actionShowImuCharts = toolsMenu->addAction("IMU数据绘图");
     connect(actionShowImuCharts, &QAction::triggered, this, &MainWindow::onActionShowImuCharts);
     

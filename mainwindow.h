@@ -52,6 +52,7 @@
 #include <QTableWidget>
 #include <QProgressBar>
 #include <QFile>
+#include <QSlider>
 #include <atomic>
 #include <thread>
 #include <QSerialPort>
@@ -63,10 +64,13 @@
 #include <QtCharts/QValueAxis>
 #include <QUdpSocket>
 #include <QHostAddress>
+#include <QAtomicInteger>
 
 QT_BEGIN_NAMESPACE
 class QChartView;
 class QChart;
+class QDragEnterEvent;
+class QDropEvent;
 QT_END_NAMESPACE
 QT_BEGIN_NAMESPACE
 
@@ -156,10 +160,24 @@ class PointCloudWidget : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Co
     Q_OBJECT
 
 public:
+    struct GridConfig {
+        enum Type {
+            Square = 0,
+            ConcentricCircles = 1
+        };
+
+        float range = 100.0f;
+        float step = 1.0f;
+        QColor color = QColor(77, 77, 77);
+        Type type = Square;
+    };
+
     explicit PointCloudWidget(QWidget *parent = nullptr);
     ~PointCloudWidget();
 
     void setGridVisible(bool visible);
+    void setGridConfig(const GridConfig& config);
+    GridConfig gridConfig() const { return m_gridConfig; }
     void updatePointCloud(const PointCloudFrame& frame);
     void clearPointCloud();
     void resetView();
@@ -199,7 +217,13 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override; // 新增释放事件处理
     void wheelEvent(QWheelEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
     void setupGridBuffers();
+
+signals:
+    void lvx2FileDropped(const QString& filePath);
 
 private:
     void setupShaders();
@@ -227,12 +251,13 @@ private:
     QOpenGLVertexArrayObject m_gridVao; // 网格 VAO
     QOpenGLBuffer m_gridVbo;            // 网格 VBO
     int m_gridVertexCount = 0;          // 网格顶点数量
+    GridConfig m_gridConfig;
 
     // 相机控制
     float m_distance;
     QVector3D m_rotation;
     QQuaternion m_orientation;      // 轨迹球当前朝向
-    QVector3D m_panOffset;          // 平移偏移
+    QVector3D m_target;     // 当前相机观察的中心点 (Pivot)
     Qt::MouseButton m_activeButton; // 当前按下按钮
     QPoint m_lastMousePos;
     bool m_mousePressed;
@@ -283,18 +308,39 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    struct Lvx2PlaybackFrameIndex {
+        uint64_t offset = 0;
+        uint64_t nextOffset = 0;
+        uint64_t frameIndex = 0;
+    };
+
+    struct Lvx2PlaybackExtrinsic {
+        bool enabled = false;
+        QMatrix4x4 transform;
+    };
+
 private:
     void setupUI();
     void setupLivoxSDK();
     void cleanupLivoxSDK();
     bool runConfigGeneratorDialog();
+    void loadGridPreferences();
+    void saveGridPreferences();
+    void showPreferencesDialog();
 
     // 点云处理
     void processPointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet);
     uint64_t parseTimestamp(const uint8_t* timestamp);
     void publishPointCloudFrame(const PointCloudFrame& frame);
+    void applyRenderingPipeline(PointCloudFrame& frame);
     void calculatePointColor(uint8_t reflectivity, uint8_t tag, float& r, float& g, float& b);
     QString parseParamValue(uint16_t key, uint8_t* value, uint16_t length);
+    bool loadLvx2PlaybackFile(const QString& filePath);
+    void closeLvx2Playback(bool clearView = true);
+    void showLvx2PlaybackFrame(int playbackFrameIndex);
+    void updateLvx2PlaybackUi();
+    void setLvx2PlaybackPlaying(bool playing);
+    int lvx2PlaybackIntervalMs() const;
 
     // 着色模式
     enum ColorMode {
@@ -336,6 +382,7 @@ private:
     QAction* actionClearCloud;
     QAction* actionResetView;
     QAction* actionShowImuCharts = nullptr;
+    QAction* actionPlayLvx2 = nullptr;
 
     // Livox SDK related
     bool sdk_initialized;
@@ -522,6 +569,30 @@ private:
     void startLvx2Recording(const QString& filePath, int durationSec);
     void stopLvx2Recording(bool flushPending);
 
+    QFile lvx2PlaybackFile;
+    QVector<Lvx2PlaybackFrameIndex> lvx2RawFrames;
+    QMap<uint32_t, Lvx2PlaybackExtrinsic> lvx2PlaybackExtrinsics;
+    QString lvx2PlaybackPath;
+    bool lvx2PlaybackActive = false;
+    bool lvx2PlaybackLoading = false;
+    bool lvx2PlaybackPlaying = false;
+    int lvx2PlaybackFrame = -1;
+    int lvx2PlaybackFrameCount = 0;
+    quint64 lvx2PlaybackLoadToken = 0;
+    QTimer* lvx2PlaybackTimer = nullptr;
+    QWidget* lvx2PlaybackBar = nullptr;
+    QPushButton* lvx2PlayPauseButton = nullptr;
+    QPushButton* lvx2FirstFrameButton = nullptr;
+    QPushButton* lvx2PrevFrameButton = nullptr;
+    QPushButton* lvx2NextFrameButton = nullptr;
+    QPushButton* lvx2LastFrameButton = nullptr;
+    QPushButton* lvx2CloseButton = nullptr;
+    QSlider* lvx2ProgressSlider = nullptr;
+    QLabel* lvx2PlaybackLabel = nullptr;
+    QComboBox* lvx2SpeedCombo = nullptr;
+    bool lvx2UpdatingSlider = false;
+    double lvx2PlaybackSpeed = 1.0;
+
     // IMU CSV 采集
     QFile imuCsvFile;
     bool imuSaveActive = false;
@@ -655,6 +726,9 @@ private slots:
     void onActionShowImuCharts();
     void onRecordParamsClicked();
     void stopRecordParams(); // 辅助函数
+    void onLvx2PlaybackTick();
+    void onLvx2PlaybackSliderMoved(int value);
+    void onLvx2PlaybackFileDropped(const QString& filePath);
 
 private:
     // Helpers
