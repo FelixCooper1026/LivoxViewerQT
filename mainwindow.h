@@ -179,6 +179,7 @@ public:
     void setGridConfig(const GridConfig& config);
     GridConfig gridConfig() const { return m_gridConfig; }
     void updatePointCloud(const PointCloudFrame& frame);
+    void updatePointCloud(PointCloudFrame&& frame);
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);
@@ -317,6 +318,10 @@ public:
     struct Lvx2PlaybackExtrinsic {
         bool enabled = false;
         QMatrix4x4 transform;
+    };
+    enum class Lvx2PlaybackMode {
+        FrameByFrame = 0,
+        SlidingWindow = 1
     };
 
 private:
@@ -467,9 +472,8 @@ private:
 	// GPS RMC 模拟
     QCheckBox* gpsSimulateCheck = nullptr;
     QTimer* gpsTimer = nullptr;
-    QLabel* imuGyroLabel = nullptr;
-    QLabel* imuAccLabel = nullptr;
     QPushButton* imuDisplayButton = nullptr; // deprecated in UI; kept for backward compatibility
+    QTableWidget* imuDataTable = nullptr;
 
     // IMU per-axis UI elements
     QProgressBar* gyroBarX = nullptr;
@@ -590,8 +594,17 @@ private:
     QSlider* lvx2ProgressSlider = nullptr;
     QLabel* lvx2PlaybackLabel = nullptr;
     QComboBox* lvx2SpeedCombo = nullptr;
+    QComboBox* lvx2PlaybackModeCombo = nullptr;
     bool lvx2UpdatingSlider = false;
     double lvx2PlaybackSpeed = 1.0;
+    Lvx2PlaybackMode lvx2PlaybackMode = Lvx2PlaybackMode::FrameByFrame;
+    QVector<PointCloudFrame> lvx2RawFrameCache;
+    QVector<bool> lvx2RawFrameCacheValid;
+    int lvx2SlidingWindowStart = -1;
+    int lvx2SlidingWindowEnd = -1;
+    QVector<Point3D> lvx2SlidingWindowPoints;
+    QVector<int> lvx2SlidingWindowSegmentPointCounts;
+    uint64_t lvx2SlidingWindowTimestamp = 0;
 
     // IMU CSV 采集
     QFile imuCsvFile;

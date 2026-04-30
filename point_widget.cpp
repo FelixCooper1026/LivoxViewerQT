@@ -930,6 +930,16 @@ void PointCloudWidget::updatePointCloud(const PointCloudFrame& frame)
     update();
 }
 
+void PointCloudWidget::updatePointCloud(PointCloudFrame&& frame)
+{
+    QMutexLocker locker(&m_pointsMutex);
+    m_points = std::move(frame.points);
+    m_vbo.bind();
+    m_vbo.allocate(m_points.constData(), m_points.size() * sizeof(Point3D));
+    m_vbo.release();
+    update();
+}
+
 void PointCloudWidget::clearPointCloud()
 {
     QMutexLocker locker(&m_pointsMutex);

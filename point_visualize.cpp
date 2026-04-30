@@ -152,6 +152,8 @@ public:
         : QTableWidgetItem(QString::number(v, 'f', decimals)), value(v) {}
     explicit NumberItem(int v)
         : QTableWidgetItem(QString::number(v)), value(static_cast<double>(v)) {}
+    explicit NumberItem(qlonglong v)
+        : QTableWidgetItem(QString::number(v)), value(static_cast<double>(v)) {}
     bool operator<(const QTableWidgetItem& other) const override {
         const NumberItem* o = dynamic_cast<const NumberItem*>(&other);
         if (o) return value < o->value;
@@ -319,9 +321,20 @@ void MainWindow::onImuDisplayButtonClicked()
         if (imuDisplayThread.joinable()) {
             imuDisplayThread.detach(); // avoid blocking GUI
         }
-        if (imuAsciiLabel) {
-            imuAsciiLabel->setText(buildImuAscii(0.0,0.0,0.0,0.0,0.0,0.0));
+        if (imuDataTable) {
+            for (int r = 0; r < 3; ++r) {
+                for (int c = 0; c < 2; ++c) {
+                    QTableWidgetItem* item = imuDataTable->item(r, c);
+                    if (!item) {
+                        item = new QTableWidgetItem();
+                        item->setTextAlignment(Qt::AlignCenter);
+                        imuDataTable->setItem(r, c, item);
+                    }
+                    item->setText("0.000");
+                }
+            }
         }
+        if (imuAsciiLabel) imuAsciiLabel->setText("状态: 已停止");
         if (imuDisplayButton) imuDisplayButton->setText("显示IMU数据");
         return;
     }
@@ -344,9 +357,24 @@ void MainWindow::onImuDisplayButtonClicked()
                 }
             }
             if (have) {
-                QString text = buildImuAscii(gx, gy, gz, ax, ay, az);
-                QMetaObject::invokeMethod(this, [this, text]() {
-                    if (imuAsciiLabel) imuAsciiLabel->setText(text);
+                QMetaObject::invokeMethod(this, [this, gx, gy, gz, ax, ay, az]() {
+                    if (imuDataTable) {
+                        const double values[3][2] = {
+                            {gx, ax}, {gy, ay}, {gz, az}
+                        };
+                        for (int r = 0; r < 3; ++r) {
+                            for (int c = 0; c < 2; ++c) {
+                                QTableWidgetItem* item = imuDataTable->item(r, c);
+                                if (!item) {
+                                    item = new QTableWidgetItem();
+                                    item->setTextAlignment(Qt::AlignCenter);
+                                    imuDataTable->setItem(r, c, item);
+                                }
+                                item->setText(QString::number(values[r][c], 'f', 3));
+                            }
+                        }
+                    }
+                    if (imuAsciiLabel) imuAsciiLabel->setText("状态: 接收中");
                 });
             }
             for (int i=0; i<10 && imuDisplayRunning.load(); ++i) {
@@ -678,8 +706,17 @@ void MainWindow::onFrameIntervalChanged(int ms)
     frameIntervalMs = static_cast<uint64_t>(ms);
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
     if (lvx2PlaybackActive) {
+        lvx2SlidingWindowStart = -1;
+        lvx2SlidingWindowEnd = -1;
+        lvx2SlidingWindowPoints.clear();
+        lvx2SlidingWindowSegmentPointCounts.clear();
+        lvx2SlidingWindowTimestamp = 0;
         const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
-        lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+        if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
+            lvx2PlaybackFrameCount = static_cast<int>(lvx2RawFrames.size());
+        } else {
+            lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+        }
         if (lvx2PlaybackFrameCount <= 0) {
             lvx2PlaybackFrameCount = 1;
         }
@@ -825,9 +862,9 @@ uint64_t MainWindow::parseTimestamp(const uint8_t* timestamp)
 void MainWindow::publishPointCloudFrame(const PointCloudFrame& frame)
 {
     // 在主线程中更新点云显示
-    QMetaObject::invokeMethod(this, [this, frame]() {
-        pointCloudWidget->updatePointCloud(frame);
-        if (lvx2PlaybackActive && selectionRealtimeEnabled && pointCloudWidget && (attrTable || selectionTable)) {
+    QMetaObject::invokeMethod(this, [this, frame]() mutable {
+        pointCloudWidget->updatePointCloud(std::move(frame));
+        if (selectionRealtimeEnabled && pointCloudWidget && (attrTable || selectionTable)) {
             updateSelectionTableAndLog();
         }
     }, Qt::QueuedConnection);
@@ -1419,11 +1456,24 @@ void MainWindow::updateSelectionTableAndLog()
             if (rows >= maxRows) break;
             int row = table->rowCount();
             table->insertRow(row);
-            table->setItem(row, 0, new NumberItem(p.x, 3));
-            table->setItem(row, 1, new NumberItem(p.y, 3));
-            table->setItem(row, 2, new NumberItem(p.z, 3));
-            table->setItem(row, 3, new NumberItem(static_cast<int>(p.reflectivity)));
-            table->setItem(row, 4, new NumberItem(static_cast<int>(p.tag)));
+            auto* i0 = new NumberItem(row);
+            auto* i1 = new NumberItem(p.x, 3);
+            auto* i2 = new NumberItem(p.y, 3);
+            auto* i3 = new NumberItem(p.z, 3);
+            auto* i4 = new NumberItem(static_cast<int>(p.reflectivity));
+            auto* i5 = new NumberItem(static_cast<int>(p.tag));
+            i0->setTextAlignment(Qt::AlignCenter);
+            i1->setTextAlignment(Qt::AlignCenter);
+            i2->setTextAlignment(Qt::AlignCenter);
+            i3->setTextAlignment(Qt::AlignCenter);
+            i4->setTextAlignment(Qt::AlignCenter);
+            i5->setTextAlignment(Qt::AlignCenter);
+            table->setItem(row, 0, i0);
+            table->setItem(row, 1, i1);
+            table->setItem(row, 2, i2);
+            table->setItem(row, 3, i3);
+            table->setItem(row, 4, i4);
+            table->setItem(row, 5, i5);
             rows++;
         }
         table->setSortingEnabled(sorting);
@@ -1443,7 +1493,7 @@ void MainWindow::updateSelectionTableAndLog()
 
 void MainWindow::onSelectionFinished()
 {
-    if (!pointCloudWidget || !selectionTable) return;
+    if (!pointCloudWidget || !(attrTable || selectionTable)) return;
     updateSelectionTableAndLog();
 } 
 

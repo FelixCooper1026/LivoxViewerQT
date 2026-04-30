@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 #include <thread>
 
 namespace {
@@ -38,7 +39,7 @@ static MainWindow::Lvx2PlaybackExtrinsic makeExtrinsic(const LVX2DeviceInfo& inf
         return extrinsic;
     }
 
-    extrinsic.transform.translate(info.x, info.y, info.z);
+    extrinsic.transform.translate(info.x / 1000.0f, info.y / 1000.0f, info.z / 1000.0f);
     extrinsic.transform.rotate(info.yaw, 0.0f, 0.0f, 1.0f);
     extrinsic.transform.rotate(info.pitch, 0.0f, 1.0f, 0.0f);
     extrinsic.transform.rotate(info.roll, 1.0f, 0.0f, 0.0f);
@@ -258,10 +259,21 @@ bool MainWindow::loadLvx2PlaybackFile(const QString& filePath)
 
             lvx2RawFrames = result.rawFrames;
             lvx2PlaybackExtrinsics = result.extrinsics;
+            lvx2RawFrameCache.resize(lvx2RawFrames.size());
+            lvx2RawFrameCacheValid = QVector<bool>(lvx2RawFrames.size(), false);
+            lvx2SlidingWindowStart = -1;
+            lvx2SlidingWindowEnd = -1;
+            lvx2SlidingWindowPoints.clear();
+            lvx2SlidingWindowSegmentPointCounts.clear();
+            lvx2SlidingWindowTimestamp = 0;
             lvx2PlaybackPath = result.filePath;
             lvx2PlaybackActive = true;
-            lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerPlaybackFrame(frameIntervalMs) - 1) /
-                                     rawFramesPerPlaybackFrame(frameIntervalMs);
+            if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
+                lvx2PlaybackFrameCount = static_cast<int>(lvx2RawFrames.size());
+            } else {
+                lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerPlaybackFrame(frameIntervalMs) - 1) /
+                                         rawFramesPerPlaybackFrame(frameIntervalMs);
+            }
             lvx2PlaybackFrame = -1;
 
             {
@@ -296,6 +308,13 @@ void MainWindow::closeLvx2Playback(bool clearView)
     lvx2PlaybackFrameCount = 0;
     lvx2RawFrames.clear();
     lvx2PlaybackExtrinsics.clear();
+    lvx2RawFrameCache.clear();
+    lvx2RawFrameCacheValid.clear();
+    lvx2SlidingWindowStart = -1;
+    lvx2SlidingWindowEnd = -1;
+    lvx2SlidingWindowPoints.clear();
+    lvx2SlidingWindowSegmentPointCounts.clear();
+    lvx2SlidingWindowTimestamp = 0;
     lvx2PlaybackPath.clear();
 
     if (lvx2PlaybackFile.isOpen()) {
@@ -320,48 +339,111 @@ void MainWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 
     playbackFrameIndex = std::clamp(playbackFrameIndex, 0, lvx2PlaybackFrameCount - 1);
     const int rawFrameCount = rawFramesPerPlaybackFrame(frameIntervalMs);
-    const int rawStartIndex = playbackFrameIndex * rawFrameCount;
-    const int rawEndIndex = std::min(rawStartIndex + rawFrameCount, static_cast<int>(lvx2RawFrames.size()));
+    int rawStartIndex = 0;
+    int rawEndIndex = 0;
+    if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
+        rawEndIndex = std::min(playbackFrameIndex + 1, static_cast<int>(lvx2RawFrames.size()));
+        rawStartIndex = std::max(0, rawEndIndex - rawFrameCount);
+    } else {
+        rawStartIndex = playbackFrameIndex * rawFrameCount;
+        rawEndIndex = std::min(rawStartIndex + rawFrameCount, static_cast<int>(lvx2RawFrames.size()));
+    }
     if (rawStartIndex >= rawEndIndex) {
         return;
     }
 
-    PointCloudFrame frame;
-    frame.device_handle = 0;
-    frame.timestamp = 0;
-
-    for (int i = rawStartIndex; i < rawEndIndex; ++i) {
-        const Lvx2PlaybackFrameIndex& frameIndex = lvx2RawFrames.at(i);
+    auto parseRawFrame = [this](int rawIndex) -> const PointCloudFrame& {
+        if (rawIndex < 0 || rawIndex >= lvx2RawFrames.size()) {
+            throw std::out_of_range("rawIndex out of range");
+        }
+        if (lvx2RawFrameCacheValid.value(rawIndex, false)) {
+            return lvx2RawFrameCache[rawIndex];
+        }
+        PointCloudFrame parsed;
+        parsed.device_handle = 0;
+        parsed.timestamp = 0;
+        const Lvx2PlaybackFrameIndex& frameIndex = lvx2RawFrames.at(rawIndex);
         qint64 cursor = qint64(frameIndex.offset) + qint64(sizeof(LVX2FrameHeader));
         while (cursor + qint64(sizeof(LVX2PackageHeader)) <= qint64(frameIndex.nextOffset)) {
             if (!lvx2PlaybackFile.seek(cursor)) {
                 break;
             }
-
             LVX2PackageHeader packageHeader{};
             if (!readExact(lvx2PlaybackFile, reinterpret_cast<char*>(&packageHeader), sizeof(packageHeader))) {
                 break;
             }
             cursor += qint64(sizeof(LVX2PackageHeader));
-
             const qint64 dataLength = qint64(packageHeader.data_length);
             if (dataLength < 0 || cursor + dataLength > qint64(frameIndex.nextOffset)) {
                 break;
             }
-
             const QByteArray payload = lvx2PlaybackFile.read(dataLength);
             if (payload.size() != dataLength) {
                 break;
             }
             cursor += dataLength;
-
-            frame.timestamp = std::max(frame.timestamp, parseTimestampValue(packageHeader.timestamp));
+            parsed.timestamp = std::max(parsed.timestamp, parseTimestampValue(packageHeader.timestamp));
             const auto extrinsicIt = lvx2PlaybackExtrinsics.constFind(packageHeader.lidar_id);
             const Lvx2PlaybackExtrinsic* extrinsic =
                 (extrinsicIt == lvx2PlaybackExtrinsics.constEnd()) ? nullptr : &extrinsicIt.value();
-            appendPackagePoints(packageHeader, payload, extrinsic, frame.points);
+            appendPackagePoints(packageHeader, payload, extrinsic, parsed.points);
+        }
+        lvx2RawFrameCache[rawIndex] = std::move(parsed);
+        lvx2RawFrameCacheValid[rawIndex] = true;
+        return lvx2RawFrameCache[rawIndex];
+    };
+
+    if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
+        const bool canIncrementalAdvance =
+            (lvx2SlidingWindowStart >= 0 && lvx2SlidingWindowEnd >= 0 &&
+             rawStartIndex >= lvx2SlidingWindowStart && rawEndIndex >= lvx2SlidingWindowEnd &&
+             rawStartIndex - lvx2SlidingWindowStart <= 1 && rawEndIndex - lvx2SlidingWindowEnd <= 1);
+
+        if (!canIncrementalAdvance) {
+            lvx2SlidingWindowPoints.clear();
+            lvx2SlidingWindowSegmentPointCounts.clear();
+            for (int i = rawStartIndex; i < rawEndIndex; ++i) {
+                const PointCloudFrame& rawFrame = parseRawFrame(i);
+                lvx2SlidingWindowPoints += rawFrame.points;
+                lvx2SlidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
+            }
+        } else {
+            if (rawStartIndex > lvx2SlidingWindowStart && !lvx2SlidingWindowSegmentPointCounts.isEmpty()) {
+                const int removeCount = lvx2SlidingWindowSegmentPointCounts.front();
+                if (removeCount > 0) {
+                    lvx2SlidingWindowPoints.remove(0, removeCount);
+                }
+                lvx2SlidingWindowSegmentPointCounts.remove(0);
+            }
+            if (rawEndIndex > lvx2SlidingWindowEnd) {
+                const PointCloudFrame& addedRaw = parseRawFrame(rawEndIndex - 1);
+                lvx2SlidingWindowPoints += addedRaw.points;
+                lvx2SlidingWindowSegmentPointCounts.push_back(addedRaw.points.size());
+            }
+        }
+        lvx2SlidingWindowStart = rawStartIndex;
+        lvx2SlidingWindowEnd = rawEndIndex;
+        lvx2SlidingWindowTimestamp = 0;
+        for (int i = lvx2SlidingWindowStart; i < lvx2SlidingWindowEnd; ++i) {
+            lvx2SlidingWindowTimestamp = std::max(lvx2SlidingWindowTimestamp, parseRawFrame(i).timestamp);
+        }
+    } else {
+        lvx2SlidingWindowStart = rawStartIndex;
+        lvx2SlidingWindowEnd = rawEndIndex;
+        lvx2SlidingWindowPoints.clear();
+        lvx2SlidingWindowSegmentPointCounts.clear();
+        lvx2SlidingWindowTimestamp = 0;
+        for (int i = rawStartIndex; i < rawEndIndex; ++i) {
+            const PointCloudFrame& rawFrame = parseRawFrame(i);
+            lvx2SlidingWindowPoints += rawFrame.points;
+            lvx2SlidingWindowTimestamp = std::max(lvx2SlidingWindowTimestamp, rawFrame.timestamp);
         }
     }
+
+    PointCloudFrame frame;
+    frame.device_handle = 0;
+    frame.timestamp = lvx2SlidingWindowTimestamp;
+    frame.points = lvx2SlidingWindowPoints;
 
     applyRenderingPipeline(frame);
     publishPointCloudFrame(frame);
@@ -402,6 +484,10 @@ void MainWindow::updateLvx2PlaybackUi()
     if (lvx2CloseButton) {
         lvx2CloseButton->setEnabled(!lvx2PlaybackLoading);
     }
+    if (lvx2PlaybackModeCombo) {
+        lvx2PlaybackModeCombo->setEnabled(lvx2PlaybackActive && !lvx2PlaybackLoading);
+        lvx2PlaybackModeCombo->setCurrentIndex(lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow ? 1 : 0);
+    }
     if (lvx2PlaybackLabel) {
         const QString name = lvx2PlaybackPath.isEmpty() ? QString() : QFileInfo(lvx2PlaybackPath).fileName();
         if (lvx2PlaybackLoading) {
@@ -418,10 +504,18 @@ void MainWindow::updateLvx2PlaybackUi()
 void MainWindow::setLvx2PlaybackPlaying(bool playing)
 {
     lvx2PlaybackPlaying = playing && lvx2PlaybackActive && !lvx2PlaybackLoading && lvx2PlaybackFrameCount > 0;
+    
     if (lvx2PlaybackTimer) {
         if (lvx2PlaybackPlaying) {
-            // 根据倍速调整定时器间隔，最小 1ms
-            const int interval = std::max(1, static_cast<int>(frameIntervalMs / lvx2PlaybackSpeed));
+            // 核心逻辑：确定基础步长
+            // 离散模式下，一帧代表 frameIntervalMs 的数据
+            // 滑动窗口模式下，由于步进是 1 个原始帧，其真实时间约为 50ms
+            double baseStepMs = (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) ? 50.0 : static_cast<double>(frameIntervalMs);
+            
+            // 根据倍速调整定时器触发频率：频率 = 基础步长 / 倍速
+            // 例如：2倍速下，50ms 的数据需要在 25ms 内播放完
+            int interval = std::max(1, static_cast<int>(baseStepMs / lvx2PlaybackSpeed));
+            
             lvx2PlaybackTimer->start(interval);
         } else {
             lvx2PlaybackTimer->stop();

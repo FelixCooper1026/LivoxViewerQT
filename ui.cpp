@@ -457,6 +457,9 @@ void MainWindow::setupUI()
     lvx2SpeedCombo = new QComboBox(lvx2PlaybackBar);
     lvx2SpeedCombo->addItems({"x0.1", "x0.5", "x1.0", "x2.0", "x4.0", "x8.0"});
     lvx2SpeedCombo->setCurrentText("x1.0");
+    lvx2PlaybackModeCombo = new QComboBox(lvx2PlaybackBar);
+    lvx2PlaybackModeCombo->addItems({"逐帧播放", "滑窗播放"});
+    lvx2PlaybackModeCombo->setCurrentIndex(0);
     lvx2PlaybackLabel = new QLabel(lvx2PlaybackBar);
     lvx2CloseButton = new QPushButton("关闭文件", lvx2PlaybackBar);
     playbackLayout->addWidget(lvx2FirstFrameButton);
@@ -466,6 +469,7 @@ void MainWindow::setupUI()
     playbackLayout->addWidget(lvx2LastFrameButton);
     playbackLayout->addWidget(lvx2ProgressSlider, 1);
     playbackLayout->addWidget(lvx2SpeedCombo);
+    playbackLayout->addWidget(lvx2PlaybackModeCombo);
     playbackLayout->addWidget(lvx2PlaybackLabel);
     playbackLayout->addWidget(lvx2CloseButton);
     lvx2PlaybackBar->setVisible(false);
@@ -635,8 +639,8 @@ void MainWindow::setupUI()
     QWidget* attrContent = new QWidget(attrDock);
     QVBoxLayout* attrLayout = new QVBoxLayout(attrContent);
     attrTable = new QTableWidget(attrContent);
-    attrTable->setColumnCount(5);
-    attrTable->setHorizontalHeaderLabels({"X(m)", "Y(m)", "Z(m)", "Refl", "Tag"});
+    attrTable->setColumnCount(6);
+    attrTable->setHorizontalHeaderLabels({"Index", "X(m)", "Y(m)", "Z(m)", "Refl", "Tag"});
     attrTable->verticalHeader()->setVisible(false);
     attrTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     attrTable->setSelectionMode(QAbstractItemView::NoSelection);
@@ -1104,15 +1108,24 @@ void MainWindow::setupUI()
     imuDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     QWidget* imuContent = new QWidget(imuDock);
     QVBoxLayout* imuLayout = new QVBoxLayout(imuContent);
-    // No per-field labels; ASCII table only
-    imuAsciiLabel = new QLabel("", imuContent);
-    QFont mono = imuAsciiLabel->font();
-    mono.setFamily("Consolas");
-    mono.setStyleHint(QFont::Monospace);
-    imuAsciiLabel->setFont(mono);
-    imuAsciiLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    imuAsciiLabel->setText(buildImuAscii(0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
-    imuAsciiLabel->setStyleSheet("QLabel { background-color: #fafafa; border: 1px solid #e0e0e0; padding: 6px; }");
+    imuDataTable = new QTableWidget(imuContent);
+    imuDataTable->setColumnCount(2);
+    imuDataTable->setRowCount(3);
+    imuDataTable->setHorizontalHeaderLabels({"Gyro(rad/s)", "Acc(g)"});
+    imuDataTable->setVerticalHeaderLabels({"X", "Y", "Z"});
+    imuDataTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    imuDataTable->setSelectionMode(QAbstractItemView::NoSelection);
+    imuDataTable->horizontalHeader()->setStretchLastSection(true);
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 2; ++c) {
+            auto* item = new QTableWidgetItem("0.000");
+            item->setTextAlignment(Qt::AlignCenter);
+            imuDataTable->setItem(r, c, item);
+        }
+    }
+    imuLayout->addWidget(imuDataTable);
+
+    imuAsciiLabel = new QLabel("状态: 未开始", imuContent);
     imuLayout->addWidget(imuAsciiLabel);
 
     // Display toggle button (2 Hz text refresh)
@@ -1853,6 +1866,34 @@ void MainWindow::setupUI()
             return;
         }
         lvx2PlaybackSpeed = speed;
+        if (lvx2PlaybackPlaying) {
+            setLvx2PlaybackPlaying(true);
+        } else {
+            updateLvx2PlaybackUi();
+        }
+    });
+    connect(lvx2PlaybackModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+        lvx2PlaybackMode = (index == 1) ? Lvx2PlaybackMode::SlidingWindow : Lvx2PlaybackMode::FrameByFrame;
+        lvx2SlidingWindowStart = -1;
+        lvx2SlidingWindowEnd = -1;
+        lvx2SlidingWindowPoints.clear();
+        lvx2SlidingWindowSegmentPointCounts.clear();
+        lvx2SlidingWindowTimestamp = 0;
+        if (!lvx2PlaybackActive) {
+            updateLvx2PlaybackUi();
+            return;
+        }
+        const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
+        if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
+            lvx2PlaybackFrameCount = static_cast<int>(lvx2RawFrames.size());
+        } else {
+            lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+        }
+        if (lvx2PlaybackFrameCount <= 0) {
+            lvx2PlaybackFrameCount = 1;
+        }
+        const int targetFrame = std::clamp(lvx2PlaybackFrame, 0, lvx2PlaybackFrameCount - 1);
+        showLvx2PlaybackFrame(targetFrame);
         if (lvx2PlaybackPlaying) {
             setLvx2PlaybackPlaying(true);
         } else {
