@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include <QApplication>
 #include <QSplitter>
 #include <QScrollArea>
@@ -1101,6 +1101,9 @@ void MainWindow::setupUI()
     paramsDock->setMinimumWidth(360);
 
     addDockWidget(Qt::RightDockWidgetArea, paramsDock);
+    tabifyDockWidget(paramsDock, attrDock);
+    paramsDock->raise();
+    attrDock->hide();
 
     // 右侧：IMU数据 Dock
     QDockWidget* imuDock = new QDockWidget("IMU数据", this);
@@ -1132,11 +1135,33 @@ void MainWindow::setupUI()
     imuDisplayButton = new QPushButton("显示IMU数据", imuContent);
     imuLayout->addWidget(imuDisplayButton);
     connect(imuDisplayButton, &QPushButton::clicked, this, &MainWindow::onImuDisplayButtonClicked);
-
     imuLayout->addStretch();
     imuContent->setLayout(imuLayout);
     imuDock->setWidget(imuContent);
     addDockWidget(Qt::LeftDockWidgetArea, imuDock);
+
+    // 左侧：LVX2文件 Dock（仅在播放LVX2时显示）
+    lvx2FileDock = new QDockWidget("LVX2文件", this);
+    lvx2FileDock->setObjectName("Lvx2FileDock");
+    lvx2FileDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    QWidget* lvx2FileContent = new QWidget(lvx2FileDock);
+    QVBoxLayout* lvx2FileLayout = new QVBoxLayout(lvx2FileContent);
+    QLabel* lvx2Hint = new QLabel("LVX2文件设备列表（勾选=可见）", lvx2FileContent);
+    lvx2FileLayout->addWidget(lvx2Hint);
+    lvx2DeviceTable = new QTableWidget(lvx2FileContent);
+    lvx2DeviceTable->setColumnCount(4);
+    lvx2DeviceTable->setHorizontalHeaderLabels({"显示", "雷达型号", "Lidar SN", "Lidar IP"});
+    lvx2DeviceTable->verticalHeader()->setVisible(false);
+    lvx2DeviceTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    lvx2DeviceTable->setSelectionMode(QAbstractItemView::NoSelection);
+    lvx2DeviceTable->horizontalHeader()->setStretchLastSection(true);
+    lvx2FileLayout->addWidget(lvx2DeviceTable);
+    lvx2FileContent->setLayout(lvx2FileLayout);
+    lvx2FileDock->setWidget(lvx2FileContent);
+    addDockWidget(Qt::LeftDockWidgetArea, lvx2FileDock);
+    tabifyDockWidget(imuDock, lvx2FileDock);
+    imuDock->raise();
+    lvx2FileDock->hide();
 
     // 底部：日志 Dock
     logDock = new QDockWidget("日志", this);
@@ -1237,7 +1262,7 @@ void MainWindow::setupUI()
         msgBox.setTextFormat(Qt::RichText);  // 支持富文本
         msgBox.setText(
             "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-            "<p><b>版本:</b> 1.2.6</p>"
+            "<p><b>版本:</b> 1.2.7</p>"
             "<p><b>编译日期:</b> " __DATE__ " </p>"
             "<p><b>作者:</b> FelixCooper1026</p>"
             "<p><b>功能特性:</b></p>"
@@ -1772,6 +1797,9 @@ void MainWindow::setupUI()
     viewMenu->addAction(devicesDock->toggleViewAction());
     viewMenu->addAction(paramsDock->toggleViewAction());
     viewMenu->addAction(imuDock->toggleViewAction());
+    if (lvx2FileDock) {
+        viewMenu->addAction(lvx2FileDock->toggleViewAction());
+    }
     viewMenu->addAction(logDock->toggleViewAction());
 
     // 状态栏

@@ -782,6 +782,12 @@ void PointCloudWidget::mousePressEvent(QMouseEvent *event)
         update();
         return;
     }
+    // 相机操作：左键旋转 或 中键/右键平移
+    if ((event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) ||
+        event->button() == Qt::MiddleButton ||
+        event->button() == Qt::RightButton) {
+        setCursor(Qt::ClosedHandCursor);
+    }
 }
 
 void PointCloudWidget::mouseMoveEvent(QMouseEvent *event)
@@ -879,6 +885,14 @@ void PointCloudWidget::mouseReleaseEvent(QMouseEvent *event)
     }
     m_mousePressed = false;
     m_activeButton = Qt::NoButton;
+    setCursor(Qt::ArrowCursor);
+}
+
+void PointCloudWidget::leaveEvent(QEvent *event)
+{
+    Q_UNUSED(event);
+    setCursor(Qt::ArrowCursor);
+    QOpenGLWidget::leaveEvent(event);
 }
 
 void PointCloudWidget::wheelEvent(QWheelEvent *event)

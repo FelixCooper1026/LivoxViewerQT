@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QtEndian>
 
@@ -20,6 +21,7 @@ struct Lvx2LoadResult {
     QString filePath;
     QVector<MainWindow::Lvx2PlaybackFrameIndex> rawFrames;
     QMap<uint32_t, MainWindow::Lvx2PlaybackExtrinsic> extrinsics;
+    QVector<LVX2DeviceInfo> devices;
 };
 
 static bool readExact(QFile& file, char* data, qint64 size) {
@@ -39,7 +41,7 @@ static MainWindow::Lvx2PlaybackExtrinsic makeExtrinsic(const LVX2DeviceInfo& inf
         return extrinsic;
     }
 
-    extrinsic.transform.translate(info.x / 1000.0f, info.y / 1000.0f, info.z / 1000.0f);
+    extrinsic.transform.translate(info.x / 100.0f, info.y / 100.0f, info.z / 100.0f);
     extrinsic.transform.rotate(info.yaw, 0.0f, 0.0f, 1.0f);
     extrinsic.transform.rotate(info.pitch, 0.0f, 1.0f, 0.0f);
     extrinsic.transform.rotate(info.roll, 1.0f, 0.0f, 0.0f);
@@ -157,6 +159,14 @@ static int rawFramesPerPlaybackFrame(uint64_t frameIntervalMs) {
     return std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
 }
 
+static QString lidarIdToIpString(uint32_t lidarId) {
+    const uint8_t b0 = static_cast<uint8_t>(lidarId & 0xFF);
+    const uint8_t b1 = static_cast<uint8_t>((lidarId >> 8) & 0xFF);
+    const uint8_t b2 = static_cast<uint8_t>((lidarId >> 16) & 0xFF);
+    const uint8_t b3 = static_cast<uint8_t>((lidarId >> 24) & 0xFF);
+    return QString("%1.%2.%3.%4").arg(b0).arg(b1).arg(b2).arg(b3);
+}
+
 } // namespace
 
 bool MainWindow::loadLvx2PlaybackFile(const QString& filePath)
@@ -199,6 +209,7 @@ bool MainWindow::loadLvx2PlaybackFile(const QString& filePath)
                         break;
                     }
                     result.extrinsics.insert(deviceInfo.lidar_id, makeExtrinsic(deviceInfo));
+                    result.devices.push_back(deviceInfo);
                 }
 
                 if (result.errorMessage.isEmpty()) {
@@ -259,6 +270,17 @@ bool MainWindow::loadLvx2PlaybackFile(const QString& filePath)
 
             lvx2RawFrames = result.rawFrames;
             lvx2PlaybackExtrinsics = result.extrinsics;
+            lvx2PlaybackDevices.clear();
+            lvx2PlaybackDeviceVisible.clear();
+            for (const LVX2DeviceInfo& deviceInfo : result.devices) {
+                Lvx2PlaybackDeviceInfoUi uiInfo;
+                uiInfo.lidarId = deviceInfo.lidar_id;
+                uiInfo.deviceType = deviceInfo.device_type;
+                uiInfo.lidarSn = QString::fromLatin1(deviceInfo.lidar_sn).trimmed();
+                lvx2PlaybackDevices.push_back(uiInfo);
+                lvx2PlaybackDeviceVisible.insert(deviceInfo.lidar_id, true);
+            }
+            rebuildLvx2DeviceTab();
             lvx2RawFrameCache.resize(lvx2RawFrames.size());
             lvx2RawFrameCacheValid = QVector<bool>(lvx2RawFrames.size(), false);
             lvx2SlidingWindowStart = -1;
@@ -308,6 +330,9 @@ void MainWindow::closeLvx2Playback(bool clearView)
     lvx2PlaybackFrameCount = 0;
     lvx2RawFrames.clear();
     lvx2PlaybackExtrinsics.clear();
+    lvx2PlaybackDevices.clear();
+    lvx2PlaybackDeviceVisible.clear();
+    rebuildLvx2DeviceTab();
     lvx2RawFrameCache.clear();
     lvx2RawFrameCacheValid.clear();
     lvx2SlidingWindowStart = -1;
@@ -386,6 +411,9 @@ void MainWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
             const auto extrinsicIt = lvx2PlaybackExtrinsics.constFind(packageHeader.lidar_id);
             const Lvx2PlaybackExtrinsic* extrinsic =
                 (extrinsicIt == lvx2PlaybackExtrinsics.constEnd()) ? nullptr : &extrinsicIt.value();
+            if (!lvx2PlaybackDeviceVisible.value(packageHeader.lidar_id, true)) {
+                continue;
+            }
             appendPackagePoints(packageHeader, payload, extrinsic, parsed.points);
         }
         lvx2RawFrameCache[rawIndex] = std::move(parsed);
@@ -452,8 +480,72 @@ void MainWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     updateLvx2PlaybackUi();
 }
 
+QString MainWindow::lvx2DeviceTypeToModel(uint8_t deviceType) const
+{
+    switch (deviceType) {
+    case kLivoxLidarTypeMid40: return "Mid40";
+    case kLivoxLidarTypeMid70: return "Mid70";
+    case kLivoxLidarTypeMid360: return "Mid360";
+    case kLivoxLidarTypeMid360s: return "Mid360s";
+    case kLivoxLidarTypeHorizon: return "Horizon";
+    case kLivoxLidarTypeAvia: return "Avia";
+    case kLivoxLidarTypeAvia2: return "Avia2";
+    case kLivoxLidarTypeTele: return "Tele";
+    case kLivoxLidarTypeHAP: return "HAP";
+    case kLivoxLidarTypePA: return "PA";
+    default: return QString("Unknown(%1)").arg(deviceType);
+    }
+}
+
+void MainWindow::rebuildLvx2DeviceTab()
+{
+    if (!lvx2DeviceTable) {
+        return;
+    }
+    QSignalBlocker blocker(lvx2DeviceTable);
+    lvx2DeviceTable->clearContents();
+    lvx2DeviceTable->setRowCount(lvx2PlaybackDevices.size());
+    for (int row = 0; row < lvx2PlaybackDevices.size(); ++row) {
+        const auto& info = lvx2PlaybackDevices[row];
+        auto* visibleItem = new QTableWidgetItem();
+        visibleItem->setFlags((visibleItem->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        const bool visible = lvx2PlaybackDeviceVisible.value(info.lidarId, true);
+        visibleItem->setCheckState(visible ? Qt::Checked : Qt::Unchecked);
+        visibleItem->setData(Qt::UserRole, static_cast<qulonglong>(info.lidarId));
+        lvx2DeviceTable->setItem(row, 0, visibleItem);
+        lvx2DeviceTable->setItem(row, 1, new QTableWidgetItem(lvx2DeviceTypeToModel(info.deviceType)));
+        lvx2DeviceTable->setItem(row, 2, new QTableWidgetItem(info.lidarSn));
+        lvx2DeviceTable->setItem(row, 3, new QTableWidgetItem(lidarIdToIpString(info.lidarId)));
+    }
+
+    disconnect(lvx2DeviceTable, &QTableWidget::itemChanged, this, nullptr);
+    connect(lvx2DeviceTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem* item) {
+        if (!item || item->column() != 0) {
+            return;
+        }
+        const uint32_t lidarId = item->data(Qt::UserRole).toUInt();
+        lvx2PlaybackDeviceVisible[lidarId] = (item->checkState() == Qt::Checked);
+        lvx2RawFrameCacheValid.fill(false);
+        lvx2SlidingWindowStart = -1;
+        lvx2SlidingWindowEnd = -1;
+        lvx2SlidingWindowPoints.clear();
+        lvx2SlidingWindowSegmentPointCounts.clear();
+        if (lvx2PlaybackActive && lvx2PlaybackFrame >= 0) {
+            showLvx2PlaybackFrame(lvx2PlaybackFrame);
+        }
+    });
+}
+
 void MainWindow::updateLvx2PlaybackUi()
 {
+    if (lvx2FileDock) {
+        const bool showDock = lvx2PlaybackActive || lvx2PlaybackLoading;
+        lvx2FileDock->setVisible(showDock);
+        if (showDock) {
+            lvx2FileDock->raise();
+        }
+    }
+
     if (!lvx2PlaybackBar) {
         return;
     }

@@ -510,6 +510,7 @@ void MainWindow::startDeviceDiscovery()
     if (discoveryActive)
     {
         return;
+        logMessage("设备发现已启动");
     }
 
     // 检查是否有有线网口连接
@@ -540,6 +541,7 @@ void MainWindow::startDeviceDiscovery()
         }
 
         return; // 暂时退出，等待下一轮检测
+        logMessage ("等待有线网口连接中...");
     }
 
     // 获取有线网口的 IPv4（必须存在）

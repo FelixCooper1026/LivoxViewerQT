@@ -221,6 +221,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
+    void leaveEvent(QEvent *event) override;
     void setupGridBuffers();
 
 signals:
@@ -345,6 +346,8 @@ private:
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();
     void setLvx2PlaybackPlaying(bool playing);
+    QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
+    void rebuildLvx2DeviceTab();
     int lvx2PlaybackIntervalMs() const;
 
     // 着色模式
@@ -379,6 +382,7 @@ private:
     // Docks and toolbar
     QDockWidget* devicesDock;
     QDockWidget* paramsDock;
+    QDockWidget* lvx2FileDock = nullptr;
     QDockWidget* logDock;
     QToolBar* mainToolBar;
     QAction* actionStartSdk;
@@ -474,6 +478,7 @@ private:
     QTimer* gpsTimer = nullptr;
     QPushButton* imuDisplayButton = nullptr; // deprecated in UI; kept for backward compatibility
     QTableWidget* imuDataTable = nullptr;
+    QTableWidget* lvx2DeviceTable = nullptr;
 
     // IMU per-axis UI elements
     QProgressBar* gyroBarX = nullptr;
@@ -576,6 +581,13 @@ private:
     QFile lvx2PlaybackFile;
     QVector<Lvx2PlaybackFrameIndex> lvx2RawFrames;
     QMap<uint32_t, Lvx2PlaybackExtrinsic> lvx2PlaybackExtrinsics;
+    struct Lvx2PlaybackDeviceInfoUi {
+        uint32_t lidarId = 0;
+        uint8_t deviceType = 0;
+        QString lidarSn;
+    };
+    QVector<Lvx2PlaybackDeviceInfoUi> lvx2PlaybackDevices;
+    QMap<uint32_t, bool> lvx2PlaybackDeviceVisible;
     QString lvx2PlaybackPath;
     bool lvx2PlaybackActive = false;
     bool lvx2PlaybackLoading = false;
