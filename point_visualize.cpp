@@ -440,7 +440,7 @@ void MainWindow::onActionShowImuCharts()
     imuChartThread = std::thread([this]() {
         double t = 0.0;
         const double dt = 0.05; // 20 Hz
-        const double windowSec = 10.0;
+        const double windowSec = 5.0;
         const int maxPoints = static_cast<int>(windowSec / dt);
         while (imuChartRunning.load()) {
             float gx=0, gy=0, gz=0, ax=0, ay=0, az=0; bool have=false;
@@ -1456,7 +1456,7 @@ void MainWindow::updateSelectionTableAndLog()
             if (rows >= maxRows) break;
             int row = table->rowCount();
             table->insertRow(row);
-            auto* i0 = new NumberItem(row);
+            auto* i0 = new NumberItem(row + 1);
             auto* i1 = new NumberItem(p.x, 3);
             auto* i2 = new NumberItem(p.y, 3);
             auto* i3 = new NumberItem(p.z, 3);
