@@ -65,6 +65,7 @@
 #include <QUdpSocket>
 #include <QHostAddress>
 #include <QAtomicInteger>
+#include <functional>
 
 QT_BEGIN_NAMESPACE
 class QChartView;
@@ -160,6 +161,15 @@ class PointCloudWidget : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Co
     Q_OBJECT
 
 public:
+    enum class ViewPreset {
+        World = 0,
+        Front = 1,
+        Back = 2,
+        Left = 3,
+        Right = 4,
+        Top = 5
+    };
+
     struct GridConfig {
         enum Type {
             Square = 0,
@@ -209,6 +219,7 @@ public:
 
     // 设置平面投影视角（用于平面投影观察）
     void setTopDownView();
+    void setViewPreset(ViewPreset preset);
 
 protected:
     void initializeGL() override;
@@ -349,6 +360,23 @@ private:
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
     int lvx2PlaybackIntervalMs() const;
+    enum class Lvx2ConvertMode {
+        MergeAllToOne = 0,
+        SplitBy100ms = 1
+    };
+    enum class Lvx2ConvertFormat {
+        PCD = 0,
+        LAS = 1,
+        CSV = 2,
+        TXT = 3
+    };
+    bool convertLvx2File(const QString& sourcePath,
+                         const QString& outputPathNoExt,
+                         Lvx2ConvertMode mode,
+                         Lvx2ConvertFormat format,
+                         const std::function<void(int, int)>& progress);
+    bool savePointCloudAsCSV(const QString& filePath, const QVector<Point3D>& points);
+    bool savePointCloudAsTXT(const QString& filePath, const QVector<Point3D>& points);
 
     // 着色模式
     enum ColorMode {

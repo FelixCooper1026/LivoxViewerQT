@@ -145,6 +145,7 @@ set(SOURCES
     sdk_callbacks.cpp
     point_visualize.cpp
     lvx2_playback.cpp
+    lvx2_converter.cpp
     parse_params.cpp
 )
 

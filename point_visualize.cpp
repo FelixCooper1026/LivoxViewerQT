@@ -1116,9 +1116,9 @@ bool MainWindow::savePointCloudAsLAS(const QString& filePath, const QVector<Poin
         qToLittleEndian<qint32>(zi, reinterpret_cast<uchar*>(rec.data() + 8));
         // Intensity
         qToLittleEndian<quint16>(clampU16(int(p.reflectivity)), reinterpret_cast<uchar*>(rec.data() + 12));
-        // Return flags (1), classification (1), scan angle (1), user data (1) -> put tag into user data
-        rec[14] = 1;             // return number bits -> 1
-        rec[15] = 1;             // classification -> unclassified
+        // Return flags (0), classification (0), scan angle (0), user data (1) -> put tag into user data
+        rec[14] = 0;             // return number bits -> 0
+        rec[15] = 0;             // classification -> unclassified
         rec[16] = 0;             // scan angle rank
         rec[17] = static_cast<char>(p.tag); // user data stores tag
         // Point source ID (uint16)

@@ -276,7 +276,7 @@ void MainWindow::setupUI()
     colorModeCombo->addItems({"反射率", "距离", "高度", "纯色", "平面投影"});
     colorModeCombo->setCurrentIndex(colorMode);
     colorModeCombo->setToolTip("点云着色模式");
-    connect(colorModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::onColorModeChanged);
+    connect(colorModeCombo, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onColorModeChanged);
 
     // 网格显示控制 
     QCheckBox* gridCheck = new QCheckBox("显示网格", toolbarRow2);
@@ -347,6 +347,33 @@ void MainWindow::setupUI()
     QPushButton* btnToggleSelection = new QPushButton("点云框选", toolbarRow1);
     QPushButton* btnMeasure = new QPushButton("点云测距", toolbarRow1);
     QPushButton* btnReset = new QPushButton("重置视图", toolbarRow1);
+    QLabel* lblViewPreset = new QLabel("视角:", toolbarRow1);
+    QComboBox* viewPresetCombo = new QComboBox(toolbarRow1);
+    viewPresetCombo->addItems({"俯视图", "前视图", "左视图", "右视图", "后视图"});
+    connect(viewPresetCombo, QOverload<int>::of(&QComboBox::activated), [this](int index) {
+        if (!pointCloudWidget) return;
+        switch (index) {
+        case 0:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Top);
+            break;
+        case 1:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Front);
+            break;
+        case 2:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Left);
+            break;
+        case 3:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Right);
+            break;
+        case 4:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Back);
+            break;
+        case 5:
+        default:
+            pointCloudWidget->setViewPreset(PointCloudWidget::ViewPreset::Top);
+            break;
+        }
+    });
     connect(btnToggleSelection, &QPushButton::clicked, [this, btnToggleSelection]() {
         if (!pointCloudWidget) return;
         bool enable = !pointCloudWidget->isSelectionModeEnabled();
@@ -419,6 +446,8 @@ void MainWindow::setupUI()
     row1Layout->addWidget(btnMeasure);
     row1Layout->addWidget(btnToggleSelection);
     row1Layout->addWidget(btnReset);
+    row1Layout->addWidget(lblViewPreset);
+    row1Layout->addWidget(viewPresetCombo);
     row1Layout->addStretch();
 
     // 拼装第二行工具栏
@@ -439,7 +468,7 @@ void MainWindow::setupUI()
 
     // 可视化窗口
     pointCloudWidget = new PointCloudWidget(centralContainer);
-    pointCloudWidget->setMinimumSize(800, 500);
+    pointCloudWidget->setMinimumSize(200, 200);
     pointCloudWidget->setPointSize(pointSizePx);
     connect(pointCloudWidget, &PointCloudWidget::lvx2FileDropped, this, &MainWindow::onLvx2PlaybackFileDropped);
 
@@ -619,7 +648,7 @@ void MainWindow::setupUI()
     devicesScroll->setWidgetResizable(true);
     devicesScroll->setWidget(devicesDockContent);
     devicesDock->setWidget(devicesScroll);
-    devicesDock->setMinimumWidth(200);
+    devicesDock->setMinimumWidth(0);
 
     addDockWidget(Qt::LeftDockWidgetArea, devicesDock);
 
@@ -1098,7 +1127,7 @@ void MainWindow::setupUI()
     paramsScroll->setWidget(paramsDockContent);
     paramsScroll->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
     paramsDock->setWidget(paramsScroll);
-    paramsDock->setMinimumWidth(360);
+    paramsDock->setMinimumWidth(0);
 
     addDockWidget(Qt::RightDockWidgetArea, paramsDock);
     tabifyDockWidget(paramsDock, attrDock);
@@ -1200,6 +1229,7 @@ void MainWindow::setupUI()
 
     QAction* actionGenerateConfig = fileMenu->addAction("生成配置文件...");
     actionPlayLvx2 = fileMenu->addAction("播放LVX2点云...");
+    QAction* actionFormatConvert = fileMenu->addAction("格式转换...");
     QAction* actionPreferences = fileMenu->addAction("首选项...");
     fileMenu->addSeparator();
     exitAction = fileMenu->addAction("退出");
@@ -1220,6 +1250,153 @@ void MainWindow::setupUI()
         }
         settings.setValue("playback/lastLVX2Dir", QFileInfo(filePath).absolutePath());
         loadLvx2PlaybackFile(filePath);
+    });
+    connect(actionFormatConvert, &QAction::triggered, [this]() {
+        QSettings settings("Livox", "LivoxViewerQT");
+        QString lastSrc = settings.value("convert/lastSource", "").toString();
+
+        QDialog dlg(this);
+        dlg.setWindowTitle("LVX2格式转换");
+        dlg.resize(620, 340);
+        QVBoxLayout* root = new QVBoxLayout(&dlg);
+
+        QGroupBox* srcBox = new QGroupBox("源文件", &dlg);
+        QHBoxLayout* srcLayout = new QHBoxLayout(srcBox);
+        QLineEdit* srcEdit = new QLineEdit(srcBox);
+        srcEdit->setText(lastSrc);
+        QPushButton* srcBtn = new QPushButton("选择LVX2", srcBox);
+        srcLayout->addWidget(srcEdit, 1);
+        srcLayout->addWidget(srcBtn);
+        root->addWidget(srcBox);
+
+        QGroupBox* modeBox = new QGroupBox("转换模式", &dlg);
+        QVBoxLayout* modeLayout = new QVBoxLayout(modeBox);
+        QRadioButton* modeMerge = new QRadioButton("所有帧转换为一个文件", modeBox);
+        QRadioButton* modeSplit = new QRadioButton("100ms单帧转换为多个文件", modeBox);
+        modeMerge->setChecked(true);
+        modeLayout->addWidget(modeMerge);
+        modeLayout->addWidget(modeSplit);
+        root->addWidget(modeBox);
+
+        QGroupBox* formatBox = new QGroupBox("转换类型", &dlg);
+        QHBoxLayout* formatLayout = new QHBoxLayout(formatBox);
+        QRadioButton* fmtPcd = new QRadioButton("PCD", formatBox);
+        QRadioButton* fmtLas = new QRadioButton("LAS", formatBox);
+        QRadioButton* fmtCsv = new QRadioButton("CSV", formatBox);
+        QRadioButton* fmtTxt = new QRadioButton("TXT", formatBox);
+        fmtPcd->setChecked(true);
+        formatLayout->addWidget(fmtPcd);
+        formatLayout->addWidget(fmtLas);
+        formatLayout->addWidget(fmtCsv);
+        formatLayout->addWidget(fmtTxt);
+        formatLayout->addStretch();
+        root->addWidget(formatBox);
+
+        QGroupBox* outBox = new QGroupBox("输出文件", &dlg);
+        QGridLayout* outLayout = new QGridLayout(outBox);
+        QLabel* outDirLabel = new QLabel("保存路径:", outBox);
+        QLineEdit* outDirEdit = new QLineEdit(outBox);
+        QPushButton* outDirBtn = new QPushButton("选择路径", outBox);
+        QLabel* outNameLabel = new QLabel("文件名:", outBox);
+        QLineEdit* outNameEdit = new QLineEdit(outBox);
+        outLayout->addWidget(outDirLabel, 0, 0);
+        outLayout->addWidget(outDirEdit, 0, 1);
+        outLayout->addWidget(outDirBtn, 0, 2);
+        outLayout->addWidget(outNameLabel, 1, 0);
+        outLayout->addWidget(outNameEdit, 1, 1, 1, 2);
+        root->addWidget(outBox);
+
+        QProgressBar* progress = new QProgressBar(&dlg);
+        progress->setRange(0, 100);
+        progress->setValue(0);
+        root->addWidget(progress);
+
+        QLabel* resultLabel = new QLabel(&dlg);
+        resultLabel->setText("就绪");
+        root->addWidget(resultLabel);
+
+        QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+        QPushButton* startBtn = new QPushButton("开始转换", &dlg);
+        box->addButton(startBtn, QDialogButtonBox::ActionRole);
+        root->addWidget(box);
+
+        auto syncDefaultOutput = [srcEdit, outDirEdit, outNameEdit]() {
+            const QFileInfo fi(srcEdit->text());
+            if (fi.exists()) {
+                outDirEdit->setText(fi.absolutePath());
+                outNameEdit->setText(fi.completeBaseName());
+            }
+        };
+        if (!srcEdit->text().isEmpty()) {
+            syncDefaultOutput();
+        }
+
+        connect(srcBtn, &QPushButton::clicked, &dlg, [this, srcEdit, &settings, syncDefaultOutput]() {
+            QString startDir = QFileInfo(srcEdit->text()).absolutePath();
+            if (startDir.isEmpty()) {
+                startDir = settings.value("convert/lastSourceDir", QDir::homePath()).toString();
+            }
+            const QString p = QFileDialog::getOpenFileName(this, "选择LVX2源文件", startDir, "LVX2点云 (*.lvx2)");
+            if (p.isEmpty()) {
+                return;
+            }
+            srcEdit->setText(p);
+            settings.setValue("convert/lastSourceDir", QFileInfo(p).absolutePath());
+            syncDefaultOutput();
+        });
+        connect(outDirBtn, &QPushButton::clicked, &dlg, [this, outDirEdit]() {
+            const QString dir = QFileDialog::getExistingDirectory(this, "选择保存路径",
+                outDirEdit->text().isEmpty() ? QDir::homePath() : outDirEdit->text());
+            if (!dir.isEmpty()) {
+                outDirEdit->setText(dir);
+            }
+        });
+        connect(startBtn, &QPushButton::clicked, &dlg, [this, &settings, srcEdit, outDirEdit, outNameEdit,
+                                                         modeSplit, fmtLas, fmtCsv, fmtTxt, progress, resultLabel, startBtn]() {
+            const QString srcPath = srcEdit->text().trimmed();
+            const QString outDir = outDirEdit->text().trimmed();
+            const QString outName = outNameEdit->text().trimmed();
+            if (srcPath.isEmpty() || outDir.isEmpty() || outName.isEmpty()) {
+                resultLabel->setText("错误：请完整选择源文件、保存路径和文件名");
+                return;
+            }
+            if (!QFileInfo::exists(srcPath)) {
+                resultLabel->setText("错误：源文件不存在");
+                return;
+            }
+            if (!QDir(outDir).exists()) {
+                resultLabel->setText("错误：保存路径不存在");
+                return;
+            }
+
+            settings.setValue("convert/lastSource", srcPath);
+            const QString outputNoExt = QDir(outDir).filePath(outName);
+            const Lvx2ConvertMode mode = modeSplit->isChecked()
+                ? Lvx2ConvertMode::SplitBy100ms
+                : Lvx2ConvertMode::MergeAllToOne;
+            Lvx2ConvertFormat format = Lvx2ConvertFormat::PCD;
+            if (fmtLas->isChecked()) {
+                format = Lvx2ConvertFormat::LAS;
+            } else if (fmtCsv->isChecked()) {
+                format = Lvx2ConvertFormat::CSV;
+            } else if (fmtTxt->isChecked()) {
+                format = Lvx2ConvertFormat::TXT;
+            }
+
+            startBtn->setEnabled(false);
+            progress->setValue(0);
+            resultLabel->setText("正在转换...");
+            bool ok = convertLvx2File(srcPath, outputNoExt, mode, format, [&](int done, int total) {
+                const int value = (total > 0) ? (done * 100 / total) : 0;
+                progress->setValue(value);
+            });
+            startBtn->setEnabled(true);
+            progress->setValue(ok ? 100 : progress->value());
+            resultLabel->setText(ok ? "转换完成，可继续选择其他源文件进行转换" :
+                                      "转换失败，请检查LVX2文件格式或输出路径权限");
+        });
+        connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+        dlg.exec();
     });
     connect(actionPreferences, &QAction::triggered, this, &MainWindow::showPreferencesDialog);
 
@@ -1262,7 +1439,7 @@ void MainWindow::setupUI()
         msgBox.setTextFormat(Qt::RichText);  // 支持富文本
         msgBox.setText(
             "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-            "<p><b>版本:</b> 1.2.7</p>"
+            "<p><b>版本:</b> 1.2.8</p>"
             "<p><b>编译日期:</b> " __DATE__ " </p>"
             "<p><b>作者:</b> FelixCooper1026</p>"
             "<p><b>功能特性:</b></p>"

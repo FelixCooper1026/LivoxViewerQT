@@ -151,6 +151,8 @@ LivoxViewerQT/
 ├── sdk_init.cpp                 # Livox SDK 初始化
 ├── sdk_callbacks.cpp            # SDK 回调处理
 ├── point_visualize.cpp          # 点云可视化处理
+├── lvx2_converter.cpp           # 文件格式转换
+├── lvx2_playback.cpp            # LVX2文件播放
 ├── resources/                   # 程序图标等资源文件
 ├── pics/                        # 程序界面截图
 │   ├── main_interface.png

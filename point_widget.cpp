@@ -14,7 +14,7 @@
 PointCloudWidget::PointCloudWidget(QWidget *parent)
     : QOpenGLWidget(parent)
     , m_program(nullptr)
-    , m_distance(10.0f)
+    , m_distance(25.0f)
     , m_rotation(0, 0, 0)
     , m_orientation() // identity
     , m_target(0, 0, 0)
@@ -29,8 +29,9 @@ PointCloudWidget::PointCloudWidget(QWidget *parent)
 {
     setFocusPolicy(Qt::StrongFocus);
     setAcceptDrops(true);
-    // 默认视角：X 向上、Y 向左、Z 向外（绕 Z 轴 +90°）
-    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
+    // 默认视角：X 向上、Y 向左、Z 向外（斜45°视角看向Z轴）
+    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
+                * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
 }
 
 PointCloudWidget::~PointCloudWidget()
@@ -964,8 +965,9 @@ void PointCloudWidget::clearPointCloud()
 
 void PointCloudWidget::resetView()
 {
-    m_distance = 10.0f;
-    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
+    m_distance = 25.0f;
+    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
+                * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
     m_target = QVector3D(0, 0, 0); // 重置观察中心
     update();
 }
@@ -987,9 +989,43 @@ void PointCloudWidget::setLegend(int mode, float minVal, float maxVal, bool visi
 
 void PointCloudWidget::setTopDownView()
 {
-    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), 0.0f);
-    m_distance = 15.0f;
-    m_target = QVector3D(0, 0, 0); // 重置观察中心
+    setViewPreset(ViewPreset::World);
+}
+
+void PointCloudWidget::setViewPreset(ViewPreset preset)
+{
+    const QQuaternion qFront = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), -90.0f)  // 再绕Y轴-90°
+                         * QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -90.0f); // 先绕X轴-90°
+    const QQuaternion qBack = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), 90.0f)  // 再绕Y轴90°
+                         * QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -90.0f); // 先绕X轴-90°
+    const QQuaternion qLeft = QQuaternion::fromAxisAndAngle(QVector3D(0, 1, 0), -180.0f)  // 再绕Y轴-180°
+                         * QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -90.0f); // 先绕X轴-90°
+    const QQuaternion qRight = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -90.0f); // 绕X轴-90°
+    const QQuaternion qTop = QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f); // 绕Z轴90°
+    const QQuaternion qWorld = QQuaternion();
+
+    switch (preset) {
+    case ViewPreset::World:
+        m_orientation = qWorld;
+        break;
+    case ViewPreset::Front:
+        m_orientation = qFront;
+        break;
+    case ViewPreset::Back:
+        m_orientation = qBack;
+        break;
+    case ViewPreset::Left:
+        m_orientation = qLeft;
+        break;
+    case ViewPreset::Right:
+        m_orientation = qRight;
+        break;
+    case ViewPreset::Top:
+        m_orientation = qTop;
+        break;
+    }
+    m_distance = 25.0f;
+    m_target = QVector3D(0, 0, 0);
     update();
 }
 
