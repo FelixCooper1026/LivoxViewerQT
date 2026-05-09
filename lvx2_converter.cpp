@@ -229,6 +229,53 @@ static inline quint16 clampU16(int v) {
     return quint16(std::max(0, std::min(65535, v)));
 }
 
+struct PcdBinaryPoint {
+    float x;
+    float y;
+    float z;
+    float intensity;
+    float tag;
+};
+static_assert(sizeof(PcdBinaryPoint) == 20, "PcdBinaryPoint must be 20 bytes");
+
+static bool savePointCloudAsPCDBinaryFile(const QString& filePath, const QVector<Point3D>& points) {
+    QFile f(filePath);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+    QTextStream header(&f);
+    header.setRealNumberNotation(QTextStream::FixedNotation);
+    header.setRealNumberPrecision(6);
+    header << "# .PCD v0.7 - Point Cloud Data file\n";
+    header << "VERSION 0.7\n";
+    header << "FIELDS x y z intensity tag\n";
+    header << "SIZE 4 4 4 4 4\n";
+    header << "TYPE F F F F F\n";
+    header << "COUNT 1 1 1 1 1\n";
+    header << "WIDTH " << points.size() << "\n";
+    header << "HEIGHT 1\n";
+    header << "VIEWPOINT 0 0 0 1 0 0 0\n";
+    header << "POINTS " << points.size() << "\n";
+    header << "DATA binary\n";
+    header.flush();
+
+    for (const Point3D& p : points) {
+        const PcdBinaryPoint out{
+            p.x,
+            p.y,
+            p.z,
+            float(p.reflectivity),
+            float(p.tag)
+        };
+        if (f.write(reinterpret_cast<const char*>(&out), sizeof(out)) != sizeof(out)) {
+            f.close();
+            return false;
+        }
+    }
+    f.close();
+    return true;
+}
+
 } // namespace
 
 bool MainWindow::savePointCloudAsCSV(const QString& filePath, const QVector<Point3D>& points)
@@ -331,7 +378,7 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
 
     auto writePoints = [this, format](const QString& path, const QVector<Point3D>& pts) -> bool {
         switch (format) {
-        case Lvx2ConvertFormat::PCD: return savePointCloudAsPCD(path, pts);
+        case Lvx2ConvertFormat::PCD: return savePointCloudAsPCDBinaryFile(path, pts);
         case Lvx2ConvertFormat::LAS: return savePointCloudAsLAS(path, pts);
         case Lvx2ConvertFormat::CSV: return savePointCloudAsCSV(path, pts);
         case Lvx2ConvertFormat::TXT: return savePointCloudAsTXT(path, pts);
@@ -344,7 +391,6 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
         QFile outFile;
         QFile pcdTmpFile;
         QTextStream textOut;
-        QTextStream pcdTmpOut;
 
         qint64 pointCount = 0;
         const double lasScale = 0.001;
@@ -370,12 +416,9 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
             const QFileInfo fi(outPath);
             const QString tmpPath = fi.absolutePath() + "/" + fi.completeBaseName() + ".pcd.tmp_points";
             pcdTmpFile.setFileName(tmpPath);
-            if (!pcdTmpFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            if (!pcdTmpFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 return false;
             }
-            pcdTmpOut.setDevice(&pcdTmpFile);
-            pcdTmpOut.setRealNumberNotation(QTextStream::FixedNotation);
-            pcdTmpOut.setRealNumberPrecision(6);
         } else if (format == Lvx2ConvertFormat::LAS) {
             outFile.setFileName(outPath);
             if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
@@ -408,6 +451,7 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
 
         const int total = rawFrames.size();
         QByteArray lasRec(20, 0);
+        bool pcdWriteFailed = false;
         for (int i = 0; i < total; ++i) {
             const Lvx2PlaybackFrameIndex& frameIndex = rawFrames.at(i);
             qint64 cursor = qint64(frameIndex.offset) + qint64(sizeof(LVX2FrameHeader));
@@ -433,12 +477,25 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
                 const Lvx2PlaybackExtrinsic* extrinsic =
                     (extrinsicIt == extrinsics.constEnd()) ? nullptr : &extrinsicIt.value();
                 iteratePackagePoints(packageHeader, payload, extrinsic, [&](const Point3D& p) {
+                    if (pcdWriteFailed) {
+                        return;
+                    }
                     if (format == Lvx2ConvertFormat::CSV) {
                         textOut << p.x << ',' << p.y << ',' << p.z << ',' << int(p.reflectivity) << ',' << int(p.tag) << "\n";
                     } else if (format == Lvx2ConvertFormat::TXT) {
                         textOut << p.x << ' ' << p.y << ' ' << p.z << ' ' << int(p.reflectivity) << ' ' << int(p.tag) << "\n";
                     } else if (format == Lvx2ConvertFormat::PCD) {
-                        pcdTmpOut << p.x << ' ' << p.y << ' ' << p.z << ' ' << int(p.reflectivity) << ' ' << int(p.tag) << "\n";
+                        const PcdBinaryPoint out{
+                            p.x,
+                            p.y,
+                            p.z,
+                            float(p.reflectivity),
+                            float(p.tag)
+                        };
+                        if (pcdTmpFile.write(reinterpret_cast<const char*>(&out), sizeof(out)) != sizeof(out)) {
+                            pcdWriteFailed = true;
+                            return;
+                        }
                     } else if (format == Lvx2ConvertFormat::LAS) {
                         lasMinX = std::min(lasMinX, double(p.x));
                         lasMinY = std::min(lasMinY, double(p.y));
@@ -463,6 +520,9 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
                     ++pointCount;
                 });
             }
+            if (pcdWriteFailed) {
+                return false;
+            }
             if (progress) {
                 progress(i + 1, total);
             }
@@ -470,11 +530,10 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
         }
 
         if (format == Lvx2ConvertFormat::PCD) {
-            pcdTmpOut.flush();
             pcdTmpFile.close();
 
             outFile.setFileName(outPath);
-            if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+            if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
                 pcdTmpFile.remove();
                 return false;
             }
@@ -491,10 +550,10 @@ bool MainWindow::convertLvx2File(const QString& sourcePath,
             finalOut << "HEIGHT 1\n";
             finalOut << "VIEWPOINT 0 0 0 1 0 0 0\n";
             finalOut << "POINTS " << pointCount << "\n";
-            finalOut << "DATA ascii\n";
+            finalOut << "DATA binary\n";
             finalOut.flush();
 
-            if (!pcdTmpFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            if (!pcdTmpFile.open(QIODevice::ReadOnly)) {
                 outFile.close();
                 pcdTmpFile.remove();
                 return false;

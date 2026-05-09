@@ -1133,26 +1133,43 @@ bool MainWindow::savePointCloudAsLAS(const QString& filePath, const QVector<Poin
 bool MainWindow::savePointCloudAsPCD(const QString& filePath, const QVector<Point3D>& points)
 {
     QFile f(filePath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         return false;
     }
-    QTextStream out(&f);
-    out.setRealNumberNotation(QTextStream::FixedNotation);
-    out.setRealNumberPrecision(6);
-    // ASCII PCD header with reflectivity(intensity) and tag
-    out << "# .PCD v0.7 - Point Cloud Data file\n";
-    out << "VERSION 0.7\n";
-    out << "FIELDS x y z intensity tag\n";
-    out << "SIZE 4 4 4 4 4\n";
-    out << "TYPE F F F F F\n";
-    out << "COUNT 1 1 1 1 1\n";
-    out << "WIDTH " << points.size() << "\n";
-    out << "HEIGHT 1\n";
-    out << "VIEWPOINT 0 0 0 1 0 0 0\n";
-    out << "POINTS " << points.size() << "\n";
-    out << "DATA ascii\n";
+    QTextStream header(&f);
+    header << "# .PCD v0.7 - Point Cloud Data file\n";
+    header << "VERSION 0.7\n";
+    header << "FIELDS x y z intensity tag\n";
+    header << "SIZE 4 4 4 4 4\n";
+    header << "TYPE F F F F F\n";
+    header << "COUNT 1 1 1 1 1\n";
+    header << "WIDTH " << points.size() << "\n";
+    header << "HEIGHT 1\n";
+    header << "VIEWPOINT 0 0 0 1 0 0 0\n";
+    header << "POINTS " << points.size() << "\n";
+    header << "DATA binary\n";
+    header.flush();
+
+    struct PcdBinaryPoint {
+        float x;
+        float y;
+        float z;
+        float intensity;
+        float tag;
+    };
+
     for (const Point3D& p : points) {
-        out << p.x << ' ' << p.y << ' ' << p.z << ' ' << int(p.reflectivity) << ' ' << int(p.tag) << "\n";
+        const PcdBinaryPoint out{
+            p.x,
+            p.y,
+            p.z,
+            float(p.reflectivity),
+            float(p.tag)
+        };
+        if (f.write(reinterpret_cast<const char*>(&out), sizeof(out)) != sizeof(out)) {
+            f.close();
+            return false;
+        }
     }
     f.close();
     return true;
