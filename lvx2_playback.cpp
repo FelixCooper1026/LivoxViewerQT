@@ -556,7 +556,12 @@ void MainWindow::updateLvx2PlaybackUi()
     }
 
     if (lvx2PlayPauseButton) {
-        lvx2PlayPauseButton->setText(lvx2PlaybackPlaying ? "暂停" : "播放");
+        QIcon icon = QIcon::fromTheme(lvx2PlaybackPlaying ? "media-playback-pause" : "media-playback-start");
+        if (icon.isNull()) {
+            icon = style()->standardIcon(lvx2PlaybackPlaying ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay);
+        }
+        lvx2PlayPauseButton->setIcon(icon);
+        lvx2PlayPauseButton->setToolTip(lvx2PlaybackPlaying ? "暂停" : "播放");
         lvx2PlayPauseButton->setEnabled(lvx2PlaybackActive && !lvx2PlaybackLoading);
     }
     if (lvx2PrevFrameButton) {

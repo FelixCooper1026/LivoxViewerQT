@@ -637,7 +637,7 @@ private:
     QComboBox* lvx2PlaybackModeCombo = nullptr;
     bool lvx2UpdatingSlider = false;
     double lvx2PlaybackSpeed = 1.0;
-    Lvx2PlaybackMode lvx2PlaybackMode = Lvx2PlaybackMode::FrameByFrame;
+    Lvx2PlaybackMode lvx2PlaybackMode = Lvx2PlaybackMode::SlidingWindow;
     QVector<PointCloudFrame> lvx2RawFrameCache;
     QVector<bool> lvx2RawFrameCacheValid;
     int lvx2SlidingWindowStart = -1;
