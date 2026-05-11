@@ -454,9 +454,6 @@ void PointCloudWidget::paintGL()
     
     m_program->bind();
     
-    // 1. 设置基础变换矩阵
-    m_program->bind();
-    
     // 1. 设置基础变换矩阵 (目标中心轨道相机模型)
     m_modelView.setToIdentity();
 
@@ -470,7 +467,7 @@ void PointCloudWidget::paintGL()
     // 动作 1：首先，把我们要观察的“目标点”移动到世界坐标系的原点 (Translation)
     m_modelView.translate(-m_target);
 
-    // 1. 设置基础变换矩阵    
+    // 设置基础投影矩阵    
     m_projection.setToIdentity();
     const float nearPlane = 0.1f;
     float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
@@ -480,18 +477,10 @@ void PointCloudWidget::paintGL()
     m_program->setUniformValue("uPointSize", m_pointSize);
 
     // ==========================================
-    // 2. 绘制基础图元：坐标轴与网格
-    // 强制关闭选择逻辑，确保它们保持原始颜色
+    // 2. 绘制基础图元：网格 (注：坐标轴被移到了后面作为 Overlay 绘制)
     // ==========================================
     m_program->setUniformValue("uSelectionEnabled", 0);
     m_program->setUniformValue("uPersistEnabled", 0);
-
-    // 绘制坐标轴
-    glLineWidth(2.0f);
-    m_axesVao.bind();
-    glDrawArrays(GL_LINES, 0, m_axesVertexCount);
-    m_axesVao.release();
-    glLineWidth(1.0f);
 
     // 绘制网格
     if (m_gridVisible) {
@@ -507,14 +496,13 @@ void PointCloudWidget::paintGL()
     // ==========================================
     // 3. 准备绘制点云：恢复并设置点云的选择状态逻辑
     // ==========================================
-    
     // 持久选择（使用选择当时的矩阵参数）
     if (m_selectionLocked) {
         m_program->setUniformValue("uPersistEnabled", 1);
         m_program->setUniformValue("uPersistRect", QVector4D(m_selRectLogical.left(), m_selRectLogical.top(), m_selRectLogical.right(), m_selRectLogical.bottom()));
-// 【优化】：在 CPU 端提前计算好 MVP 矩阵，只传一个矩阵给 GPU
-QMatrix4x4 selMVP = m_selProjection * m_selModelView;
-m_program->setUniformValue("uSelMVP", selMVP);
+        // 在 CPU 端提前计算好 MVP 矩阵
+        QMatrix4x4 selMVP = m_selProjection * m_selModelView;
+        m_program->setUniformValue("uSelMVP", selMVP);
         m_program->setUniformValue("uViewport", QVector2D(float(m_selViewportW), float(m_selViewportH)));
         m_program->setUniformValue("uDepthRange", QVector2D(m_selViewZMin, m_selViewZMax));
     } else {
@@ -541,7 +529,6 @@ m_program->setUniformValue("uSelMVP", selMVP);
             m_program->setUniformValue("uSelRect", QVector4D(x0, y0, x1, y1));
         }
     } else {
-        // 确保未拖拽时关闭临时高亮
         m_program->setUniformValue("uSelectionEnabled", 0);
     }
     
@@ -552,13 +539,44 @@ m_program->setUniformValue("uSelMVP", selMVP);
         m_vao.release();
     }
     
+    // ==========================================
+    // 4.5 绘制 Overlay 坐标轴 (固定在左下角)
+    // ==========================================
+    // 临时关闭深度测试，确保坐标轴不会被网格或点云遮挡
+    glDisable(GL_DEPTH_TEST);
+    m_program->setUniformValue("uSelectionEnabled", 0); 
+    m_program->setUniformValue("uPersistEnabled", 0);
+
+    QMatrix4x4 overlayProj;
+    // 构建正交投影，左下角为(0,0)，宽高为像素分辨率
+    overlayProj.ortho(0.0f, float(width()), 0.0f, float(height()), -1000.0f, 1000.0f);
+    
+    QMatrix4x4 overlayMV;
+    float padding = 85.0f;     // 原点距离屏幕左下角的像素距离
+    float axisLength = 40.0f;  // 轴在屏幕上的像素长度（假设 VAO 中线条长度是 1.0）
+    
+    overlayMV.translate(padding, padding, 0.0f); 
+    overlayMV = overlayMV * quaternionToMatrix(m_orientation); // 只应用场景旋转，没有平移
+    overlayMV.scale(axisLength);
+
+    m_program->setUniformValue("projection", overlayProj);
+    m_program->setUniformValue("modelView", overlayMV);
+
+    glLineWidth(3.0f); // 使得叠加轴更清晰
+    m_axesVao.bind();
+    glDrawArrays(GL_LINES, 0, m_axesVertexCount);
+    m_axesVao.release();
+    glLineWidth(1.0f);
+
+    // 恢复深度测试并解绑着色器
+    glEnable(GL_DEPTH_TEST);
     m_program->release();
 
     // ==========================================
     // 5. 绘制 2D 叠加层 (文本、UI组件等)
     // ==========================================
 
-    // 绘制坐标轴标签 "X", "Y", "Z"
+    // 绘制坐标轴标签 "X", "Y", "Z" (基于 Overlay 轴的位置)
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::TextAntialiasing, true);
@@ -570,25 +588,28 @@ m_program->setUniformValue("uSelMVP", selMVP);
         QVector3D tips[] = { QVector3D(1.0f, 0, 0), QVector3D(0, 1.0f, 0), QVector3D(0, 0, 1.0f) };
         QString labels[] = { "X", "Y", "Z" };
 
+        float labelRadius = axisLength + 12.0f; // 标签离原点的距离比轴长一点
+
         for (int i = 0; i < 3; ++i) {
-            QVector4D hp(tips[i], 1.0f);
-            // 建议分步计算，以便检查视图坐标系下的 Z 值
-            QVector4D viewPos = m_modelView * hp;
+            // 仅使用场景的旋转矩阵来推算 X, Y 的偏移
+            QVector3D rotatedPos = rot * (tips[i] * labelRadius);
             
-            // 在 OpenGL 视图空间中，相机看向 -Z 方向。
-            // 如果 viewPos.z() > 0，说明点在相机后面，或者在近裁剪面外
-            if (viewPos.z() >= -0.1f) continue; 
-        
-            QVector4D clip = m_projection * viewPos;
-            
-            // 标准裁剪检查：NDC 坐标必须在 [-1, 1] 之间
-            if (clip.z() < -clip.w() || clip.z() > clip.w()) continue;
-            if (std::abs(clip.x()) > clip.w() || std::abs(clip.y()) > clip.w()) continue;
-        
-            QVector3D ndc = clip.toVector3DAffine();
-            int sx = int((ndc.x() * 0.5f + 0.5f) * width());
-            int sy = int((1.0f - (ndc.y() * 0.5f + 0.5f)) * height());
-            painter.drawText(sx + 8, sy - 8, labels[i]);
+            // OpenGL的正交矩阵原点在左下角，而QPainter原点在左上角
+            // x = padding + rotatedPos.x()
+            // y_gl = padding + rotatedPos.y()  ->  y_painter = height() - y_gl
+            int sx = int(padding + rotatedPos.x());
+            int sy = int(height() - (padding + rotatedPos.y()));
+
+            // // 可选：利用 rotatedPos.z() 实现背面轴标签置灰或半透明
+            // if (rotatedPos.z() < -10.0f) {
+            //     painter.setPen(QColor(150, 150, 150, 180)); // 偏向内部变暗
+            // } else {
+            //     painter.setPen(Qt::white);
+            // }
+            painter.setPen(Qt::white);
+
+            // 微调居中，让字母正中心对准坐标
+            painter.drawText(sx - 4, sy + 4, labels[i]); 
         }
     }
 
@@ -624,7 +645,7 @@ m_program->setUniformValue("uSelMVP", selMVP);
         }
     }
 
-    // 右下角图例
+    // 右下角图例 (保持不变)
     if (m_legendVisible) {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);

@@ -11,10 +11,13 @@ LivoxViewerQT 是一款专为Livox激光雷达设备设计的Qt上位机软件�
 
 支持的设备：
 - Livox MID-360
-- Livox HAP (部分功能未适配）
+- Livox Mid-360S
+- Livox Avia2
+- Livox HAP （部分功能未适配）
 
 主要功能：
 - 实时点云数据显示
+- 离线点云播放
 - 3D点云可视化
 - 设备参数配置
 - 数据记录和回放
