@@ -347,6 +347,13 @@ void MainWindow::setupUI()
     QPushButton* btnToggleSelection = new QPushButton("点云框选", toolbarRow1);
     QPushButton* btnMeasure = new QPushButton("点云测距", toolbarRow1);
     QPushButton* btnReset = new QPushButton("重置视图", toolbarRow1);
+    const QSize toolbarIconSize(fontMetrics().height() + 4, fontMetrics().height() + 4);
+    btnToggleSelection->setIcon(QIcon(":/icons/select_box.svg"));
+    btnMeasure->setIcon(QIcon(":/icons/measure.svg"));
+    btnReset->setIcon(QIcon(":/icons/reset_view.svg"));
+    btnToggleSelection->setIconSize(toolbarIconSize);
+    btnMeasure->setIconSize(toolbarIconSize);
+    btnReset->setIconSize(toolbarIconSize);
     QLabel* lblViewPreset = new QLabel("视角:", toolbarRow1);
     QComboBox* viewPresetCombo = new QComboBox(toolbarRow1);
     viewPresetCombo->addItems({"俯视图", "前视图", "左视图", "右视图", "后视图"});
@@ -566,6 +573,8 @@ void MainWindow::setupUI()
     networkInterfaceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     networkInterfaceCombo->setToolTip("选择用于雷达通信的网络接口");
     QPushButton* btnRefreshNetwork = new QPushButton("刷新", networkRow);
+    btnRefreshNetwork->setIcon(QIcon(":/icons/refresh.svg"));
+    btnRefreshNetwork->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
     btnRefreshNetwork->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     hostnetworkLayout->addWidget(networkLabel);
     hostnetworkLayout->addWidget(networkInterfaceCombo, 1);

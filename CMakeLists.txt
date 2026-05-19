@@ -55,7 +55,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # 查找Qt6，如果失败则尝试Qt5
 find_package(Qt6 6.2 QUIET COMPONENTS 
-    Core Widgets OpenGL OpenGLWidgets SerialPort Charts Network
+    Core Widgets OpenGL OpenGLWidgets SerialPort Charts Network Svg
 )
 
 if(Qt6_FOUND)
@@ -65,7 +65,7 @@ if(Qt6_FOUND)
 else()
     # 尝试Qt5作为备选
     find_package(Qt5 5.15 QUIET COMPONENTS 
-        Core Widgets OpenGL SerialPort Charts Network
+        Core Widgets OpenGL SerialPort Charts Network Svg
     )
     
     if(Qt5_FOUND)
@@ -155,7 +155,9 @@ set(HEADERS
 )
 
 # 资源文件
-set(RESOURCE_FILES "")
+set(RESOURCE_FILES
+    icons/icons.qrc
+)
 
 # Windows 下应用图标资源
 if(WIN32)
@@ -284,6 +286,7 @@ if(QT_VERSION_MAJOR EQUAL 6)
         Qt6::SerialPort
         Qt6::Charts
         Qt6::Network
+        Qt6::Svg
     )
 else()
     target_link_libraries(LivoxViewerQT PRIVATE
@@ -293,6 +296,7 @@ else()
         Qt5::SerialPort
         Qt5::Charts
         Qt5::Network
+        Qt5::Svg
     )
 endif()
 
