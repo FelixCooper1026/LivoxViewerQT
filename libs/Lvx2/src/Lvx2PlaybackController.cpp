@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "Pcap/PcapPlaybackController.h"
 #include "Pcap/PushMsgParser.h"
 
 #include <QDir>
@@ -694,9 +695,7 @@ void LivoxViewerWindow::onLvx2PlaybackFileDropped(const QString& filePath)
     if (filePath.isEmpty()) {
         return;
     }
-    if (filePath.endsWith(QStringLiteral(".pcap"), Qt::CaseInsensitive) ||
-        filePath.endsWith(QStringLiteral(".pcapng"), Qt::CaseInsensitive) ||
-        filePath.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive)) {
+    if (PcapPlayback::isSupportedFile(filePath)) {
         loadPcapPlaybackFile(filePath);
         return;
     }

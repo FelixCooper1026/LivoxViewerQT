@@ -1,7 +1,9 @@
-#include "LivoxViewerWindow.h"
+#include "PointCloud/PointCloudView.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QLinearGradient>
 #include <QOpenGLFunctions>
@@ -9,6 +11,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QUrl>
+#include <QVector4D>
 
 // PointCloudView 实现
 PointCloudView::PointCloudView(QWidget *parent)

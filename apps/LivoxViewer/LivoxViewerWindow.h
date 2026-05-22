@@ -69,6 +69,8 @@
 #include "LivoxCore/LidarDeviceInfo.h"
 #include "LivoxCore/LidarSdkTypes.h"
 #include "LivoxCore/Lvx2Types.h"
+#include "Lvx2/Lvx2Converter.h"
+#include "Lvx2/Lvx2PlaybackController.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
 
@@ -88,20 +90,9 @@ public:
     LivoxViewerWindow(QWidget *parent = nullptr);
     ~LivoxViewerWindow();
 
-    struct Lvx2PlaybackFrameIndex {
-        uint64_t offset = 0;
-        uint64_t nextOffset = 0;
-        uint64_t frameIndex = 0;
-    };
-
-    struct Lvx2PlaybackExtrinsic {
-        bool enabled = false;
-        QMatrix4x4 transform;
-    };
-    enum class Lvx2PlaybackMode {
-        FrameByFrame = 0,
-        SlidingWindow = 1
-    };
+    using Lvx2PlaybackFrameIndex = Lvx2Playback::FrameIndex;
+    using Lvx2PlaybackExtrinsic = Lvx2Playback::Extrinsic;
+    using Lvx2PlaybackMode = Lvx2Playback::Mode;
 
 private:
     void initializeUserInterface();
@@ -128,16 +119,8 @@ private:
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
     int lvx2PlaybackIntervalMs() const;
-    enum class Lvx2ConvertMode {
-        MergeAllToOne = 0,
-        SplitBy100ms = 1
-    };
-    enum class Lvx2ConvertFormat {
-        PCD = 0,
-        LAS = 1,
-        CSV = 2,
-        TXT = 3
-    };
+    using Lvx2ConvertMode = Lvx2Convert::Mode;
+    using Lvx2ConvertFormat = Lvx2Convert::Format;
     bool convertLvx2File(const QString& sourcePath,
                          const QString& outputPathNoExt,
                          Lvx2ConvertMode mode,
