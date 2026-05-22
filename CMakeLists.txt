@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.2.5
+    VERSION 1.3.0
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )
@@ -138,20 +138,50 @@ endif()
 
 # 基础源文件
 set(SOURCES
-    main.cpp
-    sdk_init.cpp
-    point_widget.cpp
-    ui.cpp
-    sdk_callbacks.cpp
-    point_visualize.cpp
-    lvx2_playback.cpp
-    lvx2_converter.cpp
-    parse_params.cpp
+    apps/LivoxViewer/main.cpp
+    apps/LivoxViewer/LivoxViewerUi.cpp
+    apps/LivoxViewer/LivoxViewerActions.cpp
+    apps/LivoxViewer/LivoxViewerSettings.cpp
+    libs/LivoxCore/src/LidarSdkController.cpp
+    libs/LivoxCore/src/LidarSdkCallbacks.cpp
+    libs/LivoxCore/src/LidarParameterParser.cpp
+    libs/PointCloud/src/PointCloudView.cpp
+    libs/PointCloud/src/PointCloudPipeline.cpp
+    libs/Lvx2/src/Lvx2PlaybackController.cpp
+    libs/Lvx2/src/Lvx2Converter.cpp
+    libs/Pcap/src/PcapParser.cpp
+    libs/Pcap/src/PcapUdpPacket.cpp
+    libs/Pcap/src/PointParser.cpp
+    libs/Pcap/src/PushMsgParser.cpp
+    libs/Pcap/src/PcapPlaybackController.cpp
+    libs/AppConfig/src/AppSettings.cpp
+    libs/AppConfig/src/ConfigJsonService.cpp
+    libs/AppConfig/src/NetworkInterfaceService.cpp
 )
 
 # 头文件
 set(HEADERS
-    mainwindow.h
+    apps/LivoxViewer/LivoxViewerWindow.h
+    libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
+    libs/LivoxCore/include/LivoxCore/LidarSdkTypes.h
+    libs/LivoxCore/include/LivoxCore/Lvx2Types.h
+    libs/PointCloud/include/PointCloud/PointCloudTypes.h
+    libs/PointCloud/include/PointCloud/PointCloudFrame.h
+    libs/PointCloud/include/PointCloud/PointCloudView.h
+    libs/PointCloud/include/PointCloud/PointCloudPipeline.h
+    libs/PointCloud/include/PointCloud/PointCloudPersistence.h
+    libs/Lvx2/include/Lvx2/Lvx2Types.h
+    libs/Lvx2/include/Lvx2/Lvx2Reader.h
+    libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
+    libs/Lvx2/include/Lvx2/Lvx2Converter.h
+    libs/Pcap/include/Pcap/PcapParser.h
+    libs/Pcap/include/Pcap/PcapUdpPacket.h
+    libs/Pcap/include/Pcap/PointParser.h
+    libs/Pcap/include/Pcap/PushMsgParser.h
+    libs/Pcap/include/Pcap/PcapPlaybackController.h
+    libs/AppConfig/include/AppConfig/AppSettings.h
+    libs/AppConfig/include/AppConfig/ConfigJsonService.h
+    libs/AppConfig/include/AppConfig/NetworkInterfaceService.h
 )
 
 # 资源文件
@@ -221,6 +251,12 @@ endif()
 
 target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/apps/LivoxViewer
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/AppConfig/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
@@ -315,11 +351,36 @@ if(IS_LINUX)
         dl
         m  # 数学库
     )
+    find_library(PCAP_LIBRARY pcap)
+    if(PCAP_LIBRARY)
+        target_link_libraries(LivoxViewerQT PRIVATE ${PCAP_LIBRARY})
+        message(STATUS "Linked libpcap: ${PCAP_LIBRARY}")
+    else()
+        message(WARNING "libpcap not found; install libpcap-dev for Pcap playback support")
+    endif()
 elseif(IS_WINDOWS)
     target_link_libraries(LivoxViewerQT PRIVATE
         ws2_32  # Windows Socket库
         winmm   # Windows多媒体库
     )
+
+    set(NPCAP_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16")
+    if(EXISTS "${NPCAP_SDK_DIR}/Include/pcap.h")
+        message(STATUS "Npcap SDK: ${NPCAP_SDK_DIR}")
+        target_include_directories(LivoxViewerQT PRIVATE "${NPCAP_SDK_DIR}/Include")
+        target_link_libraries(LivoxViewerQT PRIVATE
+            "${NPCAP_SDK_DIR}/Lib/x64/wpcap.lib"
+            "${NPCAP_SDK_DIR}/Lib/x64/Packet.lib"
+        )
+        if(MSVC)
+            set_target_properties(LivoxViewerQT PROPERTIES LINK_FLAGS "/DELAYLOAD:wpcap.dll")
+            target_link_libraries(LivoxViewerQT PRIVATE delayimp.lib)
+        elseif(MINGW)
+            set_target_properties(LivoxViewerQT PROPERTIES LINK_FLAGS "-Wl,--delayload=wpcap.dll")
+        endif()
+    else()
+        message(WARNING "Npcap SDK not found at ${NPCAP_SDK_DIR}; Pcap playback will not build on Windows")
+    endif()
 endif()
 
 # =============================================================================

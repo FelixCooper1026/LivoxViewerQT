@@ -1,0 +1,6 @@
+#ifndef APPCONFIG_APPSETTINGS_H
+#define APPCONFIG_APPSETTINGS_H
+
+#include <QSettings>
+
+#endif // APPCONFIG_APPSETTINGS_H

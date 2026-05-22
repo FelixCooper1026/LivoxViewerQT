@@ -1,0 +1,7 @@
+#ifndef APPCONFIG_CONFIGJSONSERVICE_H
+#define APPCONFIG_CONFIGJSONSERVICE_H
+
+#include <QJsonDocument>
+#include <QJsonObject>
+
+#endif // APPCONFIG_CONFIGJSONSERVICE_H

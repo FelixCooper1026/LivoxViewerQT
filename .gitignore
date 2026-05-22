@@ -1,5 +1,6 @@
 # Build directories
 build/
+build-*/
 *.build
 *.pro.user
 *.autosave
@@ -26,9 +27,11 @@ build/
 *.lai
 *.la
 *.a
-!livox_sdk_qt/lib/*.a  
+!livox_sdk_qt/lib/*.a
 *.lib
-!livox_sdk_qt/lib/*.lib 
+!livox_sdk_qt/lib/*.lib
+!third-party/npcap-sdk-1.16/Lib/
+!third-party/npcap-sdk-1.16/Lib/**/*.lib
 
 # Executables
 *.exe
