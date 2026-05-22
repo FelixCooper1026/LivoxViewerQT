@@ -87,6 +87,10 @@ LivoxViewerQT_Portable/
 lidar_log/
 *.log
 
+# Manual offline test fixtures
+testdata/manual/*
+!testdata/manual/README.md
+
 # System files
 .DS_Store
 Thumbs.db
