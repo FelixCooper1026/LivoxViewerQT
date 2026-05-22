@@ -149,11 +149,13 @@ set(SOURCES
     libs/PointCloud/src/PointCloudPipeline.cpp
     libs/Lvx2/src/Lvx2PlaybackController.cpp
     libs/Lvx2/src/Lvx2Converter.cpp
+    libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/PcapParser.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
     libs/Pcap/src/PcapPlaybackController.cpp
+    libs/Export/src/PointCloudExport.cpp
     libs/AppConfig/src/AppSettings.cpp
     libs/AppConfig/src/ConfigJsonService.cpp
     libs/AppConfig/src/NetworkInterfaceService.cpp
@@ -174,11 +176,13 @@ set(HEADERS
     libs/Lvx2/include/Lvx2/Lvx2Reader.h
     libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
     libs/Lvx2/include/Lvx2/Lvx2Converter.h
+    libs/Lvx2/include/Lvx2/Lvx2PointParser.h
     libs/Pcap/include/Pcap/PcapParser.h
     libs/Pcap/include/Pcap/PcapUdpPacket.h
     libs/Pcap/include/Pcap/PointParser.h
     libs/Pcap/include/Pcap/PushMsgParser.h
     libs/Pcap/include/Pcap/PcapPlaybackController.h
+    libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
     libs/AppConfig/include/AppConfig/ConfigJsonService.h
     libs/AppConfig/include/AppConfig/NetworkInterfaceService.h
@@ -256,6 +260,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Export/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/AppConfig/include
     ${CMAKE_CURRENT_BINARY_DIR}
 )

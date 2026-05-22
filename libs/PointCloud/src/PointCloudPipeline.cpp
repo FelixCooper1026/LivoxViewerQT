@@ -1,4 +1,6 @@
 #include "LivoxViewerWindow.h"
+
+#include "Export/PointCloudExport.h"
 #include <algorithm>
 #include <limits>
 #include <QColorDialog>
@@ -1034,145 +1036,14 @@ static inline void calcColorSolid(const QColor& color, float& r, float& g, float
     b = color.blueF();
 }
 
-static inline quint16 clampU16(int v) { return quint16(std::max(0, std::min(65535, v))); }
-
 bool LivoxViewerWindow::savePointCloudAsLAS(const QString& filePath, const QVector<PointCloudPoint>& points)
 {
-    QFile f(filePath);
-    if (!f.open(QIODevice::WriteOnly)) return false;
-
-    // LAS 1.2 header (little-endian), Point Data Record Format 0
-    // We will use scale (0.001) and offset 0 for simplicity; compute bbox
-    double scaleX = 0.001, scaleY = 0.001, scaleZ = 0.001;
-    double minX = std::numeric_limits<double>::max();
-    double minY = std::numeric_limits<double>::max();
-    double minZ = std::numeric_limits<double>::max();
-    double maxX = -std::numeric_limits<double>::max();
-    double maxY = -std::numeric_limits<double>::max();
-    double maxZ = -std::numeric_limits<double>::max();
-    for (const PointCloudPoint& p : points) {
-        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
-        if (p.z < minZ) minZ = p.z; if (p.z > maxZ) maxZ = p.z;
-    }
-    double offX = 0.0, offY = 0.0, offZ = 0.0; // offsets set to 0
-
-    QByteArray header(227, 0); // LAS 1.2 header size
-    // File Signature "LASF"
-    header[0] = 'L'; header[1] = 'A'; header[2] = 'S'; header[3] = 'F';
-    // File Source ID, Global Encoding -> leave 0
-    // Project ID GUIDs -> zeros
-    // Version Major/Minor
-    header[24] = 1; // version major
-    header[25] = 2; // version minor
-    // System Identifier (32 bytes)
-    QByteArray sys = QByteArray("LivoxViewerQT"); sys = sys.leftJustified(32, '\0', true);
-    std::copy(sys.begin(), sys.end(), header.begin() + 26);
-    // Generating Software (32 bytes)
-    QByteArray gen = QByteArray("LVX"); gen = gen.leftJustified(32, '\0', true);
-    std::copy(gen.begin(), gen.end(), header.begin() + 58);
-    // File Creation Day/Year -> leave 0
-    // Header Size
-    qToLittleEndian<quint16>(227, reinterpret_cast<uchar*>(header.data() + 94));
-    // Offset to point data: header (227) + no VLRs (0)
-    qToLittleEndian<quint32>(227, reinterpret_cast<uchar*>(header.data() + 96));
-    // Number of Variable Length Records
-    qToLittleEndian<quint32>(0, reinterpret_cast<uchar*>(header.data() + 100));
-    // Point Data Format
-    header[104] = 0; // format 0
-    // Point Data Record Length (bytes) -> 20 for format 0
-    qToLittleEndian<quint16>(20, reinterpret_cast<uchar*>(header.data() + 105));
-    // Legacy number of point records
-    qToLittleEndian<quint32>(static_cast<quint32>(points.size()), reinterpret_cast<uchar*>(header.data() + 107));
-    // Legacy number of points by return (5 x uint32) -> set first = count
-    qToLittleEndian<quint32>(static_cast<quint32>(points.size()), reinterpret_cast<uchar*>(header.data() + 111));
-    // Scale Factors (X,Y,Z) at offsets 131,139,147 as doubles
-    qToLittleEndian<double>(scaleX, reinterpret_cast<uchar*>(header.data() + 131));
-    qToLittleEndian<double>(scaleY, reinterpret_cast<uchar*>(header.data() + 139));
-    qToLittleEndian<double>(scaleZ, reinterpret_cast<uchar*>(header.data() + 147));
-    // Offsets (X,Y,Z) as doubles
-    qToLittleEndian<double>(offX, reinterpret_cast<uchar*>(header.data() + 155));
-    qToLittleEndian<double>(offY, reinterpret_cast<uchar*>(header.data() + 163));
-    qToLittleEndian<double>(offZ, reinterpret_cast<uchar*>(header.data() + 171));
-    // Max/Min (X,Y,Z) as doubles
-    qToLittleEndian<double>(maxX, reinterpret_cast<uchar*>(header.data() + 179));
-    qToLittleEndian<double>(minX, reinterpret_cast<uchar*>(header.data() + 187));
-    qToLittleEndian<double>(maxY, reinterpret_cast<uchar*>(header.data() + 195));
-    qToLittleEndian<double>(minY, reinterpret_cast<uchar*>(header.data() + 203));
-    qToLittleEndian<double>(maxZ, reinterpret_cast<uchar*>(header.data() + 211));
-    qToLittleEndian<double>(minZ, reinterpret_cast<uchar*>(header.data() + 219));
-
-    if (f.write(header) != header.size()) { f.close(); return false; }
-
-    // Write points (Format 0): X,Y,Z as int32, Intensity uint16, flags+classification etc.
-    QByteArray rec(20, 0);
-    for (const PointCloudPoint& p : points) {
-        // Convert to scaled integer: integer = round((coord - offset)/scale)
-        qint32 xi = qint32(std::llround((p.x - offX) / scaleX));
-        qint32 yi = qint32(std::llround((p.y - offY) / scaleY));
-        qint32 zi = qint32(std::llround((p.z - offZ) / scaleZ));
-        qToLittleEndian<qint32>(xi, reinterpret_cast<uchar*>(rec.data() + 0));
-        qToLittleEndian<qint32>(yi, reinterpret_cast<uchar*>(rec.data() + 4));
-        qToLittleEndian<qint32>(zi, reinterpret_cast<uchar*>(rec.data() + 8));
-        // Intensity
-        qToLittleEndian<quint16>(clampU16(int(p.reflectivity)), reinterpret_cast<uchar*>(rec.data() + 12));
-        // Return flags (0), classification (0), scan angle (0), user data (1) -> put tag into user data
-        rec[14] = 0;             // return number bits -> 0
-        rec[15] = 0;             // classification -> unclassified
-        rec[16] = 0;             // scan angle rank
-        rec[17] = static_cast<char>(p.tag); // user data stores tag
-        // Point source ID (uint16)
-        qToLittleEndian<quint16>(0, reinterpret_cast<uchar*>(rec.data() + 18));
-        if (f.write(rec) != rec.size()) { f.close(); return false; }
-    }
-
-    f.close();
-    return true;
+    return PointCloudExport::saveAsLAS(filePath, points);
 }
 
 bool LivoxViewerWindow::savePointCloudAsPCD(const QString& filePath, const QVector<PointCloudPoint>& points)
 {
-    QFile f(filePath);
-    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        return false;
-    }
-    QTextStream header(&f);
-    header << "# .PCD v0.7 - Point Cloud Data file\n";
-    header << "VERSION 0.7\n";
-    header << "FIELDS x y z intensity tag\n";
-    header << "SIZE 4 4 4 4 4\n";
-    header << "TYPE F F F F F\n";
-    header << "COUNT 1 1 1 1 1\n";
-    header << "WIDTH " << points.size() << "\n";
-    header << "HEIGHT 1\n";
-    header << "VIEWPOINT 0 0 0 1 0 0 0\n";
-    header << "POINTS " << points.size() << "\n";
-    header << "DATA binary\n";
-    header.flush();
-
-    struct PcdBinaryPoint {
-        float x;
-        float y;
-        float z;
-        float intensity;
-        float tag;
-    };
-
-    for (const PointCloudPoint& p : points) {
-        const PcdBinaryPoint out{
-            p.x,
-            p.y,
-            p.z,
-            float(p.reflectivity),
-            float(p.tag)
-        };
-        if (f.write(reinterpret_cast<const char*>(&out), sizeof(out)) != sizeof(out)) {
-            f.close();
-            return false;
-        }
-    }
-    f.close();
-    return true;
+    return PointCloudExport::saveAsPCD(filePath, points);
 }
 
 void LivoxViewerWindow::onRenderTick()
