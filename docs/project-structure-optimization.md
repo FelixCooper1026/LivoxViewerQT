@@ -1,130 +1,254 @@
 # LivoxViewerQT 项目结构优化建议
 
-## 1. 当前结构判断
+更新时间：2026-05-23
+当前基线提交：`bd75939 refactor: split main window panels and menu actions`
 
-项目当前已经从单文件工程演进为 `apps` 与 `libs` 目录结构，但模块边界还没有真正闭合。主要问题是多个 `libs/*/src` 文件直接包含 `LivoxViewerWindow.h` 并实现主窗口成员函数，导致所谓库模块仍依赖应用层。
+## 1. 当前状态概览
 
-当前最重要的结构风险不是 CMake target 数量，而是 `LivoxViewerWindow` 同时承担 UI、状态、SDK、网络、配置、点云、录制、回放和导出职责。
+项目已经从早期的主窗口大文件逐步拆出 `apps/` 与 `libs/` 目录，并完成了 Stage 0 到 Stage 6 的第一轮保守重构提交。当前结构比初始状态清晰很多：
 
-## 2. 高耦合文件
+- `apps/LivoxViewer/` 已拆出工具栏、回放条、设备面板、参数面板、文件信息面板、IMU 面板、日志面板和菜单动作文件。
+- `libs/Export/` 已集中点云导出能力。
+- `libs/Lvx2/` 已有 `Lvx2Reader`、`Lvx2PointParser`、`Lvx2Converter`。
+- `libs/Pcap/` 已有 `PcapReader` 和 PCAP 解析相关模块。
+- `libs/Playback/` 已有统一 `PlaybackSource` 抽象。
+- `libs/PointCloud/` 已有 `PointCloudDecoder`、`PointCloudColorizer`、`PointCloudFilter`、`PointCloudProjection` 等处理模块。
+- `libs/AppConfig/` 与 `libs/LivoxCore/` 已拆出配置、发现、SDK、参数服务的部分实现。
 
-### `apps/LivoxViewer/LivoxViewerWindow.h`
+但需要明确：当前阶段主要完成了“物理拆文件”和“公共能力抽取”，还没有完全完成“业务边界闭合”。多个 `libs/*/src` 文件仍然直接包含 `LivoxViewerWindow.h`，并实现 `LivoxViewerWindow::` 成员函数。这意味着这些文件虽然位于 `libs` 目录下，职责上仍然属于应用层主窗口的一部分。
 
-该头文件保存了主窗口绝大多数状态，包括：
+## 2. 阶段完成情况
 
-- Qt 控件指针。
-- SDK 初始化和设备列表状态。
-- 网络发现状态。
-- 点云帧缓存。
-- 参数查询和配置控件映射。
-- PCD、LAS、LVX2、IMU 保存状态。
-- LVX2/PCAP 回放状态。
-- IMU、GPS、串口线程状态。
-- 点云滤波和选择状态。
+| 阶段 | 状态 | 对应提交 | 当前结论 |
+| --- | --- | --- | --- |
+| Stage 0：文档与测试样例约定 | 已完成 | `a08c0c6` | 已新增功能流程文档和结构优化文档；`.gitignore` 已忽略 `testdata/manual/*` 并保留 README。 |
+| Stage 1：建立真实模块边界 | 已完成 | `1c42da5` | 已补齐关键头文件接口并减少部分隐式依赖。 |
+| Stage 2：点云导出与 LVX2 公共解析 | 已完成 | `91ce482` | 已新增 `libs/Export` 与 LVX2 点解析 helper，导出逻辑开始集中。 |
+| Stage 3：统一离线播放来源 | 已完成 | `4e23419` | 已新增 `PlaybackSource`、`Lvx2Reader`、`PcapReader`，LVX2/PCAP 可使用统一播放来源模型。 |
+| Stage 4：拆实时点云 pipeline | 已完成 | `28e2121` | 已新增 decoder、colorizer、filter、projection 模块；实时点云处理主路径已拆出核心处理能力。 |
+| Stage 5：拆 SDK、发现、配置、参数服务 | 部分完成 | `f7986ba` | 已有服务类，但 `LidarSdkController.cpp`、`LidarSdkCallbacks.cpp`、`LidarParameterParser.cpp` 仍实现大量主窗口成员函数。 |
+| Stage 6：拆主窗口 UI | 部分完成 | `415669e`、`bd75939` | 已拆出 toolbar、playback bar、五个 dock 面板和菜单动作文件；菜单里的各类 dialog/action 仍集中在 `MainMenuActions.cpp`。 |
 
-优化方向：主窗口只保留子模块对象、关键信号连接和窗口生命周期。
+## 3. 已完成项
 
-### `apps/LivoxViewer/LivoxViewerUi.cpp`
+### 3.1 文档、测试样例和仓库规则
 
-该文件同时负责：
+已完成：
 
-- 主界面布局。
-- 工具栏和菜单。
-- 多个 Dock。
-- 配置生成对话框。
-- 格式转换对话框。
-- 保存 PCD/LAS/LVX2/IMU 对话框。
-- 固件升级流程。
-- 点云滤波对话框。
-- 设备列表和参数标签更新。
+- `docs/complete-feature-flow.md`
+- `docs/project-structure-optimization.md`
+- `testdata/manual/*` 忽略规则
+- `testdata/manual/README.md` 保留规则
+- Npcap SDK `Lib` 目录忽略规则修复
 
-优化方向：拆分为 panel、dialog、action 类，UI 只发信号，不直接承载业务流程。
+当前离线 smoke 样例仍按约定放在：
 
-### `libs/PointCloud/src/PointCloudPipeline.cpp`
+- `testdata/manual/sample.lvx2`
+- `testdata/manual/sample.pcap`
 
-该文件混合了：
+这些真实样例不进入仓库。
 
-- SDK 点云包解析。
-- 滑动窗口合帧。
-- 点云滤波、着色、投影。
-- PCD/LAS 写出。
-- LVX2 录制。
-- IMU 显示、IMU CSV 保存。
-- GPS 模拟和串口转发。
-- 采集计时器。
+### 3.2 UI 文件第一轮拆分
 
-优化方向：拆成点云解码、点云 pipeline、导出器、录制器、IMU/GPS 服务。
+已从 `initializeUserInterface()` 中拆出：
 
-### `libs/LivoxCore/src/LidarSdkController.cpp`
+- `apps/LivoxViewer/ViewerToolbar.cpp`
+- `apps/LivoxViewer/PlaybackBar.cpp`
+- `apps/LivoxViewer/DevicePanel.cpp`
+- `apps/LivoxViewer/ParameterPanel.cpp`
+- `apps/LivoxViewer/FileInfoPanel.cpp`
+- `apps/LivoxViewer/ImuPanel.cpp`
+- `apps/LivoxViewer/LogPanel.cpp`
+- `apps/LivoxViewer/MainMenuActions.cpp`
 
-该文件混合了：
+当前 `initializeUserInterface()` 的职责已经收敛为：
 
-- SDK 初始化和关闭。
-- 配置文件查找、迁移、修正。
-- 网卡扫描和选择。
-- 自动修改主机 IP。
-- UDP 广播发现。
-- 雷达发现响应解析。
+- 设置应用字体
+- 创建中央点云视图
+- 创建工具栏和回放条
+- 初始化投影控件状态
+- 调用各 panel 创建函数
+- 设置 dock 初始尺寸
+- 调用菜单和 action 创建函数
 
-优化方向：拆成 SDK service、discovery service、config service、network service。
+这一步没有改变控件文案、信号连接或业务流程。
 
-### `libs/LivoxCore/src/LidarParameterParser.cpp`
+### 3.3 点云处理模块
 
-该文件混合了：
+已新增或完善：
 
-- 参数格式化。
-- 参数控件同步。
-- 参数写入。
-- 参数响应处理。
-- 参数 CSV 记录。
+- `PointCloudDecoder`
+- `PointCloudColorizer`
+- `PointCloudFilter`
+- `PointCloudProjection`
+- `PointCloudFrame`
+- `PointCloudTypes`
 
-优化方向：拆成参数模型、参数 parser、参数 command service、参数记录器。
+当前实时点云路径已经具备更清晰的处理模块，但 `PointCloudPipeline.cpp` 仍然承载不少应用层成员函数。
 
-### `libs/Lvx2/src/Lvx2PlaybackController.cpp`
+### 3.4 离线播放和导出模块
 
-该文件混合了：
+已新增或完善：
 
-- LVX2 文件结构读取。
-- package 点云解析。
-- 外参应用。
-- 帧缓存。
-- 播放状态。
-- 播放 UI 更新。
+- `PlaybackSource`
+- `Lvx2Reader`
+- `PcapReader`
+- `Lvx2PointParser`
+- `PointCloudExport`
 
-优化方向：拆成 `Lvx2Reader` 和通用 `PlaybackController`。
+LVX2/PCAP 离线 smoke 已覆盖：
 
-### `libs/Lvx2/src/Lvx2Converter.cpp`
+- LVX2 加载
+- PCAP 加载
+- 设备数量解析
+- 点数解析
+- PCD/LAS/CSV/TXT 非空导出
 
-该文件与 LVX2 回放重复实现点解析和外参应用，同时又包含多种输出格式 writer。
+### 3.5 Livox SDK、发现、配置、参数服务
 
-优化方向：复用 `Lvx2Reader` 和 `Export` writer。
+已新增或完善：
 
-## 3. 推荐目标结构
+- `LidarSdkService`
+- `LidarDiscoveryService`
+- `LidarParameterService`
+- `LidarConfigService`
+- `ConfigJsonService`
+- `NetworkInterfaceService`
+- `AppSettings`
+
+这些服务为后续从主窗口剥离 SDK、网络、配置和参数业务奠定了基础。
+
+## 4. 未完全完成项
+
+### 4.1 `libs` 目录中仍有应用层主窗口实现
+
+当前仍有多个 `libs/*/src` 文件直接包含 `LivoxViewerWindow.h`，并实现 `LivoxViewerWindow::` 成员函数：
+
+- `libs/LivoxCore/src/LidarSdkController.cpp`
+- `libs/LivoxCore/src/LidarSdkCallbacks.cpp`
+- `libs/LivoxCore/src/LidarParameterParser.cpp`
+- `libs/Lvx2/src/Lvx2PlaybackController.cpp`
+- `libs/Lvx2/src/Lvx2Converter.cpp`
+- `libs/Pcap/src/PcapPlaybackController.cpp`
+- `libs/PointCloud/src/PointCloudPipeline.cpp`
+
+这仍然是当前最大的结构问题。下一步应把这些文件中真正属于应用层的主窗口槽函数迁回 `apps/LivoxViewer/` 或拆成应用层 controller/action 文件；`libs` 只保留纯服务、解析、模型和算法。
+
+### 4.2 `MainMenuActions.cpp` 仍然过大
+
+`apps/LivoxViewer/MainMenuActions.cpp` 当前约 1179 行，集中包含：
+
+- 文件菜单
+- 工具菜单
+- 帮助菜单
+- LVX2 格式转换对话框
+- 点云保存动作
+- IMU 保存动作入口
+- 固件升级对话框
+- 重启/恢复出厂设置动作
+- 点云滤波对话框
+- 状态栏、计时器和部分 action 连接
+
+这一步已经从 `LivoxViewerUi.cpp` 拆出，但还没有达到 Stage 6 原计划中“dialog/action 独立成文件”的目标。
+
+### 4.3 `ParameterPanel.cpp` 仍然偏重
+
+`apps/LivoxViewer/ParameterPanel.cpp` 当前约 488 行，仍集中创建多个参数页、参数控件映射和部分控件连接。后续可以继续拆为：
+
+- `BasicParameterPanel`
+- `NetworkParameterPanel`
+- `FovParameterPanel`
+- `StatusParameterPanel`
+- `ParameterRecordControls`
+
+这类拆分应仍保持保守，仅移动 UI 创建代码，不改变参数 key、控件文案和连接。
+
+### 4.4 `LivoxViewerWindow.h` 仍然是中心状态仓库
+
+`apps/LivoxViewer/LivoxViewerWindow.h` 当前仍保存大量状态：
+
+- UI 控件指针
+- SDK 状态
+- 设备列表
+- 参数查询和参数记录状态
+- 点云窗口、滤波、投影状态
+- LVX2/PCAP 回放状态
+- IMU/GPS/串口状态
+- 采集、保存、录制状态
+
+后续应逐步把状态移动到明确的 controller/service/panel 对象中。主窗口最终只保留模块对象、信号转发和生命周期管理。
+
+### 4.5 `LidarSdkController.cpp` 仍然过大
+
+`libs/LivoxCore/src/LidarSdkController.cpp` 当前约 1208 行，仍包含 SDK 初始化、发现控制、主机 IP 更新、配置文件更新、设备状态处理等主窗口成员函数。
+
+虽然 Stage 5 已新增服务类，但旧 controller 仍承担大量协调逻辑。后续应把它拆为：
+
+- 应用层 `LidarController` 或 `DeviceController`
+- 纯 SDK 服务
+- 纯发现服务
+- 配置服务
+- 网络接口服务
+
+### 4.6 `PointCloudPipeline.cpp` 仍然混合实时、录制、IMU/GPS 和 UI 槽函数
+
+`libs/PointCloud/src/PointCloudPipeline.cpp` 当前约 1177 行，仍包含：
+
+- 采集计时
+- GPS 模拟
+- 串口转发
+- IMU 图表和 IMU 保存
+- 渲染 tick 调度
+- 点云选择和测量 UI 响应
+- LVX2 录制入口
+
+Stage 4 已拆出点云处理算法，但该文件仍不是纯 point cloud library。后续应把应用层槽函数迁出，并进一步拆出 recording、IMU/GPS 和 selection controller。
+
+## 5. 推荐目标结构
+
+当前仍建议向下面结构收敛：
 
 ```text
 apps/LivoxViewer/
-  MainWindow.*
-  actions/
+  LivoxViewerWindow.*
+  ViewerToolbar.*
+  PlaybackBar.*
   panels/
+    DevicePanel.*
+    ParameterPanel.*
+    FileInfoPanel.*
+    ImuPanel.*
+    LogPanel.*
+  actions/
+    MainMenuActions.*
+    CaptureActions.*
+    DeviceActions.*
+    HelpActions.*
+    PlaybackActions.*
   dialogs/
+    ConfigGeneratorDialog.*
+    FormatConvertDialog.*
+    FirmwareUpgradeDialog.*
+    PointCloudFilterDialog.*
+    PreferencesDialog.*
 
 libs/AppConfig/
   AppSettings.*
   ConfigJsonService.*
+  LidarConfigService.*
   NetworkInterfaceService.*
 
 libs/LivoxCore/
   LidarSdkService.*
   LidarDiscoveryService.*
-  LidarConfigService.*
   LidarParameterService.*
   LidarParameterModel.*
+  LidarPacketUtils.*
 
 libs/PointCloud/
   PointCloudTypes.*
   PointCloudFrame.*
   PointCloudDecoder.*
-  PointCloudPipeline.*
   PointCloudColorizer.*
   PointCloudFilter.*
   PointCloudProjection.*
@@ -149,72 +273,119 @@ libs/Export/
   TxtPointWriter.*
 ```
 
-## 4. 分阶段重构路线
+说明：当前 CMake 仍保持单一 `LivoxViewerQT` target，这是合理的。等 `libs` 不再实现主窗口成员函数后，再考虑拆静态库 target。
 
-### Stage 0：文档与测试样例约定
+## 6. 下一阶段建议
 
-- 新增完整功能流程文档。
-- 新增项目结构优化建议。
-- 忽略 `testdata/manual/*`，避免真实 LVX2/PCAP 样例进入仓库。
-- 保留 `testdata/manual/README.md` 说明手动测试样例命名。
+### Priority 1：完成 Stage 6 的 action/dialog 二次拆分
 
-### Stage 1：建立真实模块边界
+目标：降低 `MainMenuActions.cpp` 复杂度，不改行为。
 
-- 修正 `PointCloudView.cpp` 对 `LivoxViewerWindow.h` 的直接依赖。
-- 补齐空壳头文件中的接口声明。
-- 不移动业务逻辑，不改变行为。
+建议顺序：
 
-### Stage 2：拆出点云导出与 LVX2 公共解析
+1. 把格式转换对话框拆到 `FormatConvertDialog.cpp`。
+2. 把固件升级对话框拆到 `FirmwareUpgradeDialog.cpp`。
+3. 把点云滤波对话框拆到 `PointCloudFilterDialog.cpp`。
+4. 把帮助菜单链接拆到 `HelpActions.cpp`。
+5. 把采集/保存菜单动作拆到 `CaptureActions.cpp`。
+6. 把设备菜单动作拆到 `DeviceActions.cpp`。
 
-- 新增 `libs/Export`。
-- 集中实现 PCD、LAS、CSV、TXT 写出。
-- LVX2 播放和转换共用点解析与外参 helper。
-- 保持文件格式和 UI 行为不变。
+验收标准：
 
-### Stage 3：统一离线播放来源
+- `MainMenuActions.cpp` 只负责创建菜单骨架和连接 action。
+- 每个 dialog/action 文件只承载一个功能方向。
+- 菜单文案、默认值、保存路径、错误提示和信号连接保持不变。
 
-- 新增 `PlaybackSource` 概念。
-- `Lvx2Reader` 负责 LVX2。
-- `PcapReader` 负责 PCAP。
-- 播放控制器只处理帧数、当前帧、速度、模式、设备可见性。
+### Priority 2：把应用层主窗口成员实现移出 `libs`
 
-### Stage 4：拆实时点云处理 pipeline
+目标：让 `libs` 目录真正成为库层。
 
-- `PointCloudDecoder` 只负责原始 SDK 包到 `PointCloudFrame`。
-- `PointCloudColorizer` 负责着色。
-- `PointCloudFilter` 负责 tag 滤波。
-- `PointCloudProjection` 负责球面/平面投影。
-- `onRenderTick()` 保留调度语义，内部调用独立模块。
+建议顺序：
 
-### Stage 5：拆 Livox SDK、发现、配置、参数服务
+1. 新增 `apps/LivoxViewer/controllers/` 或先使用平铺文件。
+2. 将 `Lvx2PlaybackController.cpp`、`PcapPlaybackController.cpp` 中的 `LivoxViewerWindow::` 实现移到应用层。
+3. 将 `Lvx2Converter.cpp` 中的主窗口 wrapper 移到应用层，库层只保留转换器。
+4. 将 `PointCloudPipeline.cpp` 中 UI 槽函数迁移到应用层。
+5. 将 `LidarSdkController.cpp`、`LidarSdkCallbacks.cpp`、`LidarParameterParser.cpp` 的主窗口实现逐步迁移。
 
-- `LidarSdkService` 管理 SDK 生命周期和回调注册。
-- `LidarDiscoveryService` 管理 UDP 发现。
-- `LidarConfigService` 管理 `config.json` 查找、迁移、更新。
-- `LidarParameterService` 管理参数查询、写入、格式化和记录。
+验收标准：
 
-### Stage 6：拆主窗口 UI
+- `libs/**` 中不再包含 `LivoxViewerWindow.h`。
+- `libs/**` 中不再出现 `LivoxViewerWindow::`。
+- 主窗口通过 service/controller 对象调用库能力。
 
-- 主窗口拆出工具栏、设备面板、参数面板、回放条、文件信息面板、IMU 面板、日志面板。
-- 对话框和菜单 action 独立成文件。
-- `LivoxViewerWindow` 只做模块组合和生命周期管理。
+### Priority 3：继续拆 `LivoxViewerWindow.h` 状态
 
-## 5. 重构约束
+目标：减少主窗口头文件的成员变量和 include。
+
+建议顺序：
+
+1. 将 playback 状态封装为 `PlaybackControllerState` 或应用层 controller。
+2. 将 capture/record 状态封装为 `CaptureSession`。
+3. 将 IMU/GPS/serial 状态封装为独立对象。
+4. 将参数控件映射和参数记录状态放入参数面板或参数 controller。
+5. 将滤波 dialog 相关状态放入 `PointCloudFilterDialog`。
+
+验收标准：
+
+- `LivoxViewerWindow.h` 只保留跨模块必需的对象指针和少量生命周期状态。
+- 大部分 Qt 控件指针由对应 panel/dialog 持有。
+
+### Priority 4：整理源码目录和 CMake
+
+目标：在边界稳定后再做目录移动，避免过早增加 churn。
+
+建议顺序：
+
+1. 将 `apps/LivoxViewer/*Panel.cpp` 移入 `apps/LivoxViewer/panels/`。
+2. 将 action 文件移入 `apps/LivoxViewer/actions/`。
+3. 将 dialog 文件移入 `apps/LivoxViewer/dialogs/`。
+4. 更新 CMake source list。
+5. 等 `libs` 完全脱离主窗口后，再考虑拆多个静态库 target。
+
+## 7. 重构约束
 
 - 保持用户可见行为不变。
-- 每阶段只改一个方向。
+- 每个阶段只处理一个方向。
+- 优先移动代码和建立边界，再做行为性重写。
+- 不添加隐藏错误的兜底逻辑。
+- 解析失败、文件缺失、SDK 调用失败应显式返回错误或保持现有错误提示。
 - 每阶段必须 Release 编译通过。
-- 每阶段启动 GUI，确认不立即崩溃。
-- 有真实样例时验证 LVX2 与 PCAP 离线回放。
-- 不添加隐藏错误的兜底逻辑；失败路径必须显式报错或保持现有错误提示。
+- 每阶段必须执行 GUI 启动 smoke。
+- 有真实样例时继续执行 LVX2/PCAP 离线 smoke。
 - 不提交 `build-msvc/`、`testdata/manual/sample.lvx2`、`testdata/manual/sample.pcap` 和 smoke 输出。
 
-## 6. 阶段验收标准
+## 8. 阶段验收标准
 
-- `git status` 只包含本阶段预期变更。
+每个后续阶段完成后固定检查：
+
+```powershell
+cmake --build build-msvc --config Release
+B:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe
+B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe
+```
+
+离线 smoke：
+
+```powershell
+cmake --build build-msvc\smoke-build --config Release
+B:\Workspace\LivoxViewerQT\build-msvc\smoke-build\Release\lvx2_smoke.exe
+```
+
+文件检查：
+
+```powershell
+git status --short
+git diff --check
+Get-ChildItem build-msvc\smoke-output -File | Select-Object Name,Length
+```
+
+验收结果应至少覆盖：
+
 - Release 构建成功。
 - `windeployqt` 成功完成。
-- `LivoxViewerQT.exe` 能启动并保持运行。
-- LVX2 样例能加载并显示第一帧。
-- PCAP 样例能加载并显示第一帧。
-- LVX2 转换到 PCD、LAS、CSV、TXT 后生成非空文件。
+- GUI 启动后不立即崩溃。
+- LVX2 样例可读取。
+- PCAP 样例可读取。
+- PCD/LAS/CSV/TXT 输出文件非空。
+- 本阶段 commit 只包含本阶段相关源码或文档变更。
