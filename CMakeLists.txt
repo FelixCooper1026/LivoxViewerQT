@@ -140,30 +140,30 @@ endif()
 set(SOURCES
     apps/LivoxViewer/main.cpp
     apps/LivoxViewer/LivoxViewerUi.cpp
-    apps/LivoxViewer/ViewerToolbar.cpp
-    apps/LivoxViewer/PlaybackBar.cpp
-    apps/LivoxViewer/DevicePanel.cpp
-    apps/LivoxViewer/ParameterPanel.cpp
-    apps/LivoxViewer/FileInfoPanel.cpp
-    apps/LivoxViewer/ImuPanel.cpp
-    apps/LivoxViewer/LogPanel.cpp
-    apps/LivoxViewer/MainMenuActions.cpp
-    apps/LivoxViewer/CaptureActions.cpp
-    apps/LivoxViewer/DeviceActions.cpp
-    apps/LivoxViewer/HelpActions.cpp
-    apps/LivoxViewer/PlaybackActions.cpp
-    apps/LivoxViewer/FileActions.cpp
-    apps/LivoxViewer/StatusRuntime.cpp
-    apps/LivoxViewer/FormatConvertDialog.cpp
-    apps/LivoxViewer/FirmwareUpgradeDialog.cpp
-    apps/LivoxViewer/PointCloudFilterDialog.cpp
-    apps/LivoxViewer/PlaybackControllerActions.cpp
-    apps/LivoxViewer/PcapPlaybackActions.cpp
-    apps/LivoxViewer/Lvx2ConvertActions.cpp
-    apps/LivoxViewer/PointCloudActions.cpp
-    apps/LivoxViewer/LidarSdkActions.cpp
-    apps/LivoxViewer/LidarSdkCallbacks.cpp
-    apps/LivoxViewer/LidarParameterActions.cpp
+    apps/LivoxViewer/panels/ViewerToolbar.cpp
+    apps/LivoxViewer/panels/PlaybackBar.cpp
+    apps/LivoxViewer/panels/DevicePanel.cpp
+    apps/LivoxViewer/panels/ParameterPanel.cpp
+    apps/LivoxViewer/panels/FileInfoPanel.cpp
+    apps/LivoxViewer/panels/ImuPanel.cpp
+    apps/LivoxViewer/panels/LogPanel.cpp
+    apps/LivoxViewer/actions/MainMenuActions.cpp
+    apps/LivoxViewer/actions/CaptureActions.cpp
+    apps/LivoxViewer/actions/DeviceActions.cpp
+    apps/LivoxViewer/actions/HelpActions.cpp
+    apps/LivoxViewer/actions/PlaybackActions.cpp
+    apps/LivoxViewer/actions/FileActions.cpp
+    apps/LivoxViewer/actions/StatusRuntime.cpp
+    apps/LivoxViewer/dialogs/FormatConvertDialog.cpp
+    apps/LivoxViewer/dialogs/FirmwareUpgradeDialog.cpp
+    apps/LivoxViewer/dialogs/PointCloudFilterDialog.cpp
+    apps/LivoxViewer/actions/PlaybackControllerActions.cpp
+    apps/LivoxViewer/actions/PcapPlaybackActions.cpp
+    apps/LivoxViewer/actions/Lvx2ConvertActions.cpp
+    apps/LivoxViewer/actions/PointCloudActions.cpp
+    apps/LivoxViewer/actions/LidarSdkActions.cpp
+    apps/LivoxViewer/actions/LidarSdkCallbacks.cpp
+    apps/LivoxViewer/actions/LidarParameterActions.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkService.cpp
