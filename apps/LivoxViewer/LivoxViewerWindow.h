@@ -110,6 +110,9 @@ private:
     void showFormatConvertDialog();
     void showFirmwareUpgradeDialog();
     void showPointCloudFilterDialog();
+    void createCaptureActions(QMenu* toolsMenu);
+    void createDeviceActions();
+    void createHelpActions();
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();
