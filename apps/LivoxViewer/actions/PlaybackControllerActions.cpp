@@ -42,26 +42,26 @@ static int visiblePlaybackFrameCount(const Playback::Source* source,
 
 void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source)
 {
-    playbackSource = source;
-    playbackDevices = playbackSource ? playbackSource->devices() : QVector<PlaybackDeviceInfo>();
-    playbackDeviceVisible.clear();
-    for (const PlaybackDeviceInfo& device : playbackDevices) {
-        playbackDeviceVisible.insert(device.lidarId, true);
+    playbackState.source = source;
+    playbackState.devices = playbackState.source ? playbackState.source->devices() : QVector<PlaybackDeviceInfo>();
+    playbackState.deviceVisible.clear();
+    for (const PlaybackDeviceInfo& device : playbackState.devices) {
+        playbackState.deviceVisible.insert(device.lidarId, true);
     }
     rebuildLvx2DeviceTab();
 
-    playbackSlidingWindowStart = -1;
-    playbackSlidingWindowEnd = -1;
-    playbackSlidingWindowPoints.clear();
-    playbackSlidingWindowSegmentPointCounts.clear();
-    playbackSlidingWindowTimestamp = 0;
-    playbackPath = playbackSource ? playbackSource->path() : QString();
-    playbackActive = (playbackSource && playbackSource->frameCount() > 0);
-    playbackFrameCount = visiblePlaybackFrameCount(playbackSource.get(), playbackMode, frameIntervalMs);
-    if (playbackActive && playbackFrameCount <= 0) {
-        playbackFrameCount = 1;
+    playbackState.slidingWindowStart = -1;
+    playbackState.slidingWindowEnd = -1;
+    playbackState.slidingWindowPoints.clear();
+    playbackState.slidingWindowSegmentPointCounts.clear();
+    playbackState.slidingWindowTimestamp = 0;
+    playbackState.path = playbackState.source ? playbackState.source->path() : QString();
+    playbackState.active = (playbackState.source && playbackState.source->frameCount() > 0);
+    playbackState.frameCount = visiblePlaybackFrameCount(playbackState.source.get(), playbackState.mode, frameIntervalMs);
+    if (playbackState.active && playbackState.frameCount <= 0) {
+        playbackState.frameCount = 1;
     }
-    playbackFrame = -1;
+    playbackState.frame = -1;
 
     {
         QMutexLocker locker(&frameMutex);
@@ -73,20 +73,20 @@ void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback:
     updateLvx2PlaybackUi();
     showLvx2PlaybackFrame(0);
 
-    const QString fileName = playbackPath.isEmpty() ? QString() : QFileInfo(playbackPath).fileName();
+    const QString fileName = playbackState.path.isEmpty() ? QString() : QFileInfo(playbackState.path).fileName();
     if (statusLabelBar) {
-        if (playbackSource && playbackSource->kind() == Playback::SourceKind::Pcap) {
+        if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
             statusLabelBar->setText(QString("Pcap播放: %1").arg(fileName));
         } else {
             statusLabelBar->setText(QString("LVX2播放: %1").arg(fileName));
         }
     }
-    if (playbackSource && playbackSource->kind() == Playback::SourceKind::Pcap) {
+    if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
         logMessage(QString("已加载Pcap文件: %1 (共 %2 帧)")
-                       .arg(QDir::toNativeSeparators(playbackPath))
-                       .arg(playbackSource->frameCount()));
+                       .arg(QDir::toNativeSeparators(playbackState.path))
+                       .arg(playbackState.source->frameCount()));
     } else {
-        logMessage(QString("已加载LVX2文件: %1").arg(QDir::toNativeSeparators(playbackPath)));
+        logMessage(QString("已加载LVX2文件: %1").arg(QDir::toNativeSeparators(playbackState.path)));
     }
 }
 
@@ -94,10 +94,10 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
 {
     closeLvx2Playback(false);
 
-    playbackLoading = true;
-    playbackPath = filePath;
-    playbackLoadToken++;
-    const quint64 currentToken = playbackLoadToken;
+    playbackState.loading = true;
+    playbackState.path = filePath;
+    playbackState.loadToken++;
+    const quint64 currentToken = playbackState.loadToken;
 
     setLvx2PlaybackPlaying(false);
     updateLvx2PlaybackUi();
@@ -111,13 +111,13 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
         const QString errorMessage = source->errorMessage();
 
         QMetaObject::invokeMethod(this, [this, currentToken, source, ok, errorMessage]() {
-            if (currentToken != playbackLoadToken) {
+            if (currentToken != playbackState.loadToken) {
                 return;
             }
 
-            playbackLoading = false;
+            playbackState.loading = false;
             if (!ok) {
-                playbackPath.clear();
+                playbackState.path.clear();
                 updateLvx2PlaybackUi();
                 if (statusLabelBar) {
                     statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
@@ -137,21 +137,21 @@ void LivoxViewerWindow::closeLvx2Playback(bool clearView)
 {
     setLvx2PlaybackPlaying(false);
 
-    playbackLoadToken++;
-    playbackSource.reset();
-    playbackActive = false;
-    playbackLoading = false;
-    playbackFrame = -1;
-    playbackFrameCount = 0;
-    playbackDevices.clear();
-    playbackDeviceVisible.clear();
+    playbackState.loadToken++;
+    playbackState.source.reset();
+    playbackState.active = false;
+    playbackState.loading = false;
+    playbackState.frame = -1;
+    playbackState.frameCount = 0;
+    playbackState.devices.clear();
+    playbackState.deviceVisible.clear();
     rebuildLvx2DeviceTab();
-    playbackSlidingWindowStart = -1;
-    playbackSlidingWindowEnd = -1;
-    playbackSlidingWindowPoints.clear();
-    playbackSlidingWindowSegmentPointCounts.clear();
-    playbackSlidingWindowTimestamp = 0;
-    playbackPath.clear();
+    playbackState.slidingWindowStart = -1;
+    playbackState.slidingWindowEnd = -1;
+    playbackState.slidingWindowPoints.clear();
+    playbackState.slidingWindowSegmentPointCounts.clear();
+    playbackState.slidingWindowTimestamp = 0;
+    playbackState.path.clear();
 
     updateLvx2PlaybackUi();
     if (clearView && pointCloudView) {
@@ -165,16 +165,16 @@ void LivoxViewerWindow::closeLvx2Playback(bool clearView)
 
 void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 {
-    if (!playbackActive || !playbackSource || playbackFrameCount <= 0) {
+    if (!playbackState.active || !playbackState.source || playbackState.frameCount <= 0) {
         return;
     }
 
-    playbackFrameIndex = std::clamp(playbackFrameIndex, 0, playbackFrameCount - 1);
-    const int sourceFrameCount = playbackSource->frameCount();
+    playbackFrameIndex = std::clamp(playbackFrameIndex, 0, playbackState.frameCount - 1);
+    const int sourceFrameCount = playbackState.source->frameCount();
     const int rawFrameCount = rawFramesPerPlaybackFrame(frameIntervalMs);
     int rawStartIndex = 0;
     int rawEndIndex = 0;
-    if (playbackMode == Lvx2PlaybackMode::SlidingWindow) {
+    if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
         rawEndIndex = std::min(playbackFrameIndex + 1, sourceFrameCount);
         rawStartIndex = std::max(0, rawEndIndex - rawFrameCount);
     } else {
@@ -187,69 +187,69 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 
     auto readRawFrame = [this](int rawIndex) -> PointCloudFrame {
         PointCloudFrame frame;
-        if (!playbackSource || !playbackSource->readFrame(rawIndex, playbackDeviceVisible, frame)) {
+        if (!playbackState.source || !playbackState.source->readFrame(rawIndex, playbackState.deviceVisible, frame)) {
             return {};
         }
         return frame;
     };
 
-    if (playbackMode == Lvx2PlaybackMode::SlidingWindow) {
+    if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
         const bool canIncrementalAdvance =
-            (playbackSlidingWindowStart >= 0 && playbackSlidingWindowEnd >= 0 &&
-             rawStartIndex >= playbackSlidingWindowStart && rawEndIndex >= playbackSlidingWindowEnd &&
-             rawStartIndex - playbackSlidingWindowStart <= 1 && rawEndIndex - playbackSlidingWindowEnd <= 1);
+            (playbackState.slidingWindowStart >= 0 && playbackState.slidingWindowEnd >= 0 &&
+             rawStartIndex >= playbackState.slidingWindowStart && rawEndIndex >= playbackState.slidingWindowEnd &&
+             rawStartIndex - playbackState.slidingWindowStart <= 1 && rawEndIndex - playbackState.slidingWindowEnd <= 1);
 
         if (!canIncrementalAdvance) {
-            playbackSlidingWindowPoints.clear();
-            playbackSlidingWindowSegmentPointCounts.clear();
+            playbackState.slidingWindowPoints.clear();
+            playbackState.slidingWindowSegmentPointCounts.clear();
             for (int i = rawStartIndex; i < rawEndIndex; ++i) {
                 const PointCloudFrame rawFrame = readRawFrame(i);
-                playbackSlidingWindowPoints += rawFrame.points;
-                playbackSlidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
+                playbackState.slidingWindowPoints += rawFrame.points;
+                playbackState.slidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
             }
         } else {
-            if (rawStartIndex > playbackSlidingWindowStart && !playbackSlidingWindowSegmentPointCounts.isEmpty()) {
-                const int removeCount = playbackSlidingWindowSegmentPointCounts.front();
+            if (rawStartIndex > playbackState.slidingWindowStart && !playbackState.slidingWindowSegmentPointCounts.isEmpty()) {
+                const int removeCount = playbackState.slidingWindowSegmentPointCounts.front();
                 if (removeCount > 0) {
-                    playbackSlidingWindowPoints.remove(0, removeCount);
+                    playbackState.slidingWindowPoints.remove(0, removeCount);
                 }
-                playbackSlidingWindowSegmentPointCounts.remove(0);
+                playbackState.slidingWindowSegmentPointCounts.remove(0);
             }
-            if (rawEndIndex > playbackSlidingWindowEnd) {
+            if (rawEndIndex > playbackState.slidingWindowEnd) {
                 const PointCloudFrame addedFrame = readRawFrame(rawEndIndex - 1);
-                playbackSlidingWindowPoints += addedFrame.points;
-                playbackSlidingWindowSegmentPointCounts.push_back(addedFrame.points.size());
+                playbackState.slidingWindowPoints += addedFrame.points;
+                playbackState.slidingWindowSegmentPointCounts.push_back(addedFrame.points.size());
             }
         }
-        playbackSlidingWindowStart = rawStartIndex;
-        playbackSlidingWindowEnd = rawEndIndex;
-        playbackSlidingWindowTimestamp = 0;
-        for (int i = playbackSlidingWindowStart; i < playbackSlidingWindowEnd; ++i) {
-            playbackSlidingWindowTimestamp =
-                std::max(playbackSlidingWindowTimestamp, readRawFrame(i).timestamp);
+        playbackState.slidingWindowStart = rawStartIndex;
+        playbackState.slidingWindowEnd = rawEndIndex;
+        playbackState.slidingWindowTimestamp = 0;
+        for (int i = playbackState.slidingWindowStart; i < playbackState.slidingWindowEnd; ++i) {
+            playbackState.slidingWindowTimestamp =
+                std::max(playbackState.slidingWindowTimestamp, readRawFrame(i).timestamp);
         }
     } else {
-        playbackSlidingWindowStart = rawStartIndex;
-        playbackSlidingWindowEnd = rawEndIndex;
-        playbackSlidingWindowPoints.clear();
-        playbackSlidingWindowSegmentPointCounts.clear();
-        playbackSlidingWindowTimestamp = 0;
+        playbackState.slidingWindowStart = rawStartIndex;
+        playbackState.slidingWindowEnd = rawEndIndex;
+        playbackState.slidingWindowPoints.clear();
+        playbackState.slidingWindowSegmentPointCounts.clear();
+        playbackState.slidingWindowTimestamp = 0;
         for (int i = rawStartIndex; i < rawEndIndex; ++i) {
             const PointCloudFrame rawFrame = readRawFrame(i);
-            playbackSlidingWindowPoints += rawFrame.points;
-            playbackSlidingWindowTimestamp = std::max(playbackSlidingWindowTimestamp, rawFrame.timestamp);
+            playbackState.slidingWindowPoints += rawFrame.points;
+            playbackState.slidingWindowTimestamp = std::max(playbackState.slidingWindowTimestamp, rawFrame.timestamp);
         }
     }
 
     PointCloudFrame frame;
     frame.device_handle = 0;
-    frame.timestamp = playbackSlidingWindowTimestamp;
-    frame.points = playbackSlidingWindowPoints;
+    frame.timestamp = playbackState.slidingWindowTimestamp;
+    frame.points = playbackState.slidingWindowPoints;
 
     applyPointCloudPipeline(frame);
     presentPointCloudFrame(frame);
 
-    playbackFrame = playbackFrameIndex;
+    playbackState.frame = playbackFrameIndex;
     updateLvx2PlaybackUi();
 }
 
@@ -277,12 +277,12 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
     }
     QSignalBlocker blocker(lvx2DeviceTable);
     lvx2DeviceTable->clearContents();
-    lvx2DeviceTable->setRowCount(playbackDevices.size());
-    for (int row = 0; row < playbackDevices.size(); ++row) {
-        const auto& info = playbackDevices[row];
+    lvx2DeviceTable->setRowCount(playbackState.devices.size());
+    for (int row = 0; row < playbackState.devices.size(); ++row) {
+        const auto& info = playbackState.devices[row];
         auto* visibleItem = new QTableWidgetItem();
         visibleItem->setFlags((visibleItem->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        const bool visible = playbackDeviceVisible.value(info.lidarId, true);
+        const bool visible = playbackState.deviceVisible.value(info.lidarId, true);
         visibleItem->setCheckState(visible ? Qt::Checked : Qt::Unchecked);
         visibleItem->setData(Qt::UserRole, static_cast<qulonglong>(info.lidarId));
         lvx2DeviceTable->setItem(row, 0, visibleItem);
@@ -299,16 +299,16 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
             return;
         }
         const uint32_t lidarId = static_cast<uint32_t>(item->data(Qt::UserRole).toULongLong());
-        playbackDeviceVisible[lidarId] = (item->checkState() == Qt::Checked);
-        if (playbackSource) {
-            playbackSource->invalidateCache();
+        playbackState.deviceVisible[lidarId] = (item->checkState() == Qt::Checked);
+        if (playbackState.source) {
+            playbackState.source->invalidateCache();
         }
-        playbackSlidingWindowStart = -1;
-        playbackSlidingWindowEnd = -1;
-        playbackSlidingWindowPoints.clear();
-        playbackSlidingWindowSegmentPointCounts.clear();
-        if (playbackActive && playbackFrame >= 0) {
-            showLvx2PlaybackFrame(playbackFrame);
+        playbackState.slidingWindowStart = -1;
+        playbackState.slidingWindowEnd = -1;
+        playbackState.slidingWindowPoints.clear();
+        playbackState.slidingWindowSegmentPointCounts.clear();
+        if (playbackState.active && playbackState.frame >= 0) {
+            showLvx2PlaybackFrame(playbackState.frame);
         }
     });
 }
@@ -316,77 +316,77 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
 void LivoxViewerWindow::updateLvx2PlaybackUi()
 {
     if (lvx2FileDock) {
-        const bool showDock = playbackActive || playbackLoading;
+        const bool showDock = playbackState.active || playbackState.loading;
         lvx2FileDock->setVisible(showDock);
         if (showDock) {
             lvx2FileDock->raise();
         }
     }
 
-    if (!lvx2PlaybackBar) {
+    if (!playbackState.bar) {
         return;
     }
 
-    lvx2PlaybackBar->setVisible(playbackActive || playbackLoading);
-    if (!playbackActive && !playbackLoading) {
+    playbackState.bar->setVisible(playbackState.active || playbackState.loading);
+    if (!playbackState.active && !playbackState.loading) {
         return;
     }
 
-    if (lvx2PlayPauseButton) {
-        QIcon icon = QIcon::fromTheme(playbackPlaying ? "media-playback-pause" : "media-playback-start");
+    if (playbackState.playPauseButton) {
+        QIcon icon = QIcon::fromTheme(playbackState.playing ? "media-playback-pause" : "media-playback-start");
         if (icon.isNull()) {
-            icon = style()->standardIcon(playbackPlaying ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay);
+            icon = style()->standardIcon(playbackState.playing ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay);
         }
-        lvx2PlayPauseButton->setIcon(icon);
-        lvx2PlayPauseButton->setToolTip(playbackPlaying ? "暂停" : "播放");
-        lvx2PlayPauseButton->setEnabled(playbackActive && !playbackLoading);
+        playbackState.playPauseButton->setIcon(icon);
+        playbackState.playPauseButton->setToolTip(playbackState.playing ? "暂停" : "播放");
+        playbackState.playPauseButton->setEnabled(playbackState.active && !playbackState.loading);
     }
-    if (lvx2PrevFrameButton) {
-        lvx2PrevFrameButton->setEnabled(playbackActive && !playbackLoading && playbackFrame > 0);
+    if (playbackState.prevFrameButton) {
+        playbackState.prevFrameButton->setEnabled(playbackState.active && !playbackState.loading && playbackState.frame > 0);
     }
-    if (lvx2NextFrameButton) {
-        lvx2NextFrameButton->setEnabled(playbackActive && !playbackLoading &&
-                                        playbackFrame >= 0 && playbackFrame < playbackFrameCount - 1);
+    if (playbackState.nextFrameButton) {
+        playbackState.nextFrameButton->setEnabled(playbackState.active && !playbackState.loading &&
+                                        playbackState.frame >= 0 && playbackState.frame < playbackState.frameCount - 1);
     }
-    if (lvx2ProgressSlider) {
-        playbackUpdatingSlider = true;
-        lvx2ProgressSlider->setRange(0, std::max(0, playbackFrameCount - 1));
-        lvx2ProgressSlider->setEnabled(playbackActive && !playbackLoading && playbackFrameCount > 0);
-        lvx2ProgressSlider->setValue(std::max(0, playbackFrame));
-        playbackUpdatingSlider = false;
+    if (playbackState.progressSlider) {
+        playbackState.updatingSlider = true;
+        playbackState.progressSlider->setRange(0, std::max(0, playbackState.frameCount - 1));
+        playbackState.progressSlider->setEnabled(playbackState.active && !playbackState.loading && playbackState.frameCount > 0);
+        playbackState.progressSlider->setValue(std::max(0, playbackState.frame));
+        playbackState.updatingSlider = false;
     }
-    if (lvx2CloseButton) {
-        lvx2CloseButton->setEnabled(!playbackLoading);
+    if (playbackState.closeButton) {
+        playbackState.closeButton->setEnabled(!playbackState.loading);
     }
-    if (lvx2PlaybackModeCombo) {
-        lvx2PlaybackModeCombo->setEnabled(playbackActive && !playbackLoading);
-        lvx2PlaybackModeCombo->setCurrentIndex(playbackMode == Lvx2PlaybackMode::SlidingWindow ? 1 : 0);
+    if (playbackState.modeCombo) {
+        playbackState.modeCombo->setEnabled(playbackState.active && !playbackState.loading);
+        playbackState.modeCombo->setCurrentIndex(playbackState.mode == Lvx2PlaybackMode::SlidingWindow ? 1 : 0);
     }
-    if (lvx2PlaybackLabel) {
-        const QString name = playbackPath.isEmpty() ? QString() : QFileInfo(playbackPath).fileName();
-        if (playbackLoading) {
-            lvx2PlaybackLabel->setText(QString("%1  加载中...").arg(name));
+    if (playbackState.label) {
+        const QString name = playbackState.path.isEmpty() ? QString() : QFileInfo(playbackState.path).fileName();
+        if (playbackState.loading) {
+            playbackState.label->setText(QString("%1  加载中...").arg(name));
         } else {
-            lvx2PlaybackLabel->setText(QString("%1  %2/%3")
+            playbackState.label->setText(QString("%1  %2/%3")
                                        .arg(name)
-                                       .arg(std::max(0, playbackFrame) + 1)
-                                       .arg(std::max(1, playbackFrameCount)));
+                                       .arg(std::max(0, playbackState.frame) + 1)
+                                       .arg(std::max(1, playbackState.frameCount)));
         }
     }
 }
 
 void LivoxViewerWindow::setLvx2PlaybackPlaying(bool playing)
 {
-    playbackPlaying = playing && playbackActive && !playbackLoading && playbackFrameCount > 0;
+    playbackState.playing = playing && playbackState.active && !playbackState.loading && playbackState.frameCount > 0;
 
-    if (lvx2PlaybackTimer) {
-        if (playbackPlaying) {
+    if (playbackState.timer) {
+        if (playbackState.playing) {
             const double baseStepMs =
-                (playbackMode == Lvx2PlaybackMode::SlidingWindow) ? 50.0 : static_cast<double>(frameIntervalMs);
-            const int interval = std::max(1, static_cast<int>(baseStepMs / playbackSpeed));
-            lvx2PlaybackTimer->start(interval);
+                (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) ? 50.0 : static_cast<double>(frameIntervalMs);
+            const int interval = std::max(1, static_cast<int>(baseStepMs / playbackState.speed));
+            playbackState.timer->start(interval);
         } else {
-            lvx2PlaybackTimer->stop();
+            playbackState.timer->stop();
         }
     }
     updateLvx2PlaybackUi();
@@ -394,13 +394,13 @@ void LivoxViewerWindow::setLvx2PlaybackPlaying(bool playing)
 
 void LivoxViewerWindow::onLvx2PlaybackTick()
 {
-    if (!playbackActive) {
+    if (!playbackState.active) {
         setLvx2PlaybackPlaying(false);
         return;
     }
 
-    const int nextFrame = playbackFrame + 1;
-    if (nextFrame >= playbackFrameCount) {
+    const int nextFrame = playbackState.frame + 1;
+    if (nextFrame >= playbackState.frameCount) {
         setLvx2PlaybackPlaying(false);
         return;
     }
@@ -409,7 +409,7 @@ void LivoxViewerWindow::onLvx2PlaybackTick()
 
 void LivoxViewerWindow::onLvx2PlaybackSliderMoved(int value)
 {
-    if (playbackUpdatingSlider || !playbackActive) {
+    if (playbackState.updatingSlider || !playbackState.active) {
         return;
     }
     setLvx2PlaybackPlaying(false);

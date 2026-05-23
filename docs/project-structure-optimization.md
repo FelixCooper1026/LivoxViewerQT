@@ -1,7 +1,7 @@
 ﻿# LivoxViewerQT 项目结构优化建议
 
-更新时间：2026-05-23
-当前基线提交：`bd75939 refactor: split main window panels and menu actions`
+更新时间：2026-05-24
+当前基线提交：`99bedbc refactor: organize viewer source directories`
 
 ## 1. 当前状态概览
 
@@ -15,7 +15,7 @@
 - `libs/PointCloud/` 已有 `PointCloudDecoder`、`PointCloudColorizer`、`PointCloudFilter`、`PointCloudProjection` 等处理模块。
 - `libs/AppConfig/` 与 `libs/LivoxCore/` 已拆出配置、发现、SDK、参数服务的部分实现。
 
-但需要明确：当前阶段主要完成了“物理拆文件”和“公共能力抽取”，还没有完全完成“业务边界闭合”。多个 `libs/*/src` 文件仍然直接包含 `LivoxViewerWindow.h`，并实现 `LivoxViewerWindow::` 成员函数。这意味着这些文件虽然位于 `libs` 目录下，职责上仍然属于应用层主窗口的一部分。
+但需要明确：当前阶段已经完成 `libs/*` 与主窗口实现的物理解耦，库层不再直接包含 `LivoxViewerWindow.h` 或实现 `LivoxViewerWindow::` 成员函数；剩余重点转为应用层内部状态所有权收敛，尤其是 `LivoxViewerWindow.h` 中仍集中持有的播放、采集、IMU、参数和滤波状态。
 
 ## 2. 阶段完成情况
 
@@ -127,6 +127,21 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 这些服务为后续从主窗口剥离 SDK、网络、配置和参数业务奠定了基础。
 
+### 3.6 Priority 3 第一阶段：回放状态封装
+
+已新增：
+
+- `apps/LivoxViewer/state/PlaybackControllerState.h`
+
+已完成：
+
+- 将 LVX2/PCAP 离线回放的数据状态集中到 `PlaybackControllerState`，包括 source、设备列表、设备可见性、路径、加载 token、播放状态、当前帧、帧数、播放速度和滑窗缓存。
+- 将回放条控件指针集中到 `PlaybackControllerState`，包括播放/暂停、首帧、上一帧、下一帧、尾帧、关闭、进度条、速度和播放模式控件。
+- `LivoxViewerWindow.h` 不再直接持有分散的 `playback*` / `lvx2Playback*` 成员，保留单个 `playbackState` 成员。
+- `PlaybackActions.cpp`、`PlaybackControllerActions.cpp`、`PcapPlaybackActions.cpp`、`PlaybackBar.cpp`、`StatusRuntime.cpp` 和相关点云刷新路径已改为通过 `playbackState` 访问原有状态。
+
+本阶段只改变状态归属和成员访问路径，不改变 LVX2/PCAP 加载、播放控制、滑窗缓存、设备可见性、进度条和 UI 文案。
+
 ## 4. 未完全完成项
 
 ### 4.1 `libs` 目录中仍有应用层主窗口实现
@@ -191,7 +206,7 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - 设备列表
 - 参数查询和参数记录状态
 - 点云窗口、滤波、投影状态
-- LVX2/PCAP 回放状态
+- LVX2/PCAP 回放状态已第一轮收敛为 `PlaybackControllerState`，但相关控制函数仍是主窗口成员函数
 - IMU/GPS/串口状态
 - 采集、保存、录制状态
 
@@ -342,7 +357,7 @@ libs/Export/
 
 建议顺序：
 
-1. 将 playback 状态封装为 `PlaybackControllerState` 或应用层 controller。
+1. 已完成：将 playback 状态封装为 `PlaybackControllerState`。
 2. 将 capture/record 状态封装为 `CaptureSession`。
 3. 将 IMU/GPS/serial 状态封装为独立对象。
 4. 将参数控件映射和参数记录状态放入参数面板或参数 controller。

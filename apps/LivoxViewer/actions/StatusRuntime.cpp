@@ -28,9 +28,9 @@ void LivoxViewerWindow::createStatusBarAndTimers()
     renderTimer->setTimerType(Qt::PreciseTimer);
     connect(renderTimer, &QTimer::timeout, this, &LivoxViewerWindow::onRenderTick);
     renderTimer->start(33);
-    lvx2PlaybackTimer = new QTimer(this);
-    lvx2PlaybackTimer->setTimerType(Qt::PreciseTimer);
-    connect(lvx2PlaybackTimer, &QTimer::timeout, this, &LivoxViewerWindow::onLvx2PlaybackTick);
+    playbackState.timer = new QTimer(this);
+    playbackState.timer->setTimerType(Qt::PreciseTimer);
+    connect(playbackState.timer, &QTimer::timeout, this, &LivoxViewerWindow::onLvx2PlaybackTick);
     // 采集定时器
     captureTimer = new QTimer(this);
     connect(captureTimer, &QTimer::timeout, this, &LivoxViewerWindow::onCaptureTick);

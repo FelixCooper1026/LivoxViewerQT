@@ -75,6 +75,7 @@
 #include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
+#include "state/PlaybackControllerState.h"
 
 QT_BEGIN_NAMESPACE
 class QChartView;
@@ -378,36 +379,7 @@ private:
     void startLvx2Recording(const QString& filePath, int durationSec);
     void stopLvx2Recording(bool flushPending);
 
-    std::shared_ptr<Playback::Source> playbackSource;
-    QVector<PlaybackDeviceInfo> playbackDevices;
-    QMap<uint32_t, bool> playbackDeviceVisible;
-    QString playbackPath;
-    bool playbackActive = false;
-    bool playbackLoading = false;
-    bool playbackPlaying = false;
-    int playbackFrame = -1;
-    int playbackFrameCount = 0;
-    quint64 playbackLoadToken = 0;
-    QTimer* lvx2PlaybackTimer = nullptr;
-    QWidget* lvx2PlaybackBar = nullptr;
-    QPushButton* lvx2PlayPauseButton = nullptr;
-    QPushButton* lvx2FirstFrameButton = nullptr;
-    QPushButton* lvx2PrevFrameButton = nullptr;
-    QPushButton* lvx2NextFrameButton = nullptr;
-    QPushButton* lvx2LastFrameButton = nullptr;
-    QPushButton* lvx2CloseButton = nullptr;
-    QSlider* lvx2ProgressSlider = nullptr;
-    QLabel* lvx2PlaybackLabel = nullptr;
-    QComboBox* lvx2SpeedCombo = nullptr;
-    QComboBox* lvx2PlaybackModeCombo = nullptr;
-    bool playbackUpdatingSlider = false;
-    double playbackSpeed = 1.0;
-    Lvx2PlaybackMode playbackMode = Lvx2PlaybackMode::SlidingWindow;
-    int playbackSlidingWindowStart = -1;
-    int playbackSlidingWindowEnd = -1;
-    QVector<PointCloudPoint> playbackSlidingWindowPoints;
-    QVector<int> playbackSlidingWindowSegmentPointCounts;
-    uint64_t playbackSlidingWindowTimestamp = 0;
+    PlaybackControllerState playbackState;
 
     // IMU CSV 采集
     QFile imuCsvFile;

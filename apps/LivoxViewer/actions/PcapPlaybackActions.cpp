@@ -12,10 +12,10 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
 {
     closeLvx2Playback(false);
 
-    playbackLoading = true;
-    playbackPath = filePath;
-    playbackLoadToken++;
-    const quint64 currentToken = playbackLoadToken;
+    playbackState.loading = true;
+    playbackState.path = filePath;
+    playbackState.loadToken++;
+    const quint64 currentToken = playbackState.loadToken;
 
     setLvx2PlaybackPlaying(false);
     updateLvx2PlaybackUi();
@@ -29,13 +29,13 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
         const QString errorMessage = source->errorMessage();
 
         QMetaObject::invokeMethod(this, [this, currentToken, source, ok, errorMessage]() {
-            if (currentToken != playbackLoadToken) {
+            if (currentToken != playbackState.loadToken) {
                 return;
             }
 
-            playbackLoading = false;
+            playbackState.loading = false;
             if (!ok) {
-                playbackPath.clear();
+                playbackState.path.clear();
                 updateLvx2PlaybackUi();
                 if (statusLabelBar) {
                     statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");

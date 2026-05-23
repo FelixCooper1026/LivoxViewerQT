@@ -51,7 +51,7 @@ void LivoxViewerWindow::initializeUserInterface()
     createPlaybackBar(centralContainer);
 
     centralLayout->addWidget(viewerToolbar);
-    centralLayout->addWidget(lvx2PlaybackBar);
+    centralLayout->addWidget(playbackState.bar);
     centralLayout->addWidget(pointCloudView, 1);
     setCentralWidget(centralContainer);
 
