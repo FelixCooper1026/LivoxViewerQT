@@ -707,24 +707,25 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
     if (ms < 50) ms = 50;
     frameIntervalMs = static_cast<uint64_t>(ms);
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
-    if (lvx2PlaybackActive) {
-        lvx2SlidingWindowStart = -1;
-        lvx2SlidingWindowEnd = -1;
-        lvx2SlidingWindowPoints.clear();
-        lvx2SlidingWindowSegmentPointCounts.clear();
-        lvx2SlidingWindowTimestamp = 0;
+    if (playbackActive) {
+        playbackSlidingWindowStart = -1;
+        playbackSlidingWindowEnd = -1;
+        playbackSlidingWindowPoints.clear();
+        playbackSlidingWindowSegmentPointCounts.clear();
+        playbackSlidingWindowTimestamp = 0;
+        const int sourceFrameCount = playbackSource ? playbackSource->frameCount() : 0;
         const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
-        if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
-            lvx2PlaybackFrameCount = static_cast<int>(lvx2RawFrames.size());
+        if (playbackMode == Lvx2PlaybackMode::SlidingWindow) {
+            playbackFrameCount = sourceFrameCount;
         } else {
-            lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+            playbackFrameCount = (sourceFrameCount + rawFramesPerStep - 1) / rawFramesPerStep;
         }
-        if (lvx2PlaybackFrameCount <= 0) {
-            lvx2PlaybackFrameCount = 1;
+        if (playbackFrameCount <= 0) {
+            playbackFrameCount = 1;
         }
-        const int targetFrame = std::clamp(lvx2PlaybackFrame, 0, lvx2PlaybackFrameCount - 1);
+        const int targetFrame = std::clamp(playbackFrame, 0, playbackFrameCount - 1);
         showLvx2PlaybackFrame(targetFrame);
-        if (lvx2PlaybackPlaying) {
+        if (playbackPlaying) {
             setLvx2PlaybackPlaying(true);
         } else {
             updateLvx2PlaybackUi();
@@ -1048,7 +1049,7 @@ bool LivoxViewerWindow::savePointCloudAsPCD(const QString& filePath, const QVect
 
 void LivoxViewerWindow::onRenderTick()
 {
-    if (lvx2PlaybackActive) {
+    if (playbackActive) {
         {
             QMutexLocker locker(&frameMutex);
             pendingFrames.clear();

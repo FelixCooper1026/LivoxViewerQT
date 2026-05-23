@@ -1,23 +1,12 @@
 #ifndef LVX2_LVX2PLAYBACKCONTROLLER_H
 #define LVX2_LVX2PLAYBACKCONTROLLER_H
 
-#include "Lvx2/Lvx2Types.h"
-
-#include <QMatrix4x4>
-#include <cstdint>
+#include "Playback/PlaybackSource.h"
 
 namespace Lvx2Playback {
 
-struct FrameIndex {
-    uint64_t offset = 0;
-    uint64_t nextOffset = 0;
-    uint64_t frameIndex = 0;
-};
-
-struct Extrinsic {
-    bool enabled = false;
-    QMatrix4x4 transform;
-};
+using FrameIndex = Playback::FrameRef;
+using Extrinsic = Playback::Extrinsic;
 
 enum class Mode {
     FrameByFrame = 0,

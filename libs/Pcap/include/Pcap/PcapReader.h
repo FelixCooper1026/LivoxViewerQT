@@ -1,19 +1,12 @@
-#ifndef LVX2_LVX2READER_H
-#define LVX2_LVX2READER_H
+#ifndef PCAP_PCAPREADER_H
+#define PCAP_PCAPREADER_H
 
 #include "Playback/PlaybackSource.h"
 
-#include <memory>
+namespace Pcap {
 
-class QFile;
-
-namespace Lvx2 {
-
-class Lvx2Reader final : public Playback::Source {
+class PcapReader final : public Playback::Source {
 public:
-    Lvx2Reader();
-    ~Lvx2Reader() override;
-
     bool load(const QString& filePath) override;
     Playback::SourceKind kind() const override;
     QString path() const override;
@@ -23,21 +16,15 @@ public:
     bool readFrame(int frameIndex,
                    const QMap<uint32_t, bool>& deviceVisibility,
                    PointCloudFrame& frame) override;
-    void invalidateCache() override;
 
 private:
-    bool ensurePlaybackFileOpen();
-
     QString filePath_;
     QString errorMessage_;
-    QVector<Playback::FrameRef> frames_;
-    QMap<uint32_t, Playback::Extrinsic> extrinsics_;
+    QVector<PointCloudFrame> frames_;
     QVector<Playback::DeviceInfo> devices_;
-    QVector<PointCloudFrame> frameCache_;
-    QVector<bool> frameCacheValid_;
-    std::unique_ptr<QFile> playbackFile_;
+    QMap<uint32_t, Playback::Extrinsic> extrinsics_;
 };
 
-} // namespace Lvx2
+} // namespace Pcap
 
-#endif // LVX2_LVX2READER_H
+#endif // PCAP_PCAPREADER_H

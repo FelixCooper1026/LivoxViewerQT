@@ -66,11 +66,13 @@
 #include <QHostAddress>
 #include <QAtomicInteger>
 #include <functional>
+#include <memory>
 #include "LivoxCore/LidarDeviceInfo.h"
 #include "LivoxCore/LidarSdkTypes.h"
 #include "LivoxCore/Lvx2Types.h"
 #include "Lvx2/Lvx2Converter.h"
 #include "Lvx2/Lvx2PlaybackController.h"
+#include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
 
@@ -93,6 +95,7 @@ public:
     using Lvx2PlaybackFrameIndex = Lvx2Playback::FrameIndex;
     using Lvx2PlaybackExtrinsic = Lvx2Playback::Extrinsic;
     using Lvx2PlaybackMode = Lvx2Playback::Mode;
+    using PlaybackDeviceInfo = Playback::DeviceInfo;
 
 private:
     void initializeUserInterface();
@@ -116,6 +119,7 @@ private:
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();
     void setLvx2PlaybackPlaying(bool playing);
+    void finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source);
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
     int lvx2PlaybackIntervalMs() const;
@@ -358,25 +362,16 @@ private:
     void startLvx2Recording(const QString& filePath, int durationSec);
     void stopLvx2Recording(bool flushPending);
 
-    bool pcapPlaybackFromFile = false;
-    QFile lvx2PlaybackFile;
-    QVector<Lvx2PlaybackFrameIndex> lvx2RawFrames;
-    QMap<uint32_t, Lvx2PlaybackExtrinsic> lvx2PlaybackExtrinsics;
-    struct Lvx2PlaybackDeviceInfoUi {
-        uint32_t lidarId = 0;
-        uint8_t deviceType = 0;
-        QString lidarSn;
-        QString modelDisplay;
-    };
-    QVector<Lvx2PlaybackDeviceInfoUi> lvx2PlaybackDevices;
-    QMap<uint32_t, bool> lvx2PlaybackDeviceVisible;
-    QString lvx2PlaybackPath;
-    bool lvx2PlaybackActive = false;
-    bool lvx2PlaybackLoading = false;
-    bool lvx2PlaybackPlaying = false;
-    int lvx2PlaybackFrame = -1;
-    int lvx2PlaybackFrameCount = 0;
-    quint64 lvx2PlaybackLoadToken = 0;
+    std::shared_ptr<Playback::Source> playbackSource;
+    QVector<PlaybackDeviceInfo> playbackDevices;
+    QMap<uint32_t, bool> playbackDeviceVisible;
+    QString playbackPath;
+    bool playbackActive = false;
+    bool playbackLoading = false;
+    bool playbackPlaying = false;
+    int playbackFrame = -1;
+    int playbackFrameCount = 0;
+    quint64 playbackLoadToken = 0;
     QTimer* lvx2PlaybackTimer = nullptr;
     QWidget* lvx2PlaybackBar = nullptr;
     QPushButton* lvx2PlayPauseButton = nullptr;
@@ -389,16 +384,14 @@ private:
     QLabel* lvx2PlaybackLabel = nullptr;
     QComboBox* lvx2SpeedCombo = nullptr;
     QComboBox* lvx2PlaybackModeCombo = nullptr;
-    bool lvx2UpdatingSlider = false;
-    double lvx2PlaybackSpeed = 1.0;
-    Lvx2PlaybackMode lvx2PlaybackMode = Lvx2PlaybackMode::SlidingWindow;
-    QVector<PointCloudFrame> lvx2RawFrameCache;
-    QVector<bool> lvx2RawFrameCacheValid;
-    int lvx2SlidingWindowStart = -1;
-    int lvx2SlidingWindowEnd = -1;
-    QVector<PointCloudPoint> lvx2SlidingWindowPoints;
-    QVector<int> lvx2SlidingWindowSegmentPointCounts;
-    uint64_t lvx2SlidingWindowTimestamp = 0;
+    bool playbackUpdatingSlider = false;
+    double playbackSpeed = 1.0;
+    Lvx2PlaybackMode playbackMode = Lvx2PlaybackMode::SlidingWindow;
+    int playbackSlidingWindowStart = -1;
+    int playbackSlidingWindowEnd = -1;
+    QVector<PointCloudPoint> playbackSlidingWindowPoints;
+    QVector<int> playbackSlidingWindowSegmentPointCounts;
+    uint64_t playbackSlidingWindowTimestamp = 0;
 
     // IMU CSV 采集
     QFile imuCsvFile;

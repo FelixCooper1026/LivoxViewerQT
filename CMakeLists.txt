@@ -147,10 +147,12 @@ set(SOURCES
     libs/LivoxCore/src/LidarParameterParser.cpp
     libs/PointCloud/src/PointCloudView.cpp
     libs/PointCloud/src/PointCloudPipeline.cpp
+    libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PlaybackController.cpp
     libs/Lvx2/src/Lvx2Converter.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/PcapParser.cpp
+    libs/Pcap/src/PcapReader.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
@@ -172,12 +174,14 @@ set(HEADERS
     libs/PointCloud/include/PointCloud/PointCloudView.h
     libs/PointCloud/include/PointCloud/PointCloudPipeline.h
     libs/PointCloud/include/PointCloud/PointCloudPersistence.h
+    libs/Playback/include/Playback/PlaybackSource.h
     libs/Lvx2/include/Lvx2/Lvx2Types.h
     libs/Lvx2/include/Lvx2/Lvx2Reader.h
     libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
     libs/Lvx2/include/Lvx2/Lvx2Converter.h
     libs/Lvx2/include/Lvx2/Lvx2PointParser.h
     libs/Pcap/include/Pcap/PcapParser.h
+    libs/Pcap/include/Pcap/PcapReader.h
     libs/Pcap/include/Pcap/PcapUdpPacket.h
     libs/Pcap/include/Pcap/PointParser.h
     libs/Pcap/include/Pcap/PushMsgParser.h
@@ -258,6 +262,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/LivoxViewer
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Export/include

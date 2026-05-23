@@ -1876,48 +1876,48 @@ void LivoxViewerWindow::initializeUserInterface()
 
     connect(actionSaveIMU, &QAction::triggered, this, &LivoxViewerWindow::onActionCaptureImuTriggered);
     connect(lvx2PlayPauseButton, &QPushButton::clicked, [this]() {
-        if (!lvx2PlaybackActive) {
+        if (!playbackActive) {
             return;
         }
-        if (lvx2PlaybackPlaying) {
+        if (playbackPlaying) {
             setLvx2PlaybackPlaying(false);
             return;
         }
-        if (lvx2PlaybackFrameCount <= 0) {
+        if (playbackFrameCount <= 0) {
             return;
         }
-        if (lvx2PlaybackFrame < 0 || lvx2PlaybackFrame >= lvx2PlaybackFrameCount - 1) {
+        if (playbackFrame < 0 || playbackFrame >= playbackFrameCount - 1) {
             showLvx2PlaybackFrame(0);
         }
         setLvx2PlaybackPlaying(true);
     });
     connect(lvx2FirstFrameButton, &QPushButton::clicked, [this]() {
-        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+        if (!playbackActive || playbackFrameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
         showLvx2PlaybackFrame(0);
     });
     connect(lvx2PrevFrameButton, &QPushButton::clicked, [this]() {
-        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+        if (!playbackActive || playbackFrameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
-        showLvx2PlaybackFrame(std::max(0, lvx2PlaybackFrame - 1));
+        showLvx2PlaybackFrame(std::max(0, playbackFrame - 1));
     });
     connect(lvx2NextFrameButton, &QPushButton::clicked, [this]() {
-        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+        if (!playbackActive || playbackFrameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
-        showLvx2PlaybackFrame(std::min(lvx2PlaybackFrameCount - 1, lvx2PlaybackFrame + 1));
+        showLvx2PlaybackFrame(std::min(playbackFrameCount - 1, playbackFrame + 1));
     });
     connect(lvx2LastFrameButton, &QPushButton::clicked, [this]() {
-        if (!lvx2PlaybackActive || lvx2PlaybackFrameCount <= 0) {
+        if (!playbackActive || playbackFrameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
-        showLvx2PlaybackFrame(lvx2PlaybackFrameCount - 1);
+        showLvx2PlaybackFrame(playbackFrameCount - 1);
     });
     connect(lvx2ProgressSlider, &QSlider::valueChanged, this, &LivoxViewerWindow::onLvx2PlaybackSliderMoved);
     connect(lvx2SpeedCombo, &QComboBox::currentTextChanged, [this](const QString& text) {
@@ -1928,36 +1928,37 @@ void LivoxViewerWindow::initializeUserInterface()
         if (!ok || speed <= 0.0) {
             return;
         }
-        lvx2PlaybackSpeed = speed;
-        if (lvx2PlaybackPlaying) {
+        playbackSpeed = speed;
+        if (playbackPlaying) {
             setLvx2PlaybackPlaying(true);
         } else {
             updateLvx2PlaybackUi();
         }
     });
     connect(lvx2PlaybackModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
-        lvx2PlaybackMode = (index == 1) ? Lvx2PlaybackMode::SlidingWindow : Lvx2PlaybackMode::FrameByFrame;
-        lvx2SlidingWindowStart = -1;
-        lvx2SlidingWindowEnd = -1;
-        lvx2SlidingWindowPoints.clear();
-        lvx2SlidingWindowSegmentPointCounts.clear();
-        lvx2SlidingWindowTimestamp = 0;
-        if (!lvx2PlaybackActive) {
+        playbackMode = (index == 1) ? Lvx2PlaybackMode::SlidingWindow : Lvx2PlaybackMode::FrameByFrame;
+        playbackSlidingWindowStart = -1;
+        playbackSlidingWindowEnd = -1;
+        playbackSlidingWindowPoints.clear();
+        playbackSlidingWindowSegmentPointCounts.clear();
+        playbackSlidingWindowTimestamp = 0;
+        if (!playbackActive) {
             updateLvx2PlaybackUi();
             return;
         }
+        const int sourceFrameCount = playbackSource ? playbackSource->frameCount() : 0;
         const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
-        if (lvx2PlaybackMode == Lvx2PlaybackMode::SlidingWindow) {
-            lvx2PlaybackFrameCount = static_cast<int>(lvx2RawFrames.size());
+        if (playbackMode == Lvx2PlaybackMode::SlidingWindow) {
+            playbackFrameCount = sourceFrameCount;
         } else {
-            lvx2PlaybackFrameCount = (lvx2RawFrames.size() + rawFramesPerStep - 1) / rawFramesPerStep;
+            playbackFrameCount = (sourceFrameCount + rawFramesPerStep - 1) / rawFramesPerStep;
         }
-        if (lvx2PlaybackFrameCount <= 0) {
-            lvx2PlaybackFrameCount = 1;
+        if (playbackFrameCount <= 0) {
+            playbackFrameCount = 1;
         }
-        const int targetFrame = std::clamp(lvx2PlaybackFrame, 0, lvx2PlaybackFrameCount - 1);
+        const int targetFrame = std::clamp(playbackFrame, 0, playbackFrameCount - 1);
         showLvx2PlaybackFrame(targetFrame);
-        if (lvx2PlaybackPlaying) {
+        if (playbackPlaying) {
             setLvx2PlaybackPlaying(true);
         } else {
             updateLvx2PlaybackUi();
