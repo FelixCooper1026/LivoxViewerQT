@@ -191,6 +191,7 @@ set(SOURCES
 # 头文件
   set(HEADERS
      apps/LivoxViewer/LivoxViewerWindow.h
+     apps/LivoxViewer/state/CaptureSessionState.h
      apps/LivoxViewer/state/PlaybackControllerState.h
      libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h

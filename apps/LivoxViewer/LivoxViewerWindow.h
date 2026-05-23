@@ -75,6 +75,7 @@
 #include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
+#include "state/CaptureSessionState.h"
 #include "state/PlaybackControllerState.h"
 
 QT_BEGIN_NAMESPACE
@@ -262,14 +263,7 @@ private:
     QDockWidget* attrDock = nullptr;
     QTableWidget* attrTable = nullptr;
     // 采集控制
-    QSpinBox* captureDurationSpin = nullptr;
-    QPushButton* btnCaptureLog = nullptr;
-    QPushButton* btnCaptureDebug = nullptr;
-    QProgressBar* captureProgress = nullptr;
-    QTimer* captureTimer = nullptr;
-    int captureSecondsRemaining = 0;
-    int captureTotalSeconds = 0;
-    enum CaptureType { CaptureNone, CaptureLog, CaptureDebug, CaptureLVX2, CaptureIMU } currentCapture = CaptureNone;
+    CaptureSessionState captureState;
     // 多设备升级进度跟踪
     QMap<uint32_t, int> upgradeProgressMap;
     int upgradeTotalDevices = 0;  // 总设备数，用于进度显示
@@ -355,38 +349,18 @@ private:
     void updateSelectionTableAndLog();
 
     // PCD 保存
-    QString pcdSaveDir;           // 目标保存目录（PCD_雷达SN）
-    int pcdFramesRemaining = 0;   // 待保存帧数
-    bool pcdSaveActive = false;   // 是否正在保存
-    uint64_t pcdLastSavedTimestamp = 0; // 上一次已保存的帧时间戳，避免重复
     bool savePointCloudAsPCD(const QString& filePath, const QVector<PointCloudPoint>& points);
 
     // LAS 保存
-    QString lasSaveDir;           // 目标保存目录（LAS_雷达SN）
-    int lasFramesRemaining = 0;   // 待保存帧数
-    bool lasSaveActive = false;   // 是否正在保存
-    uint64_t lasLastSavedTimestamp = 0; // 上一次已保存的帧时间戳，避免重复
     bool savePointCloudAsLAS(const QString& filePath, const QVector<PointCloudPoint>& points);
 
     // LVX2 录制
-    QString lvx2SaveDir;          // 目标保存目录（LVX2_雷达SN）
-    bool lvx2SaveActive = false;  // 是否正在录制
-    QFile lvx2File;               // 当前打开文件
-    QVector<QByteArray> lvx2PendingPkgs; // 当前帧待写入包
-    uint64_t lvx2FrameStartNs = 0;       // 当前帧起始时间
-    uint64_t lvx2FrameIndex = 0;         // 帧序号
-    QMutex lvx2Mutex;                     // 录制互斥
     void startLvx2Recording(const QString& filePath, int durationSec);
     void stopLvx2Recording(bool flushPending);
 
     PlaybackControllerState playbackState;
 
     // IMU CSV 采集
-    QFile imuCsvFile;
-    bool imuSaveActive = false;
-    int imuSecondsRemaining = 0;
-    int imuTotalSeconds = 0;
-    QMutex imuCsvMutex;
     void appendImuCsvRow(quint64 timestamp_ns, float gx, float gy, float gz, float ax, float ay, float az);
 
 

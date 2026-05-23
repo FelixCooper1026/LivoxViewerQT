@@ -145,10 +145,10 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             window->decodePointCloudPacket(handle, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入
-            if (window->lvx2SaveActive && packet_copy->data_type == 0x01) {
-                QMutexLocker lk(&window->lvx2Mutex);
+            if (window->captureState.lvx2SaveActive && packet_copy->data_type == 0x01) {
+                QMutexLocker lk(&window->captureState.lvx2Mutex);
                 uint64_t ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
-                if (window->lvx2FrameStartNs == 0) window->lvx2FrameStartNs = ts;
+                if (window->captureState.lvx2FrameStartNs == 0) window->captureState.lvx2FrameStartNs = ts;
                 QByteArray pkg;
                 Lvx2PackageHeader hdr{};
                 hdr.lidar_id = handle;
@@ -160,21 +160,21 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
                 hdr.frame_counter = packet_copy->frame_cnt;
                 pkg.append(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
                 pkg.append(reinterpret_cast<const char*>(packet_copy->data), hdr.data_length);
-                window->lvx2PendingPkgs.push_back(pkg);
-                if (ts - window->lvx2FrameStartNs >= 50ULL * 1000000ULL) {
-                    uint64_t frameStart = window->lvx2File.pos();
+                window->captureState.lvx2PendingPkgs.push_back(pkg);
+                if (ts - window->captureState.lvx2FrameStartNs >= 50ULL * 1000000ULL) {
+                    uint64_t frameStart = window->captureState.lvx2File.pos();
                     Lvx2FrameHeader fh{};
-                    window->lvx2File.write(reinterpret_cast<const char*>(&fh), sizeof(fh));
-                    for (const QByteArray& ba : window->lvx2PendingPkgs) window->lvx2File.write(ba);
-                    uint64_t nextOff = window->lvx2File.pos();
+                    window->captureState.lvx2File.write(reinterpret_cast<const char*>(&fh), sizeof(fh));
+                    for (const QByteArray& ba : window->captureState.lvx2PendingPkgs) window->captureState.lvx2File.write(ba);
+                    uint64_t nextOff = window->captureState.lvx2File.pos();
                     fh.current_offset = frameStart;
                     fh.next_offset = nextOff;
-                    fh.frame_index = window->lvx2FrameIndex++;
-                    window->lvx2File.seek(frameStart);
-                    window->lvx2File.write(reinterpret_cast<const char*>(&fh), sizeof(fh));
-                    window->lvx2File.seek(nextOff);
-                    window->lvx2PendingPkgs.clear();
-                    window->lvx2FrameStartNs = ts;
+                    fh.frame_index = window->captureState.lvx2FrameIndex++;
+                    window->captureState.lvx2File.seek(frameStart);
+                    window->captureState.lvx2File.write(reinterpret_cast<const char*>(&fh), sizeof(fh));
+                    window->captureState.lvx2File.seek(nextOff);
+                    window->captureState.lvx2PendingPkgs.clear();
+                    window->captureState.lvx2FrameStartNs = ts;
                 }
             }
             
@@ -237,7 +237,7 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                     window->latestImu.have = true;
                 }
                 // 若正在保存IMU数据，将包内样本写入CSV
-                if (window->imuSaveActive) {
+                if (window->captureState.imuSaveActive) {
                     quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                     for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
                         const LivoxLidarImuRawPoint& s = p_imu_data[i];

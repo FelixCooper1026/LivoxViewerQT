@@ -9,12 +9,12 @@ void LivoxViewerWindow::createStatusBarAndTimers()
     statusLabelBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     statusBar->addPermanentWidget(statusLabelBar, 1);
     // 在状态栏添加采集进度条
-    captureProgress = new QProgressBar(statusBar);
-    captureProgress->setRange(0,100);
-    captureProgress->setValue(0);
-    captureProgress->setFixedWidth(260);
-    captureProgress->setTextVisible(true);
-    statusBar->addPermanentWidget(captureProgress, 0);
+    captureState.progress = new QProgressBar(statusBar);
+    captureState.progress->setRange(0,100);
+    captureState.progress->setValue(0);
+    captureState.progress->setFixedWidth(260);
+    captureState.progress->setTextVisible(true);
+    statusBar->addPermanentWidget(captureState.progress, 0);
 
     // 信号槽连接
     // 刷新按钮已移除，无需实现 onRefreshClicked
@@ -32,6 +32,6 @@ void LivoxViewerWindow::createStatusBarAndTimers()
     playbackState.timer->setTimerType(Qt::PreciseTimer);
     connect(playbackState.timer, &QTimer::timeout, this, &LivoxViewerWindow::onLvx2PlaybackTick);
     // 采集定时器
-    captureTimer = new QTimer(this);
-    connect(captureTimer, &QTimer::timeout, this, &LivoxViewerWindow::onCaptureTick);
+    captureState.timer = new QTimer(this);
+    connect(captureState.timer, &QTimer::timeout, this, &LivoxViewerWindow::onCaptureTick);
 }

@@ -79,7 +79,7 @@ void LivoxViewerWindow::showFirmwareUpgradeDialog()
         // 设置进度回调，支持多设备进度跟踪
         SetLivoxLidarUpgradeProgressCallback([](uint32_t handle, LivoxLidarUpgradeState state, void* client){
             LivoxViewerWindow* w = static_cast<LivoxViewerWindow*>(client);
-            if (!w || !w->captureProgress) return;
+            if (!w || !w->captureState.progress) return;
             QMetaObject::invokeMethod(w, [w, handle, state]() {
                 // 在锁内更新进度和计算统计信息
                 int avgProgress = 0;
@@ -127,8 +127,8 @@ void LivoxViewerWindow::showFirmwareUpgradeDialog()
                 } // 释放锁
 
                 // 在锁外更新UI，避免长时间持有锁
-                w->captureProgress->setValue(avgProgress);
-                w->captureProgress->setFormat(QString("升级进度 %1% (%2/%3)").arg(avgProgress).arg(completedCount).arg(totalDevices));
+                w->captureState.progress->setValue(avgProgress);
+                w->captureState.progress->setFormat(QString("升级进度 %1% (%2/%3)").arg(avgProgress).arg(completedCount).arg(totalDevices));
 
                 if (allComplete) {
                     w->statusLabelBar->setText(QString("升级完成 (%1个设备)，请等待设备重启").arg(totalDevices));
@@ -145,8 +145,8 @@ void LivoxViewerWindow::showFirmwareUpgradeDialog()
             UpgradeLivoxLidars(handleArr.data(), handleArr.size());
         }).detach();
 
-        captureProgress->setValue(0);
-        captureProgress->setFormat(QString("升级进度 0% (0/%1)").arg(selectedHandles.size()));
+        captureState.progress->setValue(0);
+        captureState.progress->setFormat(QString("升级进度 0% (0/%1)").arg(selectedHandles.size()));
         statusLabelBar->setText(QString("正在升级 %1 个设备，请勿断电或进行操作").arg(selectedHandles.size()));
         logMessage("正在进行固件升级，请勿断电或进行操作!!!");
 }

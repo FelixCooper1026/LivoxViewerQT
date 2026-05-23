@@ -186,79 +186,79 @@ static void DebugPointCloudCallback(livox_status status, uint32_t handle, LivoxL
 void LivoxViewerWindow::onStartCaptureLog()
 {
     if (!currentLidarDevice || !currentLidarDevice->is_connected) { logMessage("设备未连接"); return; }
-    if (currentCapture != CaptureNone) return;
-    currentCapture = CaptureLog;
-    int sec = captureDurationSpin ? captureDurationSpin->value() : 10;
-    captureSecondsRemaining = sec;
-    captureTotalSeconds = sec;
+    if (captureState.current != CaptureNone) return;
+    captureState.current = CaptureLog;
+    int sec = captureState.durationSpin ? captureState.durationSpin->value() : 10;
+    captureState.secondsRemaining = sec;
+    captureState.totalSeconds = sec;
     logMessage(QString("开始采集日志，时长: %1s").arg(sec));
-    captureProgress->setValue(0);
-    captureProgress->setFormat("LOG采集中 %p% (%v s)");
+    captureState.progress->setValue(0);
+    captureState.progress->setFormat("LOG采集中 %p% (%v s)");
     // 启动日志
     SaveLivoxLidarSdkLoggerFile();
     LivoxLidarStartLogger(currentLidarDevice->handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
-    captureTimer->start(1000);
+    captureState.timer->start(1000);
 }
 
 void LivoxViewerWindow::onStartCaptureDebug()
 {
     if (!currentLidarDevice || !currentLidarDevice->is_connected) { logMessage("设备未连接"); return; }
-    if (currentCapture != CaptureNone) return;
-    currentCapture = CaptureDebug;
-    int sec = captureDurationSpin ? captureDurationSpin->value() : 10;
-    captureSecondsRemaining = sec;
-    captureTotalSeconds = sec;
+    if (captureState.current != CaptureNone) return;
+    captureState.current = CaptureDebug;
+    int sec = captureState.durationSpin ? captureState.durationSpin->value() : 10;
+    captureState.secondsRemaining = sec;
+    captureState.totalSeconds = sec;
     logMessage(QString("开始采集Debug点云，时长: %1s").arg(sec));
-    captureProgress->setValue(0);
-    captureProgress->setFormat("Debug采集中 %p% (%v s)");
+    captureState.progress->setValue(0);
+    captureState.progress->setFormat("Debug采集中 %p% (%v s)");
     // 开启Debug点云
     SetLivoxLidarDebugPointCloud(currentLidarDevice->handle, true, DebugPointCloudCallback, this);
-    captureTimer->start(1000);
+    captureState.timer->start(1000);
 }
 
 void LivoxViewerWindow::onCaptureTick()
 {
-    if (captureSecondsRemaining <= 0) {
-        captureTimer->stop();
+    if (captureState.secondsRemaining <= 0) {
+        captureState.timer->stop();
         // 停止采集/录制
-        if (currentCapture == CaptureLog) {
+        if (captureState.current == CaptureLog) {
             LivoxLidarStopLogger(currentLidarDevice->handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
             logMessage("日志采集完成");
-        } else if (currentCapture == CaptureDebug) {
+        } else if (captureState.current == CaptureDebug) {
             SetLivoxLidarDebugPointCloud(currentLidarDevice->handle, false, DebugPointCloudCallback, this);
             logMessage("Debug点云采集完成");
-        } else if (currentCapture == CaptureLVX2) {
+        } else if (captureState.current == CaptureLVX2) {
             stopLvx2Recording(true);
             logMessage("LVX2数据保存完成");
-        } else if (currentCapture == CaptureIMU) {
+        } else if (captureState.current == CaptureIMU) {
             {
-                QMutexLocker lk(&imuCsvMutex);
-                if (imuCsvFile.isOpen()) imuCsvFile.flush();
-                if (imuCsvFile.isOpen()) imuCsvFile.close();
+                QMutexLocker lk(&captureState.imuCsvMutex);
+                if (captureState.imuCsvFile.isOpen()) captureState.imuCsvFile.flush();
+                if (captureState.imuCsvFile.isOpen()) captureState.imuCsvFile.close();
             }
-            imuSaveActive = false;
+            captureState.imuSaveActive = false;
             logMessage("IMU数据保存完成");
         }
-        if (captureProgress) {
-            captureProgress->setValue(100);
-            captureProgress->setFormat("采集完成");
+        if (captureState.progress) {
+            captureState.progress->setValue(100);
+            captureState.progress->setFormat("采集完成");
         }
         statusLabelBar->setText("已连接 - 采样中");
-        currentCapture = CaptureNone;
+        captureState.current = CaptureNone;
         return;
     }
     //statusLabelBar->setText("数据采集中");
 
-    int total = captureTotalSeconds > 0 ? captureTotalSeconds : (captureDurationSpin ? captureDurationSpin->value() : 1);
-    int done = total - captureSecondsRemaining;
+    int total = captureState.totalSeconds > 0 ? captureState.totalSeconds : (captureState.durationSpin ? captureState.durationSpin->value() : 1);
+    int done = total - captureState.secondsRemaining;
     if (done < 0) done = 0;
     if (done > total) done = total;
     int percent = total > 0 ? (done * 100 / total) : 100;
-    if (captureProgress) {
-        captureProgress->setValue(percent);
-        captureProgress->setFormat(QString("%1% (%2 s)").arg(percent).arg(captureSecondsRemaining));
+    if (captureState.progress) {
+        captureState.progress->setValue(percent);
+        captureState.progress->setFormat(QString("%1% (%2 s)").arg(percent).arg(captureState.secondsRemaining));
     }
-    captureSecondsRemaining--;
+    captureState.secondsRemaining--;
 }
 
 static QString nmeaChecksum(const QString& payload)
@@ -492,7 +492,7 @@ void LivoxViewerWindow::onActionCaptureImuTriggered()
         QMessageBox::warning(this, "保存IMU数据", "设备未连接");
         return;
     }
-    if (currentCapture != CaptureNone) {
+    if (captureState.current != CaptureNone) {
         QMessageBox::warning(this, "保存IMU数据", "当前已有采集任务在进行中");
         return;
     }
@@ -571,37 +571,37 @@ void LivoxViewerWindow::onActionCaptureImuTriggered()
     QString filePath = QDir(targetDir).filePath(QString("%1_%2.csv").arg(sn, startTime));
 
     // 打开CSV
-    imuCsvFile.setFileName(filePath);
-    if (!imuCsvFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    captureState.imuCsvFile.setFileName(filePath);
+    if (!captureState.imuCsvFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         QMessageBox::warning(this, "保存IMU数据", "无法创建CSV文件");
         return;
     }
     {
-        QMutexLocker lk(&imuCsvMutex);
-        QTextStream ts(&imuCsvFile);
+        QMutexLocker lk(&captureState.imuCsvMutex);
+        QTextStream ts(&captureState.imuCsvFile);
         ts << "timestamp_ns,gx,gy,gz,ax,ay,az\n";
     }
     // 配置进度条
-    if (captureProgress) {
-        captureProgress->setRange(0, 100);
-        captureProgress->setValue(0);
-        captureProgress->setFormat("IMU采集中 %p% (%v s)");
+    if (captureState.progress) {
+        captureState.progress->setRange(0, 100);
+        captureState.progress->setValue(0);
+        captureState.progress->setFormat("IMU采集中 %p% (%v s)");
     }
     // 启动计时
-    captureSecondsRemaining = spinSec->value();
-    captureTotalSeconds = captureSecondsRemaining;
-    currentCapture = CaptureIMU;
-    imuSaveActive = true;
+    captureState.secondsRemaining = spinSec->value();
+    captureState.totalSeconds = captureState.secondsRemaining;
+    captureState.current = CaptureIMU;
+    captureState.imuSaveActive = true;
     statusLabelBar->setText("正在保存IMU数据...");
     logMessage(QString("IMU保存路径: %1").arg(QDir::toNativeSeparators(filePath)));
-    captureTimer->start(1000);
+    captureState.timer->start(1000);
 }
 
 void LivoxViewerWindow::appendImuCsvRow(quint64 timestamp_ns, float gx, float gy, float gz, float ax, float ay, float az)
 {
-    QMutexLocker lk(&imuCsvMutex);
-    if (!imuSaveActive || !imuCsvFile.isOpen()) return;
-    QTextStream ts(&imuCsvFile);
+    QMutexLocker lk(&captureState.imuCsvMutex);
+    if (!captureState.imuSaveActive || !captureState.imuCsvFile.isOpen()) return;
+    QTextStream ts(&captureState.imuCsvFile);
     ts.setRealNumberNotation(QTextStream::FixedNotation);
     ts.setRealNumberPrecision(6);
     ts << timestamp_ns << ',' << gx << ',' << gy << ',' << gz << ',' << ax << ',' << ay << ',' << az << '\n';
@@ -898,44 +898,44 @@ void LivoxViewerWindow::onRenderTick()
         applyPointCloudPipeline(merged);
 
 		// 保存PCD：在渲染循环中，当开启保存任务时按帧保存
-		if (pcdSaveActive && pcdFramesRemaining > 0) {
+		if (captureState.pcdSaveActive && captureState.pcdFramesRemaining > 0) {
 			// 用合并窗口末尾时间戳作为文件名（纳秒）
-			if (pcdLastSavedTimestamp != now_ns) {
+			if (captureState.pcdLastSavedTimestamp != now_ns) {
 				QString fileName = QString::number(now_ns) + ".pcd";
-				QString filePath = QDir(pcdSaveDir).filePath(fileName);
+				QString filePath = QDir(captureState.pcdSaveDir).filePath(fileName);
 				if (savePointCloudAsPCD(filePath, merged.points)) {
 					logMessage(QString("PCD保存: %1").arg(QDir::toNativeSeparators(filePath)));
-					pcdLastSavedTimestamp = now_ns;
-					pcdFramesRemaining--;
-					if (pcdFramesRemaining <= 0) {
-						pcdSaveActive = false;
+					captureState.pcdLastSavedTimestamp = now_ns;
+					captureState.pcdFramesRemaining--;
+					if (captureState.pcdFramesRemaining <= 0) {
+						captureState.pcdSaveActive = false;
 						statusLabelBar->setText("PCD保存完成");
 					}
 				} else {
 					logMessage(QString("PCD保存失败: %1").arg(QDir::toNativeSeparators(filePath)));
 					// 即使失败也避免卡住
-					pcdLastSavedTimestamp = now_ns;
-					pcdFramesRemaining--;
+					captureState.pcdLastSavedTimestamp = now_ns;
+					captureState.pcdFramesRemaining--;
 				}
 			}
 		}
 		// 保存LAS：与PCD一致的触发策略
-		if (lasSaveActive && lasFramesRemaining > 0) {
-			if (lasLastSavedTimestamp != now_ns) {
+		if (captureState.lasSaveActive && captureState.lasFramesRemaining > 0) {
+			if (captureState.lasLastSavedTimestamp != now_ns) {
 				QString fileName = QString::number(now_ns) + ".las";
-				QString filePath = QDir(lasSaveDir).filePath(fileName);
+				QString filePath = QDir(captureState.lasSaveDir).filePath(fileName);
 				if (savePointCloudAsLAS(filePath, merged.points)) {
 					logMessage(QString("LAS保存: %1").arg(QDir::toNativeSeparators(filePath)));
-					lasLastSavedTimestamp = now_ns;
-					lasFramesRemaining--;
-					if (lasFramesRemaining <= 0) {
-						lasSaveActive = false;
+					captureState.lasLastSavedTimestamp = now_ns;
+					captureState.lasFramesRemaining--;
+					if (captureState.lasFramesRemaining <= 0) {
+						captureState.lasSaveActive = false;
 						statusLabelBar->setText("LAS保存完成");
 					}
 				} else {
 					logMessage(QString("LAS保存失败: %1").arg(QDir::toNativeSeparators(filePath)));
-					lasLastSavedTimestamp = now_ns;
-					lasFramesRemaining--;
+					captureState.lasLastSavedTimestamp = now_ns;
+					captureState.lasFramesRemaining--;
 				}
 			}
 		}
@@ -1137,41 +1137,41 @@ void LivoxViewerWindow::onSelectionFinished()
 
 void LivoxViewerWindow::startLvx2Recording(const QString& filePath, int durationSec)
 {
-    QMutexLocker lk(&lvx2Mutex);
-    if (lvx2SaveActive) return;
-    lvx2File.setFileName(filePath);
-    if (!lvx2File.open(QIODevice::WriteOnly)) {
+    QMutexLocker lk(&captureState.lvx2Mutex);
+    if (captureState.lvx2SaveActive) return;
+    captureState.lvx2File.setFileName(filePath);
+    if (!captureState.lvx2File.open(QIODevice::WriteOnly)) {
         logMessage("打开LVX2文件失败");
-        currentCapture = CaptureNone;
+        captureState.current = CaptureNone;
         return;
     }
     // 写头
     Lvx2PublicHeader pub;
-    lvx2File.write(reinterpret_cast<const char*>(&pub), sizeof(pub));
+    captureState.lvx2File.write(reinterpret_cast<const char*>(&pub), sizeof(pub));
     Lvx2PrivateHeader pri;
-    lvx2File.write(reinterpret_cast<const char*>(&pri), sizeof(pri));
+    captureState.lvx2File.write(reinterpret_cast<const char*>(&pri), sizeof(pri));
     Lvx2DeviceInfo dev{};
     QByteArray snb = currentLidarDevice ? currentLidarDevice->sn.left(15).toLatin1() : QByteArray("Unknown");
     std::memset(dev.lidar_sn, 0, sizeof(dev.lidar_sn));
     std::memcpy(dev.lidar_sn, snb.constData(), std::min<size_t>(size_t(snb.size()), sizeof(dev.lidar_sn)));
     dev.lidar_id = currentLidarDevice ? currentLidarDevice->handle : 0;
     dev.device_type = currentLidarDevice ? currentLidarDevice->dev_type : 0;
-    lvx2File.write(reinterpret_cast<const char*>(&dev), sizeof(dev));
+    captureState.lvx2File.write(reinterpret_cast<const char*>(&dev), sizeof(dev));
 
-    lvx2SaveActive = true;
-    lvx2FrameStartNs = 0;
-    lvx2FrameIndex = 0;
+    captureState.lvx2SaveActive = true;
+    captureState.lvx2FrameStartNs = 0;
+    captureState.lvx2FrameIndex = 0;
     // 借用采集计时器
-    captureSecondsRemaining = durationSec;
-    captureProgress->setValue(0);
-    captureProgress->setFormat("录制中 %p% (%v s)");
+    captureState.secondsRemaining = durationSec;
+    captureState.progress->setValue(0);
+    captureState.progress->setFormat("录制中 %p% (%v s)");
 }
 
 void LivoxViewerWindow::stopLvx2Recording(bool flushPending)
 {
-    QMutexLocker lk(&lvx2Mutex);
-    if (!lvx2SaveActive) return;
+    QMutexLocker lk(&captureState.lvx2Mutex);
+    if (!captureState.lvx2SaveActive) return;
     Q_UNUSED(flushPending);
-    lvx2SaveActive = false;
-    if (lvx2File.isOpen()) lvx2File.close();
+    captureState.lvx2SaveActive = false;
+    if (captureState.lvx2File.isOpen()) captureState.lvx2File.close();
 }

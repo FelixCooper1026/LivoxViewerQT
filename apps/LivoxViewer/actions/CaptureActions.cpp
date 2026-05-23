@@ -17,27 +17,27 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
     QAction* actionCaptureLAS = saveMenu->addAction("保存LAS点云...");
     QAction* actionSaveIMU = toolsMenu->addAction("保存IMU数据...");
 
-    // 采集动作：弹窗输入时长，顶部显示进度条（复用已有captureProgress，放在状态栏）
+    // 采集动作：弹窗输入时长，顶部显示进度条（复用已有captureState.progress，放在状态栏）
     connect(actionCaptureLog, &QAction::triggered, [this]() {
         bool ok = false;
         int sec = QInputDialog::getInt(this, "LOG数据采集", "采集时长(秒):", 300, 10, 86400, 10, &ok);
         if (!ok) return;
-        if (!captureDurationSpin) {
-            captureDurationSpin = new QSpinBox(this);
-            captureDurationSpin->setRange(10, 86400);   // ⭐ 设置最大值为 86400s (24 小时)
+        if (!captureState.durationSpin) {
+            captureState.durationSpin = new QSpinBox(this);
+            captureState.durationSpin->setRange(10, 86400);   // ⭐ 设置最大值为 86400s (24 小时)
         }
-        captureDurationSpin->setValue(sec);
+        captureState.durationSpin->setValue(sec);
         onStartCaptureLog();
     });
     connect(actionCaptureDebug, &QAction::triggered, [this]() {
         bool ok = false;
         int sec = QInputDialog::getInt(this, "Debug数据采集", "采集时长(秒):", 10, 1, 3600, 1, &ok);
         if (!ok) return;
-        if (!captureDurationSpin) {
-            captureDurationSpin = new QSpinBox(this);
-            captureDurationSpin->setRange(1, 3600);   // ⭐ 设置最大值为 3600
+        if (!captureState.durationSpin) {
+            captureState.durationSpin = new QSpinBox(this);
+            captureState.durationSpin->setRange(1, 3600);   // ⭐ 设置最大值为 3600
         }
-        captureDurationSpin->setValue(sec);
+        captureState.durationSpin->setValue(sec);
         onStartCaptureDebug();
     });
 
@@ -110,12 +110,12 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
         QString targetDir = QDir(baseDir).filePath(QString("PCD_%1").arg(sn));
         QDir().mkpath(targetDir);
-        pcdSaveDir = targetDir;
-        pcdFramesRemaining = spinCount->value();
-        pcdSaveActive = true;
-        pcdLastSavedTimestamp = 0;
-        statusLabelBar->setText(QString("开始保存PCD，共 %1 帧...").arg(pcdFramesRemaining));
-        logMessage(QString("PCD保存目录: %1").arg(QDir::toNativeSeparators(pcdSaveDir)));
+        captureState.pcdSaveDir = targetDir;
+        captureState.pcdFramesRemaining = spinCount->value();
+        captureState.pcdSaveActive = true;
+        captureState.pcdLastSavedTimestamp = 0;
+        statusLabelBar->setText(QString("开始保存PCD，共 %1 帧...").arg(captureState.pcdFramesRemaining));
+        logMessage(QString("PCD保存目录: %1").arg(QDir::toNativeSeparators(captureState.pcdSaveDir)));
     });
 
     //保存LAS点云
@@ -184,12 +184,12 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
         QString targetDir = QDir(baseDir).filePath(QString("LAS_%1").arg(sn));
         QDir().mkpath(targetDir);
-        lasSaveDir = targetDir;
-        lasFramesRemaining = spinCount->value();
-        lasSaveActive = true;
-        lasLastSavedTimestamp = 0;
-        statusLabelBar->setText(QString("开始保存LAS，共 %1 帧...").arg(lasFramesRemaining));
-        logMessage(QString("LAS保存目录: %1").arg(QDir::toNativeSeparators(lasSaveDir)));
+        captureState.lasSaveDir = targetDir;
+        captureState.lasFramesRemaining = spinCount->value();
+        captureState.lasSaveActive = true;
+        captureState.lasLastSavedTimestamp = 0;
+        statusLabelBar->setText(QString("开始保存LAS，共 %1 帧...").arg(captureState.lasFramesRemaining));
+        logMessage(QString("LAS保存目录: %1").arg(QDir::toNativeSeparators(captureState.lasSaveDir)));
     });
 
     //保存LVX2点云
@@ -261,24 +261,24 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         QString filePath = QDir(targetDir).filePath(QString("%1_%2.lvx2").arg(sn, startTime));
 
         // 配置进度条
-        if (captureProgress) {
-            captureProgress->setRange(0, 100);
-            captureProgress->setValue(0);
-            captureProgress->setFormat("录制中 %p% (%v s)");
+        if (captureState.progress) {
+            captureState.progress->setRange(0, 100);
+            captureState.progress->setValue(0);
+            captureState.progress->setFormat("录制中 %p% (%v s)");
         }
         // 保存配置并启动录制倒计时
-        captureSecondsRemaining = spinSec->value();
-        captureTotalSeconds = captureSecondsRemaining;
-        currentCapture = CaptureLVX2;
+        captureState.secondsRemaining = spinSec->value();
+        captureState.totalSeconds = captureState.secondsRemaining;
+        captureState.current = CaptureLVX2;
         statusLabelBar->setText("正在录制LVX2...");
         logMessage(QString("LVX2保存路径: %1").arg(QDir::toNativeSeparators(filePath)));
-        startLvx2Recording(filePath, captureSecondsRemaining);
-        captureTimer->start(1000);
+        startLvx2Recording(filePath, captureState.secondsRemaining);
+        captureState.timer->start(1000);
     });
 
     // 调整状态栏进度条长度
-    if (captureProgress) {
-        captureProgress->setFixedWidth(260);
+    if (captureState.progress) {
+        captureState.progress->setFixedWidth(260);
     }
 
     connect(actionSaveIMU, &QAction::triggered, this, &LivoxViewerWindow::onActionCaptureImuTriggered);

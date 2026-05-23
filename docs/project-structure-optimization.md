@@ -1,7 +1,7 @@
 ﻿# LivoxViewerQT 项目结构优化建议
 
 更新时间：2026-05-24
-当前基线提交：`99bedbc refactor: organize viewer source directories`
+当前基线提交：`cc19743 refactor: encapsulate playback state`
 
 ## 1. 当前状态概览
 
@@ -142,6 +142,22 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 本阶段只改变状态归属和成员访问路径，不改变 LVX2/PCAP 加载、播放控制、滑窗缓存、设备可见性、进度条和 UI 文案。
 
+### 3.7 Priority 3 第二阶段：采集和录制状态封装
+
+已新增：
+
+- `apps/LivoxViewer/state/CaptureSessionState.h`
+
+已完成：
+
+- 将 LOG/Debug/LVX2/IMU 采集状态集中到 `CaptureSessionState`，包括采集类型、倒计时、总时长、状态栏进度条和采集定时器。
+- 将 PCD/LAS 按帧保存状态集中到 `CaptureSessionState`，包括保存目录、剩余帧数、激活状态和上一帧保存时间戳。
+- 将 LVX2 录制状态集中到 `CaptureSessionState`，包括录制文件、待写入包、帧起始时间、帧序号和互斥锁。
+- 将 IMU CSV 录制状态集中到 `CaptureSessionState`，包括 CSV 文件、激活状态、倒计时和互斥锁。
+- `CaptureActions.cpp`、`PointCloudActions.cpp`、`LidarSdkCallbacks.cpp`、`StatusRuntime.cpp` 和固件升级进度显示已改为通过 `captureState` 访问原有状态。
+
+本阶段只改变状态归属和成员访问路径，不改变采集菜单、保存路径、进度条文案、LVX2 录制格式、PCD/LAS 保存策略或 IMU CSV 字段。
+
 ## 4. 未完全完成项
 
 ### 4.1 `libs` 目录中仍有应用层主窗口实现
@@ -208,7 +224,7 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - 点云窗口、滤波、投影状态
 - LVX2/PCAP 回放状态已第一轮收敛为 `PlaybackControllerState`，但相关控制函数仍是主窗口成员函数
 - IMU/GPS/串口状态
-- 采集、保存、录制状态
+- 采集、保存、录制状态已第一轮收敛为 `CaptureSessionState`，但相关控制函数仍是主窗口成员函数
 
 后续应逐步把状态移动到明确的 controller/service/panel 对象中。主窗口最终只保留模块对象、信号转发和生命周期管理。
 
@@ -358,7 +374,7 @@ libs/Export/
 建议顺序：
 
 1. 已完成：将 playback 状态封装为 `PlaybackControllerState`。
-2. 将 capture/record 状态封装为 `CaptureSession`。
+2. 已完成：将 capture/record 状态封装为 `CaptureSessionState`。
 3. 将 IMU/GPS/serial 状态封装为独立对象。
 4. 将参数控件映射和参数记录状态放入参数面板或参数 controller。
 5. 将滤波 dialog 相关状态放入 `PointCloudFilterDialog`。
