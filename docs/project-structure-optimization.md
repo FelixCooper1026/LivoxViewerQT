@@ -67,6 +67,8 @@
 - `apps/LivoxViewer/CaptureActions.cpp`
 - `apps/LivoxViewer/DeviceActions.cpp`
 - `apps/LivoxViewer/PlaybackActions.cpp`
+- `apps/LivoxViewer/FileActions.cpp`
+- `apps/LivoxViewer/StatusRuntime.cpp`
 
 当前 `initializeUserInterface()` 的职责已经收敛为：
 
@@ -145,12 +147,11 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 ### 4.2 `MainMenuActions.cpp` 仍然过大
 
-`apps/LivoxViewer/MainMenuActions.cpp` 当前已从约 1179 行降到约 130 行，仍集中包含：
+`apps/LivoxViewer/MainMenuActions.cpp` 当前已从约 1179 行降到约 39 行，当前职责只剩：
 
-- 文件菜单
-- 工具菜单
-- 状态栏、计时器和部分 action 连接
-- LVX2/PCAP 打开动作
+- 创建菜单栏和一级菜单。
+- 调用文件、采集、设备、帮助、回放、状态栏/定时器等模块创建函数。
+- 注册各 dock 的显示/隐藏 action。
 
 已拆出的独立 dialog 文件：
 
@@ -164,8 +165,10 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - `apps/LivoxViewer/CaptureActions.cpp`
 - `apps/LivoxViewer/DeviceActions.cpp`
 - `apps/LivoxViewer/PlaybackActions.cpp`
+- `apps/LivoxViewer/FileActions.cpp`
+- `apps/LivoxViewer/StatusRuntime.cpp`
 
-剩余目标是继续拆出文件打开、状态栏和定时器初始化，让 `MainMenuActions.cpp` 只保留菜单骨架。
+`MainMenuActions.cpp` 已达到只保留菜单骨架和模块组装的目标。
 
 ### 4.3 `ParameterPanel.cpp` 仍然偏重
 
@@ -306,7 +309,8 @@ libs/Export/
 5. 已完成：把采集/保存菜单动作拆到 `CaptureActions.cpp`。
 6. 已完成：把设备菜单动作拆到 `DeviceActions.cpp`。
 7. 已完成：把回放连接、IMU 绘图和点云滤波入口拆到 `PlaybackActions.cpp`。
-8. 待完成：把 LVX2/PCAP 文件打开拆到独立文件。
+8. 已完成：把 LVX2/PCAP 文件打开拆到 `FileActions.cpp`。
+9. 已完成：把状态栏和基础定时器初始化拆到 `StatusRuntime.cpp`。
 
 验收标准：
 

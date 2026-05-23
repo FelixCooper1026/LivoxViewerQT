@@ -114,6 +114,8 @@ private:
     void createDeviceActions();
     void createHelpActions();
     void createPlaybackActions(QMenu* toolsMenu);
+    void createFileActions();
+    void createStatusBarAndTimers();
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();
