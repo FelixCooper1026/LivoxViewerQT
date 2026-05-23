@@ -157,6 +157,7 @@ set(SOURCES
     apps/LivoxViewer/PlaybackControllerActions.cpp
     apps/LivoxViewer/PcapPlaybackActions.cpp
     apps/LivoxViewer/Lvx2ConvertActions.cpp
+    apps/LivoxViewer/PointCloudActions.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp
@@ -170,7 +171,6 @@ set(SOURCES
     libs/PointCloud/src/PointCloudColorizer.cpp
     libs/PointCloud/src/PointCloudFilter.cpp
     libs/PointCloud/src/PointCloudProjection.cpp
-    libs/PointCloud/src/PointCloudPipeline.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/PcapParser.cpp
