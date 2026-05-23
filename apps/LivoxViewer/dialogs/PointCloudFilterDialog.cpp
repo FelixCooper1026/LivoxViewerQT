@@ -1,20 +1,20 @@
 #include "LivoxViewerWindow.h"
 void LivoxViewerWindow::showPointCloudFilterDialog()
 {
-        if (!filterDialog) {
-            filterDialog = new QDialog(this);
-            filterDialog->setWindowTitle("点云滤波");
-            filterDialog->setMinimumWidth(500);
-            QVBoxLayout* layout = new QVBoxLayout(filterDialog);
+        if (!filterState.dialog) {
+            filterState.dialog = new QDialog(this);
+            filterState.dialog->setWindowTitle("点云滤波");
+            filterState.dialog->setMinimumWidth(500);
+            QVBoxLayout* layout = new QVBoxLayout(filterState.dialog);
 
             // Tag值滤波设置
-            QGroupBox* tagGroup = new QGroupBox("Tag值滤波", filterDialog);
+            QGroupBox* tagGroup = new QGroupBox("Tag值滤波", filterState.dialog);
             QVBoxLayout* tagLayout = new QVBoxLayout(tagGroup);
 
 
 
             auto makeTagRow = [&](const QString& label, int& value, QSpinBox*& spin, QLabel*& desc, const QString& meaning) {
-                QWidget* row = new QWidget(filterDialog);
+                QWidget* row = new QWidget(filterState.dialog);
                 QHBoxLayout* h = new QHBoxLayout(row);
                 h->setContentsMargins(0,0,0,0);
                 QLabel* lbl = new QLabel(label + ":", row);
@@ -38,71 +38,71 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             QString meaning32 = "雨雾、灰尘等微小颗粒";
             QString meaning10 = "相近物体间的粘连点云";
 
-            makeTagRow("Bit[7-6]", filterTagVal76, filterSpin76, desc76, meaning76);
-            makeTagRow("Bit[5-4]", filterTagVal54, filterSpin54, desc54, meaning54);
-            makeTagRow("Bit[3-2]", filterTagVal32, filterSpin32, desc32, meaning32);
-            makeTagRow("Bit[1-0]", filterTagVal10, filterSpin10, desc10, meaning10);
+            makeTagRow("Bit[7-6]", filterState.tagVal76, filterState.spin76, desc76, meaning76);
+            makeTagRow("Bit[5-4]", filterState.tagVal54, filterState.spin54, desc54, meaning54);
+            makeTagRow("Bit[3-2]", filterState.tagVal32, filterState.spin32, desc32, meaning32);
+            makeTagRow("Bit[1-0]", filterState.tagVal10, filterState.spin10, desc10, meaning10);
 
             // 设置初始值
-            if (filterSpin76) filterSpin76->setValue(filterTagVal76);
-            if (filterSpin54) filterSpin54->setValue(filterTagVal54);
-            if (filterSpin32) filterSpin32->setValue(filterTagVal32);
-            if (filterSpin10) filterSpin10->setValue(filterTagVal10);
+            if (filterState.spin76) filterState.spin76->setValue(filterState.tagVal76);
+            if (filterState.spin54) filterState.spin54->setValue(filterState.tagVal54);
+            if (filterState.spin32) filterState.spin32->setValue(filterState.tagVal32);
+            if (filterState.spin10) filterState.spin10->setValue(filterState.tagVal10);
 
             layout->addWidget(tagGroup);
 
 
 
             // 滤噪列表
-            QGroupBox* filterListGroup = new QGroupBox("滤噪列表", filterDialog);
+            QGroupBox* filterListGroup = new QGroupBox("滤噪列表", filterState.dialog);
             QVBoxLayout* filterListLayout = new QVBoxLayout(filterListGroup);
 
             // 添加Tag值到滤噪列表
-            QWidget* addFilterRow = new QWidget(filterDialog);
+            QWidget* addFilterRow = new QWidget(filterState.dialog);
             QHBoxLayout* addFilterLayout = new QHBoxLayout(addFilterRow);
             addFilterLayout->setContentsMargins(0,0,0,0);
 
             QLabel* addFilterLabel = new QLabel("当前Tag值:", addFilterRow);
             QLabel* currentTagLabel = new QLabel("0", addFilterRow);
             currentTagLabel->setStyleSheet("font-weight: bold; color: green;");
-            addNoiseFilterButton = new QPushButton("添加到滤噪列表", addFilterRow);
-            addNoiseFilterButton->setEnabled(false);
+            filterState.addNoiseFilterButton = new QPushButton("添加到滤噪列表", addFilterRow);
+            filterState.addNoiseFilterButton->setEnabled(false);
 
             addFilterLayout->addWidget(addFilterLabel);
             addFilterLayout->addWidget(currentTagLabel);
             addFilterLayout->addSpacing(12);
-            addFilterLayout->addWidget(addNoiseFilterButton);
+            addFilterLayout->addWidget(filterState.addNoiseFilterButton);
             addFilterLayout->addStretch();
             filterListLayout->addWidget(addFilterRow);
 
             // 滤噪列表显示
-            noiseFilterList = new QListWidget(filterDialog);
-            noiseFilterList->setMaximumHeight(120);
-            filterListLayout->addWidget(noiseFilterList);
+            filterState.noiseFilterList = new QListWidget(filterState.dialog);
+            filterState.noiseFilterList->setMaximumHeight(120);
+            filterListLayout->addWidget(filterState.noiseFilterList);
 
             // 移除按钮
             QHBoxLayout* removeFilterLayout = new QHBoxLayout();
-            removeNoiseFilterButton = new QPushButton("移除选中项", filterDialog);
-            removeNoiseFilterButton->setEnabled(false);
-            removeFilterLayout->addWidget(removeNoiseFilterButton);
+            filterState.removeNoiseFilterButton = new QPushButton("移除选中项", filterState.dialog);
+            filterState.removeNoiseFilterButton->setEnabled(false);
+            removeFilterLayout->addWidget(filterState.removeNoiseFilterButton);
             removeFilterLayout->addStretch();
             filterListLayout->addLayout(removeFilterLayout);
 
             layout->addWidget(filterListGroup);
 
             // 噪点处理选项（全局设置）
-            QGroupBox* noiseGroup = new QGroupBox("噪点处理", filterDialog);
+            QGroupBox* noiseGroup = new QGroupBox("噪点处理", filterState.dialog);
             QVBoxLayout* noiseLayout = new QVBoxLayout(noiseGroup);
 
-            showNoiseCheck = new QCheckBox("高亮显示噪点", noiseGroup);
-            removeNoiseCheck = new QCheckBox("移除噪点（仅移除显示，并非真正不输出）", noiseGroup);
+            filterState.showNoiseCheck = new QCheckBox("高亮显示噪点", noiseGroup);
+            filterState.removeNoiseCheck = new QCheckBox("移除噪点（仅移除显示，并非真正不输出）", noiseGroup);
 
-            noiseLayout->addWidget(showNoiseCheck);
-            noiseLayout->addWidget(removeNoiseCheck);
+            noiseLayout->addWidget(filterState.showNoiseCheck);
+            noiseLayout->addWidget(filterState.removeNoiseCheck);
             layout->addWidget(noiseGroup);
 
             // 控制按钮
-            QWidget* ctrlRow = new QWidget(filterDialog);
+            QWidget* ctrlRow = new QWidget(filterState.dialog);
             QHBoxLayout* ctrlLayout = new QHBoxLayout(ctrlRow);
             ctrlLayout->setContentsMargins(0,0,0,0);
             QPushButton* closeBtn = new QPushButton("关闭", ctrlRow);
@@ -112,9 +112,9 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
 
             // 连接信号
             auto updateTagLabel = [this]() {
-                if (filterTagLabel && filterTagLabel->isVisible()) {
+                if (filterState.tagLabel && filterState.tagLabel->isVisible()) {
                     uint8_t tag = makeFilterTag();
-                    filterTagLabel->setText(QString::number(tag));
+                    filterState.tagLabel->setText(QString::number(tag));
                 }
             };
 
@@ -129,18 +129,18 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                     }
                 };
 
-                if (desc76) desc76->setText(QString("%1（%2）").arg(meaning76, confToText(filterTagVal76)));
-                if (desc54) desc54->setText(QString("%1（%2）").arg(meaning54, confToText(filterTagVal54)));
-                if (desc32) desc32->setText(QString("%1（%2）").arg(meaning32, confToText(filterTagVal32)));
-                if (desc10) desc10->setText(QString("%1（%2）").arg(meaning10, confToText(filterTagVal10)));
+                if (desc76) desc76->setText(QString("%1（%2）").arg(meaning76, confToText(filterState.tagVal76)));
+                if (desc54) desc54->setText(QString("%1（%2）").arg(meaning54, confToText(filterState.tagVal54)));
+                if (desc32) desc32->setText(QString("%1（%2）").arg(meaning32, confToText(filterState.tagVal32)));
+                if (desc10) desc10->setText(QString("%1（%2）").arg(meaning10, confToText(filterState.tagVal10)));
             };
 
             auto connectFilterSpin = [this, updateMeanings](QSpinBox* spin, const QString& desc) {
-                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterDialog, [this, spin, desc, updateMeanings]() {
-                    if (desc == "Bit[7-6]") filterTagVal76 = spin->value();
-                    else if (desc == "Bit[5-4]") filterTagVal54 = spin->value();
-                    else if (desc == "Bit[3-2]") filterTagVal32 = spin->value();
-                    else if (desc == "Bit[1-0]") filterTagVal10 = spin->value();
+                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterState.dialog, [this, spin, desc, updateMeanings]() {
+                    if (desc == "Bit[7-6]") filterState.tagVal76 = spin->value();
+                    else if (desc == "Bit[5-4]") filterState.tagVal54 = spin->value();
+                    else if (desc == "Bit[3-2]") filterState.tagVal32 = spin->value();
+                    else if (desc == "Bit[1-0]") filterState.tagVal10 = spin->value();
 
                     // 更新含义说明和标签
                     updateMeanings();
@@ -149,21 +149,21 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                 });
             };
 
-            connectFilterSpin(filterSpin76, "Bit[7-6]");
-            connectFilterSpin(filterSpin54, "Bit[5-4]");
-            connectFilterSpin(filterSpin32, "Bit[3-2]");
-            connectFilterSpin(filterSpin10, "Bit[1-0]");
+            connectFilterSpin(filterState.spin76, "Bit[7-6]");
+            connectFilterSpin(filterState.spin54, "Bit[5-4]");
+            connectFilterSpin(filterState.spin32, "Bit[3-2]");
+            connectFilterSpin(filterState.spin10, "Bit[1-0]");
 
 
 
 
 
-            connect(showNoiseCheck, &QCheckBox::toggled, filterDialog, [this](bool en) {
-                showNoisePoints = en;
+            connect(filterState.showNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this](bool en) {
+                filterState.showNoisePoints = en;
                 if (pointCloudView) pointCloudView->update();
             });
-            connect(removeNoiseCheck, &QCheckBox::toggled, filterDialog, [this](bool en) {
-                removeNoisePoints = en;
+            connect(filterState.removeNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this](bool en) {
+                filterState.removeNoisePoints = en;
                 if (pointCloudView) pointCloudView->update();
             });
 
@@ -175,44 +175,44 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                 currentTagLabel->setText(QString::number(tag));
 
                 // 检查是否已在列表中
-                bool alreadyInList = noiseFilterTags.contains(tag);
-                addNoiseFilterButton->setEnabled(!alreadyInList);
-                addNoiseFilterButton->setText(alreadyInList ? "已在列表中" : "添加到滤噪列表");
+                bool alreadyInList = filterState.noiseFilterTags.contains(tag);
+                filterState.addNoiseFilterButton->setEnabled(!alreadyInList);
+                filterState.addNoiseFilterButton->setText(alreadyInList ? "已在列表中" : "添加到滤噪列表");
             };
 
             // 连接滤噪列表相关信号
-            connect(addNoiseFilterButton, &QPushButton::clicked, filterDialog, [this, currentTagLabel, updateCurrentTagDisplay]() {
+            connect(filterState.addNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, currentTagLabel, updateCurrentTagDisplay]() {
                 uint8_t tag = makeFilterTag();
-                if (!noiseFilterTags.contains(tag)) {
-                    noiseFilterTags.append(tag);
+                if (!filterState.noiseFilterTags.contains(tag)) {
+                    filterState.noiseFilterTags.append(tag);
                     updateNoiseFilterList();
                     updateCurrentTagDisplay(); // 立即更新按钮状态和文字
                 }
             });
 
-            connect(removeNoiseFilterButton, &QPushButton::clicked, filterDialog, [this, updateCurrentTagDisplay]() {
-                int currentRow = noiseFilterList->currentRow();
-                if (currentRow >= 0 && currentRow < noiseFilterTags.size()) {
-                    noiseFilterTags.removeAt(currentRow);
+            connect(filterState.removeNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, updateCurrentTagDisplay]() {
+                int currentRow = filterState.noiseFilterList->currentRow();
+                if (currentRow >= 0 && currentRow < filterState.noiseFilterTags.size()) {
+                    filterState.noiseFilterTags.removeAt(currentRow);
                     updateNoiseFilterList();
                     updateCurrentTagDisplay(); // 立即更新按钮状态和文字
                     if (pointCloudView) pointCloudView->update();
                 }
             });
 
-            connect(noiseFilterList, &QListWidget::itemSelectionChanged, filterDialog, [this]() {
-                removeNoiseFilterButton->setEnabled(noiseFilterList->currentRow() >= 0);
+            connect(filterState.noiseFilterList, &QListWidget::itemSelectionChanged, filterState.dialog, [this]() {
+                filterState.removeNoiseFilterButton->setEnabled(filterState.noiseFilterList->currentRow() >= 0);
             });
 
 
 
             // 重新连接spinbox信号，只更新含义说明和当前Tag值显示，不触发点云更新
             auto connectFilterSpinWithTag = [this, updateMeanings, updateCurrentTagDisplay](QSpinBox* spin, const QString& desc) {
-                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterDialog, [this, spin, desc, updateMeanings, updateCurrentTagDisplay]() {
-                    if (desc == "Bit[7-6]") filterTagVal76 = spin->value();
-                    else if (desc == "Bit[5-4]") filterTagVal54 = spin->value();
-                    else if (desc == "Bit[3-2]") filterTagVal32 = spin->value();
-                    else if (desc == "Bit[1-0]") filterTagVal10 = spin->value();
+                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterState.dialog, [this, spin, desc, updateMeanings, updateCurrentTagDisplay]() {
+                    if (desc == "Bit[7-6]") filterState.tagVal76 = spin->value();
+                    else if (desc == "Bit[5-4]") filterState.tagVal54 = spin->value();
+                    else if (desc == "Bit[3-2]") filterState.tagVal32 = spin->value();
+                    else if (desc == "Bit[1-0]") filterState.tagVal10 = spin->value();
 
                     // 只更新含义说明和当前Tag值显示，不触发点云更新
                     updateMeanings();
@@ -221,16 +221,16 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             };
 
             // 重新连接所有spinbox
-            connectFilterSpinWithTag(filterSpin76, "Bit[7-6]");
-            connectFilterSpinWithTag(filterSpin54, "Bit[5-4]");
-            connectFilterSpinWithTag(filterSpin32, "Bit[3-2]");
-            connectFilterSpinWithTag(filterSpin10, "Bit[1-0]");
+            connectFilterSpinWithTag(filterState.spin76, "Bit[7-6]");
+            connectFilterSpinWithTag(filterState.spin54, "Bit[5-4]");
+            connectFilterSpinWithTag(filterState.spin32, "Bit[3-2]");
+            connectFilterSpinWithTag(filterState.spin10, "Bit[1-0]");
 
-            connect(closeBtn, &QPushButton::clicked, filterDialog, &QDialog::accept);
+            connect(closeBtn, &QPushButton::clicked, filterState.dialog, &QDialog::accept);
 
             // 设置初始状态
-            if (showNoiseCheck) showNoiseCheck->setChecked(showNoisePoints);
-            if (removeNoiseCheck) removeNoiseCheck->setChecked(removeNoisePoints);
+            if (filterState.showNoiseCheck) filterState.showNoiseCheck->setChecked(filterState.showNoisePoints);
+            if (filterState.removeNoiseCheck) filterState.removeNoiseCheck->setChecked(filterState.removeNoisePoints);
 
             // 初始化含义说明和当前Tag值显示
             updateMeanings();
@@ -240,7 +240,7 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             updateNoiseFilterList();
         }
 
-        filterDialog->show();
-        filterDialog->raise();
-        filterDialog->activateWindow();
+        filterState.dialog->show();
+        filterState.dialog->raise();
+        filterState.dialog->activateWindow();
 }

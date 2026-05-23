@@ -780,9 +780,9 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
     }
 
     PointCloudFilter::Config filterConfig;
-    filterConfig.showNoisePoints = showNoisePoints;
-    filterConfig.removeNoisePoints = removeNoisePoints;
-    filterConfig.noiseTags = noiseFilterTags;
+    filterConfig.showNoisePoints = filterState.showNoisePoints;
+    filterConfig.removeNoisePoints = filterState.removeNoisePoints;
+    filterConfig.noiseTags = filterState.noiseFilterTags;
     frame.points = PointCloudFilter::apply(frame.points, filterConfig);
 }
 

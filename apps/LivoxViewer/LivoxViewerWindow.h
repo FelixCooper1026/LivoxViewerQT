@@ -79,6 +79,7 @@
 #include "state/ImuRuntimeState.h"
 #include "state/ParameterUiState.h"
 #include "state/PlaybackControllerState.h"
+#include "state/PointCloudFilterState.h"
 
 QT_BEGIN_NAMESPACE
 class QChartView;
@@ -300,31 +301,11 @@ private:
 
 
     // 点云滤波功能
-    bool showNoisePoints = false;
-    bool removeNoisePoints = false;
-    // 滤波参数
-    int filterTagVal76 = 0; // bit[7-6]
-    int filterTagVal54 = 0; // bit[5-4]
-    int filterTagVal32 = 0; // bit[3-2]
-    int filterTagVal10 = 0; // bit[1-0]
-    // 滤噪列表
-    QVector<uint8_t> noiseFilterTags;
-    // 控制面板（懒创建）
-    QDialog* filterDialog = nullptr;
-    QSpinBox* filterSpin76 = nullptr;
-    QSpinBox* filterSpin54 = nullptr;
-    QSpinBox* filterSpin32 = nullptr;
-    QSpinBox* filterSpin10 = nullptr;
-    QLabel* filterTagLabel = nullptr;
-    QCheckBox* showNoiseCheck = nullptr;
-    QCheckBox* removeNoiseCheck = nullptr;
-    QListWidget* noiseFilterList = nullptr;
-    QPushButton* addNoiseFilterButton = nullptr;
-    QPushButton* removeNoiseFilterButton = nullptr;
+    PointCloudFilterState filterState;
 
     // 工具：组合/匹配 tag
     uint8_t makeFilterTag() const {
-        return uint8_t((filterTagVal76 & 0x3) << 6 | (filterTagVal54 & 0x3) << 4 | (filterTagVal32 & 0x3) << 2 | (filterTagVal10 & 0x3));
+        return uint8_t((filterState.tagVal76 & 0x3) << 6 | (filterState.tagVal54 & 0x3) << 4 | (filterState.tagVal32 & 0x3) << 2 | (filterState.tagVal10 & 0x3));
     }
     // 更新滤噪列表显示
     void updateNoiseFilterList();

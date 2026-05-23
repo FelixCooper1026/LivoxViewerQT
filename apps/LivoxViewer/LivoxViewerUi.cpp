@@ -467,19 +467,19 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 
 void LivoxViewerWindow::updateNoiseFilterList()
 {
-    if (!noiseFilterList) return;
+    if (!filterState.noiseFilterList) return;
 
-    noiseFilterList->clear();
-    for (uint8_t tag : noiseFilterTags) {
+    filterState.noiseFilterList->clear();
+    for (uint8_t tag : filterState.noiseFilterTags) {
         QString itemText = QString("Tag值: %1").arg(tag);
         QListWidgetItem* item = new QListWidgetItem(itemText);
         item->setData(Qt::UserRole, tag);
-        noiseFilterList->addItem(item);
+        filterState.noiseFilterList->addItem(item);
     }
 
     // 更新移除按钮状态
-    if (removeNoiseFilterButton) {
-        removeNoiseFilterButton->setEnabled(!noiseFilterTags.isEmpty());
+    if (filterState.removeNoiseFilterButton) {
+        filterState.removeNoiseFilterButton->setEnabled(!filterState.noiseFilterTags.isEmpty());
     }
 }
 

@@ -1,7 +1,7 @@
 ﻿# LivoxViewerQT 项目结构优化建议
 
 更新时间：2026-05-24
-当前基线提交：`856595f refactor: encapsulate imu runtime state`
+当前基线提交：本文件随 `refactor: encapsulate point cloud filter state` 更新
 
 ## 1. 当前状态概览
 
@@ -189,6 +189,20 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 本阶段只改变状态归属和成员访问路径，不改变参数 tab、参数 key、控件文案、参数查询、参数写入或 CSV 记录格式。
 
+### 3.10 Priority 3 第五阶段：点云滤波状态封装
+
+已新增：
+
+- `apps/LivoxViewer/state/PointCloudFilterState.h`
+
+已完成：
+
+- 将噪点显示、噪点移除、tag bit 参数和滤噪 tag 列表集中到 `PointCloudFilterState`。
+- 将点云滤波 dialog 及其 spinbox、checkbox、列表和按钮指针集中到 `PointCloudFilterState`。
+- `PointCloudFilterDialog.cpp`、`PointCloudActions.cpp` 和 `LivoxViewerUi.cpp` 已改为通过 `filterState` 访问原有状态。
+
+本阶段只改变状态归属和成员访问路径，不改变滤波 dialog 文案、tag 组合逻辑、滤噪列表行为或点云滤波结果。
+
 ## 4. 未完全完成项
 
 ### 4.1 `libs` 目录中仍有应用层主窗口实现
@@ -253,7 +267,8 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - 设备列表
 - 参数查询定时器和参数业务槽函数
 - 参数 UI 和参数记录状态已第一轮收敛为 `ParameterUiState`，但相关控制函数仍是主窗口成员函数
-- 点云窗口、滤波、投影状态
+- 点云窗口和投影状态
+- 点云滤波 dialog 状态已第一轮收敛为 `PointCloudFilterState`
 - LVX2/PCAP 回放状态已第一轮收敛为 `PlaybackControllerState`，但相关控制函数仍是主窗口成员函数
 - IMU/GPS/串口状态已第一轮收敛为 `ImuRuntimeState`，但相关控制函数仍是主窗口成员函数
 - 采集、保存、录制状态已第一轮收敛为 `CaptureSessionState`，但相关控制函数仍是主窗口成员函数
@@ -409,7 +424,7 @@ libs/Export/
 2. 已完成：将 capture/record 状态封装为 `CaptureSessionState`。
 3. 已完成：将 IMU/GPS/serial 状态封装为 `ImuRuntimeState`。
 4. 已完成：将参数控件映射和参数记录状态封装为 `ParameterUiState`。
-5. 将滤波 dialog 相关状态放入 `PointCloudFilterDialog`。
+5. 已完成：将滤波 dialog 相关状态封装为 `PointCloudFilterState`。
 
 验收标准：
 
