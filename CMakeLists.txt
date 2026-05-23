@@ -146,6 +146,10 @@ set(SOURCES
     libs/LivoxCore/src/LidarSdkCallbacks.cpp
     libs/LivoxCore/src/LidarParameterParser.cpp
     libs/PointCloud/src/PointCloudView.cpp
+    libs/PointCloud/src/PointCloudDecoder.cpp
+    libs/PointCloud/src/PointCloudColorizer.cpp
+    libs/PointCloud/src/PointCloudFilter.cpp
+    libs/PointCloud/src/PointCloudProjection.cpp
     libs/PointCloud/src/PointCloudPipeline.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PlaybackController.cpp
@@ -167,11 +171,16 @@ set(SOURCES
 set(HEADERS
     apps/LivoxViewer/LivoxViewerWindow.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
+    libs/LivoxCore/include/LivoxCore/LidarPacketUtils.h
     libs/LivoxCore/include/LivoxCore/LidarSdkTypes.h
     libs/LivoxCore/include/LivoxCore/Lvx2Types.h
     libs/PointCloud/include/PointCloud/PointCloudTypes.h
     libs/PointCloud/include/PointCloud/PointCloudFrame.h
     libs/PointCloud/include/PointCloud/PointCloudView.h
+    libs/PointCloud/include/PointCloud/PointCloudDecoder.h
+    libs/PointCloud/include/PointCloud/PointCloudColorizer.h
+    libs/PointCloud/include/PointCloud/PointCloudFilter.h
+    libs/PointCloud/include/PointCloud/PointCloudProjection.h
     libs/PointCloud/include/PointCloud/PointCloudPipeline.h
     libs/PointCloud/include/PointCloud/PointCloudPersistence.h
     libs/Playback/include/Playback/PlaybackSource.h

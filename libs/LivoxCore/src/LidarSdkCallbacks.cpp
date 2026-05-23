@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "LivoxCore/LidarPacketUtils.h"
 #include <QRegularExpression>
 #include <QTime>
 #include <QLayout>
@@ -145,7 +146,7 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             // LVX2录制：在主线程中累积并分帧写入
             if (window->lvx2SaveActive && packet_copy->data_type == 0x01) {
                 QMutexLocker lk(&window->lvx2Mutex);
-                uint64_t ts = window->parseTimestamp(packet_copy->timestamp);
+                uint64_t ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                 if (window->lvx2FrameStartNs == 0) window->lvx2FrameStartNs = ts;
                 QByteArray pkg;
                 Lvx2PackageHeader hdr{};
@@ -236,7 +237,7 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                 }
                 // 若正在保存IMU数据，将包内样本写入CSV
                 if (window->imuSaveActive) {
-                    quint64 ts = window->parseTimestamp(packet_copy->timestamp);
+                    quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                     for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
                         const LivoxLidarImuRawPoint& s = p_imu_data[i];
                         window->appendImuCsvRow(ts, s.gyro_x, s.gyro_y, s.gyro_z, s.acc_x, s.acc_y, s.acc_z);

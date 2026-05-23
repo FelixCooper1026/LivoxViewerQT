@@ -108,10 +108,8 @@ private:
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet);
-    uint64_t parseTimestamp(const uint8_t* timestamp);
     void presentPointCloudFrame(const PointCloudFrame& frame);
     void applyPointCloudPipeline(PointCloudFrame& frame);
-    void calculatePointColor(uint8_t reflectivity, uint8_t tag, float& r, float& g, float& b);
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
     bool loadLvx2PlaybackFile(const QString& filePath);
     bool loadPcapPlaybackFile(const QString& filePath);
@@ -428,29 +426,8 @@ private:
 
     // 工具：组合/匹配 tag
     uint8_t makeFilterTag() const {
-        try {
-            return uint8_t((filterTagVal76 & 0x3) << 6 | (filterTagVal54 & 0x3) << 4 | (filterTagVal32 & 0x3) << 2 | (filterTagVal10 & 0x3));
-        } catch (...) {
-            return 0;
-        }
+        return uint8_t((filterTagVal76 & 0x3) << 6 | (filterTagVal54 & 0x3) << 4 | (filterTagVal32 & 0x3) << 2 | (filterTagVal10 & 0x3));
     }
-    bool filterTagMatches(uint8_t tag) const {
-        try {
-            // 只检查滤噪列表中的所有Tag值
-            for (uint8_t filterTag : noiseFilterTags) {
-                if (filterTag == tag) {
-                    return true;
-                }
-            }
-
-            return false;
-        } catch (...) {
-            return false;
-        }
-    }
-    // 滤波处理
-    QVector<PointCloudPoint> applyPointCloudFilters(const QVector<PointCloudPoint>& inputPoints);
-
     // 更新滤噪列表显示
     void updateNoiseFilterList();
 

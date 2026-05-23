@@ -1,6 +1,9 @@
 #include "LivoxViewerWindow.h"
 
 #include "Export/PointCloudExport.h"
+#include "PointCloud/PointCloudColorizer.h"
+#include "PointCloud/PointCloudDecoder.h"
+#include "PointCloud/PointCloudFilter.h"
 #include <algorithm>
 #include <limits>
 #include <QColorDialog>
@@ -735,131 +738,22 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
 
 void LivoxViewerWindow::decodePointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet)
 {
-    if (!packet || packet->dot_num == 0) {
+    PointCloudDecoder::DecodeOptions options;
+    options.depthProjectionEnabled = projectionDepthEnabled;
+    options.depthMeters = projectionDepthMeters;
+    options.planarProjectionEnabled = planarProjectionEnabled;
+    options.planarRadius = planarProjectionRadius;
+
+    PointCloudFrame frame;
+    if (!PointCloudDecoder::decodeLivoxPacket(handle, packet, options, frame)) {
         return;
     }
-    
-    // 解析时间戳
-    uint64_t timestamp = parseTimestamp(packet->timestamp);
-    
-    // 创建点云帧
-    PointCloudFrame frame;
-    frame.timestamp = timestamp;
-    frame.device_handle = handle;
-    
-    // 根据数据类型解析点云数据
-    if (packet->data_type == kLivoxLidarCartesianCoordinateHighData) {
-        LivoxLidarCartesianHighRawPoint *p_point_data = (LivoxLidarCartesianHighRawPoint *)packet->data;
-        for (uint32_t i = 0; i < packet->dot_num; i++) {
-            PointCloudPoint point;
-            point.x = p_point_data[i].x / 1000.0f; // 转换为米
-            point.y = p_point_data[i].y / 1000.0f;
-            point.z = p_point_data[i].z / 1000.0f;
-            point.reflectivity = p_point_data[i].reflectivity;
-            point.tag = p_point_data[i].tag;
-            
-            frame.points.append(point);
-        }
-    }
-    else if (packet->data_type == kLivoxLidarCartesianCoordinateLowData) {
-        LivoxLidarCartesianLowRawPoint *p_point_data = (LivoxLidarCartesianLowRawPoint *)packet->data;
-        for (uint32_t i = 0; i < packet->dot_num; i++) {
-            PointCloudPoint point;
-            point.x = p_point_data[i].x / 100.0f; // 转换为米
-            point.y = p_point_data[i].y / 100.0f;
-            point.z = p_point_data[i].z / 100.0f;
-            point.reflectivity = p_point_data[i].reflectivity;
-            point.tag = p_point_data[i].tag;
-            
-            frame.points.append(point);
-        }
-    }
-    else if (packet->data_type == kLivoxLidarSphericalCoordinateData) {
-        LivoxLidarSpherPoint* p_point_data = (LivoxLidarSpherPoint *)packet->data;
-        for (uint32_t i = 0; i < packet->dot_num; i++) {
-            PointCloudPoint point;
-            
-            // 球坐标转笛卡尔坐标
-            float depth = p_point_data[i].depth / 1000.0f; // 转换为米
-            float theta = p_point_data[i].theta / 100.0f * M_PI / 180.0f; // 转换为弧度
-            float phi = p_point_data[i].phi / 100.0f * M_PI / 180.0f; // 转换为弧度
-            
-            // 深度投影：启用且设置了投影距离（>0）时，使用该距离替换 depth
-            if (projectionDepthEnabled && projectionDepthMeters > 0.0f) {
-                depth = projectionDepthMeters;
-            }
-            
-            // 平面投影模式时，设置投影深度为平面投影半径
-            if (planarProjectionEnabled && projectionDepthMeters <= 0.0f) {
-                depth = planarProjectionRadius;
-            }
-            
-            // 平面投影：如果启用平面投影，将球坐标转换为平面坐标
-            if (planarProjectionEnabled) {
-                // 等距圆柱投影：将球面展开为平面
-                // phi (方位角) 映射到 X 轴，theta (仰角) 映射到 Y 轴
-                float phi_deg = phi * 180.0f / M_PI;  // 转换为度
-                float theta_deg = theta * 180.0f / M_PI;  // 转换为度
-                
-                // 将方位角映射到 [-180, 180] 度范围
-                if (phi_deg > 180.0f) phi_deg -= 360.0f;
-                
-                // 将仰角映射到 [-90, 90] 度范围（完整球面）
-                theta_deg = 90.0f - theta_deg; // 转换坐标系，使0°为水平，正值为上方，负值为下方
-                
-                // 计算平面坐标
-                point.x = planarProjectionRadius * phi_deg / 180.0f;  // X轴：方位角
-                point.y = planarProjectionRadius * theta_deg / 90.0f;  // Y轴：仰角
-                point.z = 0.0f;  // 平面投影时Z设为0
-            } else {
-                // 原始球坐标转笛卡尔坐标
-                point.x = depth * sin(theta) * cos(phi);
-                point.y = depth * sin(theta) * sin(phi);
-                point.z = depth * cos(theta);
-            }
-            point.reflectivity = p_point_data[i].reflectivity;
-            point.tag = p_point_data[i].tag;
-            
-            frame.points.append(point);
-        }
-    }
-    else if (packet->data_type == kLivoxLidarDoubleEchoData) {
-        LivoxLidarDoubleEchoRawPoint *p_point_data = (LivoxLidarDoubleEchoRawPoint *)packet->data;
-        for (uint32_t i = 0; i < packet->dot_num; i++) {
-            PointCloudPoint point1;
-            PointCloudPoint point2;
-            point1.x = p_point_data[i].x1 / 1000.0f;
-            point1.y = p_point_data[i].y1 / 1000.0f;
-            point1.z = p_point_data[i].z1 / 1000.0f;
-            point1.reflectivity = p_point_data[i].reflectivity1;
-            point1.tag = p_point_data[i].tag1;
-            point2.x = p_point_data[i].x2 / 1000.0f;
-            point2.y = p_point_data[i].y2 / 1000.0f;
-            point2.z = p_point_data[i].z2 / 1000.0f;
-            point2.reflectivity = p_point_data[i].reflectivity2;
-            point2.tag = p_point_data[i].tag2;
-            
-            frame.points.append(point1);
-            frame.points.append(point2);
-        }
-    }
-    
-    // 推入待处理队列，记录最新时间戳
+
     {
         QMutexLocker locker(&frameMutex);
         pendingFrames[handle].enqueue(frame);
-        lastSeenTimestamp[handle] = timestamp;
+        lastSeenTimestamp[handle] = frame.timestamp;
     }
-}
-
-uint64_t LivoxViewerWindow::parseTimestamp(const uint8_t* timestamp)
-{
-    // 按小端序解析时间戳
-    uint64_t result = 0;
-    for (int i = 7; i >= 0; --i) {
-        result = (result << 8) | timestamp[i];
-    }
-    return result;
 }
 
 void LivoxViewerWindow::presentPointCloudFrame(const PointCloudFrame& frame)
@@ -875,166 +769,21 @@ void LivoxViewerWindow::presentPointCloudFrame(const PointCloudFrame& frame)
 
 void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
 {
-    if (frame.points.isEmpty()) {
-        if (pointCloudView) {
-            pointCloudView->setLegend(colorMode == ColorSolid ? ColorSolid : colorMode, 0.0f, 1.0f, colorMode != ColorSolid);
-        }
-        frame.points = applyPointCloudFilters(frame.points);
-        return;
+    PointCloudColorizer::Config colorConfig;
+    colorConfig.mode = colorMode;
+    colorConfig.solidColor = solidColor;
+    colorConfig.planarProjectionRadius = planarProjectionRadius;
+
+    const PointCloudPipelineLegend legend = PointCloudColorizer::apply(frame.points, colorConfig);
+    if (pointCloudView) {
+        pointCloudView->setLegend(legend.mode, legend.minValue, legend.maxValue, legend.visible);
     }
 
-    if (colorMode == ColorByReflectivity) {
-        for (PointCloudPoint& p : frame.points) {
-            calculatePointColor(p.reflectivity, p.tag, p.r, p.g, p.b);
-        }
-        if (pointCloudView) pointCloudView->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
-    } else if (colorMode == ColorByDistance) {
-        float minD = std::numeric_limits<float>::max();
-        float maxD = 0.0f;
-        for (const PointCloudPoint& p : frame.points) {
-            float d = std::sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-            if (d < minD) minD = d;
-            if (d > maxD) maxD = d;
-        }
-        if (!(maxD > minD)) { minD = 0.0f; maxD = 1.0f; }
-        for (PointCloudPoint& p : frame.points) {
-            float t = 0.0f;
-            const float d = std::sqrt(p.x*p.x + p.y*p.y + p.z*p.z);
-            if (maxD > minD) t = (d - minD) / (maxD - minD);
-            t = std::clamp(t, 0.0f, 1.0f);
-            if (t < 0.25f)      { p.r = 0.0f;           p.g = t/0.25f;     p.b = 1.0f; }
-            else if (t < 0.5f)  { p.r = 0.0f;           p.g = 1.0f;        p.b = 1.0f - (t-0.25f)/0.25f; }
-            else if (t < 0.75f) { p.r = (t-0.5f)/0.25f; p.g = 1.0f;        p.b = 0.0f; }
-            else                { p.r = 1.0f;           p.g = 1.0f-(t-0.75f)/0.25f; p.b = 0.0f; }
-        }
-        if (pointCloudView) pointCloudView->setLegend(ColorByDistance, minD, maxD, true);
-    } else if (colorMode == ColorByElevation) {
-        float minZ = std::numeric_limits<float>::max();
-        float maxZ = std::numeric_limits<float>::lowest();
-        for (const PointCloudPoint& p : frame.points) {
-            if (p.z < minZ) minZ = p.z;
-            if (p.z > maxZ) maxZ = p.z;
-        }
-        if (!(maxZ > minZ)) { minZ = -1.0f; maxZ = 1.0f; }
-        for (PointCloudPoint& p : frame.points) {
-            float t = 0.0f;
-            if (maxZ > minZ) t = (p.z - minZ) / (maxZ - minZ);
-            t = std::clamp(t, 0.0f, 1.0f);
-            p.r = t; p.g = 0.0f; p.b = 1.0f - t;
-        }
-        if (pointCloudView) pointCloudView->setLegend(ColorByElevation, minZ, maxZ, true);
-    } else if (colorMode == ColorSolid) {
-        for (PointCloudPoint& p : frame.points) {
-            p.r = solidColor.redF();
-            p.g = solidColor.greenF();
-            p.b = solidColor.blueF();
-        }
-        if (pointCloudView) pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
-    } else if (colorMode == ColorByPlanarProjection) {
-        float minX = std::numeric_limits<float>::max();
-        float maxX = std::numeric_limits<float>::lowest();
-        float minY = std::numeric_limits<float>::max();
-        float maxY = std::numeric_limits<float>::lowest();
-        for (const PointCloudPoint& p : frame.points) {
-            if (p.x < minX) minX = p.x;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.y > maxY) maxY = p.y;
-        }
-        if (!(maxX > minX)) { minX = -planarProjectionRadius; maxX = planarProjectionRadius; }
-        if (!(maxY > minY)) { minY = 0.0f; maxY = planarProjectionRadius; }
-        for (PointCloudPoint& p : frame.points) {
-            float tx = (p.x - minX) / (maxX - minX);
-            float ty = (p.y - minY) / (maxY - minY);
-            tx = std::clamp(tx, 0.0f, 1.0f);
-            ty = std::clamp(ty, 0.0f, 1.0f);
-            const float hue = tx * 360.0f;
-            const float saturation = 0.8f;
-            const float value = 0.5f + ty * 0.5f;
-            const float c = value * saturation;
-            const float x = c * (1.0f - std::abs(std::fmod(hue / 60.0f, 2.0f) - 1.0f));
-            const float m = value - c;
-            if (hue < 60.0f) {
-                p.r = c + m; p.g = x + m; p.b = m;
-            } else if (hue < 120.0f) {
-                p.r = x + m; p.g = c + m; p.b = m;
-            } else if (hue < 180.0f) {
-                p.r = m; p.g = c + m; p.b = x + m;
-            } else if (hue < 240.0f) {
-                p.r = m; p.g = x + m; p.b = c + m;
-            } else if (hue < 300.0f) {
-                p.r = x + m; p.g = m; p.b = c + m;
-            } else {
-                p.r = c + m; p.g = m; p.b = x + m;
-            }
-            p.r = std::clamp(p.r, 0.0f, 1.0f);
-            p.g = std::clamp(p.g, 0.0f, 1.0f);
-            p.b = std::clamp(p.b, 0.0f, 1.0f);
-        }
-        if (pointCloudView) pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
-    }
-
-    frame.points = applyPointCloudFilters(frame.points);
-}
-
-void LivoxViewerWindow::calculatePointColor(uint8_t reflectivity, uint8_t tag, float& r, float& g, float& b)
-{
-    // 参考Livox Viewer的着色逻辑（Livox color-coding strategy）
-    uint8_t cur_reflectivity = reflectivity;
-    uint8_t tag_value = tag;
-    
-    if (cur_reflectivity < 30) {
-        r = 0;
-        g = static_cast<float>(cur_reflectivity * 255 / 30) / 255.0f;
-        b = 1.0f;
-    }
-    else if (cur_reflectivity < 90) {
-        r = 0;
-        g = 1.0f;
-        b = static_cast<float>((90 - cur_reflectivity) * 255 / 60) / 255.0f;
-    }
-    else if (cur_reflectivity < 150) {
-        r = static_cast<float>((cur_reflectivity - 90) * 255 / 60) / 255.0f;
-        g = 1.0f;
-        b = 0;
-    }
-    else {
-        r = 1.0f;
-        g = static_cast<float>((255 - cur_reflectivity) * 255 / (256 - 150)) / 255.0f;
-        b = 0;
-    }
-}
-
-static inline void calcColorDistance(const PointCloudPoint& p, float minD, float maxD, float& r, float& g, float& b)
-{
-    const float dx = p.x, dy = p.y, dz = p.z;
-    float d = std::sqrt(dx*dx + dy*dy + dz*dz);
-    float t = 0.0f;
-    if (maxD > minD) t = (d - minD) / (maxD - minD);
-    t = std::clamp(t, 0.0f, 1.0f);
-    // 蓝->青->绿->黄->红
-    if (t < 0.25f)      { r = 0.0f;           g = t/0.25f;     b = 1.0f; }
-    else if (t < 0.5f)  { r = 0.0f;           g = 1.0f;        b = 1.0f - (t-0.25f)/0.25f; }
-    else if (t < 0.75f) { r = (t-0.5f)/0.25f; g = 1.0f;        b = 0.0f; }
-    else                { r = 1.0f;           g = 1.0f-(t-0.75f)/0.25f; b = 0.0f; }
-}
-
-static inline void calcColorElevation(const PointCloudPoint& p, float minZ, float maxZ, float& r, float& g, float& b)
-{
-    float t = 0.0f;
-    if (maxZ > minZ) t = (p.z - minZ) / (maxZ - minZ);
-    t = std::clamp(t, 0.0f, 1.0f);
-    // 低->高: 蓝->红
-    r = t;
-    g = 0.0f;
-    b = 1.0f - t;
-}
-
-static inline void calcColorSolid(const QColor& color, float& r, float& g, float& b)
-{
-    r = color.redF();
-    g = color.greenF();
-    b = color.blueF();
+    PointCloudFilter::Config filterConfig;
+    filterConfig.showNoisePoints = showNoisePoints;
+    filterConfig.removeNoisePoints = removeNoisePoints;
+    filterConfig.noiseTags = noiseFilterTags;
+    frame.points = PointCloudFilter::apply(frame.points, filterConfig);
 }
 
 bool LivoxViewerWindow::savePointCloudAsLAS(const QString& filePath, const QVector<PointCloudPoint>& points)
@@ -1425,39 +1174,4 @@ void LivoxViewerWindow::stopLvx2Recording(bool flushPending)
     Q_UNUSED(flushPending);
     lvx2SaveActive = false;
     if (lvx2File.isOpen()) lvx2File.close();
-}
-
-QVector<PointCloudPoint> LivoxViewerWindow::applyPointCloudFilters(const QVector<PointCloudPoint>& inputPoints)
-{
-    if (inputPoints.isEmpty()) {
-        return inputPoints;
-    }
-
-    QVector<PointCloudPoint> filteredPoints = inputPoints;
-
-    // 噪点处理（基于tag值识别）
-    if (showNoisePoints || removeNoisePoints) {
-        QVector<PointCloudPoint> processedPoints;
-        for (const PointCloudPoint& p : filteredPoints) {
-            bool isNoise = filterTagMatches(p.tag);
-            PointCloudPoint processedPoint = p;
-            
-            if (showNoisePoints && isNoise) {
-                // 高亮噪点（红色）
-                processedPoint.r = 1.0f;
-                processedPoint.g = 0.0f;
-                processedPoint.b = 0.0f;
-            }
-            
-            if (!removeNoisePoints || !isNoise) {
-                // 根据设置决定是否保留噪点
-                processedPoints.append(processedPoint);
-            }
-        }
-        filteredPoints = processedPoints;
-    }
-
-
-
-    return filteredPoints;
 }
