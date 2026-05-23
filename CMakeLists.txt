@@ -142,6 +142,12 @@ set(SOURCES
     apps/LivoxViewer/LivoxViewerUi.cpp
     apps/LivoxViewer/ViewerToolbar.cpp
     apps/LivoxViewer/PlaybackBar.cpp
+    apps/LivoxViewer/DevicePanel.cpp
+    apps/LivoxViewer/ParameterPanel.cpp
+    apps/LivoxViewer/FileInfoPanel.cpp
+    apps/LivoxViewer/ImuPanel.cpp
+    apps/LivoxViewer/LogPanel.cpp
+    apps/LivoxViewer/MainMenuActions.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp

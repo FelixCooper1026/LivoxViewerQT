@@ -101,6 +101,12 @@ private:
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);
     QWidget* createPlaybackBar(QWidget* parent);
+    void createDevicePanel();
+    void createParameterPanel();
+    void createImuPanel();
+    void createFileInfoPanel();
+    void createLogPanel();
+    void createMenusAndActions();
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();
@@ -165,6 +171,7 @@ private:
     // Docks and toolbar
     QDockWidget* lidarDevicesDock;
     QDockWidget* paramsDock;
+    QDockWidget* imuDock = nullptr;
     QDockWidget* lvx2FileDock = nullptr;
     QDockWidget* logDock;
     QToolBar* mainToolBar;
