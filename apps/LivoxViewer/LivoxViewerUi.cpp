@@ -103,7 +103,7 @@ void LivoxViewerWindow::onLidarDeviceSelected()
         }
     }
     // 切换设备后，立即触发当前标签页的刷新逻辑
-    // 这会清空 updatedConfigKeys 并发送 QueryInternalInfo 命令，从而刷新所有 Tab 的参数显示
+    // 这会清空 parameterState.updatedConfigKeys 并发送 QueryInternalInfo 命令，从而刷新所有 Tab 的参数显示
     if (paramTabWidget) {
         onTabChanged(paramTabWidget->currentIndex());
     }
@@ -146,7 +146,7 @@ void LivoxViewerWindow::onTabChanged(int index)
     if (!currentLidarDevice || !currentLidarDevice->is_connected) return;
 
     // 清除旧的配置标记，准备接受新一轮查询结果
-    updatedConfigKeys.clear();
+    parameterState.updatedConfigKeys.clear();
     livox_status status = QueryLivoxLidarInternalInfo(currentLidarDevice->handle, onQueryInternalInfoResponse, this);
     if (status != kLivoxLidarStatusSuccess) {
         logMessage(QString("切换至标签页[%1]时查询设备信息失败: %2 (错误码: %3)")

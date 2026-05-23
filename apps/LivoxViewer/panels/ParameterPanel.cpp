@@ -45,8 +45,8 @@ void LivoxViewerWindow::createParameterPanel()
         kKeyCurWorkState, kKeyCoreTemp, kKeyPowerUpCnt, kKeyLocalTimeNow, kKeyLastSyncTime,
         kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode
     };
-    for (uint16_t key : configurableKeysVec) this->configurableKeys.insert(key);
-    for (uint16_t key : statusKeysVec) this->statusKeys.insert(key);
+    for (uint16_t key : configurableKeysVec) this->parameterState.configurableKeys.insert(key);
+    for (uint16_t key : statusKeysVec) this->parameterState.statusKeys.insert(key);
 
     // 参数标签
     paramTabWidget = new QTabWidget(paramsDockContent);
@@ -69,7 +69,7 @@ void LivoxViewerWindow::createParameterPanel()
     workModeCombo->addItems({"采样模式", "待机模式"});
     workModeCombo->setCurrentIndex(0);
     basicLayout->addRow("工作模式:", workModeCombo);
-    paramControls[kKeyWorkMode] = workModeCombo;
+    parameterState.controls[kKeyWorkMode] = workModeCombo;
     connect(workModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyWorkMode); });
 
     QComboBox* patternModeCombo = new QComboBox();
@@ -77,7 +77,7 @@ void LivoxViewerWindow::createParameterPanel()
     patternModeCombo->addItems({"非重复扫描", "重复扫描", "低帧率重复扫描"});
     patternModeCombo->setCurrentIndex(0);
     basicLayout->addRow("扫描模式:", patternModeCombo);
-    paramControls[kKeyPatternMode] = patternModeCombo;
+    parameterState.controls[kKeyPatternMode] = patternModeCombo;
     connect(patternModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyPatternMode); });
 
     QComboBox* pclDataTypeCombo = new QComboBox();
@@ -85,7 +85,7 @@ void LivoxViewerWindow::createParameterPanel()
     pclDataTypeCombo->addItems({"高精度笛卡尔坐标", "低精度笛卡尔坐标", "球坐标"});
     pclDataTypeCombo->setCurrentIndex(0);
     basicLayout->addRow("点云格式:", pclDataTypeCombo);
-    paramControls[kKeyPclDataType] = pclDataTypeCombo;
+    parameterState.controls[kKeyPclDataType] = pclDataTypeCombo;
     connect(pclDataTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyPclDataType); });
 
     QComboBox* detectModeCombo = new QComboBox();
@@ -93,7 +93,7 @@ void LivoxViewerWindow::createParameterPanel()
     detectModeCombo->addItems({"正常模式", "敏感模式"});
     detectModeCombo->setCurrentIndex(0);
     basicLayout->addRow("探测模式:", detectModeCombo);
-    paramControls[kKeyDetectMode] = detectModeCombo;
+    parameterState.controls[kKeyDetectMode] = detectModeCombo;
     connect(detectModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyDetectMode); });
 
     QComboBox* imuDataCombo = new QComboBox();
@@ -101,7 +101,7 @@ void LivoxViewerWindow::createParameterPanel()
     imuDataCombo->addItems({"关闭", "开启"});
     imuDataCombo->setCurrentIndex(0);
     basicLayout->addRow("IMU数据发送:", imuDataCombo);
-    paramControls[kKeyImuDataEn] = imuDataCombo;
+    parameterState.controls[kKeyImuDataEn] = imuDataCombo;
     connect(imuDataCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyImuDataEn); });
 
     QComboBox* motorSpeedCombo = new QComboBox();
@@ -109,7 +109,7 @@ void LivoxViewerWindow::createParameterPanel()
     motorSpeedCombo->addItems({"正常转速","低转速"});
     motorSpeedCombo->setCurrentIndex(0);
     basicLayout->addRow("电机转速:", motorSpeedCombo);
-    paramControls[kKeySetEscMode] = motorSpeedCombo;
+    parameterState.controls[kKeySetEscMode] = motorSpeedCombo;
     connect(motorSpeedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEscMode); });
 
     QComboBox* syncFilterModeCombo = new QComboBox();
@@ -117,7 +117,7 @@ void LivoxViewerWindow::createParameterPanel()
     syncFilterModeCombo->addItems({"关闭", "开启"});
     syncFilterModeCombo->setCurrentIndex(0);
     basicLayout->addRow("异常时间过滤:", syncFilterModeCombo);
-    paramControls[kKeySetPpsSyncMode] = syncFilterModeCombo;
+    parameterState.controls[kKeySetPpsSyncMode] = syncFilterModeCombo;
     connect(syncFilterModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetPpsSyncMode); });
 
     QComboBox* fovModeCombo = new QComboBox();
@@ -125,7 +125,7 @@ void LivoxViewerWindow::createParameterPanel()
     fovModeCombo->addItems({"Focus FOV", "Normal FOV"});
     fovModeCombo->setCurrentIndex(1);
     basicLayout->addRow("FOV模式:", fovModeCombo);
-    paramControls[kKeySetFovMode] = fovModeCombo;
+    parameterState.controls[kKeySetFovMode] = fovModeCombo;
     connect(fovModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetFovMode); });
 
     QComboBox* echoModeCombo = new QComboBox();
@@ -133,7 +133,7 @@ void LivoxViewerWindow::createParameterPanel()
     echoModeCombo->addItems({"最强回波", "第一回波"});
     echoModeCombo->setCurrentIndex(0);
     basicLayout->addRow("回波模式:", echoModeCombo);
-    paramControls[kKeySetEchoMode] = echoModeCombo;
+    parameterState.controls[kKeySetEchoMode] = echoModeCombo;
     connect(echoModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEchoMode); });
 
     paramTabWidget->addTab(basicTab, "基本配置");
@@ -175,7 +175,7 @@ void LivoxViewerWindow::createParameterPanel()
     lidarIpContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     networkLayout->addRow(new QLabel("雷达IP:"));
     networkLayout->addRow(lidarIpContainer);
-    paramControls[kKeyLidarIpCfg] = lidarIpContainer;
+    parameterState.controls[kKeyLidarIpCfg] = lidarIpContainer;
     connect(lidarIpButton, &QPushButton::clicked, [this, lidarIpEdit, lidarMaskEdit, lidarGatewayEdit]() { applyIpConfig(kKeyLidarIpCfg, lidarIpEdit->text(), lidarMaskEdit->text(), lidarGatewayEdit->text()); });
 
     // 点云数据目的IP 子表单
@@ -203,7 +203,7 @@ void LivoxViewerWindow::createParameterPanel()
     pointDataContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     networkLayout->addRow(new QLabel("点云数据IP:"));
     networkLayout->addRow(pointDataContainer);
-    paramControls[kKeyLidarPointDataHostIpCfg] = pointDataContainer;
+    parameterState.controls[kKeyLidarPointDataHostIpCfg] = pointDataContainer;
     connect(pointDataButton, &QPushButton::clicked, [this, pointDataIpEdit, pointDataPortEdit]() { applyHostIpConfig(kKeyLidarPointDataHostIpCfg, pointDataIpEdit->text(), pointDataPortEdit->value()); });
 
     // IMU数据目的IP 子表单
@@ -231,7 +231,7 @@ void LivoxViewerWindow::createParameterPanel()
     imuDataContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     networkLayout->addRow(new QLabel("IMU数据IP:"));
     networkLayout->addRow(imuDataContainer);
-    paramControls[kKeyLidarImuHostIpCfg] = imuDataContainer;
+    parameterState.controls[kKeyLidarImuHostIpCfg] = imuDataContainer;
     connect(imuDataButton, &QPushButton::clicked, [this, imuDataIpEdit, imuDataPortEdit]() { applyHostIpConfig(kKeyLidarImuHostIpCfg, imuDataIpEdit->text(), imuDataPortEdit->value()); });
 
     // 状态信息目的IP 子表单
@@ -259,7 +259,7 @@ void LivoxViewerWindow::createParameterPanel()
     stateInfoContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     networkLayout->addRow(new QLabel("状态信息IP:"));
     networkLayout->addRow(stateInfoContainer);
-    paramControls[kKeyStateInfoHostIpCfg] = stateInfoContainer;
+    parameterState.controls[kKeyStateInfoHostIpCfg] = stateInfoContainer;
     connect(stateInfoButton, &QPushButton::clicked, [this, stateInfoIpEdit, stateInfoPortEdit]() { applyHostIpConfig(kKeyStateInfoHostIpCfg, stateInfoIpEdit->text(), stateInfoPortEdit->value()); });
 
     paramTabWidget->addTab(networkTab, "网络配置");
@@ -279,9 +279,9 @@ void LivoxViewerWindow::createParameterPanel()
     fovLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
     fovLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
     QCheckBox* fov0EnableCheck = new QCheckBox();
-    paramControls[kKeyFovCfgEn] = fov0EnableCheck;
+    parameterState.controls[kKeyFovCfgEn] = fov0EnableCheck;
     QCheckBox* fov1EnableCheck = new QCheckBox();
-    paramControls[0x001F] = fov1EnableCheck;
+    parameterState.controls[0x001F] = fov1EnableCheck;
     connect(fov0EnableCheck, &QCheckBox::toggled, [this, fov0EnableCheck, fov1EnableCheck]() { updateFovEnableState(fov0EnableCheck, fov1EnableCheck); });
     connect(fov1EnableCheck, &QCheckBox::toggled, [this, fov0EnableCheck, fov1EnableCheck]() { updateFovEnableState(fov0EnableCheck, fov1EnableCheck); });
     // FOV0配置行，使用 FlowLayout 实现行内多控件自动换行
@@ -322,7 +322,7 @@ void LivoxViewerWindow::createParameterPanel()
         fov0LabelLayout->addWidget(fov0EnableCheck);
         fovLayout->addRow(fov0Label, fov0Container);
     }
-    paramControls[kKeyFovCfg0] = fov0Container;
+    parameterState.controls[kKeyFovCfg0] = fov0Container;
     connect(fov0Button, &QPushButton::clicked, [this, fov0YawStartEdit, fov0YawStopEdit, fov0PitchStartEdit, fov0PitchStopEdit]() { applyFovConfig(kKeyFovCfg0, fov0YawStartEdit->value(), fov0YawStopEdit->value(), fov0PitchStartEdit->value(), fov0PitchStopEdit->value()); });
 
     // FOV1配置行，使用 FlowLayout
@@ -363,7 +363,7 @@ void LivoxViewerWindow::createParameterPanel()
         fov1LabelLayout->addWidget(fov1EnableCheck);
         fovLayout->addRow(fov1Label, fov1Container);
     }
-    paramControls[kKeyFovCfg1] = fov1Container;
+    parameterState.controls[kKeyFovCfg1] = fov1Container;
     connect(fov1Button, &QPushButton::clicked, [this, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit]() { applyFovConfig(kKeyFovCfg1, fov1YawStartEdit->value(), fov1YawStopEdit->value(), fov1PitchStartEdit->value(), fov1PitchStopEdit->value()); });
 
     paramTabWidget->addTab(fovTab, "FOV配置");
@@ -408,7 +408,7 @@ void LivoxViewerWindow::createParameterPanel()
         applyLayout->addWidget(attitudeButton);
         attitudeLayout->addRow(QString(), applyRow);
     }
-    paramControls[kKeyInstallAttitude] = attitudeTab;
+    parameterState.controls[kKeyInstallAttitude] = attitudeTab;
     connect(attitudeButton, &QPushButton::clicked, [this, rollEdit, pitchEdit, yawEdit, xEdit, yEdit, zEdit]() { applyAttitudeConfig(kKeyInstallAttitude, rollEdit->value(), pitchEdit->value(), yawEdit->value(), xEdit->value(), yEdit->value(), zEdit->value()); });
     paramTabWidget->addTab(attitudeTab, "外参配置");
     attitudeTab->setLayout(attitudeLayout);
@@ -456,17 +456,17 @@ void LivoxViewerWindow::createParameterPanel()
             case kKeyHmsCode: nameLabel->setText("HMS诊断码:"); break;
         }
         statusLayout->addRow(nameLabel, valueLabel);
-        paramLabels[key] = valueLabel;
+        parameterState.labels[key] = valueLabel;
     }
 
     // 添加记录参数按钮
-    recordParamsButton = new QPushButton("记录参数至CSV文件", statusTab);
-    recordParamsButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    recordParamsButton->setStyleSheet("QPushButton { padding: 5px; }");
-    statusLayout->addRow(recordParamsButton); // 这会创建一个占据整行的按钮
+    parameterState.recordButton = new QPushButton("记录参数至CSV文件", statusTab);
+    parameterState.recordButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    parameterState.recordButton->setStyleSheet("QPushButton { padding: 5px; }");
+    statusLayout->addRow(parameterState.recordButton); // 这会创建一个占据整行的按钮
 
     // 连接按钮信号
-    connect(recordParamsButton, &QPushButton::clicked, this, &LivoxViewerWindow::onRecordParamsClicked);
+    connect(parameterState.recordButton, &QPushButton::clicked, this, &LivoxViewerWindow::onRecordParamsClicked);
 
     paramTabWidget->insertTab(0, statusTab, "状态信息");
     paramTabWidget->setCurrentIndex(0);

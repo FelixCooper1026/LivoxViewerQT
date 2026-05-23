@@ -77,6 +77,7 @@
 #include "PointCloud/PointCloudView.h"
 #include "state/CaptureSessionState.h"
 #include "state/ImuRuntimeState.h"
+#include "state/ParameterUiState.h"
 #include "state/PlaybackControllerState.h"
 
 QT_BEGIN_NAMESPACE
@@ -221,24 +222,7 @@ private:
 
     // 参数查询相关
     QTimer* paramQueryTimer;
-    QMap<uint16_t, QString> paramValues;
-    QMap<uint16_t, QLabel*> paramLabels;
-
-    // 可配置参数控件映射
-    QMap<uint16_t, QWidget*> paramControls;
-
-    // 参数配置状态
-    QSet<uint16_t> configurableKeys;  // 可配置参数键集合
-    QSet<uint16_t> statusKeys;        // 状态参数键集合
-    QSet<uint16_t> updatedConfigKeys; // 已更新的可配置参数
-
-    // 参数记录相关
-    QPushButton* recordParamsButton = nullptr;
-    QFile recordParamsFile;
-    bool isRecordingParams = false;
-    QString recordParamsFilePath;
-    QMap<uint16_t, QString> recordedParamKeys; // 记录所有参数的键和名称映射
-    QVector<uint16_t> recordedParamOrder;     // 记录参数的顺序，确保表头和数据对齐
+    ParameterUiState parameterState;
 
     // Menu
     QMenuBar* menuBar;

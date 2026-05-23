@@ -1,7 +1,7 @@
 ﻿# LivoxViewerQT 项目结构优化建议
 
 更新时间：2026-05-24
-当前基线提交：`4c7f555 refactor: encapsulate capture session state`
+当前基线提交：`856595f refactor: encapsulate imu runtime state`
 
 ## 1. 当前状态概览
 
@@ -174,6 +174,21 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 本阶段只改变状态归属和成员访问路径，不改变 GPS 模拟、串口转发、IMU 表格显示、IMU 曲线显示或 IMU 数据保存行为。
 
+### 3.9 Priority 3 第四阶段：参数 UI 和参数记录状态封装
+
+已新增：
+
+- `apps/LivoxViewer/state/ParameterUiState.h`
+
+已完成：
+
+- 将参数值缓存、参数标签映射和可配置参数控件映射集中到 `ParameterUiState`。
+- 将可配置参数 key、状态参数 key 和已更新参数 key 集中到 `ParameterUiState`。
+- 将参数 CSV 记录状态集中到 `ParameterUiState`，包括记录按钮、CSV 文件、记录中状态、输出路径、记录参数名称映射和记录顺序。
+- `ParameterPanel.cpp`、`LidarParameterActions.cpp`、`LidarSdkCallbacks.cpp`、`LivoxViewerUi.cpp` 和 IMU 开关相关路径已改为通过 `parameterState` 访问原有状态。
+
+本阶段只改变状态归属和成员访问路径，不改变参数 tab、参数 key、控件文案、参数查询、参数写入或 CSV 记录格式。
+
 ## 4. 未完全完成项
 
 ### 4.1 `libs` 目录中仍有应用层主窗口实现
@@ -236,7 +251,8 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - UI 控件指针
 - SDK 状态
 - 设备列表
-- 参数查询和参数记录状态
+- 参数查询定时器和参数业务槽函数
+- 参数 UI 和参数记录状态已第一轮收敛为 `ParameterUiState`，但相关控制函数仍是主窗口成员函数
 - 点云窗口、滤波、投影状态
 - LVX2/PCAP 回放状态已第一轮收敛为 `PlaybackControllerState`，但相关控制函数仍是主窗口成员函数
 - IMU/GPS/串口状态已第一轮收敛为 `ImuRuntimeState`，但相关控制函数仍是主窗口成员函数
@@ -392,7 +408,7 @@ libs/Export/
 1. 已完成：将 playback 状态封装为 `PlaybackControllerState`。
 2. 已完成：将 capture/record 状态封装为 `CaptureSessionState`。
 3. 已完成：将 IMU/GPS/serial 状态封装为 `ImuRuntimeState`。
-4. 将参数控件映射和参数记录状态放入参数面板或参数 controller。
+4. 已完成：将参数控件映射和参数记录状态封装为 `ParameterUiState`。
 5. 将滤波 dialog 相关状态放入 `PointCloudFilterDialog`。
 
 验收标准：

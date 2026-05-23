@@ -72,7 +72,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                     }
                 }
 
-                window->updatedConfigKeys.clear();
+                window->parameterState.updatedConfigKeys.clear();
                 if (window->currentLidarDevice && window->currentLidarDevice->is_connected) {
                     livox_status status = QueryLivoxLidarInternalInfo(window->currentLidarDevice->handle, onQueryInternalInfoResponse, window);
                     if (status != kLivoxLidarStatusSuccess) {
@@ -381,19 +381,19 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 // 检查参数长度是否合理
                 if (length > 0 && length <= 1024) {
                     QString valueStr = window->formatLidarParameterValue(key, const_cast<uint8_t*>(value), length);
-                    window->paramValues[key] = valueStr;
+                    window->parameterState.values[key] = valueStr;
                     
                     // window->logMessage(QString("参数解析结果: key=0x%1, value='%2'").arg(key, 0, 16).arg(valueStr));
                     
                     // 更新UI显示
-                    if (window->paramLabels.contains(key)) {
+                    if (window->parameterState.labels.contains(key)) {
                         // 状态参数：实时更新
-                        window->paramLabels[key]->setText(valueStr);
-                    } else if (window->paramControls.contains(key)) {
+                        window->parameterState.labels[key]->setText(valueStr);
+                    } else if (window->parameterState.controls.contains(key)) {
                         // 可配置参数：只在设备连接时更新一次，避免与用户配置冲突
                         // 只处理非状态参数的可配置参数，且只在设备连接时更新一次
-                        if (!window->updatedConfigKeys.contains(key)) {
-                                QWidget* control = window->paramControls[key];
+                        if (!window->parameterState.updatedConfigKeys.contains(key)) {
+                                QWidget* control = window->parameterState.controls[key];
                                 if (QComboBox* combo = qobject_cast<QComboBox*>(control)) {
                                     // 只更新简单的下拉框控件（基本配置）
                                     // 暂时断开信号连接，避免触发配置调用
@@ -475,7 +475,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                         checkBox->setChecked(fov0Enabled);
                                         
                                         // 同时更新FOV1复选框的状态
-                                        QWidget* fov1Control = window->paramControls[0x001F];
+                                        QWidget* fov1Control = window->parameterState.controls[0x001F];
                                         if (QCheckBox* fov1CheckBox = qobject_cast<QCheckBox*>(fov1Control)) {
                                             bool fov1Enabled = false;
                                             if (length >= 1) {
@@ -500,7 +500,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                         checkBox->setChecked(fov1Enabled);
                                         
                                         // 同时更新FOV0复选框的状态
-                                        QWidget* fov0Control = window->paramControls[kKeyFovCfgEn];
+                                        QWidget* fov0Control = window->parameterState.controls[kKeyFovCfgEn];
                                         if (QCheckBox* fov0CheckBox = qobject_cast<QCheckBox*>(fov0Control)) {
                                             bool fov0Enabled = false;
                                             if (length >= 1) {
@@ -633,7 +633,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                 }
                                 
                                 // 标记该参数已更新，防止被定时器重复更新
-                                window->updatedConfigKeys.insert(key);
+                                window->parameterState.updatedConfigKeys.insert(key);
                             }
                         }
                 }
@@ -645,7 +645,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
             }
 
             // 在参数解析完成后，检查是否正在记录参数
-            if (window->isRecordingParams && window->recordParamsFile.isOpen()) {
+            if (window->parameterState.isRecording && window->parameterState.recordFile.isOpen()) {
                 // 获取当前时间戳
                 QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
                 
@@ -658,12 +658,12 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 }
                 
                 // 写入数据行
-                QTextStream stream(&window->recordParamsFile);
+                QTextStream stream(&window->parameterState.recordFile);
                 stream << timestamp;
                 
                 // 写入所有参数值
-                for (uint16_t key : window->recordedParamOrder) {
-                    QString value = window->paramValues.value(key, "N/A");
+                for (uint16_t key : window->parameterState.recordedOrder) {
+                    QString value = window->parameterState.values.value(key, "N/A");
                     // 处理CSV中的特殊字符（引号和逗号）
                     if (value.contains(',') || value.contains('"') || value.contains('\n')) {
                         value = "\"" + value.replace("\"", "\"\"") + "\"";
@@ -672,7 +672,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 }
                 stream << "\n";
                 
-                window->recordParamsFile.flush();
+                window->parameterState.recordFile.flush();
             }
             
             // window->logMessage(QString("参数查询回调处理完成，共处理 %1 个参数").arg(paramNum));

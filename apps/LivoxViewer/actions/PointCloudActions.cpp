@@ -497,7 +497,7 @@ void LivoxViewerWindow::onActionCaptureImuTriggered()
         return;
     }
     // 检查IMU数据发送是否开启
-    QWidget* ctrl = paramControls.value(kKeyImuDataEn, nullptr);
+    QWidget* ctrl = parameterState.controls.value(kKeyImuDataEn, nullptr);
     QComboBox* imuCombo = qobject_cast<QComboBox*>(ctrl);
     if (!imuCombo || imuCombo->currentIndex() != 1) {
         QMessageBox::warning(this, "保存IMU数据", "IMU数据发送未开启！");

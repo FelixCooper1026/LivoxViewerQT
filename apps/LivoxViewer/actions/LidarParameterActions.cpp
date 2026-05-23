@@ -18,7 +18,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
     }
     
     // 获取控件当前值
-    QWidget* control = paramControls[key];
+    QWidget* control = parameterState.controls[key];
     if (!control) {
         return;
     }
@@ -203,7 +203,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
         if (success) {
             logMessage(QString("发送命令: %1 -> %2").arg(paramName).arg(newValue));
             // 标记参数已更新，避免被定时器覆盖
-            updatedConfigKeys.insert(key);
+            parameterState.updatedConfigKeys.insert(key);
         } else {
             logMessage(QString("发送命令失败: %1 -> %2").arg(paramName).arg(newValue));
         }
@@ -227,7 +227,7 @@ void LivoxViewerWindow::onIpConfigResponse(livox_status status, uint32_t handle,
         // 1. 成功且设备确认执行：触发独有的重启逻辑
         if (status == kLivoxLidarStatusSuccess && has_response && ret_code == 0x00) {
             window->logMessage(QString("设备已确认IP配置，将请求重启雷达使配置生效 (handle=%1)").arg(handle));
-            window->updatedConfigKeys.insert(kKeyLidarIpCfg);
+            window->parameterState.updatedConfigKeys.insert(kKeyLidarIpCfg);
 
             livox_status rebootStatus = LivoxLidarRequestReboot(handle, nullptr, window);
             if (rebootStatus == kLivoxLidarStatusSuccess) {
@@ -357,7 +357,7 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
     if (status == kLivoxLidarStatusSuccess) {
         logMessage("已发送目的IP配置命令");
         // 标记参数已更新，避免被定时器覆盖
-        updatedConfigKeys.insert(key);
+        parameterState.updatedConfigKeys.insert(key);
     } else {
         logMessage(QString("目的IP配置命令发送失败: %1").arg(status));
     }
@@ -387,7 +387,7 @@ void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, 
     if (status == kLivoxLidarStatusSuccess) {
         logMessage(QString("已发送FOV%1配置命令").arg(key == kKeyFovCfg0 ? "0" : "1"));
         // 标记参数已更新，避免被定时器覆盖
-        updatedConfigKeys.insert(key);
+        parameterState.updatedConfigKeys.insert(key);
     } else {
         logMessage(QString("FOV%1配置命令发送失败: %2").arg(key == kKeyFovCfg0 ? "0" : "1").arg(status));
     }
@@ -412,7 +412,7 @@ void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pi
     if (status == kLivoxLidarStatusSuccess) {
         logMessage("已发送安装姿态配置命令");
         // 标记参数已更新，避免被定时器覆盖
-        updatedConfigKeys.insert(key);
+        parameterState.updatedConfigKeys.insert(key);
     } else {
         logMessage(QString("安装姿态配置命令发送失败: %1").arg(status));
     }
@@ -446,8 +446,8 @@ void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fo
         }
         logMessage(QString("FOV使能状态已更新: %1").arg(fovState));
         // 标记参数已更新，避免被定时器覆盖
-        updatedConfigKeys.insert(kKeyFovCfgEn);
-        updatedConfigKeys.insert(0x001F);
+        parameterState.updatedConfigKeys.insert(kKeyFovCfgEn);
+        parameterState.updatedConfigKeys.insert(0x001F);
     } else {
         logMessage(QString("FOV使能状态更新失败: %1").arg(status));
     }
@@ -481,7 +481,7 @@ QString LivoxViewerWindow::formatLidarParameterValue(uint16_t key, uint8_t* valu
 
 void LivoxViewerWindow::onRecordParamsClicked()
 {
-    if (!isRecordingParams) {
+    if (!parameterState.isRecording) {
         // 生成默认文件名：记录时间_设备序列号_设备参数.csv
         QString defaultFileName;
         
@@ -514,8 +514,8 @@ void LivoxViewerWindow::onRecordParamsClicked()
             fileName += ".csv";
         }
         
-        recordParamsFile.setFileName(fileName);
-        if (!recordParamsFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        parameterState.recordFile.setFileName(fileName);
+        if (!parameterState.recordFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             QMessageBox::warning(this, "错误", "无法创建文件: " + fileName);
             return;
         }
@@ -525,11 +525,11 @@ void LivoxViewerWindow::onRecordParamsClicked()
         bom.append(0xEF);
         bom.append(0xBB);
         bom.append(0xBF);
-        recordParamsFile.write(bom);
+        parameterState.recordFile.write(bom);
         
         // 初始化参数键映射（包含所有要记录的参数）
-        recordedParamKeys.clear();
-        recordedParamOrder.clear(); // 清空顺序列表
+        parameterState.recordedKeys.clear();
+        parameterState.recordedOrder.clear(); // 清空顺序列表
         
         // 状态参数
         QVector<uint16_t> allKeys = {
@@ -542,60 +542,60 @@ void LivoxViewerWindow::onRecordParamsClicked()
         };
 
         // 保存顺序
-        recordedParamOrder = allKeys;
+        parameterState.recordedOrder = allKeys;
         
         // 为每个参数键设置显示名称
         for (uint16_t key : allKeys) {
             switch (key) {
-                case kKeySn: recordedParamKeys[key] = "序列号"; break;
-                case kKeyProductInfo: recordedParamKeys[key] = "产品信息"; break;
-                case kKeyVersionApp: recordedParamKeys[key] = "固件版本"; break;
-                case kKeyVersionLoader: recordedParamKeys[key] = "LOADER版本"; break;
-                case kKeyVersionHardware: recordedParamKeys[key] = "硬件版本"; break;
-                case kKeyMac: recordedParamKeys[key] = "MAC地址"; break;
-                case kKeyCurWorkState: recordedParamKeys[key] = "当前工作状态"; break;
-                case kKeyCoreTemp: recordedParamKeys[key] = "核心温度"; break;
-                case kKeyPowerUpCnt: recordedParamKeys[key] = "上电次数"; break;
-                case kKeyLocalTimeNow: recordedParamKeys[key] = "本地时间"; break;
-                case kKeyLastSyncTime: recordedParamKeys[key] = "最后同步时间"; break;
-                case kKeyTimeOffset: recordedParamKeys[key] = "时间偏移"; break;
-                case kKeyTimeSyncType: recordedParamKeys[key] = "时间同步类型"; break;
-                case kKeyLidarDiagStatus: recordedParamKeys[key] = "雷达诊断状态"; break;
-                case kKeyFwType: recordedParamKeys[key] = "固件类型"; break;
-                case kKeyHmsCode: recordedParamKeys[key] = "HMS诊断码"; break;
-                case kKeyPclDataType: recordedParamKeys[key] = "点云格式"; break;
-                case kKeyPatternMode: recordedParamKeys[key] = "扫描模式"; break;
-                case kKeyDetectMode: recordedParamKeys[key] = "探测模式"; break;
-                case kKeyWorkMode: recordedParamKeys[key] = "工作模式"; break;
-                case kKeyImuDataEn: recordedParamKeys[key] = "IMU数据发送"; break;
-                case kKeyLidarIpCfg: recordedParamKeys[key] = "雷达IP配置"; break;
-                case kKeyStateInfoHostIpCfg: recordedParamKeys[key] = "状态信息目的IP"; break;
-                case kKeyLidarPointDataHostIpCfg: recordedParamKeys[key] = "点云数据目的IP"; break;
-                case kKeyLidarImuHostIpCfg: recordedParamKeys[key] = "IMU数据目的IP"; break;
-                case kKeyFovCfg0: recordedParamKeys[key] = "FOV0配置"; break;
-                case kKeyFovCfg1: recordedParamKeys[key] = "FOV1配置"; break;
-                case kKeyFovCfgEn: recordedParamKeys[key] = "FOV使能状态"; break;
-                case kKeyInstallAttitude: recordedParamKeys[key] = "安装姿态"; break;
-                case kKeySetEscMode: recordedParamKeys[key] = "电机转速"; break;
-                case kKeySetPpsSyncMode: recordedParamKeys[key] = "异常时间过滤"; break;
-                case kKeySetFovMode: recordedParamKeys[key] = "FOV模式"; break;
-                case kKeySetEchoMode: recordedParamKeys[key] = "回波模式"; break;
-                default: recordedParamKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
+                case kKeySn: parameterState.recordedKeys[key] = "序列号"; break;
+                case kKeyProductInfo: parameterState.recordedKeys[key] = "产品信息"; break;
+                case kKeyVersionApp: parameterState.recordedKeys[key] = "固件版本"; break;
+                case kKeyVersionLoader: parameterState.recordedKeys[key] = "LOADER版本"; break;
+                case kKeyVersionHardware: parameterState.recordedKeys[key] = "硬件版本"; break;
+                case kKeyMac: parameterState.recordedKeys[key] = "MAC地址"; break;
+                case kKeyCurWorkState: parameterState.recordedKeys[key] = "当前工作状态"; break;
+                case kKeyCoreTemp: parameterState.recordedKeys[key] = "核心温度"; break;
+                case kKeyPowerUpCnt: parameterState.recordedKeys[key] = "上电次数"; break;
+                case kKeyLocalTimeNow: parameterState.recordedKeys[key] = "本地时间"; break;
+                case kKeyLastSyncTime: parameterState.recordedKeys[key] = "最后同步时间"; break;
+                case kKeyTimeOffset: parameterState.recordedKeys[key] = "时间偏移"; break;
+                case kKeyTimeSyncType: parameterState.recordedKeys[key] = "时间同步类型"; break;
+                case kKeyLidarDiagStatus: parameterState.recordedKeys[key] = "雷达诊断状态"; break;
+                case kKeyFwType: parameterState.recordedKeys[key] = "固件类型"; break;
+                case kKeyHmsCode: parameterState.recordedKeys[key] = "HMS诊断码"; break;
+                case kKeyPclDataType: parameterState.recordedKeys[key] = "点云格式"; break;
+                case kKeyPatternMode: parameterState.recordedKeys[key] = "扫描模式"; break;
+                case kKeyDetectMode: parameterState.recordedKeys[key] = "探测模式"; break;
+                case kKeyWorkMode: parameterState.recordedKeys[key] = "工作模式"; break;
+                case kKeyImuDataEn: parameterState.recordedKeys[key] = "IMU数据发送"; break;
+                case kKeyLidarIpCfg: parameterState.recordedKeys[key] = "雷达IP配置"; break;
+                case kKeyStateInfoHostIpCfg: parameterState.recordedKeys[key] = "状态信息目的IP"; break;
+                case kKeyLidarPointDataHostIpCfg: parameterState.recordedKeys[key] = "点云数据目的IP"; break;
+                case kKeyLidarImuHostIpCfg: parameterState.recordedKeys[key] = "IMU数据目的IP"; break;
+                case kKeyFovCfg0: parameterState.recordedKeys[key] = "FOV0配置"; break;
+                case kKeyFovCfg1: parameterState.recordedKeys[key] = "FOV1配置"; break;
+                case kKeyFovCfgEn: parameterState.recordedKeys[key] = "FOV使能状态"; break;
+                case kKeyInstallAttitude: parameterState.recordedKeys[key] = "安装姿态"; break;
+                case kKeySetEscMode: parameterState.recordedKeys[key] = "电机转速"; break;
+                case kKeySetPpsSyncMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
+                case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
+                case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
+                default: parameterState.recordedKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
             }
         }
         
         // 写入CSV表头
-        QTextStream stream(&recordParamsFile);
+        QTextStream stream(&parameterState.recordFile);
         stream << "时间戳";
-        for (uint16_t key : recordedParamOrder) {
-            stream << "," << recordedParamKeys[key];
+        for (uint16_t key : parameterState.recordedOrder) {
+            stream << "," << parameterState.recordedKeys[key];
         }
         stream << "\n";
 
-        recordParamsFile.flush();   
-        recordParamsFilePath = fileName;
-        isRecordingParams = true;
-        recordParamsButton->setText("停止参数记录");
+        parameterState.recordFile.flush();
+        parameterState.recordFilePath = fileName;
+        parameterState.isRecording = true;
+        parameterState.recordButton->setText("停止参数记录");
 
         logMessage(QString("设备参数记录已开始"));
         
@@ -608,15 +608,15 @@ void LivoxViewerWindow::onRecordParamsClicked()
 
 void LivoxViewerWindow::stopRecordParams()
 {   
-    if (recordParamsFile.isOpen()) {
-        recordParamsFile.close();
+    if (parameterState.recordFile.isOpen()) {
+        parameterState.recordFile.close();
     }
     
-    isRecordingParams = false;
-    recordParamsButton->setText("记录参数至CSV文件");
+    parameterState.isRecording = false;
+    parameterState.recordButton->setText("记录参数至CSV文件");
     
     QMessageBox::information(this, "记录完成", 
-        QString("设备状态参数已保存至\n%1").arg(recordParamsFilePath));
+        QString("设备状态参数已保存至\n%1").arg(parameterState.recordFilePath));
     
-    logMessage(QString("设备参数记录已停止，文件保存至: %1").arg(recordParamsFilePath));
+    logMessage(QString("设备参数记录已停止，文件保存至: %1").arg(parameterState.recordFilePath));
 }

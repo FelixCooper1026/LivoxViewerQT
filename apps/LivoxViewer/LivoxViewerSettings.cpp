@@ -23,8 +23,6 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     , lidarDiscoverySocket(nullptr)
     , lidarDiscoveryTimer(nullptr)
     , lidarDiscoveryActive(false)
-    , recordParamsButton(nullptr)
-    , isRecordingParams(false)
 {
     initializeUserInterface();
     loadViewPreferences();
