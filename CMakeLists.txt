@@ -151,6 +151,7 @@ set(SOURCES
     apps/LivoxViewer/CaptureActions.cpp
     apps/LivoxViewer/DeviceActions.cpp
     apps/LivoxViewer/HelpActions.cpp
+    apps/LivoxViewer/PlaybackActions.cpp
     apps/LivoxViewer/FormatConvertDialog.cpp
     apps/LivoxViewer/FirmwareUpgradeDialog.cpp
     apps/LivoxViewer/PointCloudFilterDialog.cpp

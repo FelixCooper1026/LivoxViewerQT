@@ -113,6 +113,7 @@ private:
     void createCaptureActions(QMenu* toolsMenu);
     void createDeviceActions();
     void createHelpActions();
+    void createPlaybackActions(QMenu* toolsMenu);
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();

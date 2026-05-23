@@ -66,6 +66,7 @@
 - `apps/LivoxViewer/HelpActions.cpp`
 - `apps/LivoxViewer/CaptureActions.cpp`
 - `apps/LivoxViewer/DeviceActions.cpp`
+- `apps/LivoxViewer/PlaybackActions.cpp`
 
 当前 `initializeUserInterface()` 的职责已经收敛为：
 
@@ -144,14 +145,12 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 ### 4.2 `MainMenuActions.cpp` 仍然过大
 
-`apps/LivoxViewer/MainMenuActions.cpp` 当前已从约 1179 行降到约 211 行，仍集中包含：
+`apps/LivoxViewer/MainMenuActions.cpp` 当前已从约 1179 行降到约 130 行，仍集中包含：
 
 - 文件菜单
 - 工具菜单
 - 状态栏、计时器和部分 action 连接
 - LVX2/PCAP 打开动作
-- 离线回放控件连接
-- IMU 绘图和点云滤波 action 入口
 
 已拆出的独立 dialog 文件：
 
@@ -164,8 +163,9 @@ LVX2/PCAP 离线 smoke 已覆盖：
 - `apps/LivoxViewer/HelpActions.cpp`
 - `apps/LivoxViewer/CaptureActions.cpp`
 - `apps/LivoxViewer/DeviceActions.cpp`
+- `apps/LivoxViewer/PlaybackActions.cpp`
 
-剩余目标是继续拆出文件打开、回放连接、状态栏和定时器初始化，让 `MainMenuActions.cpp` 只保留菜单骨架。
+剩余目标是继续拆出文件打开、状态栏和定时器初始化，让 `MainMenuActions.cpp` 只保留菜单骨架。
 
 ### 4.3 `ParameterPanel.cpp` 仍然偏重
 
@@ -305,7 +305,8 @@ libs/Export/
 4. 已完成：把帮助菜单链接拆到 `HelpActions.cpp`。
 5. 已完成：把采集/保存菜单动作拆到 `CaptureActions.cpp`。
 6. 已完成：把设备菜单动作拆到 `DeviceActions.cpp`。
-7. 待完成：把 LVX2/PCAP 文件打开和回放连接拆到 `PlaybackActions.cpp`。
+7. 已完成：把回放连接、IMU 绘图和点云滤波入口拆到 `PlaybackActions.cpp`。
+8. 待完成：把 LVX2/PCAP 文件打开拆到独立文件。
 
 验收标准：
 
