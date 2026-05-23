@@ -128,20 +128,19 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 ### 4.1 `libs` 目录中仍有应用层主窗口实现
 
-当前仍有多个 `libs/*/src` 文件直接包含 `LivoxViewerWindow.h`，并实现 `LivoxViewerWindow::` 成员函数：
-
-- `libs/LivoxCore/src/LidarSdkController.cpp`
-- `libs/LivoxCore/src/LidarSdkCallbacks.cpp`
-- `libs/LivoxCore/src/LidarParameterParser.cpp`
+当前 `libs/*` 已不再直接包含 `LivoxViewerWindow.h`，也不再实现 `LivoxViewerWindow::` 成员函数。
 
 已迁出到应用层的主窗口实现：
 
+- `apps/LivoxViewer/LidarSdkActions.cpp`，原 `libs/LivoxCore/src/LidarSdkController.cpp`
+- `apps/LivoxViewer/LidarSdkCallbacks.cpp`，原 `libs/LivoxCore/src/LidarSdkCallbacks.cpp`
+- `apps/LivoxViewer/LidarParameterActions.cpp`，原 `libs/LivoxCore/src/LidarParameterParser.cpp`
 - `apps/LivoxViewer/PlaybackControllerActions.cpp`，原 `libs/Lvx2/src/Lvx2PlaybackController.cpp`
 - `apps/LivoxViewer/PcapPlaybackActions.cpp`，原 `libs/Pcap/src/PcapPlaybackController.cpp`
 - `apps/LivoxViewer/Lvx2ConvertActions.cpp`，原 `libs/Lvx2/src/Lvx2Converter.cpp`
 - `apps/LivoxViewer/PointCloudActions.cpp`，原 `libs/PointCloud/src/PointCloudPipeline.cpp`
 
-这仍然是当前最大的结构问题。下一步应把这些文件中真正属于应用层的主窗口槽函数迁回 `apps/LivoxViewer/` 或拆成应用层 controller/action 文件；`libs` 只保留纯服务、解析、模型和算法。
+下一步应继续把这些应用层文件内部的大块职责拆成 controller/action/dialog/panel 对象；`libs` 目前已只保留纯服务、解析、模型和算法。
 
 ### 4.2 `MainMenuActions.cpp` 仍然过大
 
@@ -324,7 +323,7 @@ libs/Export/
 2. 已完成：将 `Lvx2PlaybackController.cpp`、`PcapPlaybackController.cpp` 中的 `LivoxViewerWindow::` 实现移到应用层。
 3. 已完成：将 `Lvx2Converter.cpp` 中的主窗口 wrapper 移到应用层。
 4. 已完成：将 `PointCloudPipeline.cpp` 中 UI 槽函数整体迁移到应用层。
-5. 将 `LidarSdkController.cpp`、`LidarSdkCallbacks.cpp`、`LidarParameterParser.cpp` 的主窗口实现逐步迁移。
+5. 已完成：将 `LidarSdkController.cpp`、`LidarSdkCallbacks.cpp`、`LidarParameterParser.cpp` 的主窗口实现迁移到应用层。
 
 验收标准：
 
