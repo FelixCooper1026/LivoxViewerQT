@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "LivoxCore/LidarPacketUtils.h"
+#include "LivoxCore/LidarSdkService.h"
 #include <QRegularExpression>
 #include <QTime>
 #include <QLayout>
@@ -277,43 +278,14 @@ void LivoxViewerWindow::onStatusInfo(uint32_t handle, uint8_t dev_type, const ch
 }
 
 // 解析 livox_status
-QString LivoxViewerWindow::getLivoxStatusString(livox_status status) {
-    switch (status) {
-        case kLivoxLidarStatusSuccess: return "操作成功";
-        case kLivoxLidarStatusFailure: return "操作失败";
-        case kLivoxLidarStatusNotConnected: return "设备未连接";
-        case kLivoxLidarStatusNotSupported: return "设备不支持此操作";
-        case kLivoxLidarStatusTimeout: return "操作超时";
-        case kLivoxLidarStatusNotEnoughMemory: return "内存不足";
-        case kLivoxLidarStatusChannelNotExist: return "通信通道不存在";
-        case kLivoxLidarStatusInvalidHandle: return "设备句柄无效";
-        case kLivoxLidarStatusHandlerImplNotExist: return "处理器实现不存在";
-        case kLivoxLidarStatusSendFailed: return "命令发送失败";
-        default: return QString("未知错误: %1").arg(status);
-    }
+QString LivoxViewerWindow::getLivoxStatusString(livox_status status)
+{
+    return LidarSdkService::statusString(status);
 }
-
-// 解析 ret_code
-QString LivoxViewerWindow::getRetCodeString(uint8_t ret_code) {
-    switch (ret_code) {
-        case 0x00: return "执行成功";
-        case 0x01: return "执行失败";
-        case 0x02: return "当前状态不支持";
-        case 0x03: return "设置值超出范围";
-        case 0x20: return "参数不支持";
-        case 0x21: return "参数需重启生效";
-        case 0x22: return "参数只读，不支持写入";
-        case 0x23: return "请求参数长度错误/ack数据包超出最大长度";
-        case 0x24: return "参数 key_num 和 key_list 不匹配";
-        case 0x30: return "公钥签名验证错误";
-        case 0x31: return "固件摘要签名验证错误";
-        case 0x32: return "固件类型不匹配";
-        case 0x33: return "固件长度超出范围";
-        case 0x34: return "固件擦除中";
-        default: return QString("未知 ret_code");
-    }
+QString LivoxViewerWindow::getRetCodeString(uint8_t ret_code)
+{
+    return LidarSdkService::retCodeString(ret_code);
 }
-
 void LivoxViewerWindow::onAsyncControlResponse(livox_status status, uint32_t handle, LivoxLidarAsyncControlResponse* response, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);

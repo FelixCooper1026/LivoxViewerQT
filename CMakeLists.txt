@@ -144,7 +144,10 @@ set(SOURCES
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp
     libs/LivoxCore/src/LidarSdkCallbacks.cpp
+    libs/LivoxCore/src/LidarSdkService.cpp
+    libs/LivoxCore/src/LidarDiscoveryService.cpp
     libs/LivoxCore/src/LidarParameterParser.cpp
+    libs/LivoxCore/src/LidarParameterService.cpp
     libs/PointCloud/src/PointCloudView.cpp
     libs/PointCloud/src/PointCloudDecoder.cpp
     libs/PointCloud/src/PointCloudColorizer.cpp
@@ -163,6 +166,7 @@ set(SOURCES
     libs/Pcap/src/PcapPlaybackController.cpp
     libs/Export/src/PointCloudExport.cpp
     libs/AppConfig/src/AppSettings.cpp
+    libs/AppConfig/src/LidarConfigService.cpp
     libs/AppConfig/src/ConfigJsonService.cpp
     libs/AppConfig/src/NetworkInterfaceService.cpp
 )
@@ -170,8 +174,11 @@ set(SOURCES
 # 头文件
 set(HEADERS
     apps/LivoxViewer/LivoxViewerWindow.h
+    libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
     libs/LivoxCore/include/LivoxCore/LidarPacketUtils.h
+    libs/LivoxCore/include/LivoxCore/LidarParameterService.h
+    libs/LivoxCore/include/LivoxCore/LidarSdkService.h
     libs/LivoxCore/include/LivoxCore/LidarSdkTypes.h
     libs/LivoxCore/include/LivoxCore/Lvx2Types.h
     libs/PointCloud/include/PointCloud/PointCloudTypes.h
@@ -197,6 +204,7 @@ set(HEADERS
     libs/Pcap/include/Pcap/PcapPlaybackController.h
     libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
+    libs/AppConfig/include/AppConfig/LidarConfigService.h
     libs/AppConfig/include/AppConfig/ConfigJsonService.h
     libs/AppConfig/include/AppConfig/NetworkInterfaceService.h
 )

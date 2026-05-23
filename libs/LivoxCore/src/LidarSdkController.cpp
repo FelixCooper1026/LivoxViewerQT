@@ -1,4 +1,8 @@
 #include "LivoxViewerWindow.h"
+#include "AppConfig/LidarConfigService.h"
+#include "AppConfig/NetworkInterfaceService.h"
+#include "LivoxCore/LidarDiscoveryService.h"
+#include "LivoxCore/LidarSdkService.h"
 #include <QDir>
 #include <QApplication>
 #include <QFile>
@@ -25,296 +29,24 @@
 // 添加网段检查的辅助函数
 bool isInSameSubnet(const QString &hostIP, const QString &currentIP, const QString &subnetMask)
 {
-    QHostAddress hostAddr(hostIP);
-    QHostAddress currentAddr(currentIP);
-    QHostAddress maskAddr(subnetMask);
-
-    if (hostAddr.isNull() || currentAddr.isNull() || maskAddr.isNull())
-    {
-        return false;
-    }
-
-    // 计算网络地址
-    quint32 hostNet = hostAddr.toIPv4Address() & maskAddr.toIPv4Address();
-    quint32 currentNet = currentAddr.toIPv4Address() & maskAddr.toIPv4Address();
-
-    return hostNet == currentNet;
+    return NetworkInterfaceService::isInSameSubnet(hostIP, currentIP, subnetMask);
 }
-
-// 获取当前主机IP地址（优先获取有线网口IP）
-// 如果提供了selectedIP参数，则直接返回该IP（用于用户选择的网卡）
 QString getCurrentHostIP(const QString& selectedIP = QString())
 {
-    // 如果提供了选择的IP，直接返回
-    if (!selectedIP.isEmpty())
-    {
-        return selectedIP;
-    }
-    
-    // 否则使用原来的自动选择逻辑
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
-    {
-        if ((iface.flags() & QNetworkInterface::IsUp) &&
-            (iface.flags() & QNetworkInterface::IsRunning) &&
-            !(iface.flags() & QNetworkInterface::IsLoopBack) &&
-            !(iface.flags() & QNetworkInterface::IsPointToPoint))
-        {
-
-            // 排除无线网口，只检测有线网口
-            QString ifaceName = iface.name().toLower();
-            if (ifaceName.contains("wlan") || ifaceName.contains("wifi") ||
-                ifaceName.contains("Wireless") || ifaceName.contains("802.11"))
-            {
-                continue;
-            }
-
-            for (const QNetworkAddressEntry &entry : iface.addressEntries())
-            {
-                const QHostAddress &addr = entry.ip();
-                if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
-                    addr.toString() != "0.0.0.0" &&
-                    !addr.toString().startsWith("169.254."))
-                {
-                    return addr.toString();
-                }
-            }
-        }
-    }
-    return QString();
+    return NetworkInterfaceService::currentHostIp(selectedIP);
 }
-
-// 检查是否存在已连接的有线网口设备
 static bool hasWiredNetworkDeviceConnected()
 {
-    const auto interfaces = QNetworkInterface::allInterfaces();
-
-    for (const QNetworkInterface &iface : interfaces)
-    {
-        auto flags = iface.flags();
-        QString name = iface.humanReadableName().toLower();
-        QString sysName = iface.name().toLower();
-
-        // 只考虑激活的接口
-        if (!(flags & QNetworkInterface::IsUp) ||
-            !(flags & QNetworkInterface::IsRunning) ||
-            (flags & QNetworkInterface::IsLoopBack) ||
-            (flags & QNetworkInterface::IsPointToPoint))
-            continue;
-
-        // 排除无线/蓝牙（名称判断仅作弱信号，避免依赖中文 UI 名称）
-        if (name.contains("wifi") || name.contains("wi-fi") || name.contains("wlan") ||
-            name.contains("wireless") || name.contains("bluetooth") || name.contains("bt") ||
-            sysName.contains("wifi") || sysName.contains("wireless") || sysName.contains("wlan") ||
-            sysName.contains("bt") || sysName.contains("bluetooth"))
-            continue;
-
-        // 排除常见虚拟网卡/隧道/容器桥接（Linux/Windows 都可能出现）
-        if (sysName.contains("docker") || sysName.contains("veth") || sysName.startsWith("br-") ||
-            sysName.contains("virbr") || sysName.contains("vmnet") || sysName.contains("vboxnet") ||
-            sysName.contains("tap") || sysName.contains("tun") ||
-            sysName.contains("loopback") || name.contains("virtual"))
-            continue;
-
-        // 检查是否有有效 IPv4
-        for (const QNetworkAddressEntry &entry : iface.addressEntries())
-        {
-            const QHostAddress &addr = entry.ip();
-            if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
-                addr.toString() != "0.0.0.0" &&
-                !addr.toString().startsWith("169.254."))
-            {
-                qDebug() << "[有线接口检测] 检测到活动接口:"
-                         << iface.humanReadableName() << "(" << iface.name() << ")"
-                         << "IP:" << addr.toString();
-                return true;
-            }
-        }
-
-        // 即使暂时没有IP，也可以认为有线网口“连接着设备但未获得IP”，可选逻辑：
-        if (iface.flags() & QNetworkInterface::IsRunning)
-        {
-            qDebug() << "[有线接口检测] 检测到物理连接的以太网口:" << iface.humanReadableName();
-            return true;
-        }
-    }
-
-    qDebug() << "[有线接口检测] 未检测到活动的有线网口";
-    return false;
+    return NetworkInterfaceService::hasWiredNetworkDeviceConnected();
 }
-
-static QString defaultConfigDir()
-{
-    QString dir = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    if (dir.isEmpty()) {
-        dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    }
-    return dir;
-}
-
 static QString resolveConfigJsonPath(QString* migrationNote = nullptr)
 {
-    const QString cfgDir = defaultConfigDir();
-    const QString standardPath = cfgDir.isEmpty() ? QString() : QDir(cfgDir).filePath("config.json");
-
-    // 1) 标准位置优先：如果文件已存在，直接返回
-    if (!standardPath.isEmpty() && QFile::exists(standardPath)) {
-        return standardPath;
-    }
-
-    // 2) 兼容旧位置（程序目录/工作目录）
-    const QString appDirPath = QCoreApplication::applicationDirPath();
-    const QStringList legacyCandidates = {
-        QDir::currentPath() + "/config.json",
-        appDirPath + "/config.json",
-        appDirPath + "/../config.json",
-    };
-    
-    QString legacyFound;
-    for (const QString& p : legacyCandidates) {
-        if (QFile::exists(p)) {
-            legacyFound = p;
-            break;
-        }
-    }
-
-    // 3) 若找到旧配置且标准目录可用：迁移/复制到标准路径
-    if (!legacyFound.isEmpty() && !standardPath.isEmpty()) {
-        // 确保标准目录存在
-        QDir().mkpath(QFileInfo(standardPath).absolutePath());
-        
-        if (!QFile::exists(standardPath)) {
-            if (QFile::copy(legacyFound, standardPath)) {
-                if (migrationNote) {
-                    *migrationNote = QString("已将配置文件迁移到标准目录: %1").arg(QDir::toNativeSeparators(standardPath));
-                }
-                return standardPath;
-            }
-        }
-        // 复制失败或标准位置已有文件：继续使用旧配置
-        if (migrationNote) {
-            *migrationNote = QString("使用旧配置文件路径: %1").arg(QDir::toNativeSeparators(legacyFound));
-        }
-        return legacyFound;
-    }
-
-    // 4) 无标准目录时：直接返回旧路径（若有）
-    if (!legacyFound.isEmpty()) {
-        if (migrationNote) {
-            *migrationNote = QString("使用旧配置文件路径: %1").arg(QDir::toNativeSeparators(legacyFound));
-        }
-        return legacyFound;
-    }
-
-    // 5) 都没有：返回标准路径（关键：提前创建父目录，确保后续 File.open 能成功）
-    if (!standardPath.isEmpty()) {
-        QDir().mkpath(QFileInfo(standardPath).absolutePath());
-    }
-    
-    return standardPath;
+    return LidarConfigService::resolveConfigJsonPath(migrationNote);
 }
-// 检查配置文件中的host_ip是否与当前主机IP完全一致；当不一致时将详细信息写入 details（若提供）
-// selectedIP: 如果提供，则使用该IP进行比较；否则使用自动检测的IP
 bool checkConfigFileNetworkCompatibility(const QString &configPath, QString *details = nullptr, const QString &selectedIP = QString())
 {
-    QFile configFile(configPath);
-    if (!configFile.open(QIODevice::ReadOnly))
-    {
-        qDebug() << "无法打开配置文件:" << configPath;
-        return false;
-    }
-
-    QByteArray configData = configFile.readAll();
-    configFile.close();
-
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(configData, &parseError);
-    if (parseError.error != QJsonParseError::NoError)
-    {
-        qDebug() << "配置文件JSON解析错误:" << parseError.errorString();
-        return false;
-    }
-
-    QJsonObject configObj = doc.object();
-
-    // 遍历所有设备块（如 HAP、MID360 等）的 host_net_info[*].host_ip
-    QString currentHostIP = getCurrentHostIP(selectedIP);
-    if (currentHostIP.isEmpty())
-    {
-        qDebug() << "无法获取当前主机IP地址";
-        if (details)
-            *details = QString("无法获取当前主机IP地址");
-        return false;
-    }
-
-    // 收集所有候选 host_ip
-    QList<QPair<QString, QString>> deviceIpPairs; // <sectionName, ip>
-    for (auto it = configObj.begin(); it != configObj.end(); ++it)
-    {
-        if (!it.value().isObject())
-            continue;
-        QString sectionName = it.key();
-        QJsonObject deviceObj = it.value().toObject();
-        if (!deviceObj.contains("host_net_info") || !deviceObj.value("host_net_info").isArray())
-            continue;
-        QJsonArray hostInfoArray = deviceObj.value("host_net_info").toArray();
-        for (const QJsonValue &v : hostInfoArray)
-        {
-            if (!v.isObject())
-                continue;
-            QJsonObject hostInfo = v.toObject();
-            if (hostInfo.contains("host_ip") && hostInfo.value("host_ip").isString())
-            {
-                QString ip = hostInfo.value("host_ip").toString();
-                if (!ip.isEmpty())
-                    deviceIpPairs.append({sectionName, ip});
-            }
-        }
-    }
-
-    if (deviceIpPairs.isEmpty())
-    {
-        qDebug() << "配置文件中未找到host_ip字段";
-        if (details)
-            *details = QString("配置文件中未找到任意设备的 host_ip 字段");
-        return false;
-    }
-
-    // 要求所有设备 host_ip 都与当前主机IP完全一致
-    bool allEqual = true;
-    QStringList mismatchDetails;
-    for (const auto &pair : deviceIpPairs)
-    {
-        const QString &section = pair.first;
-        const QString &ip = pair.second;
-        if (ip != currentHostIP)
-        {
-            allEqual = false;
-            mismatchDetails << QString("[%1:%2]").arg(section, ip);
-        }
-    }
-
-    if (!allEqual)
-    {
-        qDebug() << "IP不一致: 以下设备host_ip与当前主机IP不一致:" << mismatchDetails.join(", ")
-                 << "; 当前主机IP:" << currentHostIP;
-        if (details)
-        {
-            *details = QString("IP不一致: 以下设备 host_ip 与当前主机IP不一致: %1; 当前主机IP: %2")
-                           .arg(mismatchDetails.join(", "))
-                           .arg(currentHostIP);
-        }
-        return false;
-    }
-
-    // 全部一致
-    qDebug() << "IP检查通过，所有设备 host_ip 与当前主机IP一致:" << currentHostIP;
-    if (details)
-    {
-        *details = QString("IP检查通过，所有设备 host_ip 与当前主机IP一致: %1").arg(currentHostIP);
-    }
-    return true;
+    return LidarConfigService::checkNetworkCompatibility(configPath, details, selectedIP);
 }
-
 void LivoxViewerWindow::initializeLivoxSdk()
 {
     logMessage("开始初始化Livox SDK...");
@@ -336,7 +68,7 @@ void LivoxViewerWindow::initializeLivoxSdk()
     if (lidarDiscoveryActive)
     {
         logMessage("设备发现仍在进行中，等待完成...");
-        // 延迟重试，但不要无限等待
+        // 延迟重试，但不要无限等�
         static int retryCount = 0;
         if (retryCount < 10)
         { // 最多等待20秒
@@ -376,7 +108,7 @@ void LivoxViewerWindow::initializeLivoxSdk()
             logMessage("已取消生成配置文件，SDK 初始化终止");
             return;
         }
-        
+
         // 生成后再次尝试解析（或直接使用之前的 configPath，因为 resolve 已经创建了目录）
         if (!QFile::exists(configPath))
         {
@@ -431,7 +163,7 @@ void LivoxViewerWindow::initializeLivoxSdk()
 
     try
     {
-        if (!LivoxLidarSdkInit(configPath.toStdString().c_str()))
+        if (!LidarSdkService::initialize(configPath))
         {
             logMessage("错误: Livox SDK 初始化失败");
             return;
@@ -440,18 +172,16 @@ void LivoxViewerWindow::initializeLivoxSdk()
         sdk_initialized = true;
         logMessage("Livox SDK 初始化成功");
         // 获取并打印 SDK 版本信息
-        LivoxLidarSdkVer sdkVersion;
-        GetLivoxLidarSdkVer(&sdkVersion);
-        logMessage(QString("Livox SDK 版本: v%1.%2.%3")
-                       .arg(sdkVersion.major)
-                       .arg(sdkVersion.minor)
-                       .arg(sdkVersion.patch));
+        logMessage(QString("Livox SDK version: %1").arg(LidarSdkService::versionString()));
 
         // 设置回调函数
-        SetLivoxLidarInfoChangeCallback(onLidarDeviceInfoChange, this);
-        SetLivoxLidarPointCloudCallBack(onPointCloudData, this);
-        SetLivoxLidarImuDataCallback(onImuData, this);
-        SetLivoxLidarInfoCallback(onStatusInfo, this);
+        LidarSdkService::CallbackSet callbacks;
+        callbacks.infoChange = onLidarDeviceInfoChange;
+        callbacks.pointCloud = onPointCloudData;
+        callbacks.imu = onImuData;
+        callbacks.statusInfo = onStatusInfo;
+        callbacks.clientData = this;
+        LidarSdkService::registerCallbacks(callbacks);
 
         sdk_started = true;
         pointCloudCallbackEnabled = true; // 自动开始采样
@@ -480,10 +210,8 @@ void LivoxViewerWindow::shutdownLivoxSdk()
     shutting_down = true;
 
     // 先解除所有回调注册，防止 Uninit 过程中回调进入
-    SetLivoxLidarInfoChangeCallback(nullptr, nullptr);
-    SetLivoxLidarPointCloudCallBack(nullptr, nullptr);
-    SetLivoxLidarImuDataCallback(nullptr, nullptr);
-    SetLivoxLidarInfoCallback(nullptr, nullptr);
+    LidarSdkService::clearCallbacks();
+
 
     // 清空UI侧设备状态
     {
@@ -495,7 +223,7 @@ void LivoxViewerWindow::shutdownLivoxSdk()
     currentLidarDevice = nullptr;
 
     // 最后调用 Uninit
-    LivoxLidarSdkUninit();
+    LidarSdkService::shutdown();
 
     sdk_started = false;
     sdk_initialized = false;
@@ -760,27 +488,10 @@ void LivoxViewerWindow::startLidarDiscovery()
             // === Step 1: 构建本机所有IPv4地址集合 ===
             static QSet<QString> localIPv4Set;
             if (localIPv4Set.isEmpty()) {
-                for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces()) {
-                    if (!(iface.flags() & QNetworkInterface::IsUp) ||
-                        !(iface.flags() & QNetworkInterface::IsRunning) ||
-                        (iface.flags() & QNetworkInterface::IsLoopBack))
-                        continue;
-                    for (const QNetworkAddressEntry &entry : iface.addressEntries()) {
-                        if (entry.ip().protocol() == QAbstractSocket::IPv4Protocol)
-                            localIPv4Set.insert(entry.ip().toString());
-                    }
-                }
+                localIPv4Set = NetworkInterfaceService::localIpv4Addresses();
             }
 
-            // === Step 2: 判断是否“来自本机的包” ===
-            bool isTrulyLocal = localIPv4Set.contains(senderIP);
-
-            // === Step 3: 判断当前Socket是否绑定在特定接口上 ===
-            bool boundToValidInterface = !(localIP == "0.0.0.0" ||
-                                           localIP.startsWith("169.254."));
-
-            // === Step 4: 仅当Socket绑定在特定接口上，且包确实来自本机，才忽略 ===
-            if (boundToValidInterface && isTrulyLocal) {
+            if (LidarDiscoveryService::isLocalDatagram(senderIP, localIP, localIPv4Set)) {
                 logMessage(QString("忽略来自本机接口的数据包: %1 (绑定接口: %2)")
                                .arg(senderIP)
                                .arg(localIP));
@@ -859,7 +570,7 @@ void LivoxViewerWindow::sendLidarBroadcastDiscovery()
     }
 
     // 广播发现命令
-    QByteArray discoveryCmd = QByteArray::fromHex("aa00180002000000000000000000000000000a9200000000");
+    QByteArray discoveryCmd = LidarDiscoveryService::discoveryCommand();
 
     // 诊断：打印当前 socket 本地地址（便于确认发送接口）
     QHostAddress la = lidarDiscoverySocket->localAddress();
@@ -1172,7 +883,7 @@ void LivoxViewerWindow::onLidarDiscoveryResponse(const QByteArray &data, const Q
 
                             refreshNetworkInterfaces();
 
-                            startLidarDiscovery();                            
+                            startLidarDiscovery();
                             // // 提示重启
                             // QMessageBox::warning(this, "重新启动", "准备重新启动应用程序以应用新的网络配置");
 
@@ -1249,34 +960,12 @@ void LivoxViewerWindow::onLidarDiscoveryResponse(const QByteArray &data, const Q
 
 QString LivoxViewerWindow::calculateCompatibleHostIP(const QString &deviceIP)
 {
-    QHostAddress deviceAddr(deviceIP);
-    if (deviceAddr.isNull())
-    {
-        return QString();
+    const QString candidate = NetworkInterfaceService::calculateCompatibleHostIp(deviceIP);
+    if (!candidate.isEmpty()) {
+        logMessage(QString("Compatible host IP candidate: %1").arg(candidate));
     }
-
-    quint32 deviceIPInt = deviceAddr.toIPv4Address();
-    quint32 networkPart = deviceIPInt & 0xFFFFFF00; // 255.255.255.0 掩码
-
-    // 遍历可用主机地址 2~254，跳过设备自身
-    for (int host = 2; host <= 254; ++host)
-    {
-        if (host == (deviceIPInt & 0xFF))
-        {
-            continue; // 跳过设备本身
-        }
-
-        quint32 candidateIP = networkPart | host;
-        QString candidateIPStr = QHostAddress(candidateIP).toString();
-
-        // TODO: 如果需要，ping 测试 candidateIP 是否被占用
-        logMessage(QString("尝试兼容主机IP: %1").arg(candidateIPStr));
-        return candidateIPStr; // 当前简化处理，直接返回第一个可选IP
-    }
-
-    return QString(); // 没有可用IP
+    return candidate;
 }
-
 bool LivoxViewerWindow::updateHostIPForDevice(const QString &deviceIP)
 {
     if (!autoConfigHostIpEnabled)
@@ -1450,231 +1139,25 @@ bool LivoxViewerWindow::updateHostIPForDevice(const QString &deviceIP)
 
 bool LivoxViewerWindow::updateConfigFileIP(const QString &newHostIP)
 {
-    // 查找配置文件（优先标准目录，其次兼容旧位置）
-    QString migrationNote;
-    QString configPath = resolveConfigJsonPath(&migrationNote);
-    if (!migrationNote.isEmpty()) {
-        logMessage(migrationNote);
+    QString message;
+    const bool updated = LidarConfigService::updateResolvedConfigHostIp(newHostIP, &message);
+    if (!message.isEmpty()) {
+        logMessage(message);
     }
-
-    if (configPath.isEmpty())
-    {
-        logMessage("未找到配置文件");
-        return false;
-    }
-
-    // 读取配置文件
-    QFile configFile(configPath);
-    if (!configFile.open(QIODevice::ReadOnly))
-    {
-        logMessage("无法打开配置文件");
-        return false;
-    }
-
-    QByteArray configData = configFile.readAll();
-    configFile.close();
-
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(configData, &parseError);
-    if (parseError.error != QJsonParseError::NoError)
-    {
-        logMessage("配置文件JSON解析错误");
-        return false;
-    }
-
-    QJsonObject configObj = doc.object();
-    bool updated = false;
-
-    // 更新所有设备的host_ip
-    for (auto it = configObj.begin(); it != configObj.end(); ++it)
-    {
-        if (!it.value().isObject())
-            continue;
-
-        QJsonObject deviceObj = it.value().toObject();
-        if (!deviceObj.contains("host_net_info") || !deviceObj.value("host_net_info").isArray())
-            continue;
-
-        QJsonArray hostInfoArray = deviceObj.value("host_net_info").toArray();
-        for (int i = 0; i < hostInfoArray.size(); ++i)
-        {
-            QJsonObject hostInfo = hostInfoArray[i].toObject();
-            if (hostInfo.contains("host_ip"))
-            {
-                hostInfo["host_ip"] = newHostIP;
-                hostInfoArray[i] = hostInfo;
-                updated = true;
-            }
-        }
-        deviceObj["host_net_info"] = hostInfoArray;
-        configObj[it.key()] = deviceObj;
-    }
-
-    if (!updated)
-    {
-        logMessage("配置文件中未找到host_ip字段");
-        return false;
-    }
-
-    // 写回配置文件
-    QJsonDocument newDoc(configObj);
-    if (!configFile.open(QIODevice::WriteOnly))
-    {
-        logMessage("无法写入配置文件");
-        return false;
-    }
-
-    configFile.write(newDoc.toJson());
-    configFile.close();
-
-    logMessage(QString("配置文件已更新，所有host_ip设置为: %1").arg(newHostIP));
-    return true;
+    return updated;
 }
-
 bool LivoxViewerWindow::updateConfigFileDeviceTypeIfNeeded(const QString &configPath)
 {
-    // 若尚未记录到设备类型，则直接视为无需修改
-    if (!hasLastDiscoveredLidarType)
-    {
-        qDebug() << "[DeviceTypeCheck] 未记录到最近的雷达型号，跳过 Device type 自动校正";
-        return true;
+    QString message;
+    const bool updated = LidarConfigService::updateDeviceTypeIfNeeded(configPath,
+                                                                      hasLastDiscoveredLidarType,
+                                                                      lastDiscoveredLidarType,
+                                                                      &message);
+    if (!message.isEmpty()) {
+        logMessage(message);
     }
-
-    QString expectedKey;
-    switch (lastDiscoveredLidarType)
-    {
-    case kLivoxLidarTypeMid360:
-        expectedKey = "MID360";
-        break;
-    case kLivoxLidarTypeMid360s:
-        expectedKey = "Mid360s";
-        break;
-    case kLivoxLidarTypeHAP:
-        expectedKey = "HAP";
-        break;
-    case kLivoxLidarTypeAvia2:
-        expectedKey = "Avia2";
-        break;
-    default:
-        qDebug() << "[DeviceTypeCheck] 当前雷达型号不在自动校正列表中，dev_type =" << lastDiscoveredLidarType;
-        return true;
-    }
-
-    QFile configFile(configPath);
-    if (!configFile.open(QIODevice::ReadOnly))
-    {
-        logMessage("无法打开配置文件进行 Device type 校验");
-        return false;
-    }
-
-    QByteArray data = configFile.readAll();
-    configFile.close();
-
-    QJsonParseError parseError;
-    QJsonDocument doc = QJsonDocument::fromJson(data, &parseError);
-    if (parseError.error != QJsonParseError::NoError)
-    {
-        logMessage("配置文件 JSON 解析错误（Device type 校验失败）");
-        return false;
-    }
-
-    QJsonObject root = doc.object();
-
-    // 收集设备配置块键（排除日志相关字段）
-    QStringList deviceKeys;
-    for (auto it = root.begin(); it != root.end(); ++it)
-    {
-        if (!it.value().isObject())
-            continue;
-        const QString key = it.key();
-        if (key == "lidar_log_enable" || key == "lidar_log_cache_size_MB" || key == "lidar_log_path")
-            continue;
-
-        QJsonObject obj = it.value().toObject();
-        if (obj.contains("host_net_info"))
-        {
-            deviceKeys.append(key);
-        }
-    }
-
-    if (deviceKeys.isEmpty())
-    {
-        qDebug() << "[DeviceTypeCheck] 配置文件中未找到设备配置块，跳过 Device type 自动校正";
-        return true;
-    }
-
-    // 已经包含期望的 Device type，则无需修改
-    if (deviceKeys.contains(expectedKey))
-    {
-        qDebug() << "[DeviceTypeCheck] 配置文件 Device type 已与当前雷达匹配:" << expectedKey;
-        return true;
-    }
-
-    // 仅在存在单一设备配置块时才尝试自动改名，避免误改多设备场景
-    if (deviceKeys.size() != 1)
-    {
-        logMessage("检测到配置文件包含多个设备配置块且均与当前雷达型号不匹配，暂不自动修改 Device type");
-        return true;
-    }
-
-    const QString oldKey = deviceKeys.first();
-    QJsonObject oldDevObj = root.value(oldKey).toObject();
-    if (!oldDevObj.contains("host_net_info") || !oldDevObj.value("host_net_info").isArray())
-    {
-        logMessage("配置文件设备块缺少 host_net_info，无法自动调整 Device type");
-        return false;
-    }
-
-    QJsonArray hostArr = oldDevObj.value("host_net_info").toArray();
-
-    // 按与配置向导一致的规则生成新的 lidar_net_info
-    QJsonObject lidarNet;
-    if (expectedKey == "MID360" || expectedKey == "Mid360s" || expectedKey == "Avia2")
-    {
-        lidarNet.insert("cmd_data_port", 56100);
-        lidarNet.insert("push_msg_port", 56200);
-        lidarNet.insert("point_data_port", 56300);
-        lidarNet.insert("imu_data_port", 56400);
-        lidarNet.insert("log_data_port", 56500);
-    }
-    else
-    {
-        // HAP 或其他使用 HAP 的默认端口
-        lidarNet.insert("cmd_data_port", 56000);
-        lidarNet.insert("push_msg_port", 0);
-        lidarNet.insert("point_data_port", 57000);
-        lidarNet.insert("imu_data_port", 58000);
-        lidarNet.insert("log_data_port", 59000);
-    }
-
-    // 重新组装一个有序的根对象：先日志字段，再设备块
-    QJsonObject orderedRoot;
-    if (root.contains("lidar_log_enable"))
-        orderedRoot.insert("lidar_log_enable", root.value("lidar_log_enable"));
-    if (root.contains("lidar_log_cache_size_MB"))
-        orderedRoot.insert("lidar_log_cache_size_MB", root.value("lidar_log_cache_size_MB"));
-    if (root.contains("lidar_log_path"))
-        orderedRoot.insert("lidar_log_path", root.value("lidar_log_path"));
-
-    QJsonObject newDevObj;
-    newDevObj.insert("lidar_net_info", lidarNet);
-    newDevObj.insert("host_net_info", hostArr);
-    orderedRoot.insert(expectedKey, newDevObj);
-
-    QJsonDocument newDoc(orderedRoot);
-    if (!configFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
-    {
-        logMessage("无法写入配置文件（Device type 自动校正失败）");
-        return false;
-    }
-
-    configFile.write(newDoc.toJson(QJsonDocument::Indented));
-    configFile.close();
-
-    logMessage(QString("已自动将配置文件 Device type 从 \"%1\" 调整为 \"%2\"").arg(oldKey, expectedKey));
-    return true;
+    return updated;
 }
-
 /*
 void LivoxViewerWindow::printPacketDetails(const QByteArray& data, const QHostAddress& sender)
 {
