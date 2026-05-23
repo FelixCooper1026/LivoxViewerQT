@@ -99,6 +99,8 @@ public:
 
 private:
     void initializeUserInterface();
+    QWidget* createViewerToolbar(QWidget* parent);
+    QWidget* createPlaybackBar(QWidget* parent);
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();

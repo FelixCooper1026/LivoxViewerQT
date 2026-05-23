@@ -140,6 +140,8 @@ endif()
 set(SOURCES
     apps/LivoxViewer/main.cpp
     apps/LivoxViewer/LivoxViewerUi.cpp
+    apps/LivoxViewer/ViewerToolbar.cpp
+    apps/LivoxViewer/PlaybackBar.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp
