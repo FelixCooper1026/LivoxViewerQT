@@ -148,6 +148,9 @@ set(SOURCES
     apps/LivoxViewer/ImuPanel.cpp
     apps/LivoxViewer/LogPanel.cpp
     apps/LivoxViewer/MainMenuActions.cpp
+    apps/LivoxViewer/FormatConvertDialog.cpp
+    apps/LivoxViewer/FirmwareUpgradeDialog.cpp
+    apps/LivoxViewer/PointCloudFilterDialog.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp

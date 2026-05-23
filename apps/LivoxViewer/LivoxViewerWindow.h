@@ -107,6 +107,9 @@ private:
     void createFileInfoPanel();
     void createLogPanel();
     void createMenusAndActions();
+    void showFormatConvertDialog();
+    void showFirmwareUpgradeDialog();
+    void showPointCloudFilterDialog();
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();

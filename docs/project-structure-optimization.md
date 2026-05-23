@@ -27,7 +27,7 @@
 | Stage 3：统一离线播放来源 | 已完成 | `4e23419` | 已新增 `PlaybackSource`、`Lvx2Reader`、`PcapReader`，LVX2/PCAP 可使用统一播放来源模型。 |
 | Stage 4：拆实时点云 pipeline | 已完成 | `28e2121` | 已新增 decoder、colorizer、filter、projection 模块；实时点云处理主路径已拆出核心处理能力。 |
 | Stage 5：拆 SDK、发现、配置、参数服务 | 部分完成 | `f7986ba` | 已有服务类，但 `LidarSdkController.cpp`、`LidarSdkCallbacks.cpp`、`LidarParameterParser.cpp` 仍实现大量主窗口成员函数。 |
-| Stage 6：拆主窗口 UI | 部分完成 | `415669e`、`bd75939` | 已拆出 toolbar、playback bar、五个 dock 面板和菜单动作文件；菜单里的各类 dialog/action 仍集中在 `MainMenuActions.cpp`。 |
+| Stage 6：拆主窗口 UI | 部分完成 | `415669e`、`bd75939` | 已拆出 toolbar、playback bar、五个 dock 面板、菜单动作文件，以及格式转换、固件升级、点云滤波三个独立 dialog 文件；采集/保存、帮助、设备动作仍待继续拆分。 |
 
 ## 3. 已完成项
 
@@ -60,6 +60,9 @@
 - `apps/LivoxViewer/ImuPanel.cpp`
 - `apps/LivoxViewer/LogPanel.cpp`
 - `apps/LivoxViewer/MainMenuActions.cpp`
+- `apps/LivoxViewer/FormatConvertDialog.cpp`
+- `apps/LivoxViewer/FirmwareUpgradeDialog.cpp`
+- `apps/LivoxViewer/PointCloudFilterDialog.cpp`
 
 当前 `initializeUserInterface()` 的职责已经收敛为：
 
@@ -136,20 +139,23 @@ LVX2/PCAP 离线 smoke 已覆盖：
 
 ### 4.2 `MainMenuActions.cpp` 仍然过大
 
-`apps/LivoxViewer/MainMenuActions.cpp` 当前约 1179 行，集中包含：
+`apps/LivoxViewer/MainMenuActions.cpp` 当前已从约 1179 行降到约 579 行，仍集中包含：
 
 - 文件菜单
 - 工具菜单
 - 帮助菜单
-- LVX2 格式转换对话框
 - 点云保存动作
 - IMU 保存动作入口
-- 固件升级对话框
 - 重启/恢复出厂设置动作
-- 点云滤波对话框
 - 状态栏、计时器和部分 action 连接
 
-这一步已经从 `LivoxViewerUi.cpp` 拆出，但还没有达到 Stage 6 原计划中“dialog/action 独立成文件”的目标。
+已拆出的独立 dialog 文件：
+
+- `apps/LivoxViewer/FormatConvertDialog.cpp`
+- `apps/LivoxViewer/FirmwareUpgradeDialog.cpp`
+- `apps/LivoxViewer/PointCloudFilterDialog.cpp`
+
+剩余目标是继续拆出帮助菜单、采集/保存菜单、设备动作和回放连接，让 `MainMenuActions.cpp` 只保留菜单骨架。
 
 ### 4.3 `ParameterPanel.cpp` 仍然偏重
 
@@ -283,12 +289,12 @@ libs/Export/
 
 建议顺序：
 
-1. 把格式转换对话框拆到 `FormatConvertDialog.cpp`。
-2. 把固件升级对话框拆到 `FirmwareUpgradeDialog.cpp`。
-3. 把点云滤波对话框拆到 `PointCloudFilterDialog.cpp`。
-4. 把帮助菜单链接拆到 `HelpActions.cpp`。
-5. 把采集/保存菜单动作拆到 `CaptureActions.cpp`。
-6. 把设备菜单动作拆到 `DeviceActions.cpp`。
+1. 已完成：把格式转换对话框拆到 `FormatConvertDialog.cpp`。
+2. 已完成：把固件升级对话框拆到 `FirmwareUpgradeDialog.cpp`。
+3. 已完成：把点云滤波对话框拆到 `PointCloudFilterDialog.cpp`。
+4. 待完成：把帮助菜单链接拆到 `HelpActions.cpp`。
+5. 待完成：把采集/保存菜单动作拆到 `CaptureActions.cpp`。
+6. 待完成：把设备菜单动作拆到 `DeviceActions.cpp`。
 
 验收标准：
 
