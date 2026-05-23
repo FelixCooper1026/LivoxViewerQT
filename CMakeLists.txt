@@ -154,6 +154,9 @@ set(SOURCES
     apps/LivoxViewer/FormatConvertDialog.cpp
     apps/LivoxViewer/FirmwareUpgradeDialog.cpp
     apps/LivoxViewer/PointCloudFilterDialog.cpp
+    apps/LivoxViewer/PlaybackControllerActions.cpp
+    apps/LivoxViewer/PcapPlaybackActions.cpp
+    apps/LivoxViewer/Lvx2ConvertActions.cpp
     apps/LivoxViewer/LivoxViewerActions.cpp
     apps/LivoxViewer/LivoxViewerSettings.cpp
     libs/LivoxCore/src/LidarSdkController.cpp
@@ -169,15 +172,12 @@ set(SOURCES
     libs/PointCloud/src/PointCloudProjection.cpp
     libs/PointCloud/src/PointCloudPipeline.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
-    libs/Lvx2/src/Lvx2PlaybackController.cpp
-    libs/Lvx2/src/Lvx2Converter.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/PcapParser.cpp
     libs/Pcap/src/PcapReader.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
-    libs/Pcap/src/PcapPlaybackController.cpp
     libs/Export/src/PointCloudExport.cpp
     libs/AppConfig/src/AppSettings.cpp
     libs/AppConfig/src/LidarConfigService.cpp
