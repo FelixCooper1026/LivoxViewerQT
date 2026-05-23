@@ -271,16 +271,16 @@ static QString nmeaChecksum(const QString& payload)
 void LivoxViewerWindow::onGpsSimulateToggled(bool enabled)
 {
     if (!currentLidarDevice || !currentLidarDevice->is_connected) {
-        gpsSimulateCheck->setChecked(false);
+        imuState.gpsSimulateCheck->setChecked(false);
         return;
     }
 
     if (enabled) {
-        gpsTimer->start(1000); // 1 Hz
+        imuState.gpsTimer->start(1000); // 1 Hz
         statusLabelBar->setText("GPS模拟输入已启用");
         logMessage("GPS模拟输入已启用");
     } else {
-        gpsTimer->stop();
+        imuState.gpsTimer->stop();
         statusLabelBar->setText("GPS模拟输入已关闭");
         logMessage("GPS模拟输入已关闭");
     }
@@ -321,68 +321,68 @@ QString LivoxViewerWindow::buildImuAscii(double gx, double gy, double gz, double
 void LivoxViewerWindow::onImuDisplayButtonClicked()
 {
     // Toggle 2 Hz text-only updater
-    if (imuDisplayRunning.exchange(!imuDisplayRunning.load())) {
+    if (imuState.displayRunning.exchange(!imuState.displayRunning.load())) {
         // turned off
-        if (imuDisplayThread.joinable()) {
-            imuDisplayThread.detach(); // avoid blocking GUI
+        if (imuState.displayThread.joinable()) {
+            imuState.displayThread.detach(); // avoid blocking GUI
         }
-        if (imuDataTable) {
+        if (imuState.dataTable) {
             for (int r = 0; r < 3; ++r) {
                 for (int c = 0; c < 2; ++c) {
-                    QTableWidgetItem* item = imuDataTable->item(r, c);
+                    QTableWidgetItem* item = imuState.dataTable->item(r, c);
                     if (!item) {
                         item = new QTableWidgetItem();
                         item->setTextAlignment(Qt::AlignCenter);
-                        imuDataTable->setItem(r, c, item);
+                        imuState.dataTable->setItem(r, c, item);
                     }
                     item->setText("0.000");
                 }
             }
         }
-        if (imuAsciiLabel) imuAsciiLabel->setText("状态: 已停止");
-        if (imuDisplayButton) imuDisplayButton->setText("显示IMU数据");
+        if (imuState.asciiLabel) imuState.asciiLabel->setText("状态: 已停止");
+        if (imuState.displayButton) imuState.displayButton->setText("显示IMU数据");
         return;
     }
 
-    if (imuDisplayButton) imuDisplayButton->setText("停止IMU显示");
+    if (imuState.displayButton) imuState.displayButton->setText("停止IMU显示");
 
     // Start or restart text updater thread (2 Hz)
-    if (imuDisplayThread.joinable()) {
-        imuDisplayThread.detach();
+    if (imuState.displayThread.joinable()) {
+        imuState.displayThread.detach();
     }
-    imuDisplayThread = std::thread([this]() {
-        while (imuDisplayRunning.load()) {
+    imuState.displayThread = std::thread([this]() {
+        while (imuState.displayRunning.load()) {
             float gx=0, gy=0, gz=0, ax=0, ay=0, az=0; bool have=false;
             {
-                QMutexLocker lk(&imuSampleMutex);
-                if (latestImu.have) {
-                    gx = latestImu.gx; gy = latestImu.gy; gz = latestImu.gz;
-                    ax = latestImu.ax; ay = latestImu.ay; az = latestImu.az;
+                QMutexLocker lk(&imuState.sampleMutex);
+                if (imuState.latestSample.have) {
+                    gx = imuState.latestSample.gx; gy = imuState.latestSample.gy; gz = imuState.latestSample.gz;
+                    ax = imuState.latestSample.ax; ay = imuState.latestSample.ay; az = imuState.latestSample.az;
                     have = true;
                 }
             }
             if (have) {
                 QMetaObject::invokeMethod(this, [this, gx, gy, gz, ax, ay, az]() {
-                    if (imuDataTable) {
+                    if (imuState.dataTable) {
                         const double values[3][2] = {
                             {gx, ax}, {gy, ay}, {gz, az}
                         };
                         for (int r = 0; r < 3; ++r) {
                             for (int c = 0; c < 2; ++c) {
-                                QTableWidgetItem* item = imuDataTable->item(r, c);
+                                QTableWidgetItem* item = imuState.dataTable->item(r, c);
                                 if (!item) {
                                     item = new QTableWidgetItem();
                                     item->setTextAlignment(Qt::AlignCenter);
-                                    imuDataTable->setItem(r, c, item);
+                                    imuState.dataTable->setItem(r, c, item);
                                 }
                                 item->setText(QString::number(values[r][c], 'f', 3));
                             }
                         }
                     }
-                    if (imuAsciiLabel) imuAsciiLabel->setText("状态: 接收中");
+                    if (imuState.asciiLabel) imuState.asciiLabel->setText("状态: 接收中");
                 });
             }
-            for (int i=0; i<10 && imuDisplayRunning.load(); ++i) {
+            for (int i=0; i<10 && imuState.displayRunning.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
             }
         }
@@ -391,99 +391,99 @@ void LivoxViewerWindow::onImuDisplayButtonClicked()
 
 void LivoxViewerWindow::onActionShowImuCharts()
 {
-    if (imuChartWindow && imuChartWindow->isVisible()) {
-        imuChartWindow->raise();
-        imuChartWindow->activateWindow();
+    if (imuState.chartWindow && imuState.chartWindow->isVisible()) {
+        imuState.chartWindow->raise();
+        imuState.chartWindow->activateWindow();
         return;
     }
     // Build chart window
-    imuChartWindow = new QWidget(this, Qt::Window);
-    imuChartWindow->setAttribute(Qt::WA_DeleteOnClose);
-    imuChartWindow->setWindowTitle("IMU数据曲线");
-    QVBoxLayout* layout = new QVBoxLayout(imuChartWindow);
+    imuState.chartWindow = new QWidget(this, Qt::Window);
+    imuState.chartWindow->setAttribute(Qt::WA_DeleteOnClose);
+    imuState.chartWindow->setWindowTitle("IMU数据曲线");
+    QVBoxLayout* layout = new QVBoxLayout(imuState.chartWindow);
 
     // Gyro chart
-    gyroChart = new QChart();
-    gyroSeriesX = new QLineSeries(); gyroSeriesX->setName("gyro_x");
-    gyroSeriesY = new QLineSeries(); gyroSeriesY->setName("gyro_y");
-    gyroSeriesZ = new QLineSeries(); gyroSeriesZ->setName("gyro_z");
-    gyroChart->addSeries(gyroSeriesX);
-    gyroChart->addSeries(gyroSeriesY);
-    gyroChart->addSeries(gyroSeriesZ);
-    gyroAxisX = new QValueAxis(); gyroAxisX->setTitleText("时间 (s)");
-    gyroAxisY = new QValueAxis(); gyroAxisY->setTitleText("角速度 (rad/s)"); gyroAxisY->setRange(-50, 50);
-    gyroChart->addAxis(gyroAxisX, Qt::AlignBottom);
-    gyroChart->addAxis(gyroAxisY, Qt::AlignLeft);
-    for (auto s : {gyroSeriesX, gyroSeriesY, gyroSeriesZ}) { s->attachAxis(gyroAxisX); s->attachAxis(gyroAxisY); }
-    gyroChart->legend()->setVisible(true);
-    gyroChartView = new YAxisZoomChartView(gyroChart, imuChartWindow);
+    imuState.gyroChart = new QChart();
+    imuState.gyroSeriesX = new QLineSeries(); imuState.gyroSeriesX->setName("gyro_x");
+    imuState.gyroSeriesY = new QLineSeries(); imuState.gyroSeriesY->setName("gyro_y");
+    imuState.gyroSeriesZ = new QLineSeries(); imuState.gyroSeriesZ->setName("gyro_z");
+    imuState.gyroChart->addSeries(imuState.gyroSeriesX);
+    imuState.gyroChart->addSeries(imuState.gyroSeriesY);
+    imuState.gyroChart->addSeries(imuState.gyroSeriesZ);
+    imuState.gyroAxisX = new QValueAxis(); imuState.gyroAxisX->setTitleText("时间 (s)");
+    imuState.gyroAxisY = new QValueAxis(); imuState.gyroAxisY->setTitleText("角速度 (rad/s)"); imuState.gyroAxisY->setRange(-50, 50);
+    imuState.gyroChart->addAxis(imuState.gyroAxisX, Qt::AlignBottom);
+    imuState.gyroChart->addAxis(imuState.gyroAxisY, Qt::AlignLeft);
+    for (auto s : {imuState.gyroSeriesX, imuState.gyroSeriesY, imuState.gyroSeriesZ}) { s->attachAxis(imuState.gyroAxisX); s->attachAxis(imuState.gyroAxisY); }
+    imuState.gyroChart->legend()->setVisible(true);
+    imuState.gyroChartView = new YAxisZoomChartView(imuState.gyroChart, imuState.chartWindow);
     
     // Acc chart
-    accChart = new QChart();
-    accSeriesX = new QLineSeries(); accSeriesX->setName("acc_x");
-    accSeriesY = new QLineSeries(); accSeriesY->setName("acc_y");
-    accSeriesZ = new QLineSeries(); accSeriesZ->setName("acc_z");
-    accChart->addSeries(accSeriesX);
-    accChart->addSeries(accSeriesY);
-    accChart->addSeries(accSeriesZ);
-    accAxisX = new QValueAxis(); accAxisX->setTitleText("时间 (s)");
-    accAxisY = new QValueAxis(); accAxisY->setTitleText("加速度 (g)"); accAxisY->setRange(-4, 4);
-    accChart->addAxis(accAxisX, Qt::AlignBottom);
-    accChart->addAxis(accAxisY, Qt::AlignLeft);
-    for (auto s : {accSeriesX, accSeriesY, accSeriesZ}) { s->attachAxis(accAxisX); s->attachAxis(accAxisY); }
-    accChart->legend()->setVisible(true);
-    accChartView = new YAxisZoomChartView(accChart, imuChartWindow);
+    imuState.accChart = new QChart();
+    imuState.accSeriesX = new QLineSeries(); imuState.accSeriesX->setName("acc_x");
+    imuState.accSeriesY = new QLineSeries(); imuState.accSeriesY->setName("acc_y");
+    imuState.accSeriesZ = new QLineSeries(); imuState.accSeriesZ->setName("acc_z");
+    imuState.accChart->addSeries(imuState.accSeriesX);
+    imuState.accChart->addSeries(imuState.accSeriesY);
+    imuState.accChart->addSeries(imuState.accSeriesZ);
+    imuState.accAxisX = new QValueAxis(); imuState.accAxisX->setTitleText("时间 (s)");
+    imuState.accAxisY = new QValueAxis(); imuState.accAxisY->setTitleText("加速度 (g)"); imuState.accAxisY->setRange(-4, 4);
+    imuState.accChart->addAxis(imuState.accAxisX, Qt::AlignBottom);
+    imuState.accChart->addAxis(imuState.accAxisY, Qt::AlignLeft);
+    for (auto s : {imuState.accSeriesX, imuState.accSeriesY, imuState.accSeriesZ}) { s->attachAxis(imuState.accAxisX); s->attachAxis(imuState.accAxisY); }
+    imuState.accChart->legend()->setVisible(true);
+    imuState.accChartView = new YAxisZoomChartView(imuState.accChart, imuState.chartWindow);
 
-    layout->addWidget(gyroChartView);
-    layout->addWidget(accChartView);
-    imuChartWindow->setLayout(layout);
+    layout->addWidget(imuState.gyroChartView);
+    layout->addWidget(imuState.accChartView);
+    imuState.chartWindow->setLayout(layout);
 
     // Start or restart chart updater (20 Hz) without blocking GUI
-    if (imuChartRunning.exchange(true)) {
-        if (imuChartThread.joinable()) imuChartThread.detach();
+    if (imuState.chartRunning.exchange(true)) {
+        if (imuState.chartThread.joinable()) imuState.chartThread.detach();
     }
-    imuChartThread = std::thread([this]() {
+    imuState.chartThread = std::thread([this]() {
         double t = 0.0;
         const double dt = 0.05; // 20 Hz
         const double windowSec = 5.0;
         const int maxPoints = static_cast<int>(windowSec / dt);
-        while (imuChartRunning.load()) {
+        while (imuState.chartRunning.load()) {
             float gx=0, gy=0, gz=0, ax=0, ay=0, az=0; bool have=false;
             {
-                QMutexLocker lk(&imuSampleMutex);
-                if (latestImu.have) {
-                    gx = latestImu.gx; gy = latestImu.gy; gz = latestImu.gz;
-                    ax = latestImu.ax; ay = latestImu.ay; az = latestImu.az;
+                QMutexLocker lk(&imuState.sampleMutex);
+                if (imuState.latestSample.have) {
+                    gx = imuState.latestSample.gx; gy = imuState.latestSample.gy; gz = imuState.latestSample.gz;
+                    ax = imuState.latestSample.ax; ay = imuState.latestSample.ay; az = imuState.latestSample.az;
                     have = true;
                 }
             }
             if (have) {
                 QMetaObject::invokeMethod(this, [this, gx, gy, gz, ax, ay, az, t, maxPoints, dt]() {
                     auto pushPoint = [&](QLineSeries* s, double x, double y){ if (!s) return; s->append(x, y); if (s->count() > maxPoints) s->removePoints(0, s->count() - maxPoints); };
-                    pushPoint(gyroSeriesX, t, gx); pushPoint(gyroSeriesY, t, gy); pushPoint(gyroSeriesZ, t, gz);
-                    pushPoint(accSeriesX, t, ax); pushPoint(accSeriesY, t, ay); pushPoint(accSeriesZ, t, az);
-                    if (gyroAxisX) gyroAxisX->setRange(std::max(0.0, t - (maxPoints - 1) * dt), t);
-                    if (accAxisX) accAxisX->setRange(std::max(0.0, t - (maxPoints - 1) * dt), t);
+                    pushPoint(imuState.gyroSeriesX, t, gx); pushPoint(imuState.gyroSeriesY, t, gy); pushPoint(imuState.gyroSeriesZ, t, gz);
+                    pushPoint(imuState.accSeriesX, t, ax); pushPoint(imuState.accSeriesY, t, ay); pushPoint(imuState.accSeriesZ, t, az);
+                    if (imuState.gyroAxisX) imuState.gyroAxisX->setRange(std::max(0.0, t - (maxPoints - 1) * dt), t);
+                    if (imuState.accAxisX) imuState.accAxisX->setRange(std::max(0.0, t - (maxPoints - 1) * dt), t);
                 });
             }
             t += dt;
-            for (int i=0; i<5 && imuChartRunning.load(); ++i) {
+            for (int i=0; i<5 && imuState.chartRunning.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
         }
     });
 
     // Stop chart when window closed
-    connect(imuChartWindow, &QObject::destroyed, this, [this]() {
-        imuChartRunning.store(false);
-        if (imuChartThread.joinable()) imuChartThread.detach();
-        gyroChart = nullptr; gyroChartView = nullptr; gyroSeriesX = gyroSeriesY = gyroSeriesZ = nullptr; gyroAxisX = gyroAxisY = nullptr;
-        accChart = nullptr; accChartView = nullptr; accSeriesX = accSeriesY = accSeriesZ = nullptr; accAxisX = accAxisY = nullptr;
-        imuChartWindow = nullptr;
+    connect(imuState.chartWindow, &QObject::destroyed, this, [this]() {
+        imuState.chartRunning.store(false);
+        if (imuState.chartThread.joinable()) imuState.chartThread.detach();
+        imuState.gyroChart = nullptr; imuState.gyroChartView = nullptr; imuState.gyroSeriesX = imuState.gyroSeriesY = imuState.gyroSeriesZ = nullptr; imuState.gyroAxisX = imuState.gyroAxisY = nullptr;
+        imuState.accChart = nullptr; imuState.accChartView = nullptr; imuState.accSeriesX = imuState.accSeriesY = imuState.accSeriesZ = nullptr; imuState.accAxisX = imuState.accAxisY = nullptr;
+        imuState.chartWindow = nullptr;
     });
 
-    imuChartWindow->resize(900, 600);
-    imuChartWindow->show();
+    imuState.chartWindow->resize(900, 600);
+    imuState.chartWindow->show();
 }
 
 void LivoxViewerWindow::onActionCaptureImuTriggered()
@@ -609,26 +609,26 @@ void LivoxViewerWindow::appendImuCsvRow(quint64 timestamp_ns, float gx, float gy
 
 void LivoxViewerWindow::refreshSerialPorts()
 {
-    serialPortCombo->clear();
+    imuState.serialPortCombo->clear();
     QList<QSerialPortInfo> infos = QSerialPortInfo::availablePorts();
     if (infos.isEmpty()) {
-        serialPortCombo->addItem("未连接");
-        serialPortCombo->setEnabled(false);
-        serialEnableCheck->setEnabled(false);
+        imuState.serialPortCombo->addItem("未连接");
+        imuState.serialPortCombo->setEnabled(false);
+        imuState.serialEnableCheck->setEnabled(false);
     } else {
         for (const QSerialPortInfo& info : infos) {
-            serialPortCombo->addItem(info.portName());
+            imuState.serialPortCombo->addItem(info.portName());
         }
-        serialPortCombo->setEnabled(true);
-        serialEnableCheck->setEnabled(true);
+        imuState.serialPortCombo->setEnabled(true);
+        imuState.serialEnableCheck->setEnabled(true);
     }
 }
 
 void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
 {
     if (!enabled) {
-        serialRunning.store(false);
-        if (serialThread.joinable()) serialThread.join();
+        imuState.serialRunning.store(false);
+        if (imuState.serialThread.joinable()) imuState.serialThread.join();
         // 记录串口停止日志
         logMessage("串口转发GPS已关闭");
         // 更新状态栏
@@ -636,22 +636,22 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
         return;
     }
     if (!currentLidarDevice || !currentLidarDevice->is_connected) {
-        serialEnableCheck->setChecked(false);
+        imuState.serialEnableCheck->setChecked(false);
         return;
     }
-    QString portName = serialPortCombo ? serialPortCombo->currentText() : QString();
+    QString portName = imuState.serialPortCombo ? imuState.serialPortCombo->currentText() : QString();
     if (portName.isEmpty() || portName == "未连接") {
-        serialEnableCheck->setChecked(false);
+        imuState.serialEnableCheck->setChecked(false);
         return;
     }
-    serialRunning.store(true);
+    imuState.serialRunning.store(true);
     // 记录串口启动日志并更新状态栏
     QMetaObject::invokeMethod(this, [this, portName]() {
         logMessage(QString("串口转发GPS已启用，端口: %1").arg(portName));
         statusLabelBar->setText(QString("串口转发GPS已启用，端口: %1").arg(portName));
     }, Qt::QueuedConnection);
     
-    serialThread = std::thread([this, portName]() {
+    imuState.serialThread = std::thread([this, portName]() {
         QSerialPort serial;
         serial.setPortName(portName);
         serial.setBaudRate(QSerialPort::Baud9600);
@@ -660,15 +660,15 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
         serial.setStopBits(QSerialPort::OneStop);
         if (!serial.open(QIODevice::ReadOnly)) {
             QMetaObject::invokeMethod(this, [this, portName]() { 
-                serialEnableCheck->setChecked(false); 
+                imuState.serialEnableCheck->setChecked(false);
                 logMessage(QString("串口转发GPS启动失败，无法打开端口: %1").arg(portName));
                 statusLabelBar->setText(QString("串口转发GPS启动失败，端口: %1").arg(portName));
             }, Qt::QueuedConnection);
-            serialRunning.store(false);
+            imuState.serialRunning.store(false);
             return;
         }
         QByteArray buffer;
-        while (serialRunning.load()) {
+        while (imuState.serialRunning.load()) {
             if (!serial.waitForReadyRead(200)) {
                 continue;
             }

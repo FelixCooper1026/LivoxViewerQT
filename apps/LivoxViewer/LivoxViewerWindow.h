@@ -76,6 +76,7 @@
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
 #include "state/CaptureSessionState.h"
+#include "state/ImuRuntimeState.h"
 #include "state/PlaybackControllerState.h"
 
 QT_BEGIN_NAMESPACE
@@ -269,59 +270,8 @@ private:
     int upgradeTotalDevices = 0;  // 总设备数，用于进度显示
     QMutex upgradeProgressMutex;  // 升级进度映射的互斥锁
 	// GPS RMC 模拟
-    QCheckBox* gpsSimulateCheck = nullptr;
-    QTimer* gpsTimer = nullptr;
-    QPushButton* imuDisplayButton = nullptr; // deprecated in UI; kept for backward compatibility
-    QTableWidget* imuDataTable = nullptr;
+    ImuRuntimeState imuState;
     QTableWidget* lvx2DeviceTable = nullptr;
-
-    // IMU per-axis UI elements
-    QProgressBar* gyroBarX = nullptr;
-    QProgressBar* gyroBarY = nullptr;
-    QProgressBar* gyroBarZ = nullptr;
-    QLabel* gyroValX = nullptr;
-    QLabel* gyroValY = nullptr;
-    QLabel* gyroValZ = nullptr;
-    QProgressBar* accBarX = nullptr;
-    QProgressBar* accBarY = nullptr;
-    QProgressBar* accBarZ = nullptr;
-    QLabel* accValX = nullptr;
-    QLabel* accValY = nullptr;
-    QLabel* accValZ = nullptr;
-
-    // IMU ASCII display
-    QLabel* imuAsciiLabel = nullptr;
-
-    // IMU charts
-    QChartView* gyroChartView = nullptr;
-    QChart* gyroChart = nullptr;
-    QLineSeries* gyroSeriesX = nullptr;
-    QLineSeries* gyroSeriesY = nullptr;
-    QLineSeries* gyroSeriesZ = nullptr;
-    QValueAxis* gyroAxisX = nullptr;
-    QValueAxis* gyroAxisY = nullptr;
-
-    QChartView* accChartView = nullptr;
-    QChart* accChart = nullptr;
-    QLineSeries* accSeriesX = nullptr;
-    QLineSeries* accSeriesY = nullptr;
-    QLineSeries* accSeriesZ = nullptr;
-    QValueAxis* accAxisX = nullptr;
-    QValueAxis* accAxisY = nullptr;
-
-    QWidget* imuChartWindow = nullptr;
-
-    std::atomic_bool imuDisplayRunning{false};
-    std::thread imuDisplayThread;
-    std::atomic_bool imuChartRunning{false};
-    std::thread imuChartThread;
-    QMutex imuSampleMutex;
-    struct { float gx=0, gy=0, gz=0, ax=0, ay=0, az=0; bool have=false; } latestImu;
-    // 串口转发GPS同步
-    QComboBox* serialPortCombo = nullptr;
-    QCheckBox* serialEnableCheck = nullptr;
-    std::atomic_bool serialRunning{false};
-    std::thread serialThread;
 
     int colorMode = ColorByReflectivity;
     QColor solidColor = QColor(255, 255, 255);

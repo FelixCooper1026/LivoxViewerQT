@@ -4,8 +4,8 @@
 void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
 {
     // GPS 模拟定时器
-    gpsTimer = new QTimer(this);
-    connect(gpsTimer, &QTimer::timeout, this, &LivoxViewerWindow::onGpsTick);
+    imuState.gpsTimer = new QTimer(this);
+    connect(imuState.gpsTimer, &QTimer::timeout, this, &LivoxViewerWindow::onGpsTick);
 
     connect(playbackState.playPauseButton, &QPushButton::clicked, [this]() {
         if (!playbackState.active) {

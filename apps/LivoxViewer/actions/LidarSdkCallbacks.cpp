@@ -227,14 +227,14 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                 // 仅存储最新IMU样本，避免阻塞UI
                 LivoxLidarImuRawPoint last = p_imu_data[packet_copy->dot_num - 1];
                 {
-                    QMutexLocker lk(&window->imuSampleMutex);
-                    window->latestImu.gx = last.gyro_x;
-                    window->latestImu.gy = last.gyro_y;
-                    window->latestImu.gz = last.gyro_z;
-                    window->latestImu.ax = last.acc_x;
-                    window->latestImu.ay = last.acc_y;
-                    window->latestImu.az = last.acc_z;
-                    window->latestImu.have = true;
+                    QMutexLocker lk(&window->imuState.sampleMutex);
+                    window->imuState.latestSample.gx = last.gyro_x;
+                    window->imuState.latestSample.gy = last.gyro_y;
+                    window->imuState.latestSample.gz = last.gyro_z;
+                    window->imuState.latestSample.ax = last.acc_x;
+                    window->imuState.latestSample.ay = last.acc_y;
+                    window->imuState.latestSample.az = last.acc_z;
+                    window->imuState.latestSample.have = true;
                 }
                 // 若正在保存IMU数据，将包内样本写入CSV
                 if (window->captureState.imuSaveActive) {

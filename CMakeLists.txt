@@ -192,6 +192,7 @@ set(SOURCES
   set(HEADERS
      apps/LivoxViewer/LivoxViewerWindow.h
      apps/LivoxViewer/state/CaptureSessionState.h
+     apps/LivoxViewer/state/ImuRuntimeState.h
      apps/LivoxViewer/state/PlaybackControllerState.h
      libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h

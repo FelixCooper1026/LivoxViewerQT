@@ -83,37 +83,37 @@ void LivoxViewerWindow::createDevicePanel()
     {
         QGroupBox* gpsGroup = new QGroupBox("时间同步", lidarDevicesDockContent);
         QVBoxLayout* gpsLayout = new QVBoxLayout(gpsGroup);
-        gpsSimulateCheck = new QCheckBox("启用GPS模拟输入(GPRMC)", gpsGroup);
+        imuState.gpsSimulateCheck = new QCheckBox("启用GPS模拟输入(GPRMC)", gpsGroup);
         // 第1行：启用GPS模拟输入（左对齐）
         {
             QWidget* rowSim = new QWidget(gpsGroup);
             QHBoxLayout* hSim = new QHBoxLayout(rowSim);
             hSim->setContentsMargins(0,0,0,0);
-            hSim->addWidget(gpsSimulateCheck);
+            hSim->addWidget(imuState.gpsSimulateCheck);
             hSim->addStretch();
             gpsLayout->addWidget(rowSim);
         }
-        connect(gpsSimulateCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onGpsSimulateToggled);
+        connect(imuState.gpsSimulateCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onGpsSimulateToggled);
         // 第2行：启用串口转发输入（左对齐）
-        serialEnableCheck = new QCheckBox("启用串口转发输入(GPRMC)", gpsGroup);
+        imuState.serialEnableCheck = new QCheckBox("启用串口转发输入(GPRMC)", gpsGroup);
         {
             QWidget* rowEnable = new QWidget(gpsGroup);
             QHBoxLayout* hEn = new QHBoxLayout(rowEnable);
             hEn->setContentsMargins(0,0,0,0);
-            hEn->addWidget(serialEnableCheck);
+            hEn->addWidget(imuState.serialEnableCheck);
             hEn->addStretch();
             gpsLayout->addWidget(rowEnable);
         }
-        connect(serialEnableCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onSerialEnableToggled);
+        connect(imuState.serialEnableCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onSerialEnableToggled);
         // 第3行：串口选择与刷新
-        serialPortCombo = new QComboBox(gpsGroup);
+        imuState.serialPortCombo = new QComboBox(gpsGroup);
         QPushButton* btnRefreshSerial = new QPushButton("刷新串口", gpsGroup);
         {
             QWidget* rowSer = new QWidget(gpsGroup);
             QHBoxLayout* hSer = new QHBoxLayout(rowSer);
             hSer->setContentsMargins(0,0,0,0);
             hSer->addWidget(new QLabel("串口:"));
-            hSer->addWidget(serialPortCombo, 1);
+            hSer->addWidget(imuState.serialPortCombo, 1);
             hSer->addWidget(btnRefreshSerial);
             gpsLayout->addWidget(rowSer);
         }
