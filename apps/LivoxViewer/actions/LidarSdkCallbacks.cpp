@@ -9,6 +9,10 @@
 #include <algorithm>
 #include <cstring>
 
+namespace {
+constexpr double kImuChartRetentionSec = 60.0;
+}
+
 void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLidarInfo* info, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);
@@ -224,6 +228,8 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
             // 解析IMU数据
             if (packet_copy->data_type == kLivoxLidarImuData && packet_copy->dot_num > 0) {
                 LivoxLidarImuRawPoint* p_imu_data = (LivoxLidarImuRawPoint*)packet_copy->data;
+                const quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
+                const double timestampSec = static_cast<double>(ts) * 1.0e-9;
                 // 仅存储最新IMU样本，避免阻塞UI
                 LivoxLidarImuRawPoint last = p_imu_data[packet_copy->dot_num - 1];
                 {
@@ -236,9 +242,31 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                     window->imuState.latestSample.az = last.acc_z;
                     window->imuState.latestSample.have = true;
                 }
+                {
+                    QMutexLocker lk(&window->imuState.chartSamplesMutex);
+                    if (window->imuState.chartTimeOriginSec < 0.0) {
+                        window->imuState.chartTimeOriginSec = timestampSec;
+                    }
+                    const double relativeSec = timestampSec - window->imuState.chartTimeOriginSec;
+                    for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
+                        const LivoxLidarImuRawPoint& s = p_imu_data[i];
+                        window->imuState.chartSamples.append(ImuChartSample{
+                            relativeSec,
+                            s.gyro_x, s.gyro_y, s.gyro_z,
+                            s.acc_x, s.acc_y, s.acc_z
+                        });
+                    }
+                    int removeCount = 0;
+                    while (removeCount < window->imuState.chartSamples.size() &&
+                           relativeSec - window->imuState.chartSamples[removeCount].timestampSec > kImuChartRetentionSec) {
+                        ++removeCount;
+                    }
+                    if (removeCount > 0) {
+                        window->imuState.chartSamples.remove(0, removeCount);
+                    }
+                }
                 // 若正在保存IMU数据，将包内样本写入CSV
                 if (window->captureState.imuSaveActive) {
-                    quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                     for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
                         const LivoxLidarImuRawPoint& s = p_imu_data[i];
                         window->appendImuCsvRow(ts, s.gyro_x, s.gyro_y, s.gyro_z, s.acc_x, s.acc_y, s.acc_z);

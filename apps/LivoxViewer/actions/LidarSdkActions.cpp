@@ -260,10 +260,6 @@ void LivoxViewerWindow::startLidarDiscovery()
                     waitTimer->stop();
                     startLidarDiscovery(); // 重新进入发现流程
                 }
-                else
-                {
-                    logMessage("等待有线网口连接中...");
-                }
             });
             waitTimer->start();
         }

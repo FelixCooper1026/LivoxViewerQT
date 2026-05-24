@@ -2,6 +2,7 @@
 #define LIVOXVIEWER_IMURUNTIMESTATE_H
 
 #include <QMutex>
+#include <QVector>
 #include <atomic>
 #include <thread>
 
@@ -28,6 +29,17 @@ struct ImuSampleState
     float ay = 0;
     float az = 0;
     bool have = false;
+};
+
+struct ImuChartSample
+{
+    double timestampSec = 0.0;
+    double gx = 0.0;
+    double gy = 0.0;
+    double gz = 0.0;
+    double ax = 0.0;
+    double ay = 0.0;
+    double az = 0.0;
 };
 
 struct ImuRuntimeState
@@ -69,13 +81,20 @@ struct ImuRuntimeState
     QValueAxis* accAxisY = nullptr;
 
     QWidget* chartWindow = nullptr;
+    QTimer* chartRefreshTimer = nullptr;
+    QPushButton* chartPauseButton = nullptr;
+    QPushButton* chartClearButton = nullptr;
+    QPushButton* chartResetButton = nullptr;
+    QLabel* chartHoverLabel = nullptr;
+    bool chartPaused = false;
 
     std::atomic_bool displayRunning{false};
     std::thread displayThread;
-    std::atomic_bool chartRunning{false};
-    std::thread chartThread;
     QMutex sampleMutex;
     ImuSampleState latestSample;
+    QMutex chartSamplesMutex;
+    QVector<ImuChartSample> chartSamples;
+    double chartTimeOriginSec = -1.0;
 
     QComboBox* serialPortCombo = nullptr;
     QCheckBox* serialEnableCheck = nullptr;
