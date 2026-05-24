@@ -62,8 +62,6 @@ struct ImuRuntimeState
     QLabel* accValY = nullptr;
     QLabel* accValZ = nullptr;
 
-    QLabel* asciiLabel = nullptr;
-
     QChartView* gyroChartView = nullptr;
     QChart* gyroChart = nullptr;
     QLineSeries* gyroSeriesX = nullptr;

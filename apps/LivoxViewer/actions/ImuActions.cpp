@@ -239,20 +239,6 @@ bool findNearestImuSample(const QVector<ImuChartSample>& samples, double timesta
 
 } // namespace
 
-QString LivoxViewerWindow::buildImuAscii(double gx, double gy, double gz, double ax, double ay, double az) const
-{
-    auto fw = [](double v){ return QString::number(v, 'f', 3).rightJustified(7, ' '); };
-    QString s;
-    s += "+----------------------------------+\n";
-    s += "|   Gyro(rad/s)   |     Acc(g)     |\n";
-    s += "+----------------------------------+\n";
-    s += QString("| X:%1       | X:%2      |\n").arg(fw(gx)).arg(fw(ax));
-    s += QString("| Y:%1       | Y:%2      |\n").arg(fw(gy)).arg(fw(ay));
-    s += QString("| Z:%1       | Z:%2      |\n").arg(fw(gz)).arg(fw(az));
-    s += "+----------------------------------+";
-    return s;
-}
-
 void LivoxViewerWindow::onImuDisplayButtonClicked()
 {
     if (imuState.displayRunning.exchange(!imuState.displayRunning.load())) {
@@ -272,7 +258,6 @@ void LivoxViewerWindow::onImuDisplayButtonClicked()
                 }
             }
         }
-        if (imuState.asciiLabel) imuState.asciiLabel->setText("状态: 已停止");
         if (imuState.displayButton) imuState.displayButton->setText("显示IMU数据");
         return;
     }
@@ -311,7 +296,6 @@ void LivoxViewerWindow::onImuDisplayButtonClicked()
                             }
                         }
                     }
-                    if (imuState.asciiLabel) imuState.asciiLabel->setText(buildImuAscii(gx, gy, gz, ax, ay, az));
                 });
             }
             for (int i = 0; i < 10 && imuState.displayRunning.load(); ++i) {

@@ -27,9 +27,6 @@ void LivoxViewerWindow::createImuPanel()
     }
     imuLayout->addWidget(imuState.dataTable);
 
-    imuState.asciiLabel = new QLabel("状态: 未开始", imuContent);
-    imuLayout->addWidget(imuState.asciiLabel);
-
     // Display toggle button (2 Hz text refresh)
     imuState.displayButton = new QPushButton("显示IMU数据", imuContent);
     imuLayout->addWidget(imuState.displayButton);

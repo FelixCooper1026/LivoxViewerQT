@@ -387,9 +387,6 @@ private slots:
     void onLvx2PlaybackSliderMoved(int value);
     void onLvx2PlaybackFileDropped(const QString& filePath);
 
-private:
-    // Helpers
-    QString buildImuAscii(double gx, double gy, double gz, double ax, double ay, double az) const;
 };
 
 #endif // LIVOXVIEWER_LIVOXVIEWERWINDOW_H
