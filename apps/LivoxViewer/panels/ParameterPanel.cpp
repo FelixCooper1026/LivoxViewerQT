@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 #include <QHeaderView>
 #include <QSizePolicy>
+#include <QTableView>
 
 void LivoxViewerWindow::createParameterPanel()
 {
@@ -19,12 +20,11 @@ void LivoxViewerWindow::createParameterPanel()
     attrDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     QWidget* attrContent = new QWidget(attrDock);
     QVBoxLayout* attrLayout = new QVBoxLayout(attrContent);
-    attrTable = new QTableWidget(attrContent);
-    attrTable->setColumnCount(6);
-    attrTable->setHorizontalHeaderLabels({"Index", "X(m)", "Y(m)", "Z(m)", "Refl", "Tag"});
+    attrTable = new QTableView(attrContent);
     attrTable->verticalHeader()->setVisible(false);
     attrTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    attrTable->setSelectionMode(QAbstractItemView::NoSelection);
+    attrTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    attrTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     attrTable->horizontalHeader()->setStretchLastSection(true);
     attrTable->setSortingEnabled(true);
     attrLayout->addWidget(attrTable);

@@ -163,19 +163,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                     lastSelectionCount = -1;
                     logMessage("已清除框选");
                 }
-                if (attrTable) {
-                    bool sorting = attrTable->isSortingEnabled();
-                    attrTable->setSortingEnabled(false);
-                    attrTable->clearContents();
-                    attrTable->setRowCount(0);
-                    attrTable->setSortingEnabled(sorting);
-                } else if (selectionTable) {
-                    bool sorting = selectionTable->isSortingEnabled();
-                    selectionTable->setSortingEnabled(false);
-                    selectionTable->clearContents();
-                    selectionTable->setRowCount(0);
-                    selectionTable->setSortingEnabled(sorting);
-                }
+                updateSelectionTableAndLog();
                 // 关闭点属性弹窗并停止日志
                 if (attrDock) { attrDock->hide(); }
                 selectionRealtimeEnabled = false;
@@ -187,6 +175,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                     attrDock->raise();
                 }
                 selectionRealtimeEnabled = true;
+                updateSelectionTableAndLog();
                 statusLabelBar->setText("点云框选模式：按住Ctrl+左键拖动选择区域");
             }
             btnToggleSelection->setText(enable ? "退出点云框选" : "点云框选");
