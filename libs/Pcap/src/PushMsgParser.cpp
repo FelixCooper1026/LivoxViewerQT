@@ -26,8 +26,8 @@ struct DeviceTypeConfig {
 DeviceTypeConfig getDeviceConfig(uint8_t firmwareMajor)
 {
     switch (firmwareMajor) {
-        case 13: return { 9,  QStringLiteral("Mid-360") };
-        case 35: return { 35, QStringLiteral("Mid-360S") }; 
+        case 13: return { 9,  QStringLiteral("Mid360") };
+        case 35: return { 35, QStringLiteral("Mid360S") }; 
         case 40: return { 40, QStringLiteral("Avia2") }; 
         default: return { 0,  QStringLiteral("未知") };
     }

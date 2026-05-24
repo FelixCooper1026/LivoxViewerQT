@@ -1,215 +1,148 @@
 # LivoxViewerQT
 
-## 简介
-**LivoxViewerQT** 是一个基于 **Qt 框架** 开发的 Livox 激光雷达 **可视化与控制软件**。  
-支持多种 Livox 雷达设备，提供 **实时点云显示、设备管理、数据记录** 和 **高级可视化功能**。
+LivoxViewerQT 是一个基于 Qt、CMake、Livox SDK2 和 Npcap/libpcap 的 Livox 激光雷达可视化与控制工具。项目支持实时雷达发现、点云显示、参数控制、数据采集、LVX2/PCAP 离线播放和 LVX2 格式转换。
 
-## 功能界面展示
+## 功能概览
 
-### 主界面
-![主界面](pics/main_interface.png)
+- 实时发现 Livox 雷达并初始化 Livox SDK2。
+- OpenGL 点云显示，支持反射率、距离、高程、纯色、球面深度投影和平面投影。
+- 点云交互：旋转、平移、缩放、视角预设、框选、属性表和三维测距。
+- 设备管理：网卡选择、主机 IP 自动配置、设备列表和状态显示。
+- 参数管理：基本参数、网络参数、FOV、外参、状态参数查询和写入。
+- 数据采集：LOG、Debug、LVX2 录制、PCD/LAS 保存、IMU CSV 保存。
+- 离线播放：LVX2、PCAP、PCAPNG、CAP。
+- 格式转换：LVX2 转 PCD、LAS、CSV、TXT。
+- IMU/GPS：IMU 数值和曲线显示、GPS 模拟、串口 NMEA 转发。
 
-### 点云可视化
-![点云显示](pics/pointcloud_display.png)
+## 当前项目结构
 
-### 设备管理
-![设备管理](pics/device_management.png)
-
-### 数据记录
-![数据记录](pics/data_recording.png)
-
----
-
-## 功能
-
-### 🎯 核心功能
-- **智能网络配置**：自适应网络配置修改，自动发现和连接 Livox 激光雷达设备  
-- **实时点云可视化**：高性能 OpenGL 渲染，支持大规模点云数据  
-- **多种显示模式**：反射率、距离、高程、平面投影等多种视图模式  
-- **交互式测量**：支持 3D 空间测距和点云框选操作  
-  
-
-### 📊 数据记录
-- **点云录制**：支持 Livox 官方 LVX2 格式录制，支持 PCD/LAS 导出  
-- **IMU 数据记录**：陀螺仪和加速度数据保存为 CSV  
-- **设备日志采集**：支持调试日志抓取  
-- **参数记录**：记录设备参数变化  
-
-### ⚙️ 设备控制
-- **状态参数显示**：完整的设备状态参数显示界面  
-- **工作模式控制**：支持采样、待机、睡眠等模式  
-- **FOV 配置**：可视化调整雷达扫描视场角  
-- **网络设置**：灵活设置雷达和数据目标地址网络参数  
-
-### 🔧 高级功能
-- **离线点云播放**：支持离线播放官方 LVX2 格式点云文件
-- **LVX2 格式转换**：支持将官方 LVX2 格式点云文件转换为 PCD/LAS/CSV/TXT 格式
-- **GPS 时间同步**：支持 GPS 模拟与串口转发 GPRMC 报文 
-- **IMU 数据显示**：实时显示 IMU 曲线与数值  
-- **点云滤波**：基于点云 tag 信息的噪点识别与可视化  
-- **平面投影/深度投影**：多种投影显示模式  
-
----
-
-## 🛠️ 安装与编译
-
-### 前置依赖
-请先安装 **Qt 5.15+ 或 Qt 6.2+**，并确保包含以下模块：
-- Qt Core  
-- Qt GUI  
-- Qt Widgets  
-- Qt OpenGL  
-- Qt Network  
-- Qt SerialPort  
-- Qt Charts  
-
----
-
-### Windows
-
-```bash
-# 使用 Qt Creator
-1. 打开项目
-2. 选择 MSVC 编译器套件
-3. 设置构建目录
-4. 构建项目
-
-```
-
-### Linux (Ubuntu/Debian)
-
-- **依赖**：Qt5/Qt6 开发包（Core/Widgets/OpenGL/Network/SerialPort/Charts）+ CMake 3.16+ + GCC/Clang
-- **编译**（示例）：
-
-```bash
-mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j
-```
-
-- **运行注意**：程序默认会在标准配置目录查找/创建 `config.json`（如果检测到旧位置的 `config.json` 会尝试迁移/继续兼容）。\n 
-- **动态库查找**：Linux 下已通过 RPATH 优先从可执行文件旁的 `livox_sdk_qt/lib` 查找 SDK 动态库，通常不需要再手动设置 `LD_LIBRARY_PATH`。\n 
-- **网络配置**：Linux 下“自动修改主机网口 IP”默认关闭（需要 root/sudo 权限）。如需自动修改，可在界面中勾选 **“自动修改主机网口IP（需管理员/Root）”**。
-## 🚀 快速开始
-
-### 首次运行配置
-首次运行时会自动检测网络配置并进行必要设置：
-
-- 程序会自动扫描有线网络接口。  
-- 检测连接的 Livox 雷达设备。  
-- 自动配置主机 IP 与雷达在同一网段（如有需要会提示修改或重启程序）。  
-- 生成或更新配置文件（`config.json`），保存当前网络与设备设置。  
-
-> Linux 提示：若设备与主机不在同一网段，程序会给出建议主机 IP，并提示你手动配置网卡 IPv4（默认不自动修改以避免权限问题）。
-
-### 基本使用流程
-1. **连接设备**：使用网线将主机与 Livox 雷达连接。  
-2. **启动程序**：运行 `LivoxViewerQT` 可执行文件。  
-3. **自动发现**：程序会自动发现并连接雷达设备。  
-4. **开始可视化**：连接成功后，点云数据将自动显示在 3D 视图中。  
-
----
-
-## 📖 使用指南
-
-### 3D 视图控制
-- **旋转视图**：鼠标左键拖拽  
-- **平移视图**：鼠标右键或中键拖拽  
-- **缩放**：鼠标滚轮  
-- **重置视图**：工具栏 “重置视角” 按钮
-
-### 点云测距
-1. 启用测量模式（工具栏点云测距按钮）。  
-2. 按住 `Ctrl` + 左键 选择第一个点。  
-3. 按住 `Ctrl` + 左键 选择第二个点。  
-4. 查看距离测量结果（将在测量面板/状态栏显示）。
-
-### 点云框选
-1. 启用选择模式（工具栏点云框选按钮）。  
-2. 按住 `Ctrl` + 左键拖拽选择区域。  
-3. 查看选中点的属性表格（坐标、反射率、tag 等）。
-
-### 数据记录
-
-#### 录制点云 (LVX2)
-- 点击 **"保存 LVX2 点云"** 按钮。  
-- 选择保存路径与录制时长。  
-- 点击开始录制，录制完成后程序将自动保存 LVX2 文件。
-
-#### IMU 数据记录
-- 确保设备 IMU 数据发送已开启。  
-- 点击 **"保存 IMU 数据"**，选择保存路径与时长，开始记录。  
-- IMU 数据将以 CSV 格式保存（时间戳、加速度、角速度等字段）。
-
----
-
-## 📁 项目结构
-
-```markdown
+```text
 LivoxViewerQT/
-├── main.cpp                     # 程序入口
-├── mainwindow.h/cpp             # 主窗口类
-├── point_widget.cpp             # 点云显示组件
-├── sdk_init.cpp                 # Livox SDK 初始化
-├── sdk_callbacks.cpp            # SDK 回调处理
-├── point_visualize.cpp          # 点云可视化处理
-├── lvx2_converter.cpp           # 文件格式转换
-├── lvx2_playback.cpp            # LVX2文件播放
-├── resources/                   # 程序图标等资源文件
-├── pics/                        # 程序界面截图
-│   ├── main_interface.png
-│   ├── pointcloud_display.png
-│   ├── device_management.png
-│   └── data_recording.png
-├── config.json                  # 配置文件（自动生成）
-├── CMakeLists.txt               # CMake 构建配置
-├── README.md                    # 项目说明
-├── LICENSE                      # 许可证文件
-└── livox_sdk_qt/                # Livox SDK 相关文件
-    ├── include/                 # SDK 头文件
-    │   ├── livox_lidar_api.h    # Livox 雷达 API 函数声明，用于初始化、采集数据、设备控制等
-    │   └── livox_lidar_def.h    # SDK 常量、结构体、枚举类型定义，如点云数据结构、设备信息结构等
-    └── lib/                     # SDK 静态库文件
-        ├── liblivox_lidar_sdk_static.a   # Linux/Unix 静态库
-        └── livox_lidar_sdk_static.lib    # Windows 静态库
+  apps/LivoxViewer/                 Qt 应用层
+    actions/                        主窗口业务动作
+    dialogs/                        格式转换、固件升级、滤波等对话框
+    panels/                         工具栏、回放条和 dock 面板
+    state/                          应用层状态聚合
+  libs/AppConfig/                   配置、网卡和应用设置服务
+  libs/Export/                      PCD/LAS/CSV/TXT 导出
+  libs/LivoxCore/                   Livox SDK、发现、参数服务和共享类型
+  libs/Lvx2/                        LVX2 读取和点解析
+  libs/Pcap/                        PCAP 离线读取和解析
+  libs/Playback/                    LVX2/PCAP 统一播放抽象
+  libs/PointCloud/                  点云模型、算法和 OpenGL 视图
+  livox_sdk_qt/                     Livox SDK2 头文件和静态库
+  third-party/npcap-sdk-1.16/       Npcap SDK
+  testdata/manual/                  本地手工测试样例，真实样例不入库
+  docs/                             架构、流程和重构文档
 ```
----
 
-## 🔧 故障排除
+## 依赖
 
-### 常见问题
+Windows 当前验证环境：
 
-**设备无法连接**
-- 检查网线连接是否紧固。    
-- 检查防火墙或安全软件是否阻止 UDP 广播/接收端口（默认端口：56000 等）。  
-- 查看程序日志输出获取错误详情。
+- Visual Studio 2026 Community
+- Qt 6.8.3 `msvc2022_64`
+- CMake，使用 Visual Studio 自带版本即可
+- Npcap 运行时
+- 仓库内的 `livox_sdk_qt/`
+- 仓库内的 `third-party/npcap-sdk-1.16/Lib/x64/wpcap.lib`
+- 仓库内的 `third-party/npcap-sdk-1.16/Lib/x64/Packet.lib`
 
-**Linux 下无法自动修改网卡 IP**
-- 默认行为：Linux 下该功能默认关闭。\n
-- 若需开启：勾选界面中的 **“自动修改主机网口IP（需管理员/Root）”**。\n
-- 常见原因：缺少权限（需要 `sudo`），或系统不允许普通用户修改网络配置。\n
-- 你也可以手动执行（示例）：`sudo ip addr add <host_ip>/24 dev <iface>`，然后重启程序。
+Linux 需要：
 
-**点云显示异常**
-- 确认显卡驱动支持 OpenGL 3.3+。  
-- 检查点云数据格式与采样模式是否正确。  
-- 检查激光雷达设备是否正常运行。
+- CMake 3.16+
+- GCC/Clang
+- Qt 5.15+ 或 Qt 6.2+，包含 Core、Widgets、OpenGL、SerialPort、Charts、Network、Svg
+- libpcap
+- pthread、dl、m
 
-**性能问题**
-- 降低点云积分时间。   
-- 启用点云滤波以减少渲染点数。  
+## Windows 编译运行
 
-### 日志查看
-- 程序运行日志显示在主界面底部日志区域，包含详细的程序运行状态与错误信息。  
+当前机器可直接使用以下命令：
 
----
+```powershell
+& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="B:\Qt\6.8.3\msvc2022_64"
+& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-msvc --config Release --target LivoxViewerQT
+& "B:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe" "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
+& "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
+```
 
-## 📄 许可证
-本项目基于 Qt 框架与 Livox SDK2 开发。请在使用或分发本项目时，遵循相关依赖组件的许可证条款。  
-**主要许可证**：MIT License（见项目根目录 `LICENSE` 文件）。
+如果 `cmake.exe` 已加入 PATH，可简化为：
 
----
+```powershell
+cmake -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="B:\Qt\6.8.3\msvc2022_64"
+cmake --build build-msvc --config Release --target LivoxViewerQT
+```
 
-✨ **注意**：本项目为独立开源项目，与 Livox Tech 无关。 
+## Linux 编译运行
 
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/LivoxViewerQT
+```
 
+Linux 下程序通过 RPATH 优先从可执行文件旁的 `livox_sdk_qt/lib` 查找 Livox SDK 动态库。自动修改主机网卡 IP 默认关闭，如需使用需在界面中启用并确保具备权限。
+
+## 手工 smoke 测试
+
+真实离线样例放在：
+
+```text
+testdata/manual/sample.lvx2
+testdata/manual/sample.pcap
+```
+
+这些文件被 `.gitignore` 忽略，不提交到仓库。
+
+每次重构后建议检查：
+
+```powershell
+& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-msvc --config Release --target LivoxViewerQT
+& "B:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe" "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
+& "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
+```
+
+影响离线播放或导出时，还应验证：
+
+- LVX2 样例能加载并播放。
+- PCAP 样例能加载并播放。
+- 回放条首帧、上一帧、下一帧、尾帧、播放/暂停、速度和模式切换可用。
+- 文件信息面板设备显示/隐藏可用。
+- LVX2 转换输出 PCD、LAS、CSV、TXT，且文件非空。
+
+## 使用流程
+
+实时设备：
+
+1. 使用网线连接主机和 Livox 雷达。
+2. 启动 `LivoxViewerQT.exe`。
+3. 在设备面板选择有线网卡。
+4. 程序自动发现设备，必要时更新主机 IP 或配置文件。
+5. SDK 初始化成功后开始接收点云、IMU、状态和参数。
+6. 使用工具栏调整显示、投影、滤波、框选和测距。
+
+离线播放：
+
+1. 通过菜单或拖放打开 LVX2、PCAP、PCAPNG、CAP 文件。
+2. 使用底部回放条控制帧、速度和播放模式。
+3. 在文件信息面板控制设备点云显示/隐藏。
+
+格式转换：
+
+1. 打开格式转换对话框。
+2. 选择 LVX2 源文件、输出目录、输出名、转换模式和目标格式。
+3. 执行转换并检查输出文件。
+
+## 文档
+
+- [完整功能流程文档](docs/complete-feature-flow.md)
+- [项目结构优化建议](docs/project-structure-optimization.md)
+- [多功能耦合文件分析及重构建议](docs/multi-function-coupling-analysis.md)
+- [Agent 指南](agent.md)
+
+后续代码重构前应先阅读 `agent.md`。
+
+## 许可证
+
+本项目使用 MIT License，详见 [LICENSE](LICENSE)。

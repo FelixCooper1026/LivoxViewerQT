@@ -68,7 +68,7 @@ void LivoxViewerWindow::initializeLivoxSdk()
     if (lidarDiscoveryActive)
     {
         logMessage("设备发现仍在进行中，等待完成...");
-        // 延迟重试，但不要无限等�
+        // 延迟重试，但不要无限等�
         static int retryCount = 0;
         if (retryCount < 10)
         { // 最多等待20秒

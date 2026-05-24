@@ -161,6 +161,11 @@ set(SOURCES
     apps/LivoxViewer/actions/PcapPlaybackActions.cpp
     apps/LivoxViewer/actions/Lvx2ConvertActions.cpp
     apps/LivoxViewer/actions/PointCloudActions.cpp
+    apps/LivoxViewer/actions/PointCloudRuntimeActions.cpp
+    apps/LivoxViewer/actions/PointCloudRecordingActions.cpp
+    apps/LivoxViewer/actions/PointCloudSelectionActions.cpp
+    apps/LivoxViewer/actions/ImuActions.cpp
+    apps/LivoxViewer/actions/SerialGpsActions.cpp
     apps/LivoxViewer/actions/LidarSdkActions.cpp
     apps/LivoxViewer/actions/LidarSdkCallbacks.cpp
     apps/LivoxViewer/actions/LidarParameterActions.cpp

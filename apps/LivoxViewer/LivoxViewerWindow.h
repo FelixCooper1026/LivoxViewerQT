@@ -152,6 +152,7 @@ private:
                          const std::function<void(int, int)>& progress);
     bool savePointCloudAsCSV(const QString& filePath, const QVector<PointCloudPoint>& points);
     bool savePointCloudAsTXT(const QString& filePath, const QVector<PointCloudPoint>& points);
+    void handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs);
 
     // 着色模式
     enum ColorMode {
