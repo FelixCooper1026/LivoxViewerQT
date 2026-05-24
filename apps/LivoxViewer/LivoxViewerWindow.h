@@ -49,6 +49,7 @@
 #include <QSettings>
 #include <QColor>
 #include <QFrame>
+#include <QTableView>
 #include <QTableWidget>
 #include <QProgressBar>
 #include <QFile>
@@ -245,10 +246,10 @@ private:
     QCheckBox* projectionDepthCheck = nullptr;
     QCheckBox* planarProjectionCheck = nullptr;
     QDoubleSpinBox* planarRadiusSpin = nullptr;
-    QTableWidget* selectionTable = nullptr;
+    QTableView* selectionTable = nullptr;
     // 点属性弹窗
     QDockWidget* attrDock = nullptr;
-    QTableWidget* attrTable = nullptr;
+    QTableView* attrTable = nullptr;
     // 采集控制
     CaptureSessionState captureState;
     // 多设备升级进度跟踪
