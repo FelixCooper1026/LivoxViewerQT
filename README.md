@@ -129,11 +129,6 @@ cmake --build build -j
 2. 选择源 LVX2 和输出参数。
 3. 执行转换并检查输出文件。
 
-## 仓库约定
-
-- `docs/` 与 `testdata/` 为本地目录，默认不纳入版本控制。
-- 如需团队共享文档或样例，请另建单独仓库或发布制品通道。
-
 ## 许可证
 
 MIT License，详见 [LICENSE](LICENSE)。
