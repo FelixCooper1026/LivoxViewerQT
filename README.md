@@ -1,80 +1,100 @@
 # LivoxViewerQT
 
-LivoxViewerQT 是一个基于 Qt、CMake、Livox SDK2 和 Npcap/libpcap 的 Livox 激光雷达可视化与控制工具。项目支持实时雷达发现、点云显示、参数控制、数据采集、LVX2/PCAP 离线播放和 LVX2 格式转换。
+LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化与控制工具，支持实时点云显示、参数管理、数据采集、LVX2/PCAP 离线回放和 LVX2 格式转换。
 
-## 功能概览
+## 功能特性
 
-- 实时发现 Livox 雷达并初始化 Livox SDK2。
-- OpenGL 点云显示，支持反射率、距离、高程、纯色、球面深度投影和平面投影。
-- 点云交互：旋转、平移、缩放、视角预设、框选、属性表和三维测距。
-- 设备管理：网卡选择、主机 IP 自动配置、设备列表和状态显示。
-- 参数管理：基本参数、网络参数、FOV、外参、状态参数查询和写入。
-- 数据采集：LOG、Debug、LVX2 录制、PCD/LAS 保存、IMU CSV 保存。
-- 离线播放：LVX2、PCAP、PCAPNG、CAP。
-- 格式转换：LVX2 转 PCD、LAS、CSV、TXT。
-- IMU/GPS：IMU 数值和曲线显示、GPS 模拟、串口 NMEA 转发。
+- 实时发现设备并初始化 Livox SDK
+- OpenGL 点云渲染与多种着色模式：
+  - 反射率
+  - 距离
+  - 高程
+  - 纯色
+  - 平面投影
+- 点云交互：
+  - 旋转 / 平移 / 缩放
+  - 预设视角
+  - 框选与属性查看
+  - 三维测距
+- 设备与网络管理：
+  - 网卡选择
+  - 主机 IP 自动配置（可选）
+  - 设备状态显示
+- 参数管理：
+  - 参数查询与下发（基础/网络/FOV/外参/状态）
+  - 参数 CSV 记录
+- 数据采集：
+  - LOG / Debug 采集
+  - LVX2 录制
+  - PCD / LAS 导出
+  - IMU CSV 保存
+- 离线回放：
+  - LVX2
+  - PCAP / PCAPNG / CAP
+- LVX2 转换：
+  - PCD / LAS / CSV / TXT
+- IMU 与 GPS：
+  - IMU 数值与曲线显示
+  - GPS 模拟
+  - 串口 NMEA 转发
 
-## 当前项目结构
+## 项目结构
 
 ```text
 LivoxViewerQT/
-  apps/LivoxViewer/                 Qt 应用层
-    actions/                        主窗口业务动作
-    dialogs/                        格式转换、固件升级、滤波等对话框
-    panels/                         工具栏、回放条和 dock 面板
-    state/                          应用层状态聚合
-  libs/AppConfig/                   配置、网卡和应用设置服务
-  libs/Export/                      PCD/LAS/CSV/TXT 导出
-  libs/LivoxCore/                   Livox SDK、发现、参数服务和共享类型
-  libs/Lvx2/                        LVX2 读取和点解析
-  libs/Pcap/                        PCAP 离线读取和解析
-  libs/Playback/                    LVX2/PCAP 统一播放抽象
-  libs/PointCloud/                  点云模型、算法和 OpenGL 视图
-  livox_sdk_qt/                     Livox SDK2 头文件和静态库
-  third-party/npcap-sdk-1.16/       Npcap SDK
-  testdata/manual/                  本地手工测试样例，真实样例不入库
-  docs/                             架构、流程和重构文档
+  apps/LivoxViewer/                 应用层（UI、Actions、Panels、Dialogs、State）
+  libs/AppConfig/                   配置与网卡服务
+  libs/Export/                      点云导出（PCD/LAS/CSV/TXT）
+  libs/LivoxCore/                   Livox SDK 封装、发现与参数服务
+  libs/Lvx2/                        LVX2 读取与解析
+  libs/Pcap/                        PCAP 解析与回放读取
+  libs/Playback/                    统一回放数据源抽象
+  libs/PointCloud/                  点云运行时与 OpenGL 视图
+  livox_sdk_qt/                     Livox SDK 头文件与库
+  third-party/npcap-sdk-1.16/       Npcap SDK（Windows 构建）
 ```
 
-## 依赖
+## 构建依赖
 
-Windows 当前验证环境：
+- CMake `>= 3.16`
+- C++17 编译器
+- Qt `>= 6.2`（CMake 中保留 Qt 5.15 回退）
+- Qt 模块：
+  - Core
+  - Widgets
+  - OpenGL
+  - OpenGLWidgets（Qt6）
+  - SerialPort
+  - Charts
+  - Network
+  - Svg
 
-- Visual Studio 2026 Community
-- Qt 6.8.3 `msvc2022_64`
-- CMake，使用 Visual Studio 自带版本即可
-- Npcap 运行时
-- 仓库内的 `livox_sdk_qt/`
-- 仓库内的 `third-party/npcap-sdk-1.16/Lib/x64/wpcap.lib`
-- 仓库内的 `third-party/npcap-sdk-1.16/Lib/x64/Packet.lib`
+### 平台附加依赖
 
-Linux 需要：
+- Windows：
+  - MSVC 工具链
+  - 已安装 Npcap 运行时
+  - `third-party/npcap-sdk-1.16/Lib/x64/` 下可用 `wpcap.lib` / `Packet.lib`
+- Linux：
+  - `libpcap`
+  - `pthread`、`dl`、`m`
 
-- CMake 3.16+
-- GCC/Clang
-- Qt 5.15+ 或 Qt 6.2+，包含 Core、Widgets、OpenGL、SerialPort、Charts、Network、Svg
-- libpcap
-- pthread、dl、m
+## 编译
 
-## Windows 编译运行
-
-当前机器可直接使用以下命令：
-
-```powershell
-& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="B:\Qt\6.8.3\msvc2022_64"
-& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-msvc --config Release --target LivoxViewerQT
-& "B:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe" "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
-& "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
-```
-
-如果 `cmake.exe` 已加入 PATH，可简化为：
+### Windows（PowerShell）
 
 ```powershell
-cmake -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="B:\Qt\6.8.3\msvc2022_64"
+cmake -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64"
 cmake --build build-msvc --config Release --target LivoxViewerQT
 ```
 
-## Linux 编译运行
+如需打包 Qt 运行时：
+
+```powershell
+windeployqt build-msvc\Release\LivoxViewerQT.exe
+```
+
+### Linux
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -82,67 +102,38 @@ cmake --build build -j
 ./build/LivoxViewerQT
 ```
 
-Linux 下程序通过 RPATH 优先从可执行文件旁的 `livox_sdk_qt/lib` 查找 Livox SDK 动态库。自动修改主机网卡 IP 默认关闭，如需使用需在界面中启用并确保具备权限。
+说明：
 
-## 手工 smoke 测试
-
-真实离线样例放在：
-
-```text
-testdata/manual/sample.lvx2
-testdata/manual/sample.pcap
-```
-
-这些文件被 `.gitignore` 忽略，不提交到仓库。
-
-每次重构后建议检查：
-
-```powershell
-& "B:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-msvc --config Release --target LivoxViewerQT
-& "B:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe" "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
-& "B:\Workspace\LivoxViewerQT\build-msvc\Release\LivoxViewerQT.exe"
-```
-
-影响离线播放或导出时，还应验证：
-
-- LVX2 样例能加载并播放。
-- PCAP 样例能加载并播放。
-- 回放条首帧、上一帧、下一帧、尾帧、播放/暂停、速度和模式切换可用。
-- 文件信息面板设备显示/隐藏可用。
-- LVX2 转换输出 PCD、LAS、CSV、TXT，且文件非空。
+- Linux 下可执行文件会优先从 `./livox_sdk_qt/lib` 查找 Livox SDK 动态库。
+- Linux 下主机网卡 IP 自动修改默认关闭。
 
 ## 使用流程
 
-实时设备：
+### 实时模式
 
-1. 使用网线连接主机和 Livox 雷达。
-2. 启动 `LivoxViewerQT.exe`。
-3. 在设备面板选择有线网卡。
-4. 程序自动发现设备，必要时更新主机 IP 或配置文件。
-5. SDK 初始化成功后开始接收点云、IMU、状态和参数。
-6. 使用工具栏调整显示、投影、滤波、框选和测距。
+1. 网线连接主机与 Livox 设备。
+2. 启动 `LivoxViewerQT`。
+3. 在设备面板选择网卡。
+4. 等待设备发现与 SDK 初始化完成。
+5. 在主视图进行点云观察、参数配置和采集操作。
 
-离线播放：
+### 离线回放
 
-1. 通过菜单或拖放打开 LVX2、PCAP、PCAPNG、CAP 文件。
-2. 使用底部回放条控制帧、速度和播放模式。
-3. 在文件信息面板控制设备点云显示/隐藏。
+1. 从菜单或拖拽打开 LVX2 / PCAP / PCAPNG / CAP 文件。
+2. 使用回放条控制播放、帧位置、速度与模式。
+3. 在文件信息面板切换设备可见性。
 
-格式转换：
+### LVX2 转换
 
 1. 打开格式转换对话框。
-2. 选择 LVX2 源文件、输出目录、输出名、转换模式和目标格式。
+2. 选择源 LVX2 和输出参数。
 3. 执行转换并检查输出文件。
 
-## 文档
+## 仓库约定
 
-- [完整功能流程文档](docs/complete-feature-flow.md)
-- [项目结构优化建议](docs/project-structure-optimization.md)
-- [多功能耦合文件分析及重构建议](docs/multi-function-coupling-analysis.md)
-- [Agent 指南](agent.md)
-
-后续代码重构前应先阅读 `agent.md`。
+- `docs/` 与 `testdata/` 为本地目录，默认不纳入版本控制。
+- 如需团队共享文档或样例，请另建单独仓库或发布制品通道。
 
 ## 许可证
 
-本项目使用 MIT License，详见 [LICENSE](LICENSE)。
+MIT License，详见 [LICENSE](LICENSE)。
