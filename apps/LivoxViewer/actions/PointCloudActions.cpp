@@ -1,6 +1,5 @@
 #include "LivoxViewerWindow.h"
 
-#include <QColorDialog>
 #include <algorithm>
 
 void LivoxViewerWindow::onFrameIntervalChanged(int ms)
@@ -43,11 +42,6 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
 void LivoxViewerWindow::onColorModeChanged(int index)
 {
     colorMode = index;
-    if (solidColorRow) {
-        solidColorRow->setProperty("toolbarOptionalHidden", colorMode != ColorSolid);
-        solidColorRow->setVisible(colorMode == ColorSolid);
-        solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
-    }
     if (colorModeCombo) {
         colorModeCombo->setEnabled(!planarProjectionEnabled);
     }
@@ -76,16 +70,6 @@ void LivoxViewerWindow::updatePointCloudLegend()
         pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
     } else if (mode == ColorByPlanarProjection) {
         pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
-    }
-}
-
-void LivoxViewerWindow::onSolidColorClicked()
-{
-    QColor c = QColorDialog::getColor(solidColor, this, "选择点云颜色");
-    if (!c.isValid()) return;
-    solidColor = c;
-    if (solidColorPreview) {
-        solidColorPreview->setStyleSheet(QString("background-color: %1;").arg(solidColor.name()));
     }
 }
 
@@ -123,11 +107,6 @@ void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
     }
     if (planarRadiusSpin) {
         planarRadiusSpin->setEnabled(enabled);
-    }
-    if (solidColorRow) {
-        solidColorRow->setProperty("toolbarOptionalHidden", colorMode != ColorSolid);
-        solidColorRow->setVisible(colorMode == ColorSolid);
-        solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
     }
     if (colorModeCombo) {
         colorModeCombo->setEnabled(!planarProjectionEnabled);

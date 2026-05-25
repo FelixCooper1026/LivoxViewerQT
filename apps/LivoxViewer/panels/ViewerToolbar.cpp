@@ -173,11 +173,10 @@ public:
 
         setStyleSheet(
             "#ViewerToolbarGroup {"
-            "  background: #dedede;"
-            "  border-left: 1px solid #b9b9b9;"
-            "  border-right: 1px solid #b9b9b9;"
+            "  background: palette(window);"
+            "  border-right: 1px solid palette(mid);"
             "}"
-            "#ViewerToolbarGroup QLabel { color: #202020; }"
+            "#ViewerToolbarGroup QLabel { color: palette(window-text); }"
         );
     }
 
@@ -405,24 +404,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QWidget* colorModeRow = createLabeledWidget("着色:", colorModeCombo, displayGroup);
     displayGroup->addPrimaryWidget(colorModeRow);
 
-    solidColorRow = new QWidget(displayGroup);
-    QHBoxLayout* colorRowLayoutTop = new QHBoxLayout(solidColorRow);
-    colorRowLayoutTop->setContentsMargins(0, 0, 0, 0);
-    colorRowLayoutTop->setSpacing(6);
-    solidColorPreview = new QFrame(solidColorRow);
-    solidColorPreview->setFixedSize(20, 20);
-    solidColorPreview->setFrameShape(QFrame::Box);
-    solidColorPreview->setLineWidth(1);
-    solidColorPreview->setStyleSheet(QString("background-color: %1;").arg(solidColor.name()));
-    solidColorButton = new QPushButton("颜色", solidColorRow);
-    colorRowLayoutTop->addWidget(solidColorPreview);
-    colorRowLayoutTop->addWidget(solidColorButton);
-    connect(solidColorButton, &QPushButton::clicked, this, &LivoxViewerWindow::onSolidColorClicked);
-    solidColorRow->setProperty("toolbarOptionalHidden", colorMode != ColorSolid);
-    solidColorRow->setVisible(colorMode == ColorSolid);
-    solidColorRow->setEnabled(colorMode == ColorSolid);
-    displayGroup->addSecondaryWidget(solidColorRow);
-
     QAction* visualizationAction = new QAction(style()->standardIcon(QStyle::SP_MediaPause), "点云可视化", this);
     visualizationAction->setCheckable(true);
     visualizationAction->setChecked(pointCloudVisualizationEnabled);
@@ -456,7 +437,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         onColorModeChanged(index);
     });
     addWidgetAction(displayGroup->moreMenu(), "着色", overflowColorMode);
-    displayGroup->moreMenu()->addAction("选择纯色...", this, &LivoxViewerWindow::onSolidColorClicked);
     displayGroup->moreMenu()->addAction(visualizationAction);
     toolbarLayout->addWidget(displayGroup);
 

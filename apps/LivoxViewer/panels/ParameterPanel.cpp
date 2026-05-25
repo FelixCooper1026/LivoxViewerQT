@@ -434,7 +434,7 @@ void LivoxViewerWindow::createParameterPanel()
             valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
             valueLabel->setMinimumWidth(0);
             valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            valueLabel->setStyleSheet("QLabel { background-color: #f0f0f0; padding: 2px; border: 1px solid #ccc; }");
+            valueLabel->setStyleSheet("QLabel { background-color: palette(base); padding: 2px; border: 1px solid palette(mid); }");
         nameLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         nameLabel->setMinimumWidth(100);
         switch (key) {

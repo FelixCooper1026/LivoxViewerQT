@@ -128,6 +128,8 @@ private:
     void loadViewPreferences();
     void saveViewPreferences();
     void showPreferencesDialog();
+    void applyUiTheme();
+    bool shouldUseDarkTheme() const;
     int effectiveColorMode() const;
     void updatePointCloudLegend();
     void updateProjectionControlsVisibility();
@@ -165,6 +167,12 @@ private:
         ColorByElevation = 2,
         ColorSolid = 3,
         ColorByPlanarProjection = 4  // 新增：平面投影模式
+    };
+
+    enum ThemeMode {
+        ThemeFollowSystem = 0,
+        ThemeLight = 1,
+        ThemeDark = 2
     };
 
     // 静态回调函数
@@ -242,9 +250,6 @@ private:
     // 点云可视化控制（UI控件指针与状态）
     QSpinBox* pointSizeSpin = nullptr;
     QComboBox* colorModeCombo = nullptr;
-    QPushButton* solidColorButton = nullptr;
-    QFrame* solidColorPreview = nullptr;
-    QWidget* solidColorRow = nullptr;
     QWidget* projectionControlsGroup = nullptr;
     QDoubleSpinBox* projectionDepthSpin = nullptr;
     QCheckBox* projectionDepthCheck = nullptr;
@@ -265,6 +270,7 @@ private:
     QTableWidget* lvx2DeviceTable = nullptr;
 
     int colorMode = ColorByReflectivity;
+    int themeMode = ThemeFollowSystem;
     QColor solidColor = QColor(255, 255, 255);
     float pointSizePx = 2.0f;
     float distanceLegendMin = 0.0f;
@@ -372,7 +378,6 @@ private slots:
     void onRenderTick();           // 渲染定时器回调（滑动窗口）
     void onPointSizeChanged(int px);
     void onColorModeChanged(int index);
-    void onSolidColorClicked();
     void onProjectionDepthToggled(bool enabled);
     void onProjectionDepthChanged(double meters);
     void onPlanarProjectionToggled(bool enabled);
