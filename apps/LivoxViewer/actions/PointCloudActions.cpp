@@ -44,6 +44,8 @@ void LivoxViewerWindow::onColorModeChanged(int index)
 {
     colorMode = index;
     if (solidColorRow) {
+        solidColorRow->setProperty("toolbarOptionalHidden", colorMode != ColorSolid);
+        solidColorRow->setVisible(colorMode == ColorSolid);
         solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
     }
     if (colorModeCombo) {
@@ -123,6 +125,8 @@ void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
         planarRadiusSpin->setEnabled(enabled);
     }
     if (solidColorRow) {
+        solidColorRow->setProperty("toolbarOptionalHidden", colorMode != ColorSolid);
+        solidColorRow->setVisible(colorMode == ColorSolid);
         solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
     }
     if (colorModeCombo) {

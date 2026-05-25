@@ -4,5 +4,6 @@
     <file>select_box.svg</file>
     <file>reset_view.svg</file>
     <file>refresh.svg</file>
+    <file>grid.svg</file>
   </qresource>
 </RCC>

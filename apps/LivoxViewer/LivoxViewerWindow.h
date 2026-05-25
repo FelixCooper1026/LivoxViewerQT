@@ -130,6 +130,7 @@ private:
     void showPreferencesDialog();
     int effectiveColorMode() const;
     void updatePointCloudLegend();
+    void updateProjectionControlsVisibility();
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet);
@@ -244,6 +245,7 @@ private:
     QPushButton* solidColorButton = nullptr;
     QFrame* solidColorPreview = nullptr;
     QWidget* solidColorRow = nullptr;
+    QWidget* projectionControlsGroup = nullptr;
     QDoubleSpinBox* projectionDepthSpin = nullptr;
     QCheckBox* projectionDepthCheck = nullptr;
     QCheckBox* planarProjectionCheck = nullptr;

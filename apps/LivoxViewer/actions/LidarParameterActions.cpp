@@ -9,6 +9,10 @@
 
 void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
 {
+    if (key == kKeyPclDataType) {
+        updateProjectionControlsVisibility();
+    }
+
     if (!currentLidarDevice) {
         return;
     }
@@ -38,20 +42,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     livox_status status = SetLivoxLidarPclDataType(currentLidarDevice->handle, dataType, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
-                    // 启用/禁用投影深度控件：仅球坐标时可用
-                    if (projectionDepthCheck) {
-                        projectionDepthCheck->setEnabled(index == 2);
-                    }
-                    if (projectionDepthSpin) {
-                        projectionDepthSpin->setEnabled(index == 2 && projectionDepthEnabled);
-                    }
-                    // 平面投影控件也仅在球坐标时可用
-                    if (planarProjectionCheck) {
-                        planarProjectionCheck->setEnabled(index == 2);
-                    }
-                    if (planarRadiusSpin) {
-                        planarRadiusSpin->setEnabled(index == 2 && planarProjectionEnabled);
-                    }
+                    updateProjectionControlsVisibility();
                     break;
                 }
                 case kKeyPatternMode: {

@@ -432,20 +432,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                         if (valueStr.contains("高精度")) combo->setCurrentIndex(0);
                                         else if (valueStr.contains("低精度")) combo->setCurrentIndex(1);
                                         else if (valueStr.contains("球坐标")) combo->setCurrentIndex(2);
-                                        // 根据当前点云格式启用/禁用投影深度控件（仅球坐标时可用）
-                                        if (window->projectionDepthCheck) {
-                                            window->projectionDepthCheck->setEnabled(combo->currentIndex() == 2);
-                                        }
-                                        if (window->projectionDepthSpin) {
-                                            window->projectionDepthSpin->setEnabled(combo->currentIndex() == 2 && window->projectionDepthEnabled);
-                                        }
-                                        // 平面投影控件也仅在球坐标时可用
-                                        if (window->planarProjectionCheck) {
-                                            window->planarProjectionCheck->setEnabled(combo->currentIndex() == 2);
-                                        }
-                                        if (window->planarRadiusSpin) {
-                                            window->planarRadiusSpin->setEnabled(combo->currentIndex() == 2 && window->planarProjectionEnabled);
-                                        }
+                                        window->updateProjectionControlsVisibility();
                                     } else if (key == kKeyPatternMode) {
                                             if (valueStr == "非重复扫描") combo->setCurrentIndex(0);
                                             else if (valueStr == "重复扫描") combo->setCurrentIndex(1);
