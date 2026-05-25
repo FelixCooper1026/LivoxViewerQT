@@ -682,7 +682,7 @@ void PointCloudView::paintGL()
          }
          QStringList tickLabels;
          if (m_legendMode == 0) {
-             tickLabels = {"255", "153", "102", "51", "0"};
+             tickLabels = {"255", "204", "153", "102", "51", "0"};
          } else if (m_legendMode == 1 || m_legendMode == 2 || m_legendMode == 4) {
              auto fmt = [](float v) { return QString::number(v, 'f', 2); };
              tickLabels = { fmt(m_legendMax), fmt((m_legendMin + m_legendMax) * 0.5f), fmt(m_legendMin) };
@@ -732,7 +732,7 @@ void PointCloudView::paintGL()
  
          // 标题
          painter.setPen(Qt::white);
-         QRect titleRect(barLeft - 6, barRect.top() - 20, legendWidth + 12, 18);
+         QRect titleRect(barLeft - 6, barRect.top() - 30, legendWidth + 12, 18);
          painter.drawText(titleRect, Qt::AlignLeft | Qt::AlignVCenter, title);
  
          // 刻度
@@ -742,7 +742,8 @@ void PointCloudView::paintGL()
              painter.drawText(barRect.right() + 2 + tickLen + labelSpacing, y + 4, label);
          };
          if (m_legendMode == 0) {
-             drawTick(1.0f, "255");
+             drawTick(1.0f,  "255");
+             drawTick(0.8f,  "204");
              drawTick(0.6f,  "153");
              drawTick(0.4f,  "102");
              drawTick(0.2f,  "51");

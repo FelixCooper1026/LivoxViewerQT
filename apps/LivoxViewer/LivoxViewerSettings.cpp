@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
@@ -79,6 +80,16 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     QSettings settings("Livox", "LivoxViewerQT");
+    distanceLegendMin = settings.value("legend/distanceMin", distanceLegendMin).toFloat();
+    distanceLegendMax = settings.value("legend/distanceMax", distanceLegendMax).toFloat();
+    elevationLegendMin = settings.value("legend/elevationMin", elevationLegendMin).toFloat();
+    elevationLegendMax = settings.value("legend/elevationMax", elevationLegendMax).toFloat();
+    if (distanceLegendMax <= distanceLegendMin) {
+        distanceLegendMax = distanceLegendMin + 1.0f;
+    }
+    if (elevationLegendMax <= elevationLegendMin) {
+        elevationLegendMax = elevationLegendMin + 1.0f;
+    }
     PointCloudView::GridConfig config = pointCloudView->gridConfig();
     config.range = settings.value("grid/range", config.range).toFloat();
     config.step = settings.value("grid/step", config.step).toFloat();
@@ -92,6 +103,7 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     pointCloudView->setGridConfig(config);
+    updatePointCloudLegend();
 }
 
 void LivoxViewerWindow::saveViewPreferences()
@@ -106,6 +118,10 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("grid/step", config.step);
     settings.setValue("grid/color", config.color);
     settings.setValue("grid/type", int(config.type));
+    settings.setValue("legend/distanceMin", distanceLegendMin);
+    settings.setValue("legend/distanceMax", distanceLegendMax);
+    settings.setValue("legend/elevationMin", elevationLegendMin);
+    settings.setValue("legend/elevationMax", elevationLegendMax);
 }
 
 void LivoxViewerWindow::showPreferencesDialog()
@@ -116,13 +132,18 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QDialog dlg(this);
     dlg.setWindowTitle("首选项");
-    dlg.resize(420, 220);
+    dlg.resize(520, 360);
 
     PointCloudView::GridConfig config = pointCloudView->gridConfig();
     QColor selectedColor = config.color;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
+    QTabWidget* tabs = new QTabWidget(&dlg);
+    QWidget* gridTab = new QWidget(tabs);
+    QVBoxLayout* gridLayout = new QVBoxLayout(gridTab);
     QFormLayout* form = new QFormLayout();
+    QWidget* legendTab = new QWidget(tabs);
+    QFormLayout* legendForm = new QFormLayout(legendTab);
 
     QDoubleSpinBox* rangeSpin = new QDoubleSpinBox(&dlg);
     rangeSpin->setRange(1.0, 10000.0);
@@ -175,17 +196,47 @@ void LivoxViewerWindow::showPreferencesDialog()
     typeLayout->addWidget(circleRadio);
     typeLayout->addStretch();
 
+    auto createLegendSpin = [&dlg](double minValue, double maxValue, double value) {
+        QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
+        spin->setRange(minValue, maxValue);
+        spin->setDecimals(2);
+        spin->setSingleStep(0.5);
+        spin->setSuffix(" m");
+        spin->setValue(value);
+        return spin;
+    };
+    QDoubleSpinBox* distanceMinSpin = createLegendSpin(0.0, 100000.0, distanceLegendMin);
+    QDoubleSpinBox* distanceMaxSpin = createLegendSpin(distanceLegendMin + 0.01, 100000.0, distanceLegendMax);
+    QDoubleSpinBox* elevationMinSpin = createLegendSpin(-100000.0, elevationLegendMax - 0.01, elevationLegendMin);
+    QDoubleSpinBox* elevationMaxSpin = createLegendSpin(elevationLegendMin + 0.01, 100000.0, elevationLegendMax);
+
+    connect(distanceMinSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [distanceMaxSpin](double value) { distanceMaxSpin->setMinimum(value + 0.01); });
+    connect(distanceMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [distanceMinSpin](double value) { distanceMinSpin->setMaximum(value - 0.01); });
+    connect(elevationMinSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [elevationMaxSpin](double value) { elevationMaxSpin->setMinimum(value + 0.01); });
+    connect(elevationMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [elevationMinSpin](double value) { elevationMinSpin->setMaximum(value - 0.01); });
+
     form->addRow("网格范围:", rangeSpin);
     form->addRow("网格间距:", stepSpin);
     form->addRow("网格颜色:", colorRow);
     form->addRow("网格类型:", typeRow);
+    legendForm->addRow("距离低值:", distanceMinSpin);
+    legendForm->addRow("距离高值:", distanceMaxSpin);
+    legendForm->addRow("高度低值:", elevationMinSpin);
+    legendForm->addRow("高度高值:", elevationMaxSpin);
 
     QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
-    layout->addLayout(form);
-    layout->addStretch();
+    gridLayout->addLayout(form);
+    gridLayout->addStretch();
+    tabs->addTab(gridTab, "网格");
+    tabs->addTab(legendTab, "图例");
+    layout->addWidget(tabs);
     layout->addWidget(box);
 
     if (dlg.exec() != QDialog::Accepted) {
@@ -198,7 +249,12 @@ void LivoxViewerWindow::showPreferencesDialog()
     config.type = circleRadio->isChecked()
         ? PointCloudView::GridConfig::ConcentricCircles
         : PointCloudView::GridConfig::Square;
+    distanceLegendMin = float(distanceMinSpin->value());
+    distanceLegendMax = float(distanceMaxSpin->value());
+    elevationLegendMin = float(elevationMinSpin->value());
+    elevationLegendMax = float(elevationMaxSpin->value());
 
     pointCloudView->setGridConfig(config);
+    updatePointCloudLegend();
     saveViewPreferences();
 }

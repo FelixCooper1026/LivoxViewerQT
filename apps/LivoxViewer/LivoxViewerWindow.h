@@ -128,6 +128,8 @@ private:
     void loadViewPreferences();
     void saveViewPreferences();
     void showPreferencesDialog();
+    int effectiveColorMode() const;
+    void updatePointCloudLegend();
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet);
@@ -263,6 +265,10 @@ private:
     int colorMode = ColorByReflectivity;
     QColor solidColor = QColor(255, 255, 255);
     float pointSizePx = 2.0f;
+    float distanceLegendMin = 0.0f;
+    float distanceLegendMax = 100.0f;
+    float elevationLegendMin = -5.0f;
+    float elevationLegendMax = 5.0f;
     // 球坐标深度投影（m）。0 表示使用原始深度
     float projectionDepthMeters = 1.0f;
     // 深度投影启用状态（仅在球坐标时生效）

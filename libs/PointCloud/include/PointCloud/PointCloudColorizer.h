@@ -11,6 +11,10 @@ namespace PointCloudColorizer {
 struct Config {
     int mode = 0;
     QColor solidColor = QColor(255, 255, 255);
+    float distanceColorMin = 0.0f;
+    float distanceColorMax = 100.0f;
+    float elevationColorMin = -5.0f;
+    float elevationColorMax = 5.0f;
     float planarProjectionRadius = 10.0f;
 };
 

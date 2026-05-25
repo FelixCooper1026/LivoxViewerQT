@@ -37,8 +37,12 @@ void LivoxViewerWindow::presentPointCloudFrame(const PointCloudFrame& frame)
 void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
 {
     PointCloudColorizer::Config colorConfig;
-    colorConfig.mode = colorMode;
+    colorConfig.mode = effectiveColorMode();
     colorConfig.solidColor = solidColor;
+    colorConfig.distanceColorMin = distanceLegendMin;
+    colorConfig.distanceColorMax = distanceLegendMax;
+    colorConfig.elevationColorMin = elevationLegendMin;
+    colorConfig.elevationColorMax = elevationLegendMax;
     colorConfig.planarProjectionRadius = planarProjectionRadius;
 
     const PointCloudPipelineLegend legend = PointCloudColorizer::apply(frame.points, colorConfig);

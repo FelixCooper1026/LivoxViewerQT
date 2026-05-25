@@ -57,20 +57,11 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
         legend.maxValue = 255.0f;
         legend.visible = true;
     } else if (config.mode == kColorByDistance) {
-        float minD = std::numeric_limits<float>::max();
-        float maxD = 0.0f;
-        for (const PointCloudPoint& point : points) {
-            const float d = std::sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
-            minD = std::min(minD, d);
-            maxD = std::max(maxD, d);
-        }
-        if (!(maxD > minD)) {
-            minD = 0.0f;
-            maxD = 1.0f;
-        }
+        const float minD = config.distanceColorMin;
+        const float maxD = config.distanceColorMax;
         for (PointCloudPoint& point : points) {
             const float d = std::sqrt(point.x * point.x + point.y * point.y + point.z * point.z);
-            float t = (maxD > minD) ? (d - minD) / (maxD - minD) : 0.0f;
+            float t = (d - minD) / (maxD - minD);
             t = std::clamp(t, 0.0f, 1.0f);
             if (t < 0.25f) {
                 point.r = 0.0f;
@@ -94,18 +85,10 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
         legend.maxValue = maxD;
         legend.visible = true;
     } else if (config.mode == kColorByElevation) {
-        float minZ = std::numeric_limits<float>::max();
-        float maxZ = std::numeric_limits<float>::lowest();
-        for (const PointCloudPoint& point : points) {
-            minZ = std::min(minZ, point.z);
-            maxZ = std::max(maxZ, point.z);
-        }
-        if (!(maxZ > minZ)) {
-            minZ = -1.0f;
-            maxZ = 1.0f;
-        }
+        const float minZ = config.elevationColorMin;
+        const float maxZ = config.elevationColorMax;
         for (PointCloudPoint& point : points) {
-            float t = (maxZ > minZ) ? (point.z - minZ) / (maxZ - minZ) : 0.0f;
+            float t = (point.z - minZ) / (maxZ - minZ);
             t = std::clamp(t, 0.0f, 1.0f);
             point.r = t;
             point.g = 0.0f;

@@ -44,20 +44,36 @@ void LivoxViewerWindow::onColorModeChanged(int index)
 {
     colorMode = index;
     if (solidColorRow) {
-        solidColorRow->setEnabled(colorMode == ColorSolid);
+        solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
     }
-    if (pointCloudView) {
-        if (colorMode == ColorByReflectivity) {
-            pointCloudView->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
-        } else if (colorMode == ColorByDistance) {
-            pointCloudView->setLegend(ColorByDistance, 0.0f, 1.0f, true);
-        } else if (colorMode == ColorByElevation) {
-            pointCloudView->setLegend(ColorByElevation, -1.0f, 1.0f, true);
-        } else if (colorMode == ColorSolid) {
-            pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
-        } else if (colorMode == ColorByPlanarProjection) {
-            pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
-        }
+    if (colorModeCombo) {
+        colorModeCombo->setEnabled(!planarProjectionEnabled);
+    }
+    updatePointCloudLegend();
+}
+
+int LivoxViewerWindow::effectiveColorMode() const
+{
+    return planarProjectionEnabled ? ColorByPlanarProjection : colorMode;
+}
+
+void LivoxViewerWindow::updatePointCloudLegend()
+{
+    if (!pointCloudView) {
+        return;
+    }
+
+    const int mode = effectiveColorMode();
+    if (mode == ColorByReflectivity) {
+        pointCloudView->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
+    } else if (mode == ColorByDistance) {
+        pointCloudView->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
+    } else if (mode == ColorByElevation) {
+        pointCloudView->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+    } else if (mode == ColorSolid) {
+        pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
+    } else if (mode == ColorByPlanarProjection) {
+        pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
     }
 }
 
@@ -106,12 +122,22 @@ void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
     if (planarRadiusSpin) {
         planarRadiusSpin->setEnabled(enabled);
     }
+    if (solidColorRow) {
+        solidColorRow->setEnabled(colorMode == ColorSolid && !planarProjectionEnabled);
+    }
+    if (colorModeCombo) {
+        colorModeCombo->setEnabled(!planarProjectionEnabled);
+    }
+    updatePointCloudLegend();
 }
 
 void LivoxViewerWindow::onPlanarProjectionRadiusChanged(double radius)
 {
     if (radius < 1.0) radius = 1.0;
     planarProjectionRadius = static_cast<float>(radius);
+    if (planarProjectionEnabled) {
+        updatePointCloudLegend();
+    }
     logMessage(QString("平面投影半径已设置为 %1 m").arg(radius));
 }
 

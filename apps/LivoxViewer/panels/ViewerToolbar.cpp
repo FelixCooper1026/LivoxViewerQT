@@ -44,7 +44,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         // 着色模式
         QLabel* lblColor = new QLabel("着色:", toolbarRow1);
         colorModeCombo = new QComboBox(toolbarRow1);
-        colorModeCombo->addItems({"反射率", "距离", "高度", "纯色", "平面投影"});
+        colorModeCombo->addItems({"反射率", "距离", "高度", "纯色"});
         colorModeCombo->setCurrentIndex(colorMode);
         colorModeCombo->setToolTip("点云着色模式");
         connect(colorModeCombo, QOverload<int>::of(&QComboBox::activated), this, &LivoxViewerWindow::onColorModeChanged);
@@ -178,7 +178,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 updateSelectionTableAndLog();
                 statusLabelBar->setText("点云框选模式：按住Ctrl+左键拖动选择区域");
             }
-            btnToggleSelection->setText(enable ? "退出点云框选" : "点云框选");
+            btnToggleSelection->setText(enable ? "退出框选" : "点云框选");
         });
         connect(btnReset, &QPushButton::clicked, [this]() { pointCloudView->resetView(); });
 
