@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "AppConfig/NetworkInterfaceService.h"
 #include <QHeaderView>
 #include <QSizePolicy>
 #include <QTableView>
@@ -142,125 +143,134 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* networkTab = new QWidget();
     networkTab->setMinimumWidth(0);
     networkTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    QFormLayout* networkLayout = new QFormLayout(networkTab);
-    networkLayout->setSpacing(8);
+    QVBoxLayout* networkLayout = new QVBoxLayout(networkTab);
+    networkLayout->setSpacing(10);
     networkLayout->setContentsMargins(10, 10, 10, 10);
-    networkLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    networkLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    networkLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
-    // 雷达IP 子表单（可换行）
-    QLineEdit* lidarIpEdit = new QLineEdit(); lidarIpEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QLineEdit* lidarMaskEdit = new QLineEdit(); lidarMaskEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QLineEdit* lidarGatewayEdit = new QLineEdit(); lidarGatewayEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QPushButton* lidarIpButton = new QPushButton("应用");
-    lidarIpButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto configureIpEdit = [](QLineEdit* edit) {
+        edit->setMinimumWidth(0);
+        edit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    };
+    auto configureApplyButton = [this](QPushButton* button, const QString& tooltip) {
+        button->setText("应用");
+        button->setToolTip(tooltip);
+        button->setMinimumWidth(fontMetrics().horizontalAdvance("应用") + 28);
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    };
 
-    QWidget* lidarIpContainer = new QWidget();
-    QFormLayout* lidarForm = new QFormLayout(lidarIpContainer);
-    lidarForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    lidarForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    lidarForm->addRow("IP:", lidarIpEdit);
-    lidarForm->addRow("掩码:", lidarMaskEdit);
-    lidarForm->addRow("网关:", lidarGatewayEdit);
-    // 右对齐按钮行，避免按钮拉伸
-    {
-        QWidget* btnRow = new QWidget();
-        QHBoxLayout* btnLayout = new QHBoxLayout(btnRow);
-        btnLayout->setContentsMargins(0,0,0,0);
-        btnLayout->addStretch();
-        btnLayout->addWidget(lidarIpButton);
-        lidarForm->addRow(QString(), btnRow);
-    }
+    QGroupBox* lidarIpContainer = new QGroupBox("雷达设备网络", networkTab);
     lidarIpContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    networkLayout->addRow(new QLabel("雷达IP:"));
-    networkLayout->addRow(lidarIpContainer);
+    QGridLayout* lidarGrid = new QGridLayout(lidarIpContainer);
+    lidarGrid->setContentsMargins(10, 14, 10, 10);
+    lidarGrid->setHorizontalSpacing(8);
+    lidarGrid->setVerticalSpacing(7);
+    lidarGrid->setColumnStretch(1, 1);
+
+    QLineEdit* lidarIpEdit = new QLineEdit(lidarIpContainer);
+    QLineEdit* lidarMaskEdit = new QLineEdit(lidarIpContainer);
+    QLineEdit* lidarGatewayEdit = new QLineEdit(lidarIpContainer);
+    lidarIpEdit->setObjectName("deviceIpEdit");
+    lidarMaskEdit->setObjectName("deviceMaskEdit");
+    lidarGatewayEdit->setObjectName("deviceGatewayEdit");
+    configureIpEdit(lidarIpEdit);
+    configureIpEdit(lidarMaskEdit);
+    configureIpEdit(lidarGatewayEdit);
+    QPushButton* lidarIpButton = new QPushButton(lidarIpContainer);
+    configureApplyButton(lidarIpButton, "应用雷达设备自身 IP、子网掩码和网关");
+
+    lidarGrid->addWidget(new QLabel("设备 IP", lidarIpContainer), 0, 0);
+    lidarGrid->addWidget(lidarIpEdit, 0, 1);
+    lidarGrid->addWidget(new QLabel("子网掩码", lidarIpContainer), 1, 0);
+    lidarGrid->addWidget(lidarMaskEdit, 1, 1);
+    lidarGrid->addWidget(new QLabel("网关", lidarIpContainer), 2, 0);
+    lidarGrid->addWidget(lidarGatewayEdit, 2, 1);
+    lidarGrid->addWidget(lidarIpButton, 3, 1, Qt::AlignRight);
+    networkLayout->addWidget(lidarIpContainer);
     parameterState.controls[kKeyLidarIpCfg] = lidarIpContainer;
     connect(lidarIpButton, &QPushButton::clicked, [this, lidarIpEdit, lidarMaskEdit, lidarGatewayEdit]() { applyIpConfig(kKeyLidarIpCfg, lidarIpEdit->text(), lidarMaskEdit->text(), lidarGatewayEdit->text()); });
 
-    // 点云数据目的IP 子表单
-    QLineEdit* pointDataIpEdit = new QLineEdit(); pointDataIpEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QSpinBox* pointDataPortEdit = new QSpinBox(); pointDataPortEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    pointDataPortEdit->setRange(1, 65535);
-    pointDataPortEdit->setValue(57000);
-    QPushButton* pointDataButton = new QPushButton("应用");
-    pointDataButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    QGroupBox* targetGroup = new QGroupBox(networkTab);
+    targetGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    QGridLayout* targetLayout = new QGridLayout(targetGroup);
+    targetLayout->setContentsMargins(10, 10, 10, 10);
+    targetLayout->setHorizontalSpacing(6);
+    targetLayout->setVerticalSpacing(6);
+    targetLayout->setColumnStretch(0, 1);
 
-    QWidget* pointDataContainer = new QWidget();
-    QFormLayout* pointForm = new QFormLayout(pointDataContainer);
-    pointForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    pointForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    pointForm->addRow("IP:", pointDataIpEdit);
-    pointForm->addRow("端口:", pointDataPortEdit);
-    {
-        QWidget* btnRow = new QWidget();
-        QHBoxLayout* btnLayout = new QHBoxLayout(btnRow);
-        btnLayout->setContentsMargins(0,0,0,0);
-        btnLayout->addStretch();
-        btnLayout->addWidget(pointDataButton);
-        pointForm->addRow(QString(), btnRow);
-    }
-    pointDataContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    networkLayout->addRow(new QLabel("点云数据IP:"));
-    networkLayout->addRow(pointDataContainer);
-    parameterState.controls[kKeyLidarPointDataHostIpCfg] = pointDataContainer;
-    connect(pointDataButton, &QPushButton::clicked, [this, pointDataIpEdit, pointDataPortEdit]() { applyHostIpConfig(kKeyLidarPointDataHostIpCfg, pointDataIpEdit->text(), pointDataPortEdit->value()); });
+    QVector<QLineEdit*> targetIpEdits;
+    QWidget* targetHeader = new QWidget(targetGroup);
+    QHBoxLayout* targetHeaderLayout = new QHBoxLayout(targetHeader);
+    targetHeaderLayout->setContentsMargins(0, 0, 0, 0);
+    targetHeaderLayout->setSpacing(8);
+    QLabel* targetTitle = new QLabel("数据发送目标", targetHeader);
+    QFont targetTitleFont = targetTitle->font();
+    targetTitleFont.setBold(true);
+    targetTitle->setFont(targetTitleFont);
+    QPushButton* syncTargetIpButton = new QPushButton("同步目标 IP", targetHeader);
+    syncTargetIpButton->setToolTip("将点云数据、IMU数据和推送信息的目标 IP 同步为当前选择网卡的主机 IP");
+    syncTargetIpButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    targetHeaderLayout->addWidget(targetTitle);
+    targetHeaderLayout->addStretch();
+    targetHeaderLayout->addWidget(syncTargetIpButton);
+    targetLayout->addWidget(targetHeader, 0, 0, 1, 4);
 
-    // IMU数据目的IP 子表单
-    QLineEdit* imuDataIpEdit = new QLineEdit(); imuDataIpEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QSpinBox* imuDataPortEdit = new QSpinBox(); imuDataPortEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    imuDataPortEdit->setRange(1, 65535);
-    imuDataPortEdit->setValue(57000);
-    QPushButton* imuDataButton = new QPushButton("应用");
-    imuDataButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    int targetRowIndex = 1;
+    auto createTargetRow = [&](const QString& title, uint16_t key, int defaultPort, const QString& tooltip) {
+        QLabel* titleLabel = new QLabel(title, targetGroup);
+        QFont titleFont = titleLabel->font();
+        titleFont.setBold(true);
+        titleLabel->setFont(titleFont);
+        titleLabel->setToolTip(tooltip);
+        QLineEdit* ipEdit = new QLineEdit(targetGroup);
+        ipEdit->setObjectName(QString("targetIpEdit_%1").arg(key));
+        ipEdit->setToolTip(tooltip);
+        configureIpEdit(ipEdit);
+        targetIpEdits.append(ipEdit);
+        QSpinBox* portEdit = new QSpinBox(targetGroup);
+        portEdit->setObjectName(QString("targetPortSpin_%1").arg(key));
+        portEdit->setToolTip(tooltip);
+        portEdit->setRange(1, 65535);
+        portEdit->setValue(defaultPort);
+        portEdit->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        portEdit->setMinimumWidth(fontMetrics().horizontalAdvance("65535") + 24);
+        portEdit->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        QLabel* separator = new QLabel(":", targetGroup);
+        separator->setAlignment(Qt::AlignCenter);
+        QPushButton* applyButton = new QPushButton(targetGroup);
+        configureApplyButton(applyButton, tooltip);
 
-    QWidget* imuDataContainer = new QWidget();
-    QFormLayout* imuForm = new QFormLayout(imuDataContainer);
-    imuForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    imuForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    imuForm->addRow("IP:", imuDataIpEdit);
-    imuForm->addRow("端口:", imuDataPortEdit);
-    {
-        QWidget* btnRow = new QWidget();
-        QHBoxLayout* btnLayout = new QHBoxLayout(btnRow);
-        btnLayout->setContentsMargins(0,0,0,0);
-        btnLayout->addStretch();
-        btnLayout->addWidget(imuDataButton);
-        imuForm->addRow(QString(), btnRow);
-    }
-    imuDataContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    networkLayout->addRow(new QLabel("IMU数据IP:"));
-    networkLayout->addRow(imuDataContainer);
-    parameterState.controls[kKeyLidarImuHostIpCfg] = imuDataContainer;
-    connect(imuDataButton, &QPushButton::clicked, [this, imuDataIpEdit, imuDataPortEdit]() { applyHostIpConfig(kKeyLidarImuHostIpCfg, imuDataIpEdit->text(), imuDataPortEdit->value()); });
+        targetLayout->addWidget(titleLabel, targetRowIndex, 0, 1, 4);
+        ++targetRowIndex;
+        targetLayout->addWidget(ipEdit, targetRowIndex, 0);
+        targetLayout->addWidget(separator, targetRowIndex, 1);
+        targetLayout->addWidget(portEdit, targetRowIndex, 2);
+        targetLayout->addWidget(applyButton, targetRowIndex, 3);
+        ++targetRowIndex;
+        parameterState.controls[key] = targetGroup;
+        connect(applyButton, &QPushButton::clicked, [this, key, ipEdit, portEdit]() { applyHostIpConfig(key, ipEdit->text(), portEdit->value()); });
+    };
 
-    // 状态信息目的IP 子表单
-    QLineEdit* stateInfoIpEdit = new QLineEdit(); stateInfoIpEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QSpinBox* stateInfoPortEdit = new QSpinBox(); stateInfoPortEdit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    stateInfoPortEdit->setRange(1, 65535);
-    stateInfoPortEdit->setValue(57000);
-    QPushButton* stateInfoButton = new QPushButton("应用");
-    stateInfoButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-
-    QWidget* stateInfoContainer = new QWidget();
-    QFormLayout* stateForm = new QFormLayout(stateInfoContainer);
-    stateForm->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    stateForm->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    stateForm->addRow("IP:", stateInfoIpEdit);
-    stateForm->addRow("端口:", stateInfoPortEdit);
-    {
-        QWidget* btnRow = new QWidget();
-        QHBoxLayout* btnLayout = new QHBoxLayout(btnRow);
-        btnLayout->setContentsMargins(0,0,0,0);
-        btnLayout->addStretch();
-        btnLayout->addWidget(stateInfoButton);
-        stateForm->addRow(QString(), btnRow);
-    }
-    stateInfoContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    networkLayout->addRow(new QLabel("状态信息IP:"));
-    networkLayout->addRow(stateInfoContainer);
-    parameterState.controls[kKeyStateInfoHostIpCfg] = stateInfoContainer;
-    connect(stateInfoButton, &QPushButton::clicked, [this, stateInfoIpEdit, stateInfoPortEdit]() { applyHostIpConfig(kKeyStateInfoHostIpCfg, stateInfoIpEdit->text(), stateInfoPortEdit->value()); });
+    createTargetRow("点云数据", kKeyLidarPointDataHostIpCfg, 57000, "应用点云数据发送目标 IP 和端口");
+    createTargetRow("IMU数据", kKeyLidarImuHostIpCfg, 57000, "应用 IMU 数据发送目标 IP 和端口");
+    createTargetRow("推送信息", kKeyStateInfoHostIpCfg, 57000, "应用状态/推送信息发送目标 IP 和端口");
+    connect(syncTargetIpButton, &QPushButton::clicked, this, [this, targetIpEdits]() {
+        const QString selectedIp = networkInterfaceCombo
+            ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
+            : QString();
+        const QString hostIp = NetworkInterfaceService::currentHostIp(selectedIp);
+        if (hostIp.isEmpty()) {
+            statusLabelBar->setText("未找到可用主机 IP");
+            logMessage("同步目标 IP 失败：未找到可用主机 IP");
+            return;
+        }
+        for (QLineEdit* edit : targetIpEdits) {
+            edit->setText(hostIp);
+        }
+        statusLabelBar->setText(QString("目标 IP 已同步为 %1").arg(hostIp));
+        logMessage(QString("数据发送目标 IP 已同步为当前主机 IP: %1").arg(hostIp));
+    });
+    networkLayout->addWidget(targetGroup);
+    networkLayout->addStretch();
 
     paramTabWidget->addTab(networkTab, "网络配置");
     networkTab->setLayout(networkLayout);

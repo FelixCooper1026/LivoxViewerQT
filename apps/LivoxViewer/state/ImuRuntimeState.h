@@ -16,7 +16,6 @@ class QComboBox;
 class QLabel;
 class QProgressBar;
 class QPushButton;
-class QTableWidget;
 class QTimer;
 class QWidget;
 
@@ -47,7 +46,7 @@ struct ImuRuntimeState
     QCheckBox* gpsSimulateCheck = nullptr;
     QTimer* gpsTimer = nullptr;
     QPushButton* displayButton = nullptr;
-    QTableWidget* dataTable = nullptr;
+    QLabel* dataValueLabels[3][2] = {};
 
     QProgressBar* gyroBarX = nullptr;
     QProgressBar* gyroBarY = nullptr;

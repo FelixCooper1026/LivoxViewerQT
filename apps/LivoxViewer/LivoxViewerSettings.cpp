@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
@@ -58,6 +59,15 @@ void refreshApplicationStyles()
     }
 }
 
+bool defaultAutoConfigHostIp()
+{
+#ifdef Q_OS_LINUX
+    return false;
+#else
+    return true;
+#endif
+}
+
 } // namespace
 
 LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
@@ -83,20 +93,6 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     });
 #endif
 
-    // 网络自动配置开关（Linux 默认关闭）
-    {
-        QSettings settings("Livox", "LivoxViewerQT");
-#ifdef Q_OS_LINUX
-        const bool defaultAutoConfig = false;
-#else
-        const bool defaultAutoConfig = true;
-#endif
-        autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfig).toBool();
-        if (autoConfigHostIpCheck) {
-            autoConfigHostIpCheck->setChecked(autoConfigHostIpEnabled);
-        }
-    }
-
     // 初始化网络接口列表
     refreshNetworkInterfaces();
 
@@ -114,12 +110,24 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     QSettings settings("Livox", "LivoxViewerQT");
     restoreGeometry(settings.value("geometry").toByteArray());
     restoreState(settings.value("windowState").toByteArray());
+    if (lvx2FileDock) {
+        lvx2FileDock->hide();
+    }
+    if (attrDock) {
+        attrDock->hide();
+    }
 }
 
 LivoxViewerWindow::~LivoxViewerWindow()
 {
     // 保存窗口布局与几何
     QSettings settings("Livox", "LivoxViewerQT");
+    if (lvx2FileDock) {
+        lvx2FileDock->hide();
+    }
+    if (attrDock) {
+        attrDock->hide();
+    }
     settings.setValue("geometry", saveGeometry());
     settings.setValue("windowState", saveState());
     saveViewPreferences();
@@ -196,6 +204,7 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     QSettings settings("Livox", "LivoxViewerQT");
+    autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
         themeMode = ThemeFollowSystem;
@@ -247,6 +256,7 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("legend/elevationMax", elevationLegendMax);
     settings.setValue("color/solidColor", solidColor);
     settings.setValue("theme/mode", themeMode);
+    settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
 }
 
 void LivoxViewerWindow::showPreferencesDialog()
@@ -277,6 +287,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     QComboBox* themeCombo = new QComboBox(themeTab);
     themeCombo->addItems({"跟随系统", "浅色", "深色"});
     themeCombo->setCurrentIndex(std::clamp(themeMode, int(ThemeFollowSystem), int(ThemeDark)));
+    QWidget* connectionTab = new QWidget(tabs);
+    QFormLayout* connectionForm = new QFormLayout(connectionTab);
+    QCheckBox* autoConfigHostIpPreferenceCheck = new QCheckBox("自动配置主机 IP", connectionTab);
+    autoConfigHostIpPreferenceCheck->setChecked(autoConfigHostIpEnabled);
+    autoConfigHostIpPreferenceCheck->setToolTip("开启后程序会尝试自动将所选网卡的 IPv4 配置到与雷达同网段。\nLinux 可能需要 sudo/root 权限；默认关闭以避免权限导致的失败。");
 
     QDoubleSpinBox* rangeSpin = new QDoubleSpinBox(&dlg);
     rangeSpin->setRange(1.0, 10000.0);
@@ -384,6 +399,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     legendForm->addRow("高度高值:", elevationMaxSpin);
     colorForm->addRow("纯色模式颜色:", solidColorRow);
     themeForm->addRow("应用主题:", themeCombo);
+    connectionForm->addRow("主机网络:", autoConfigHostIpPreferenceCheck);
 
     QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
@@ -391,10 +407,11 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     gridLayout->addLayout(form);
     gridLayout->addStretch();
+    tabs->addTab(themeTab, "主题");
+    tabs->addTab(connectionTab, "连接");
     tabs->addTab(gridTab, "网格");
     tabs->addTab(legendTab, "图例");
     tabs->addTab(colorTab, "着色");
-    tabs->addTab(themeTab, "主题");
     layout->addWidget(tabs);
     layout->addWidget(box);
 
@@ -414,9 +431,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     elevationLegendMax = float(elevationMaxSpin->value());
     solidColor = selectedSolidColor;
     themeMode = themeCombo->currentIndex();
+    const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
+    autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
 
     pointCloudView->setGridConfig(config);
     applyUiTheme();
     updatePointCloudLegend();
     saveViewPreferences();
+    if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
+        logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));
+    }
 }

@@ -543,19 +543,15 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                             QString mask = match.captured(2);
                                             QString gateway = match.captured(3);
                                             
-                                            // 找到对应的输入框并更新
-                                             QLayout* layout = container->layout();
-                                             if (layout) {
-                                                 for (int i = 0; i < layout->count(); ++i) {
-                                                     QLayoutItem* item = layout->itemAt(i);
-                                                     QWidget* widget = item ? item->widget() : nullptr;
-                                                     if (QLineEdit* edit = qobject_cast<QLineEdit*>(widget)) {
-                                                         if (i == 1) edit->setText(ip);      // IP输入框
-                                                         else if (i == 3) edit->setText(mask); // 掩码输入框
-                                                         else if (i == 5) edit->setText(gateway); // 网关输入框
-                                                     }
-                                                 }
-                                             }
+                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceIpEdit")) {
+                                                edit->setText(ip);
+                                            }
+                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceMaskEdit")) {
+                                                edit->setText(mask);
+                                            }
+                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceGatewayEdit")) {
+                                                edit->setText(gateway);
+                                            }
                                         }
                                     } else if (key == kKeyLidarPointDataHostIpCfg || 
                                                key == kKeyLidarImuHostIpCfg || 
@@ -568,19 +564,14 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                             QString ip = match.captured(1);
                                             int port = match.captured(2).toInt();
                                             
-                                            // 找到对应的输入框并更新
-                                             QLayout* layout = container->layout();
-                                             if (layout) {
-                                                 for (int i = 0; i < layout->count(); ++i) {
-                                                     QLayoutItem* item = layout->itemAt(i);
-                                                     QWidget* widget = item ? item->widget() : nullptr;
-                                                     if (QLineEdit* edit = qobject_cast<QLineEdit*>(widget)) {
-                                                         edit->setText(ip);
-                                                     } else if (QSpinBox* spin = qobject_cast<QSpinBox*>(widget)) {
-                                                         spin->setValue(port);
-                                                     }
-                                                 }
-                                             }
+                                            const QString ipEditName = QString("targetIpEdit_%1").arg(key);
+                                            const QString portSpinName = QString("targetPortSpin_%1").arg(key);
+                                            if (QLineEdit* edit = container->findChild<QLineEdit*>(ipEditName)) {
+                                                edit->setText(ip);
+                                            }
+                                            if (QSpinBox* spin = container->findChild<QSpinBox*>(portSpinName)) {
+                                                spin->setValue(port);
+                                            }
                                         }
                                     } else if (key == kKeyFovCfg0 || key == kKeyFovCfg1) {
                                         // FOV配置更新

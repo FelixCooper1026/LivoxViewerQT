@@ -288,9 +288,18 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
         lvx2DeviceTable->setItem(row, 0, visibleItem);
         const QString modelName =
             info.modelDisplay.isEmpty() ? lvx2DeviceTypeToModel(info.deviceType) : info.modelDisplay;
-        lvx2DeviceTable->setItem(row, 1, new QTableWidgetItem(modelName));
-        lvx2DeviceTable->setItem(row, 2, new QTableWidgetItem(info.lidarSn));
-        lvx2DeviceTable->setItem(row, 3, new QTableWidgetItem(PushMsgParser::lidarIdToIpString(info.lidarId)));
+        const QString lidarIp = PushMsgParser::lidarIdToIpString(info.lidarId);
+        QTableWidgetItem* modelItem = new QTableWidgetItem(modelName);
+        QTableWidgetItem* snItem = new QTableWidgetItem(info.lidarSn);
+        QTableWidgetItem* ipItem = new QTableWidgetItem(lidarIp);
+        const QString deviceTip = QString("型号: %1\nSN: %2\nIP: %3").arg(modelName, info.lidarSn, lidarIp);
+        visibleItem->setToolTip(deviceTip);
+        modelItem->setToolTip(deviceTip);
+        snItem->setToolTip(deviceTip);
+        ipItem->setToolTip(deviceTip);
+        lvx2DeviceTable->setItem(row, 1, modelItem);
+        lvx2DeviceTable->setItem(row, 2, snItem);
+        lvx2DeviceTable->setItem(row, 3, ipItem);
     }
 
     disconnect(lvx2DeviceTable, &QTableWidget::itemChanged, this, nullptr);
@@ -316,7 +325,7 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
 void LivoxViewerWindow::updateLvx2PlaybackUi()
 {
     if (lvx2FileDock) {
-        const bool showDock = playbackState.active || playbackState.loading;
+        const bool showDock = playbackState.active;
         lvx2FileDock->setVisible(showDock);
         if (showDock) {
             lvx2FileDock->raise();

@@ -201,6 +201,17 @@ void configureImuAxis(QValueAxis* axis, const QString& title, double minValue, d
     axis->setLabelFormat("%.2f");
 }
 
+void setImuValueLabels(ImuRuntimeState& imuState, const double values[3][2])
+{
+    for (int r = 0; r < 3; ++r) {
+        for (int c = 0; c < 2; ++c) {
+            if (imuState.dataValueLabels[r][c]) {
+                imuState.dataValueLabels[r][c]->setText(QString::number(values[r][c], 'f', 3));
+            }
+        }
+    }
+}
+
 QList<QPointF> makeImuPoints(const QVector<ImuChartSample>& samples, double startSec, double endSec, double ImuChartSample::*field)
 {
     QList<QPointF> points;
@@ -245,19 +256,8 @@ void LivoxViewerWindow::onImuDisplayButtonClicked()
         if (imuState.displayThread.joinable()) {
             imuState.displayThread.detach();
         }
-        if (imuState.dataTable) {
-            for (int r = 0; r < 3; ++r) {
-                for (int c = 0; c < 2; ++c) {
-                    QTableWidgetItem* item = imuState.dataTable->item(r, c);
-                    if (!item) {
-                        item = new QTableWidgetItem();
-                        item->setTextAlignment(Qt::AlignCenter);
-                        imuState.dataTable->setItem(r, c, item);
-                    }
-                    item->setText("0.000");
-                }
-            }
-        }
+        const double values[3][2] = {{0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}};
+        setImuValueLabels(imuState, values);
         if (imuState.displayButton) imuState.displayButton->setText("显示IMU数据");
         return;
     }
@@ -280,22 +280,10 @@ void LivoxViewerWindow::onImuDisplayButtonClicked()
             }
             if (have) {
                 QMetaObject::invokeMethod(this, [this, gx, gy, gz, ax, ay, az]() {
-                    if (imuState.dataTable) {
-                        const double values[3][2] = {
-                            {gx, ax}, {gy, ay}, {gz, az}
-                        };
-                        for (int r = 0; r < 3; ++r) {
-                            for (int c = 0; c < 2; ++c) {
-                                QTableWidgetItem* item = imuState.dataTable->item(r, c);
-                                if (!item) {
-                                    item = new QTableWidgetItem();
-                                    item->setTextAlignment(Qt::AlignCenter);
-                                    imuState.dataTable->setItem(r, c, item);
-                                }
-                                item->setText(QString::number(values[r][c], 'f', 3));
-                            }
-                        }
-                    }
+                    const double values[3][2] = {
+                        {gx, ax}, {gy, ay}, {gz, az}
+                    };
+                    setImuValueLabels(imuState, values);
                 });
             }
             for (int i = 0; i < 10 && imuState.displayRunning.load(); ++i) {

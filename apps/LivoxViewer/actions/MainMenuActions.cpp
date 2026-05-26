@@ -33,9 +33,6 @@ void LivoxViewerWindow::createMenusAndActions()
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(paramsDock->toggleViewAction());
     viewMenu->addAction(imuDock->toggleViewAction());
-    if (lvx2FileDock) {
-        viewMenu->addAction(lvx2FileDock->toggleViewAction());
-    }
     viewMenu->addAction(logDock->toggleViewAction());
 
     createStatusBarAndTimers();
