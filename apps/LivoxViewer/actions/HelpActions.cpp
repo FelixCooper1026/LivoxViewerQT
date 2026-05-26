@@ -1,5 +1,4 @@
 #include "LivoxViewerWindow.h"
-#include "AppVersion.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QUrl>
@@ -27,9 +26,9 @@ void LivoxViewerWindow::createHelpActions()
         QMessageBox msgBox(this);
         msgBox.setWindowTitle("关于 LivoxViewerQT");
         msgBox.setTextFormat(Qt::RichText);  // 支持富文本
-        msgBox.setText(
+        msgBox.setText(QString(
             "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-            "<p><b>版本:</b> " LIVOX_VIEWER_VERSION "</p>"
+            "<p><b>版本:</b> %1</p>"
             "<p><b>编译日期:</b> " __DATE__ " </p>"
             "<p><b>作者:</b> FelixCooper1026</p>"
             "<p><b>功能特性:</b></p>"
@@ -44,7 +43,7 @@ void LivoxViewerWindow::createHelpActions()
             "</ul>"
             "<p><b>项目地址:</b> <a href=\"https://github.com/FelixCooper1026/LivoxViewerQT\">https://github.com/FelixCooper1026/LivoxViewerQT</a></p>"
             "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>"
-        );
+        ).arg(QCoreApplication::applicationVersion()));
         msgBox.exec();
     });
 

@@ -297,10 +297,19 @@ else()
     endif()
 endif()
 
+set(APP_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/AppVersion.h")
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/apps/LivoxViewer/AppVersion.h.in
-    ${CMAKE_CURRENT_BINARY_DIR}/generated/AppVersion.h
+    ${APP_VERSION_HEADER}
     @ONLY
+)
+target_sources(LivoxViewerQT PRIVATE ${APP_VERSION_HEADER})
+
+target_compile_definitions(LivoxViewerQT PRIVATE
+    LIVOX_VIEWER_VERSION="${PROJECT_VERSION}"
+    LIVOX_VIEWER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+    LIVOX_VIEWER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+    LIVOX_VIEWER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
 )
 
 # =============================================================================
