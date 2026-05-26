@@ -297,6 +297,12 @@ else()
     endif()
 endif()
 
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/apps/LivoxViewer/AppVersion.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/generated/AppVersion.h
+    @ONLY
+)
+
 # =============================================================================
 # 包含路径配置
 # =============================================================================
@@ -312,6 +318,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Export/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/AppConfig/include
     ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 # 添加Livox SDK包含路径

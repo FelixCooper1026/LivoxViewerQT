@@ -176,12 +176,23 @@ public:
             "  background: palette(window);"
             "  border-right: 1px solid palette(mid);"
             "}"
+            "#ViewerToolbarGroup[leadingSeparator=\"true\"] {"
+            "  border-left: 1px solid palette(mid);"
+            "}"
             "#ViewerToolbarGroup QLabel { color: palette(window-text); }"
         );
     }
 
     QHBoxLayout* controlsLayout() const { return m_controlsLayout; }
     QMenu* moreMenu() const { return m_moreMenu; }
+
+    void setLeadingSeparatorVisible(bool visible)
+    {
+        setProperty("leadingSeparator", visible);
+        style()->unpolish(this);
+        style()->polish(this);
+        update();
+    }
 
     void addPrimaryWidget(QWidget* widget)
     {
@@ -367,24 +378,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     const QSize toolbarIconSize(fontMetrics().height() + 4, fontMetrics().height() + 4);
 
     ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar);
-    QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
-    spinFrameIntervalTop->setRange(100, 30000);
-    spinFrameIntervalTop->setSingleStep(100);
-    spinFrameIntervalTop->setSuffix(" ms");
-    spinFrameIntervalTop->setValue(static_cast<int>(frameIntervalMs));
-    spinFrameIntervalTop->setToolTip("点云积分时间/帧间隔");
-    connect(spinFrameIntervalTop, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
-    QWidget* frameIntervalRow = createLabeledWidget("积分:", spinFrameIntervalTop, displayGroup);
-    displayGroup->addPrimaryWidget(frameIntervalRow);
-
-    pointSizeSpin = new QSpinBox(displayGroup);
-    pointSizeSpin->setRange(1, 10);
-    pointSizeSpin->setValue(static_cast<int>(pointSizePx));
-    pointSizeSpin->setToolTip("点大小（像素）");
-    connect(pointSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onPointSizeChanged);
-    QWidget* pointSizeRow = createLabeledWidget("点:", pointSizeSpin, displayGroup);
-    displayGroup->addPrimaryWidget(pointSizeRow);
-
+    displayGroup->setLeadingSeparatorVisible(true);
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
     gridAction->setCheckable(true);
     gridAction->setChecked(true);
@@ -394,7 +388,46 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             pointCloudView->setGridVisible(checked);
         }
     });
-    displayGroup->addSecondaryWidget(createIconButton(gridAction, displayGroup, toolbarIconSize));
+    displayGroup->addPrimaryWidget(createIconButton(gridAction, displayGroup, toolbarIconSize));
+
+    QAction* visualizationAction = new QAction(QIcon(":/icons/point_cloud_live.svg"), "冻结实时点云", this);
+    visualizationAction->setCheckable(true);
+    visualizationAction->setChecked(pointCloudVisualizationEnabled);
+    auto syncVisualizationAction = [this, visualizationAction]() {
+        visualizationAction->setText(pointCloudVisualizationEnabled ? "冻结实时点云" : "恢复实时点云");
+        visualizationAction->setToolTip(pointCloudVisualizationEnabled
+            ? "冻结实时点云显示，不控制离线播放"
+            : "恢复实时点云显示，不控制离线播放");
+        visualizationAction->setIcon(QIcon(pointCloudVisualizationEnabled
+            ? ":/icons/point_cloud_live.svg"
+            : ":/icons/point_cloud_frozen.svg"));
+        QSignalBlocker blocker(visualizationAction);
+        visualizationAction->setChecked(pointCloudVisualizationEnabled);
+    };
+    connect(visualizationAction, &QAction::triggered, this, [this, syncVisualizationAction](bool checked) {
+        onPointCloudVisualizationToggled(checked);
+        syncVisualizationAction();
+    });
+    syncVisualizationAction();
+    displayGroup->addPrimaryWidget(createIconButton(visualizationAction, displayGroup, toolbarIconSize));
+
+    QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
+    spinFrameIntervalTop->setRange(100, 30000);
+    spinFrameIntervalTop->setSingleStep(100);
+    spinFrameIntervalTop->setSuffix(" ms");
+    spinFrameIntervalTop->setValue(static_cast<int>(frameIntervalMs));
+    spinFrameIntervalTop->setToolTip("点云积分时间/帧间隔");
+    connect(spinFrameIntervalTop, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
+    QWidget* frameIntervalRow = createLabeledWidget("积分时间:", spinFrameIntervalTop, displayGroup);
+    displayGroup->addPrimaryWidget(frameIntervalRow);
+
+    pointSizeSpin = new QSpinBox(displayGroup);
+    pointSizeSpin->setRange(1, 10);
+    pointSizeSpin->setValue(static_cast<int>(pointSizePx));
+    pointSizeSpin->setToolTip("点大小（像素）");
+    connect(pointSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onPointSizeChanged);
+    QWidget* pointSizeRow = createLabeledWidget("点大小:", pointSizeSpin, displayGroup);
+    displayGroup->addPrimaryWidget(pointSizeRow);
 
     colorModeCombo = new QComboBox(displayGroup);
     colorModeCombo->addItems({"反射率", "距离", "高度", "纯色"});
@@ -404,25 +437,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QWidget* colorModeRow = createLabeledWidget("着色:", colorModeCombo, displayGroup);
     displayGroup->addPrimaryWidget(colorModeRow);
 
-    QAction* visualizationAction = new QAction(style()->standardIcon(QStyle::SP_MediaPause), "点云可视化", this);
-    visualizationAction->setCheckable(true);
-    visualizationAction->setChecked(pointCloudVisualizationEnabled);
-    auto syncVisualizationAction = [this, visualizationAction]() {
-        visualizationAction->setText(pointCloudVisualizationEnabled ? "暂停点云可视化" : "开启点云可视化");
-        visualizationAction->setIcon(style()->standardIcon(pointCloudVisualizationEnabled ? QStyle::SP_MediaPause : QStyle::SP_MediaPlay));
-        QSignalBlocker blocker(visualizationAction);
-        visualizationAction->setChecked(pointCloudVisualizationEnabled);
-    };
-    connect(visualizationAction, &QAction::triggered, this, [this, syncVisualizationAction](bool checked) {
-        onPointCloudVisualizationToggled(checked);
-        syncVisualizationAction();
-    });
-    syncVisualizationAction();
-    displayGroup->addSecondaryWidget(createIconButton(visualizationAction, displayGroup, toolbarIconSize));
-
+    displayGroup->moreMenu()->addAction(gridAction);
+    displayGroup->moreMenu()->addAction(visualizationAction);
     addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(spinFrameIntervalTop, displayGroup->moreMenu()));
     addWidgetAction(displayGroup->moreMenu(), "点大小", cloneSpinBox(pointSizeSpin, displayGroup->moreMenu()));
-    displayGroup->moreMenu()->addAction(gridAction);
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
     overflowColorMode->addItems({"反射率", "距离", "高度", "纯色"});
     overflowColorMode->setCurrentIndex(colorModeCombo->currentIndex());
@@ -437,7 +455,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         onColorModeChanged(index);
     });
     addWidgetAction(displayGroup->moreMenu(), "着色", overflowColorMode);
-    displayGroup->moreMenu()->addAction(visualizationAction);
     toolbarLayout->addWidget(displayGroup);
 
     ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);

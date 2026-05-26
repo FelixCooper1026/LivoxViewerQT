@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QIcon>
+#include "AppVersion.h"
 #include "LivoxViewerWindow.h"
 
 #ifdef _WIN32
@@ -19,7 +20,7 @@ int main(int argc, char *argv[])
 
     // 设置应用程序信息
     app.setApplicationName("LivoxViewerQT");
-    app.setApplicationVersion("1.3.0");
+    app.setApplicationVersion(QStringLiteral(LIVOX_VIEWER_VERSION));
     app.setOrganizationName("FelixCooper1026");
     app.setWindowIcon(QIcon(":/resources/app_icon.ico"));
 

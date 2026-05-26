@@ -5,5 +5,7 @@
     <file>reset_view.svg</file>
     <file>refresh.svg</file>
     <file>grid.svg</file>
+    <file>point_cloud_live.svg</file>
+    <file>point_cloud_frozen.svg</file>
   </qresource>
 </RCC>

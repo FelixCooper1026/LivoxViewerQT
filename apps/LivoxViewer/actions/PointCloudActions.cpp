@@ -128,8 +128,8 @@ void LivoxViewerWindow::onPointCloudVisualizationToggled(bool enabled)
 {
     pointCloudVisualizationEnabled = enabled;
     if (enabled) {
-        logMessage("点云可视化已开启");
+        logMessage("实时点云显示已恢复");
     } else {
-        logMessage("点云可视化已暂停");
+        logMessage("实时点云显示已冻结");
     }
 }

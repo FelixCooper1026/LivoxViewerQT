@@ -18,6 +18,7 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QTabWidget>
+#include <QtGlobal>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -74,11 +75,13 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     initializeUserInterface();
     loadViewPreferences();
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme) {
         if (themeMode == ThemeFollowSystem) {
             applyUiTheme();
         }
     });
+#endif
 
     // 网络自动配置开关（Linux 默认关闭）
     {
@@ -133,7 +136,11 @@ bool LivoxViewerWindow::shouldUseDarkTheme() const
     if (themeMode == ThemeLight) {
         return false;
     }
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+#else
+    return QApplication::style()->standardPalette().color(QPalette::Window).lightness() < 128;
+#endif
 }
 
 void LivoxViewerWindow::applyUiTheme()
@@ -144,7 +151,7 @@ void LivoxViewerWindow::applyUiTheme()
     }
 
     app->setStyle(QStyleFactory::create("Fusion"));
-    QPalette palette = app->style()->standardPalette();
+    QPalette palette;
 
     if (shouldUseDarkTheme()) {
         palette.setColor(QPalette::Window, QColor(45, 45, 48));
@@ -161,6 +168,21 @@ void LivoxViewerWindow::applyUiTheme()
         palette.setColor(QPalette::HighlightedText, Qt::white);
         palette.setColor(QPalette::Link, QColor(90, 160, 230));
         palette.setColor(QPalette::Mid, QColor(85, 85, 88));
+    } else {
+        palette.setColor(QPalette::Window, QColor(255, 255, 255));
+        palette.setColor(QPalette::WindowText, QColor(20, 20, 20));
+        palette.setColor(QPalette::Base, QColor(255, 255, 255));
+        palette.setColor(QPalette::AlternateBase, QColor(245, 245, 245));
+        palette.setColor(QPalette::ToolTipBase, QColor(255, 255, 255));
+        palette.setColor(QPalette::ToolTipText, QColor(20, 20, 20));
+        palette.setColor(QPalette::Text, QColor(20, 20, 20));
+        palette.setColor(QPalette::Button, QColor(245, 245, 245));
+        palette.setColor(QPalette::ButtonText, QColor(20, 20, 20));
+        palette.setColor(QPalette::BrightText, Qt::red);
+        palette.setColor(QPalette::Highlight, QColor(0, 120, 215));
+        palette.setColor(QPalette::HighlightedText, Qt::white);
+        palette.setColor(QPalette::Link, QColor(0, 102, 204));
+        palette.setColor(QPalette::Mid, QColor(190, 190, 190));
     }
 
     app->setPalette(palette);
