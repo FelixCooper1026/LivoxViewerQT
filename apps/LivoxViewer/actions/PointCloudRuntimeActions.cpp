@@ -99,8 +99,8 @@ void LivoxViewerWindow::onRenderTick()
     bool hasTarget = false;
     {
         QMutexLocker devLocker(&lidarDeviceMutex);
-        if (currentLidarDevice) {
-            targetHandle = currentLidarDevice->handle;
+        if (hasCurrentLidarHandle) {
+            targetHandle = currentLidarHandle;
             hasTarget = true;
         }
     }

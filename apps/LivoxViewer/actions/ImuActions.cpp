@@ -471,7 +471,8 @@ void LivoxViewerWindow::onActionShowImuCharts()
 
 void LivoxViewerWindow::onActionCaptureImuTriggered()
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         QMessageBox::warning(this, "保存IMU数据", "设备未连接");
         return;
     }
@@ -544,7 +545,7 @@ void LivoxViewerWindow::onActionCaptureImuTriggered()
 
     settings.setValue("save/lastIMUDir", baseDir);
 
-    QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
+    QString sn = currentDevice.sn.isEmpty() ? QString("Unknown") : currentDevice.sn;
     QString targetDir = QDir(baseDir).filePath(QString("IMU_%1").arg(sn));
     QDir().mkpath(targetDir);
     QString startTime = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");

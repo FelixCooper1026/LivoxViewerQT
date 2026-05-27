@@ -7,44 +7,20 @@
 
 namespace {
 
-bool isUsableInterface(const QNetworkInterface& iface)
-{
-    const auto flags = iface.flags();
-    if (!(flags & QNetworkInterface::IsUp) ||
-        !(flags & QNetworkInterface::IsRunning) ||
-        (flags & QNetworkInterface::IsLoopBack) ||
-        (flags & QNetworkInterface::IsPointToPoint)) {
-        return false;
-    }
-
-    const QString name = iface.humanReadableName().toLower();
-    const QString sysName = iface.name().toLower();
-    if (name.contains("wifi") || name.contains("wi-fi") || name.contains("wlan") ||
-        name.contains("wireless") || name.contains("bluetooth") || name.contains("bt") ||
-        sysName.contains("wifi") || sysName.contains("wireless") || sysName.contains("wlan") ||
-        sysName.contains("bt") || sysName.contains("bluetooth")) {
-        return false;
-    }
-
-    if (sysName.contains("docker") || sysName.contains("veth") || sysName.startsWith("br-") ||
-        sysName.contains("virbr") || sysName.contains("vmnet") || sysName.contains("vboxnet") ||
-        sysName.contains("tap") || sysName.contains("tun") ||
-        sysName.contains("loopback") || name.contains("virtual")) {
-        return false;
-    }
-
-    return true;
-}
-
-bool hasValidIpv4(const QNetworkInterface& iface, QString* ip = nullptr)
+bool fillIpv4Info(const QNetworkInterface& iface, NetworkInterfaceService::NetworkInterfaceInfo* info = nullptr)
 {
     for (const QNetworkAddressEntry& entry : iface.addressEntries()) {
         const QHostAddress& addr = entry.ip();
         if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
             addr.toString() != "0.0.0.0" &&
             !addr.toString().startsWith("169.254.")) {
-            if (ip) {
-                *ip = addr.toString();
+            if (info) {
+                info->systemName = iface.name();
+                info->displayName = iface.humanReadableName();
+                info->ipv4 = addr.toString();
+                info->netmask = entry.netmask().toString();
+                info->broadcast = entry.broadcast().isNull() ? QString() : entry.broadcast().toString();
+                info->isValidForLidar = true;
             }
             return true;
         }
@@ -55,6 +31,74 @@ bool hasValidIpv4(const QNetworkInterface& iface, QString* ip = nullptr)
 } // namespace
 
 namespace NetworkInterfaceService {
+
+bool isLikelyVirtualOrWirelessInterface(const QNetworkInterface& iface)
+{
+    const QString text = QString("%1 %2")
+        .arg(iface.name().toLower(), iface.humanReadableName().toLower());
+    const QStringList excluded = {
+        "wifi", "wi-fi", "wireless", "wlan", "bluetooth",
+        "docker", "veth", "vmnet", "virtualbox", "vbox", "hyper-v",
+        "tap", "tun", "tailscale", "zerotier", "loopback", "bridge"
+    };
+
+    for (const QString& keyword : excluded) {
+        if (text.contains(keyword)) {
+            return true;
+        }
+    }
+    return iface.name().toLower().startsWith("br-");
+}
+
+bool isValidLidarInterface(const QNetworkInterface& iface)
+{
+    const auto flags = iface.flags();
+    if (!(flags & QNetworkInterface::IsUp) ||
+        !(flags & QNetworkInterface::IsRunning) ||
+        (flags & QNetworkInterface::IsLoopBack) ||
+        (flags & QNetworkInterface::IsPointToPoint)) {
+        return false;
+    }
+    if (isLikelyVirtualOrWirelessInterface(iface)) {
+        return false;
+    }
+    return fillIpv4Info(iface);
+}
+
+QList<NetworkInterfaceInfo> availableLidarInterfaces()
+{
+    QList<NetworkInterfaceInfo> interfaces;
+    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
+        if (!isValidLidarInterface(iface)) {
+            continue;
+        }
+        NetworkInterfaceInfo info;
+        if (fillIpv4Info(iface, &info)) {
+            interfaces.append(info);
+        }
+    }
+    return interfaces;
+}
+
+std::optional<NetworkInterfaceInfo> findInterfaceByName(const QString& name)
+{
+    for (const NetworkInterfaceInfo& info : availableLidarInterfaces()) {
+        if (info.systemName == name) {
+            return info;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<NetworkInterfaceInfo> findInterfaceByIp(const QString& ip)
+{
+    for (const NetworkInterfaceInfo& info : availableLidarInterfaces()) {
+        if (info.ipv4 == ip) {
+            return info;
+        }
+    }
+    return std::nullopt;
+}
 
 bool isInSameSubnet(const QString& hostIp, const QString& currentIp, const QString& subnetMask)
 {
@@ -71,36 +115,26 @@ bool isInSameSubnet(const QString& hostIp, const QString& currentIp, const QStri
 QString currentHostIp(const QString& selectedIp)
 {
     if (!selectedIp.isEmpty()) {
-        return selectedIp;
+        const auto selected = findInterfaceByIp(selectedIp);
+        if (selected.has_value()) {
+            return selected->ipv4;
+        }
     }
 
-    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
-        if (!isUsableInterface(iface)) {
-            continue;
-        }
-        QString ip;
-        if (hasValidIpv4(iface, &ip)) {
-            return ip;
-        }
+    const QList<NetworkInterfaceInfo> interfaces = availableLidarInterfaces();
+    if (!interfaces.isEmpty()) {
+        return interfaces.first().ipv4;
     }
     return QString();
 }
 
 bool hasWiredNetworkDeviceConnected()
 {
-    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
-        if (!isUsableInterface(iface)) {
-            continue;
-        }
-        if (hasValidIpv4(iface)) {
-            qDebug() << "[wired-interface] active interface:"
-                     << iface.humanReadableName() << "(" << iface.name() << ")";
-            return true;
-        }
-        if (iface.flags() & QNetworkInterface::IsRunning) {
-            qDebug() << "[wired-interface] physical link:" << iface.humanReadableName();
-            return true;
-        }
+    const QList<NetworkInterfaceInfo> interfaces = availableLidarInterfaces();
+    if (!interfaces.isEmpty()) {
+        const NetworkInterfaceInfo& iface = interfaces.first();
+        qDebug() << "[wired-interface] active interface:" << iface.displayName << "(" << iface.systemName << ")";
+        return true;
     }
     qDebug() << "[wired-interface] no active wired interface detected";
     return false;
@@ -108,15 +142,9 @@ bool hasWiredNetworkDeviceConnected()
 
 QString firstWiredInterfaceHumanName()
 {
-    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
-        if (!isUsableInterface(iface)) {
-            continue;
-        }
-        const QString name = iface.humanReadableName().toLower();
-        const QString sysName = iface.name().toLower();
-        if (sysName.startsWith("ethernet") || name.contains("ethernet") || name.contains("以太网")) {
-            return iface.humanReadableName();
-        }
+    const QList<NetworkInterfaceInfo> interfaces = availableLidarInterfaces();
+    if (!interfaces.isEmpty()) {
+        return interfaces.first().displayName;
     }
     return QString();
 }

@@ -43,7 +43,8 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
 
     //保存PCD点云
     connect(actionCapturePCD, &QAction::triggered, [this]() {
-        if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+        LidarDeviceInfo currentDevice;
+        if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
             QMessageBox::warning(this, "保存PCD点云", "设备未连接");
             return;
         }
@@ -107,7 +108,7 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         settings.setValue("save/lastPCDDir", baseDir);
 
         // 创建 PCD_雷达SN 目录
-        QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
+        QString sn = currentDevice.sn.isEmpty() ? QString("Unknown") : currentDevice.sn;
         QString targetDir = QDir(baseDir).filePath(QString("PCD_%1").arg(sn));
         QDir().mkpath(targetDir);
         captureState.pcdSaveDir = targetDir;
@@ -120,7 +121,8 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
 
     //保存LAS点云
     connect(actionCaptureLAS, &QAction::triggered, [this]() {
-        if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+        LidarDeviceInfo currentDevice;
+        if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
             QMessageBox::warning(this, "保存LAS点云", "设备未连接");
             return;
         }
@@ -181,7 +183,7 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         }
 
         settings.setValue("save/lastLASDir", baseDir);
-        QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
+        QString sn = currentDevice.sn.isEmpty() ? QString("Unknown") : currentDevice.sn;
         QString targetDir = QDir(baseDir).filePath(QString("LAS_%1").arg(sn));
         QDir().mkpath(targetDir);
         captureState.lasSaveDir = targetDir;
@@ -194,7 +196,8 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
 
     //保存LVX2点云
     connect(actionCaptureLVX2, &QAction::triggered, [this]() {
-        if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+        LidarDeviceInfo currentDevice;
+        if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
             QMessageBox::warning(this, "保存LVX2点云", "设备未连接");
             return;
         }
@@ -254,7 +257,7 @@ void LivoxViewerWindow::createCaptureActions(QMenu* toolsMenu)
         }
 
         settings.setValue("save/lastLVX2Dir", baseDir);
-        QString sn = currentLidarDevice ? currentLidarDevice->sn : QString("Unknown");
+        QString sn = currentDevice.sn.isEmpty() ? QString("Unknown") : currentDevice.sn;
         QString targetDir = QDir(baseDir).filePath(QString("LVX2_%1").arg(sn));
         QDir().mkpath(targetDir);
         QString startTime = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");

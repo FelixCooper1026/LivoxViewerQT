@@ -73,12 +73,14 @@ void LivoxViewerWindow::startLvx2Recording(const QString& filePath, int duration
     captureState.lvx2File.write(reinterpret_cast<const char*>(&pub), sizeof(pub));
     Lvx2PrivateHeader pri;
     captureState.lvx2File.write(reinterpret_cast<const char*>(&pri), sizeof(pri));
+    LidarDeviceInfo currentDevice;
+    const bool hasDevice = tryGetCurrentDevice(currentDevice);
     Lvx2DeviceInfo dev{};
-    QByteArray snb = currentLidarDevice ? currentLidarDevice->sn.left(15).toLatin1() : QByteArray("Unknown");
+    QByteArray snb = hasDevice ? currentDevice.sn.left(15).toLatin1() : QByteArray("Unknown");
     std::memset(dev.lidar_sn, 0, sizeof(dev.lidar_sn));
     std::memcpy(dev.lidar_sn, snb.constData(), std::min<size_t>(size_t(snb.size()), sizeof(dev.lidar_sn)));
-    dev.lidar_id = currentLidarDevice ? currentLidarDevice->handle : 0;
-    dev.device_type = currentLidarDevice ? currentLidarDevice->dev_type : 0;
+    dev.lidar_id = hasDevice ? currentDevice.handle : 0;
+    dev.device_type = hasDevice ? currentDevice.dev_type : 0;
     captureState.lvx2File.write(reinterpret_cast<const char*>(&dev), sizeof(dev));
 
     captureState.lvx2SaveActive = true;
@@ -117,7 +119,8 @@ static void DebugPointCloudCallback(livox_status status, uint32_t handle, LivoxL
 
 void LivoxViewerWindow::onStartCaptureLog()
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) { logMessage("设备未连接"); return; }
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) { logMessage("设备未连接"); return; }
     if (captureState.current != CaptureNone) return;
     captureState.current = CaptureLog;
     int sec = captureState.durationSpin ? captureState.durationSpin->value() : 10;
@@ -127,13 +130,14 @@ void LivoxViewerWindow::onStartCaptureLog()
     captureState.progress->setValue(0);
     captureState.progress->setFormat("LOG采集中 %p% (%v s)");
     SaveLivoxLidarSdkLoggerFile();
-    LivoxLidarStartLogger(currentLidarDevice->handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
+    LivoxLidarStartLogger(currentDevice.handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
     captureState.timer->start(1000);
 }
 
 void LivoxViewerWindow::onStartCaptureDebug()
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) { logMessage("设备未连接"); return; }
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) { logMessage("设备未连接"); return; }
     if (captureState.current != CaptureNone) return;
     captureState.current = CaptureDebug;
     int sec = captureState.durationSpin ? captureState.durationSpin->value() : 10;
@@ -142,7 +146,7 @@ void LivoxViewerWindow::onStartCaptureDebug()
     logMessage(QString("开始采集Debug点云，时长: %1s").arg(sec));
     captureState.progress->setValue(0);
     captureState.progress->setFormat("Debug采集中 %p% (%v s)");
-    SetLivoxLidarDebugPointCloud(currentLidarDevice->handle, true, DebugPointCloudCallback, this);
+    SetLivoxLidarDebugPointCloud(currentDevice.handle, true, DebugPointCloudCallback, this);
     captureState.timer->start(1000);
 }
 
@@ -151,10 +155,10 @@ void LivoxViewerWindow::onCaptureTick()
     if (captureState.secondsRemaining <= 0) {
         captureState.timer->stop();
         if (captureState.current == CaptureLog) {
-            LivoxLidarStopLogger(currentLidarDevice->handle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
+            if (hasCurrentLidarHandle) LivoxLidarStopLogger(currentLidarHandle, kLivoxLidarRealTimeLog, LoggerStartCallback, this);
             logMessage("日志采集完成");
         } else if (captureState.current == CaptureDebug) {
-            SetLivoxLidarDebugPointCloud(currentLidarDevice->handle, false, DebugPointCloudCallback, this);
+            if (hasCurrentLidarHandle) SetLivoxLidarDebugPointCloud(currentLidarHandle, false, DebugPointCloudCallback, this);
             logMessage("Debug点云采集完成");
         } else if (captureState.current == CaptureLVX2) {
             stopLvx2Recording(true);

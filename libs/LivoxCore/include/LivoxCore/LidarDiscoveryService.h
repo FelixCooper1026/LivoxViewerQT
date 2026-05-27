@@ -11,6 +11,8 @@
 namespace LidarDiscoveryService {
 
 struct DiscoveryResponse {
+    bool valid = false;
+    QString errorMessage;
     uint8_t deviceType = 0;
     QString serialNumber;
     QString deviceIp;
@@ -19,6 +21,7 @@ struct DiscoveryResponse {
 
 QByteArray discoveryCommand();
 bool isLocalDatagram(const QString& senderIp, const QString& boundLocalIp, const QSet<QString>& localIpv4Addresses);
+DiscoveryResponse parseDiscoveryResponse(const QByteArray& data);
 bool parseDiscoveryResponse(const QByteArray& data, DiscoveryResponse* response);
 
 } // namespace LidarDiscoveryService

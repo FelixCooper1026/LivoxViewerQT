@@ -303,10 +303,16 @@ void LivoxViewerWindow::createParameterPanel()
     createTargetRow("IMU数据", kKeyLidarImuHostIpCfg, 57000, "应用 IMU 数据发送目标 IP 和端口");
     createTargetRow("推送信息", kKeyStateInfoHostIpCfg, 57000, "应用状态/推送信息发送目标 IP 和端口");
     connect(syncTargetIpButton, &QPushButton::clicked, this, [this, targetIpEdits]() {
-        const QString selectedIp = networkInterfaceCombo
+        const QString selectedName = networkInterfaceCombo
             ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
             : QString();
-        const QString hostIp = NetworkInterfaceService::currentHostIp(selectedIp);
+        QString hostIp;
+        const auto selectedInterface = NetworkInterfaceService::findInterfaceByName(selectedName);
+        if (selectedInterface.has_value()) {
+            hostIp = selectedInterface->ipv4;
+        } else {
+            hostIp = NetworkInterfaceService::currentHostIp();
+        }
         if (hostIp.isEmpty()) {
             statusLabelBar->setText("未找到可用主机 IP");
             logMessage("同步目标 IP 失败：未找到可用主机 IP");

@@ -21,6 +21,7 @@
 #include <QDesktopServices>
 #include <QStandardPaths>
 #include <QRadioButton>
+#include <QSignalBlocker>
 
 #include <algorithm>
 
@@ -90,13 +91,17 @@ void LivoxViewerWindow::initializeUserInterface()
 
 void LivoxViewerWindow::onLidarDeviceSelected()
 {
+    if (shutting_down) {
+        return;
+    }
+
     int currentRow = lidarDeviceList->currentRow();
     if (currentRow >= 0 && currentRow < lidarDevices.size()) {
         QMutexLocker locker(&lidarDeviceMutex);
         auto it = lidarDevices.begin();
         std::advance(it, currentRow);
-        currentLidarDevice = &(it.value());
-        if (currentLidarDevice->is_connected) {
+        setCurrentDeviceHandle(it.key());
+        if (it.value().is_connected) {
             if (statusLabel) statusLabel->setText("状态: 已连接");
         } else {
             if (statusLabel) statusLabel->setText("状态: 未连接");
@@ -111,9 +116,15 @@ void LivoxViewerWindow::onLidarDeviceSelected()
 
 void LivoxViewerWindow::updateLidarDeviceList()
 {
-    QMutexLocker locker(&lidarDeviceMutex);
+    QList<LidarDeviceInfo> devices;
+    {
+        QMutexLocker locker(&lidarDeviceMutex);
+        devices = lidarDevices.values();
+    }
+
+    const QSignalBlocker blocker(lidarDeviceList);
     lidarDeviceList->clear();
-    for (const auto& device : lidarDevices) {
+    for (const auto& device : devices) {
         addLidarDeviceToList(device);
     }
 }
@@ -143,11 +154,12 @@ void LivoxViewerWindow::updateLidarDeviceInfo(const LidarDeviceInfo& device)
 
 void LivoxViewerWindow::onTabChanged(int index)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) return;
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) return;
 
     // 清除旧的配置标记，准备接受新一轮查询结果
     parameterState.updatedConfigKeys.clear();
-    livox_status status = QueryLivoxLidarInternalInfo(currentLidarDevice->handle, onQueryInternalInfoResponse, this);
+    livox_status status = QueryLivoxLidarInternalInfo(currentDevice.handle, onQueryInternalInfoResponse, this);
     if (status != kLivoxLidarStatusSuccess) {
         logMessage(QString("切换至标签页[%1]时查询设备信息失败: %2 (错误码: %3)")
                      .arg(index)
@@ -487,186 +499,94 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
 {
     if (!networkInterfaceCombo) return;
 
+    const QString previousName = selectedInterfaceName;
+    networkInterfaceCombo->blockSignals(true);
     networkInterfaceCombo->clear();
 
-    // 收集可用的网络接口
-    struct IfaceItem {
-        QString ip;
-        QString displayName;
-        QString humanName;
-        QString sysName;
-    };
-    QList<IfaceItem> interfaces;
-    QSet<QString> currentSysNames;  // 本次检测到的网卡系统名称集合
+    const QList<NetworkInterfaceService::NetworkInterfaceInfo> interfaces =
+        NetworkInterfaceService::availableLidarInterfaces();
 
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
-    {
-        if (!(iface.flags() & QNetworkInterface::IsUp) ||
-            !(iface.flags() & QNetworkInterface::IsRunning) ||
-            (iface.flags() & QNetworkInterface::IsLoopBack) ||
-            (iface.flags() & QNetworkInterface::IsPointToPoint))
-        {
-            continue;
-        }
-
-        for (const QNetworkAddressEntry &entry : iface.addressEntries())
-        {
-            const QHostAddress &addr = entry.ip();
-            if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
-                addr.toString() != "0.0.0.0" &&
-                !addr.toString().startsWith("169.254."))
-            {
-                IfaceItem item;
-                item.ip = addr.toString();
-                item.humanName = iface.humanReadableName();
-                item.sysName = iface.name();
-                item.displayName = QString("%1 - %2").arg(item.ip, item.humanName);
-                interfaces.append(item);
-                currentSysNames.insert(item.sysName);
-                break;
-            }
-        }
-    }
-
-    // 填充下拉列表
-    for (int i = 0; i < interfaces.size(); ++i)
-    {
-        networkInterfaceCombo->addItem(interfaces[i].displayName);
-        networkInterfaceCombo->setItemData(i, interfaces[i].ip, Qt::UserRole);
-        networkInterfaceCombo->setItemData(i, interfaces[i].humanName, Qt::UserRole + 1);
-        networkInterfaceCombo->setItemData(i, interfaces[i].sysName, Qt::UserRole + 2);
-    }
-
-    // ---------- 新的选择策略 ----------
     int selectedIndex = -1;
-    QString targetSysName;
-    QString selectedReason;  // 仅用于日志说明选中原�
-
-    // 1. 检测新增网卡（优先级最高）
-    bool hasNewInterface = false;
-    if (!lastKnownSysNames.isEmpty())
-    {
-        QSet<QString> added = currentSysNames - lastKnownSysNames;
-        if (!added.isEmpty())
-        {
-            hasNewInterface = true;
-            targetSysName = *added.constBegin();  // 取第一个新增网卡
-            selectedReason = "检测到新增网卡";
+    for (int i = 0; i < interfaces.size(); ++i) {
+        const NetworkInterfaceService::NetworkInterfaceInfo& iface = interfaces.at(i);
+        networkInterfaceCombo->addItem(QString("%1 - %2").arg(iface.displayName, iface.ipv4), iface.systemName);
+        networkInterfaceCombo->setItemData(i, iface.ipv4, Qt::UserRole + 1);
+        networkInterfaceCombo->setItemData(i, iface.displayName, Qt::UserRole + 2);
+        networkInterfaceCombo->setItemData(i, iface.netmask, Qt::UserRole + 3);
+        networkInterfaceCombo->setItemData(i, iface.broadcast, Qt::UserRole + 4);
+        if (iface.systemName == previousName) {
+            selectedIndex = i;
         }
     }
 
-    // 2. 无新增网卡时，尝试按系统名称恢复上次选中项（处理 IP 变更）
-    if (!hasNewInterface && !selectedNetworkInterfaceSysName.isEmpty() &&
-        currentSysNames.contains(selectedNetworkInterfaceSysName))
-    {
-        targetSysName = selectedNetworkInterfaceSysName;
-        selectedReason = "保留上次选中项";
-    }
-
-    // 3. 根据目标系统名称定位索引
-    if (!targetSysName.isEmpty())
-    {
-        for (int i = 0; i < interfaces.size(); ++i)
-        {
-            if (interfaces[i].sysName == targetSysName)
-            {
-                selectedIndex = i;
-                break;
-            }
-        }
-    }
-
-    // 4. 回退：若仍无匹配，选择第一个可用网卡
-    if (selectedIndex == -1 && !interfaces.isEmpty())
-    {
+    if (selectedIndex < 0 && !interfaces.isEmpty()) {
         selectedIndex = 0;
-        selectedReason = "使用首个可用网卡";
     }
 
-    // 5. 应用选中状态并更新成员变量
-    if (selectedIndex >= 0)
-    {
+    if (selectedIndex >= 0) {
         networkInterfaceCombo->setCurrentIndex(selectedIndex);
-        selectedNetworkIP = interfaces[selectedIndex].ip;
-        selectedNetworkInterfaceHumanName = interfaces[selectedIndex].humanName;
-        selectedNetworkInterfaceSysName = interfaces[selectedIndex].sysName;
-
-        if (!selectedReason.isEmpty())
-            logMessage(QString("%1: %2 (%3)").arg(selectedReason, selectedNetworkIP, selectedNetworkInterfaceHumanName));
-    }
-    else
-    {
+        selectLidarInterface(interfaces.at(selectedIndex));
+        logMessage(QString("[Network] Selected lidar interface: %1 (%2)")
+                       .arg(selectedInterfaceDisplayName, selectedHostIp));
+    } else {
+        selectedInterfaceName.clear();
+        selectedInterfaceDisplayName.clear();
+        selectedHostIp.clear();
+        selectedNetmask.clear();
+        selectedBroadcast.clear();
         selectedNetworkIP.clear();
         selectedNetworkInterfaceHumanName.clear();
         selectedNetworkInterfaceSysName.clear();
-        logMessage("警告: 未找到可用的网络接口");
+        logMessage("[Network] No valid lidar network interface found");
     }
 
-    // 6. 保存本次快照供下次刷新对比
-    lastKnownSysNames = currentSysNames;
+    networkInterfaceCombo->blockSignals(false);
 }
 
 void LivoxViewerWindow::onNetworkInterfaceChanged(int index)
 {
     if (!networkInterfaceCombo || index < 0) return;
 
-    QString newIP = networkInterfaceCombo->itemData(index, Qt::UserRole).toString();
-    QString newHumanName = networkInterfaceCombo->itemData(index, Qt::UserRole + 1).toString();
-    QString newSysName = networkInterfaceCombo->itemData(index, Qt::UserRole + 2).toString();
-    if (!newIP.isEmpty() && newIP != selectedNetworkIP)
-    {
-        QString oldIP = selectedNetworkIP;
-        selectedNetworkIP = newIP;
-        selectedNetworkInterfaceHumanName = newHumanName;
-        selectedNetworkInterfaceSysName = newSysName;
-        logMessage(QString("网络接口已切换: %1 -> %2").arg(oldIP, newIP));
-
-        // 无论设备发现是否正在进行，都重新启动设备发现以使用新的网络接口
-        logMessage("检测到网卡切换，将重新启动设备发现...");
-        if (lidarDiscoveryActive)
-        {
-            stopLidarDiscovery();
-        }
-        QTimer::singleShot(1000, this, [this]() {
-            startLidarDiscovery();
-        });
+    const QString systemName = networkInterfaceCombo->itemData(index, Qt::UserRole).toString();
+    const auto iface = NetworkInterfaceService::findInterfaceByName(systemName);
+    if (!iface.has_value()) {
+        return;
     }
+
+    const QString oldName = selectedInterfaceName;
+    const QString oldIp = selectedHostIp;
+    selectLidarInterface(*iface);
+
+    if (oldName == selectedInterfaceName && oldIp == selectedHostIp) {
+        return;
+    }
+
+    logMessage(QString("[Realtime] Network interface changed: %1 -> %2")
+                   .arg(oldIp, selectedHostIp));
+
+    if (sdk_started || sdk_initialized || realtimeState == RealtimeConnectionState::Running) {
+        restartRealtimeConnectionForNetworkChange();
+        return;
+    }
+
+    stopLidarDiscovery();
+    startLidarDiscovery();
 }
 
 QString LivoxViewerWindow::getSelectedHostIP() const
 {
-    if (!selectedNetworkIP.isEmpty())
-    {
-        return selectedNetworkIP;
-    }
-
-    // 如果没有选择，回退到原来的逻辑（自动选择第一个非无线IPv4地址）
-    for (const QNetworkInterface &iface : QNetworkInterface::allInterfaces())
-    {
-        if ((iface.flags() & QNetworkInterface::IsUp) &&
-            (iface.flags() & QNetworkInterface::IsRunning) &&
-            !(iface.flags() & QNetworkInterface::IsLoopBack) &&
-            !(iface.flags() & QNetworkInterface::IsPointToPoint))
-        {
-            // 排除无线网口，只检测有线网口
-            QString ifaceName = iface.name().toLower();
-            if (ifaceName.contains("wlan") || ifaceName.contains("wifi") ||
-                ifaceName.contains("wireless") || ifaceName.contains("802.11"))
-            {
-                continue;
-            }
-
-            for (const QNetworkAddressEntry &entry : iface.addressEntries())
-            {
-                const QHostAddress &addr = entry.ip();
-                if (addr.protocol() == QAbstractSocket::IPv4Protocol &&
-                    addr.toString() != "0.0.0.0" &&
-                    !addr.toString().startsWith("169.254."))
-                {
-                    return addr.toString();
-                }
-            }
+    if (!selectedInterfaceName.isEmpty()) {
+        const auto iface = NetworkInterfaceService::findInterfaceByName(selectedInterfaceName);
+        if (iface.has_value()) {
+            return iface->ipv4;
         }
     }
+
+    const QList<NetworkInterfaceService::NetworkInterfaceInfo> interfaces =
+        NetworkInterfaceService::availableLidarInterfaces();
+    if (!interfaces.isEmpty()) {
+        return interfaces.first().ipv4;
+    }
+
     return QString();
 }

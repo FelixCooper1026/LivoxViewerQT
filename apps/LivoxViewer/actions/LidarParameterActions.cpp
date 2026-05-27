@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "LivoxCore/LidarParameterService.h"
+#include "LivoxCore/LidarSdkService.h"
 #include <QRegularExpression>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -13,11 +14,8 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
         updateProjectionControlsVisibility();
     }
 
-    if (!currentLidarDevice) {
-        return;
-    }
-
-    if (!currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         return;
     }
     
@@ -39,7 +37,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                 case kKeyPclDataType: {
                     paramName = "点云格式";
                     LivoxLidarPointDataType dataType = static_cast<LivoxLidarPointDataType>(index + 1); // 0->1, 1->2, 2->3
-                    livox_status status = SetLivoxLidarPclDataType(currentLidarDevice->handle, dataType, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarPclDataType(currentDevice.handle, dataType, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     updateProjectionControlsVisibility();
@@ -48,7 +46,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                 case kKeyPatternMode: {
                     paramName = "扫描模式";
                     LivoxLidarScanPattern pattern = static_cast<LivoxLidarScanPattern>(index);
-                    livox_status status = SetLivoxLidarScanPattern(currentLidarDevice->handle, pattern, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarScanPattern(currentDevice.handle, pattern, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -57,8 +55,8 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     paramName = "探测模式";
                     
                     // 检查设备类型是否支持探测模式
-                    if (currentLidarDevice && currentLidarDevice->dev_type != kLivoxLidarTypeMid360) {
-                        logMessage(QString("警告: 设备类型 %1 可能不支持探测模式配置").arg(currentLidarDevice->product_info));
+                    if (currentDevice.dev_type != kLivoxLidarTypeMid360) {
+                        logMessage(QString("警告: 设备类型 %1 可能不支持探测模式配置").arg(currentDevice.product_info));
                     }
                     
                     LivoxLidarDetectMode mode;
@@ -77,7 +75,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     
                     if (index >= 0 && index <= 1) {
-                        livox_status status = SetLivoxLidarDetectMode(currentLidarDevice->handle, mode, onAsyncControlResponse, this);
+                        livox_status status = SetLivoxLidarDetectMode(currentDevice.handle, mode, onAsyncControlResponse, this);
                         success = (status == kLivoxLidarStatusSuccess);
                         newValue = combo->currentText();
                         if (!success) {
@@ -96,7 +94,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                             logMessage(QString("工作模式索引无效: %1").arg(index));
                             return;
                     }
-                    livox_status status = SetLivoxLidarWorkMode(currentLidarDevice->handle, workMode, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarWorkMode(currentDevice.handle, workMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -110,7 +108,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                         default: 
                             logMessage(QString("电机转速索引无效: %1").arg(index));
                     }
-                    livox_status status = SetLivoxLidarEscMode(currentLidarDevice->handle, motorSpeed, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarEscMode(currentDevice.handle, motorSpeed, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -124,7 +122,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                         default: 
                             logMessage(QString("异常时间过滤索引无效: %1").arg(index));
                     }
-                    livox_status status = SetLivoxLidarPpsSyncMode(currentLidarDevice->handle, syncFilterMode, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarPpsSyncMode(currentDevice.handle, syncFilterMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -137,7 +135,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                         case 0: fovMode = kLivoxSmallFovMode; break;
                         case 1: fovMode = kLivoxBigFovMode; break;
                     }
-                    livox_status status = SetLivoxLidarFovMode(currentLidarDevice->handle, fovMode, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarFovMode(currentDevice.handle, fovMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -149,7 +147,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                         case 0: echoMode = kLivoxStrongEchoMode; break;
                         case 1: echoMode = kLivoxFirstEchoMode; break;
                     }
-                    livox_status status = SetLivoxLidarEchoMode(currentLidarDevice->handle, echoMode, onAsyncControlResponse, this);
+                    livox_status status = SetLivoxLidarEchoMode(currentDevice.handle, echoMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = combo->currentText();
                     break;
@@ -158,11 +156,11 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     paramName = "IMU数据发送";
                     livox_status status;
                     if (index == 1) { // "开启"
-                        status = EnableLivoxLidarImuData(currentLidarDevice->handle, onAsyncControlResponse, this);
+                        status = EnableLivoxLidarImuData(currentDevice.handle, onAsyncControlResponse, this);
                         if (status != kLivoxLidarStatusSuccess) {
                             logMessage(QString("启用IMU数据失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));                        }
                     } else { // "关闭"
-                        status = DisableLivoxLidarImuData(currentLidarDevice->handle, onAsyncControlResponse, this);
+                        status = DisableLivoxLidarImuData(currentDevice.handle, onAsyncControlResponse, this);
                         if (status != kLivoxLidarStatusSuccess) {
                             logMessage(QString("禁用IMU数据失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));                        }
                     }
@@ -215,20 +213,35 @@ void LivoxViewerWindow::onIpConfigResponse(livox_status status, uint32_t handle,
     const uint8_t ret_code = has_response ? response->ret_code : 0xFF;
 
     QMetaObject::invokeMethod(window, [window, status, handle, ret_code, has_response]() {
+        window->pendingLidarIpConfig.reset();
         // 1. 成功且设备确认执行：触发独有的重启逻辑
         if (status == kLivoxLidarStatusSuccess && has_response && ret_code == 0x00) {
             window->logMessage(QString("设备已确认IP配置，将请求重启雷达使配置生效 (handle=%1)").arg(handle));
             window->parameterState.updatedConfigKeys.insert(kKeyLidarIpCfg);
 
-            livox_status rebootStatus = LivoxLidarRequestReboot(handle, nullptr, window);
+            livox_status rebootStatus = LivoxLidarRequestReboot(handle, nullptr, nullptr);
             if (rebootStatus == kLivoxLidarStatusSuccess) {
+                window->shutting_down = true;
+                window->pointCloudCallbackEnabled = false;
+                LidarSdkService::clearCallbacks();
                 window->logMessage("雷达正在重启，请等待设备以新配置上线...");
                 {
                     QMutexLocker locker(&window->lidarDeviceMutex);
                     window->lidarDevices.clear();
                 }
+                {
+                    QMutexLocker locker(&window->frameMutex);
+                    window->pendingFrames.clear();
+                    window->lastSeenTimestamp.clear();
+                    window->lastFrameTimestamp.clear();
+                }
+                window->clearCurrentDevice();
                 if (window->lidarDeviceList) window->updateLidarDeviceList();
                 if (window->statusLabelBar) window->statusLabelBar->setText("等待设备重启上线...");
+                QTimer::singleShot(5000, window, [window]() {
+                    window->shutdownLivoxSdk();
+                    window->startLidarDiscovery();
+                });
             } else {
                 window->logMessage(QString("重启命令发送失败: %1").arg(getLivoxStatusString(rebootStatus)));
             }
@@ -254,14 +267,12 @@ void LivoxViewerWindow::onIpConfigResponse(livox_status status, uint32_t handle,
 
 void LivoxViewerWindow::applyIpConfig(uint16_t key, const QString& ip, const QString& mask, const QString& gateway)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         logMessage("设备未连接，无法配置");
         return;
     }
     
-    LivoxLidarIpInfo ipConfig;
-    std::memset(&ipConfig, 0, sizeof(ipConfig));
-
     const QString ipClean = ip.trimmed();
     const QString maskClean = mask.trimmed();
     const QString gwClean = gateway.trimmed();
@@ -278,26 +289,31 @@ void LivoxViewerWindow::applyIpConfig(uint16_t key, const QString& ip, const QSt
         return;
     }
 
+    pendingLidarIpConfig.reset(new LivoxLidarIpInfo);
+    std::memset(pendingLidarIpConfig.get(), 0, sizeof(LivoxLidarIpInfo));
+
     QByteArray ipBytes = ipClean.toLatin1();
     QByteArray maskBytes = maskEff.toLatin1();
     QByteArray gwBytes = gwEff.toLatin1();
-    std::strncpy(ipConfig.ip_addr, ipBytes.constData(), sizeof(ipConfig.ip_addr) - 1);
-    std::strncpy(ipConfig.net_mask, maskBytes.constData(), sizeof(ipConfig.net_mask) - 1);
-    std::strncpy(ipConfig.gw_addr, gwBytes.constData(), sizeof(ipConfig.gw_addr) - 1);
+    std::strncpy(pendingLidarIpConfig->ip_addr, ipBytes.constData(), sizeof(pendingLidarIpConfig->ip_addr) - 1);
+    std::strncpy(pendingLidarIpConfig->net_mask, maskBytes.constData(), sizeof(pendingLidarIpConfig->net_mask) - 1);
+    std::strncpy(pendingLidarIpConfig->gw_addr, gwBytes.constData(), sizeof(pendingLidarIpConfig->gw_addr) - 1);
 
-    livox_status status = SetLivoxLidarIp(currentLidarDevice->handle, &ipConfig, onIpConfigResponse, this);
+    livox_status status = SetLivoxLidarIp(currentDevice.handle, pendingLidarIpConfig.get(), onIpConfigResponse, this);
     if (status == kLivoxLidarStatusSuccess) {
         logMessage("已发送雷达IP配置命令，等待设备确认是否执行...");
         if (statusLabelBar) statusLabelBar->setText("等待设备确认配置...");
     }
     else {
+        pendingLidarIpConfig.reset();
         logMessage(QString("雷达IP配置命令发送失败: %1").arg(status));
     }
 }
 
 void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int port)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -317,7 +333,7 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
             std::strncpy(hostConfig.host_ip_addr, ipBytes.constData(), sizeof(hostConfig.host_ip_addr) - 1);
             hostConfig.host_state_info_port = static_cast<uint16_t>(port);
             hostConfig.lidar_state_info_port = static_cast<uint16_t>(port);
-            status = SetLivoxLidarStateInfoHostIPCfg(currentLidarDevice->handle, &hostConfig, onAsyncControlResponse, this);
+            status = SetLivoxLidarStateInfoHostIPCfg(currentDevice.handle, &hostConfig, onAsyncControlResponse, this);
             break;
         }
         case kKeyLidarPointDataHostIpCfg: {
@@ -327,7 +343,7 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
             std::strncpy(hostConfig.host_ip_addr, ipBytes.constData(), sizeof(hostConfig.host_ip_addr) - 1);
             hostConfig.host_point_data_port = static_cast<uint16_t>(port);
             hostConfig.lidar_point_data_port = static_cast<uint16_t>(port);
-            status = SetLivoxLidarPointDataHostIPCfg(currentLidarDevice->handle, &hostConfig, onAsyncControlResponse, this);
+            status = SetLivoxLidarPointDataHostIPCfg(currentDevice.handle, &hostConfig, onAsyncControlResponse, this);
             break;
         }
         case kKeyLidarImuHostIpCfg: {
@@ -337,7 +353,7 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
             std::strncpy(hostConfig.host_ip_addr, ipBytes.constData(), sizeof(hostConfig.host_ip_addr) - 1);
             hostConfig.host_imu_data_port = static_cast<uint16_t>(port);
             hostConfig.lidar_imu_data_port = static_cast<uint16_t>(port);
-            status = SetLivoxLidarImuDataHostIPCfg(currentLidarDevice->handle, &hostConfig, onAsyncControlResponse, this);
+            status = SetLivoxLidarImuDataHostIPCfg(currentDevice.handle, &hostConfig, onAsyncControlResponse, this);
             break;
         }
         default:
@@ -356,7 +372,8 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
 
 void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, int pitchStart, int pitchStop)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -370,9 +387,9 @@ void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, 
     
     livox_status status;
     if (key == kKeyFovCfg0) {
-        status = SetLivoxLidarFovCfg0(currentLidarDevice->handle, &fovConfig, onAsyncControlResponse, this);
+        status = SetLivoxLidarFovCfg0(currentDevice.handle, &fovConfig, onAsyncControlResponse, this);
     } else {
-        status = SetLivoxLidarFovCfg1(currentLidarDevice->handle, &fovConfig, onAsyncControlResponse, this);
+        status = SetLivoxLidarFovCfg1(currentDevice.handle, &fovConfig, onAsyncControlResponse, this);
     }
     
     if (status == kLivoxLidarStatusSuccess) {
@@ -386,7 +403,8 @@ void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, 
 
 void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pitch, double yaw, int x, int y, int z)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -399,7 +417,7 @@ void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pi
     attitudeConfig.y = y;
     attitudeConfig.z = z;
     
-    livox_status status = SetLivoxLidarInstallAttitude(currentLidarDevice->handle, &attitudeConfig, onAsyncControlResponse, this);
+    livox_status status = SetLivoxLidarInstallAttitude(currentDevice.handle, &attitudeConfig, onAsyncControlResponse, this);
     if (status == kLivoxLidarStatusSuccess) {
         logMessage("已发送安装姿态配置命令");
         // 标记参数已更新，避免被定时器覆盖
@@ -411,7 +429,8 @@ void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pi
 
 void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fov1Check)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         return;
     }
     
@@ -426,7 +445,7 @@ void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fo
     }
     
     // 发送FOV使能配置
-    livox_status status = EnableLivoxLidarFov(currentLidarDevice->handle, fovEnableValue, onAsyncControlResponse, this);
+    livox_status status = EnableLivoxLidarFov(currentDevice.handle, fovEnableValue, onAsyncControlResponse, this);
     if (status == kLivoxLidarStatusSuccess) {
         QString fovState;
         switch (fovEnableValue) {
@@ -446,14 +465,15 @@ void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fo
 
 void LivoxViewerWindow::onParamQueryTimeout()
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         return;
     }
     
     // 只查询状态参数，不查询可配置参数
     // 状态参数：序列号、产品信息、版本、温度、时间等
     // 可配置参数：工作模式、扫描模式、点云格式等
-    livox_status status = QueryLivoxLidarInternalInfo(currentLidarDevice->handle, onQueryInternalInfoResponse, this);
+    livox_status status = QueryLivoxLidarInternalInfo(currentDevice.handle, onQueryInternalInfoResponse, this);
     
     if (status != kLivoxLidarStatusSuccess) {
         logMessage(QString("查询雷达内部信息失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
@@ -481,8 +501,9 @@ void LivoxViewerWindow::onRecordParamsClicked()
         
         // 获取设备序列号，如果没有当前设备则使用"Unknown"
         QString deviceSn = "Unknown";
-        if (currentLidarDevice && !currentLidarDevice->sn.isEmpty()) {
-            deviceSn = currentLidarDevice->sn;
+        LidarDeviceInfo currentDevice;
+        if (tryGetCurrentDevice(currentDevice) && !currentDevice.sn.isEmpty()) {
+            deviceSn = currentDevice.sn;
         }
         
         // 生成默认文件名

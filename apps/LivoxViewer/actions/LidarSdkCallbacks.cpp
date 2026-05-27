@@ -47,6 +47,10 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
         device.product_info = deviceTypeName;
 
         QMetaObject::invokeMethod(window, [window, device]() {
+            if (window->shutting_down) {
+                return;
+            }
+
             // 去重逻辑：同 SN 只保留一条（最新一次上报的句柄）
             {
                 QMutexLocker locker(&window->lidarDeviceMutex);
@@ -66,7 +70,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
 
             if (window->lidarDevices.size() > 0) {
                 if (window->statusLabel) window->statusLabel->setText("状态: 已连接");
-                window->currentLidarDevice = &window->lidarDevices[device.handle];
+                window->setCurrentDeviceHandle(device.handle);
 
                 for (int i = 0; i < window->lidarDeviceList->count(); ++i) {
                     QListWidgetItem* item = window->lidarDeviceList->item(i);
@@ -77,8 +81,8 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 }
 
                 window->parameterState.updatedConfigKeys.clear();
-                if (window->currentLidarDevice && window->currentLidarDevice->is_connected) {
-                    livox_status status = QueryLivoxLidarInternalInfo(window->currentLidarDevice->handle, onQueryInternalInfoResponse, window);
+                if (device.is_connected) {
+                    livox_status status = QueryLivoxLidarInternalInfo(device.handle, onQueryInternalInfoResponse, window);
                     if (status != kLivoxLidarStatusSuccess) {
                         window->logMessage(QString("查询设备配置参数失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
                     }
@@ -90,6 +94,10 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
     } else {
         // 设备信息不存在时的处理逻辑
         QMetaObject::invokeMethod(window, [window, handle]() {
+            if (window->shutting_down) {
+                return;
+            }
+
             // 从设备列表中移除
             {
                 QMutexLocker locker(&window->lidarDeviceMutex);
@@ -109,7 +117,9 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
 
             if (window->lidarDevices.isEmpty()) {
                 if (window->statusLabel) window->statusLabel->setText("状态: 未连接");
-                window->currentLidarDevice = nullptr;
+                window->clearCurrentDevice();
+            } else if (window->hasCurrentLidarHandle && window->currentLidarHandle == handle) {
+                window->setCurrentDeviceHandle(window->lidarDevices.firstKey());
             }
         }, Qt::QueuedConnection);
     }
@@ -118,7 +128,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
 void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, LivoxLidarEthernetPacket* data, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);
-    if (!window || window->shutting_down || !data) {
+    if (!window || window->shutting_down || !window->pointCloudCallbackEnabled || !data) {
         return;
     }
     if (data) {
@@ -138,6 +148,11 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
         
         // 使用QueuedConnection确保在主线程中执行
         QMetaObject::invokeMethod(window, [window, handle, packet_copy]() {
+            if (window->shutting_down || !window->pointCloudCallbackEnabled) {
+                delete[] reinterpret_cast<uint8_t*>(packet_copy);
+                return;
+            }
+
             // 再次验证数据
             if (packet_copy->dot_num > 10000 || packet_copy->data_type > 10) {
                 window->logMessage(QString("设备%1 数据包异常，跳过处理").arg(handle));
@@ -210,7 +225,11 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
         LivoxLidarEthernetPacket* packet_copy = reinterpret_cast<LivoxLidarEthernetPacket*>(data_copy);
 
         QMetaObject::invokeMethod(window, [window, handle, packet_copy]() {
-            
+            if (window->shutting_down) {
+                delete[] reinterpret_cast<uint8_t*>(packet_copy);
+                return;
+            }
+
             // 再次验证数据
             if (packet_copy->dot_num > 100 || packet_copy->data_type != kLivoxLidarImuData) {
                 // logMessage(QString("设备%1 IMU数据包异常，跳过处理").arg(handle));
@@ -218,7 +237,7 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                 return;
             }
             // 仅处理当前选中设备的IMU数据
-            if (!window->currentLidarDevice || window->currentLidarDevice->handle != handle) {
+            if (!window->hasCurrentLidarHandle || window->currentLidarHandle != handle) {
                 delete[] reinterpret_cast<uint8_t*>(packet_copy);
                 return;
             }
@@ -293,9 +312,9 @@ void LivoxViewerWindow::onStatusInfo(uint32_t handle, uint8_t dev_type, const ch
         return;
     }
     if (info) {
-        QMetaObject::invokeMethod(window, [window, handle, info]() {
+        const QString statusInfo = QString::fromLatin1(info);
+        QMetaObject::invokeMethod(window, [window, handle, statusInfo]() {
             // 检查字符串是否有效，避免显示乱码
-            QString statusInfo = QString::fromLatin1(info);
             if (statusInfo.isEmpty() || statusInfo.contains(QRegularExpression("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F-\\x9F]"))) {
                 // 包含控制字符，不显示
                 return;
@@ -358,7 +377,7 @@ void LivoxViewerWindow::onAsyncControlResponse(livox_status status, uint32_t han
 void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handle, LivoxLidarDiagInternalInfoResponse* response, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);
-    if (window && response && status == kLivoxLidarStatusSuccess) {
+    if (window && !window->shutting_down && response && status == kLivoxLidarStatusSuccess) {
         
         // 在回调线程中立即深拷贝数据，避免跨线程内存生命周期问题
         uint8_t ret_code = response->ret_code;
@@ -387,6 +406,10 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
         }
         
         QMetaObject::invokeMethod(window, [window, handle, ret_code, param_num, data_copy]() {
+            if (window->shutting_down) {
+                return;
+            }
+
             // 解析参数数据 - 使用深拷贝的安全数据
             uint16_t off = 0;
             uint16_t paramNum = param_num; // 使用拷贝的param_num
@@ -658,9 +681,10 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 // 获取设备信息
                 QString deviceSn = "Unknown";
                 QString deviceIp = "Unknown";
-                if (window->currentLidarDevice) {
-                    deviceSn = window->currentLidarDevice->sn;
-                    deviceIp = window->currentLidarDevice->lidar_ip;
+                LidarDeviceInfo currentDevice;
+                if (window->tryGetCurrentDevice(currentDevice)) {
+                    deviceSn = currentDevice.sn;
+                    deviceIp = currentDevice.lidar_ip;
                 }
                 
                 // 写入数据行

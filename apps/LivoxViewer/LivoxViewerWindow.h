@@ -67,7 +67,10 @@
 #include <QAtomicInteger>
 #include <functional>
 #include <memory>
+#include <optional>
+#include "AppConfig/NetworkInterfaceService.h"
 #include "LivoxCore/LidarDeviceInfo.h"
+#include "LivoxCore/LidarDiscoveryService.h"
 #include "LivoxCore/LidarSdkTypes.h"
 #include "LivoxCore/Lvx2Types.h"
 #include "Lvx2/Lvx2Converter.h"
@@ -101,6 +104,17 @@ public:
     using Lvx2PlaybackExtrinsic = Lvx2Playback::Extrinsic;
     using Lvx2PlaybackMode = Lvx2Playback::Mode;
     using PlaybackDeviceInfo = Playback::DeviceInfo;
+
+    enum class RealtimeConnectionState {
+        Idle,
+        WaitingNetwork,
+        Discovering,
+        ReconfiguringNetwork,
+        InitializingSdk,
+        Running,
+        Stopping,
+        Error
+    };
 
 private:
     void initializeUserInterface();
@@ -218,7 +232,12 @@ private:
     QTimer* renderTimer;
     QMutex lidarDeviceMutex;
     QMap<uint32_t, LidarDeviceInfo> lidarDevices;
-    LidarDeviceInfo* currentLidarDevice;
+    uint32_t currentLidarHandle = 0;
+    bool hasCurrentLidarHandle = false;
+    std::unique_ptr<LivoxLidarIpInfo> pendingLidarIpConfig;
+    bool tryGetCurrentDevice(LidarDeviceInfo& out);
+    void setCurrentDeviceHandle(uint32_t handle);
+    void clearCurrentDevice();
 
     // 点云组帧相关
     QMap<uint32_t, QQueue<PointCloudFrame>> pendingFrames;
@@ -330,10 +349,24 @@ private:
     void stopLidarDiscovery();
     void sendLidarBroadcastDiscovery();
     void onLidarDiscoveryResponse(const QByteArray& data, const QHostAddress& sender);
+    void handleParsedDiscoveryResponse(const LidarDiscoveryService::DiscoveryResponse& response, const QHostAddress& sender);
     bool updateHostIPForDevice(const QString& deviceIP);
+    void updateHostIPForDeviceAsync(const NetworkInterfaceService::NetworkInterfaceInfo& iface,
+                                    const QString& targetHostIp,
+                                    const QString& netmask);
     bool updateConfigFileIP(const QString& newHostIP);
     bool updateConfigFileDeviceTypeIfNeeded(const QString& configPath);
     QString calculateCompatibleHostIP(const QString& deviceIP);
+    void setRealtimeState(RealtimeConnectionState state);
+    void enterWaitingNetworkState();
+    void scheduleDiscoveryRetry(int delayMs);
+    void stopAndDeleteTimer(QTimer*& timer);
+    void resetDiscoverySessionState();
+    bool createAndBindDiscoverySocket(const NetworkInterfaceService::NetworkInterfaceInfo& iface);
+    std::optional<NetworkInterfaceService::NetworkInterfaceInfo> selectedLidarInterface() const;
+    std::optional<NetworkInterfaceService::NetworkInterfaceInfo> ensureSelectedLidarInterface();
+    void selectLidarInterface(const NetworkInterfaceService::NetworkInterfaceInfo& iface);
+    void restartRealtimeConnectionForNetworkChange();
     // void printPacketDetails(const QByteArray& data, const QHostAddress& sender);
 
     // 网络接口选择相关
@@ -342,18 +375,34 @@ private:
     QString selectedNetworkIP;
     QString selectedNetworkInterfaceHumanName;
     QString selectedNetworkInterfaceSysName;
+    QString selectedInterfaceName;
+    QString selectedInterfaceDisplayName;
+    QString selectedHostIp;
+    QString selectedNetmask;
+    QString selectedBroadcast;
     QSet<QString> lastKnownSysNames; // 记录上一次刷新时的网卡系统名称集合
     void refreshNetworkInterfaces();
     void onNetworkInterfaceChanged(int index);
     QString getSelectedHostIP() const;
 
     bool autoConfigHostIpEnabled = true;
+    bool autoDiscoveryEnabled = true;
     bool manualNetworkConfigPromptActive = false;
 
     // UDP socket for device discovery
     QUdpSocket* lidarDiscoverySocket;
     QTimer* lidarDiscoveryTimer;
+    QTimer* discoveryBroadcastTimer = nullptr;
+    QTimer* discoveryTimeoutTimer = nullptr;
+    QTimer* discoveryRetryTimer = nullptr;
+    QTimer* networkWaitTimer = nullptr;
     bool lidarDiscoveryActive;
+    RealtimeConnectionState realtimeState = RealtimeConnectionState::Idle;
+    QSet<QString> localIPv4SetForCurrentSession;
+    int discoverySendCount = 0;
+    int discoveryBindLogCount = 0;
+    int sdkInitRetryCount = 0;
+    QString lastAttemptedAutoConfigIp;
     // 最近一次发现到的雷达型号（用于自动校正配置文件中的 Device type）
     uint8_t lastDiscoveredLidarType = 0;
     bool hasLastDiscoveredLidarType = false;

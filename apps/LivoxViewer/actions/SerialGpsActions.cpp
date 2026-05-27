@@ -11,7 +11,8 @@ static QString nmeaChecksum(const QString& payload)
 
 void LivoxViewerWindow::onGpsSimulateToggled(bool enabled)
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         imuState.gpsSimulateCheck->setChecked(false);
         return;
     }
@@ -29,7 +30,8 @@ void LivoxViewerWindow::onGpsSimulateToggled(bool enabled)
 
 void LivoxViewerWindow::onGpsTick()
 {
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) return;
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) return;
     QDateTime now = QDateTime::currentDateTimeUtc();
     QString timeStr = now.toString("hhmmss");
     QString dateStr = now.toString("ddMMyy");
@@ -39,7 +41,7 @@ void LivoxViewerWindow::onGpsTick()
     QString sentence = "$" + payload + nmeaChecksum(payload) + "\r\n";
     logMessage(QString("GPS模拟报文: %1").arg(sentence.trimmed()));
     QByteArray rmc = sentence.toLatin1();
-    SetLivoxLidarRmcSyncTime(currentLidarDevice->handle, rmc.constData(), static_cast<uint16_t>(rmc.size()), nullptr, nullptr);
+    SetLivoxLidarRmcSyncTime(currentDevice.handle, rmc.constData(), static_cast<uint16_t>(rmc.size()), nullptr, nullptr);
 }
 
 void LivoxViewerWindow::refreshSerialPorts()
@@ -68,7 +70,8 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
         statusLabelBar->setText("串口转发GPS已关闭");
         return;
     }
-    if (!currentLidarDevice || !currentLidarDevice->is_connected) {
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
         imuState.serialEnableCheck->setChecked(false);
         return;
     }
@@ -110,7 +113,8 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
                 QByteArray line = buffer.left(idx + 1);
                 buffer.remove(0, idx + 1);
                 if (line.startsWith("$GP") || line.startsWith("$GN")) {
-                    if (currentLidarDevice && currentLidarDevice->is_connected) {
+                    LidarDeviceInfo currentDevice;
+                    if (tryGetCurrentDevice(currentDevice) && currentDevice.is_connected) {
                         QString gpsMessage = QString::fromLatin1(line.trimmed());
 
                         if (line.startsWith("$GPRMC") || line.startsWith("$GNRMC")) {
@@ -119,7 +123,7 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
                                 statusLabelBar->setText(QString("串口转发GPS同步中... 端口: %1").arg(portName));
                             }, Qt::QueuedConnection);
 
-                            SetLivoxLidarRmcSyncTime(currentLidarDevice->handle, line.constData(), static_cast<uint16_t>(line.size()), nullptr, nullptr);
+                            SetLivoxLidarRmcSyncTime(currentDevice.handle, line.constData(), static_cast<uint16_t>(line.size()), nullptr, nullptr);
                         } else {
                             QMetaObject::invokeMethod(this, [this, gpsMessage]() {
                                 logMessage(QString("串口转发GPS报文: %1").arg(gpsMessage));
