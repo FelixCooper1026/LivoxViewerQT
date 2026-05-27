@@ -1,8 +1,57 @@
 #include "LivoxViewerWindow.h"
 #include "AppConfig/NetworkInterfaceService.h"
 #include <QHeaderView>
+#include <QPainter>
 #include <QSizePolicy>
 #include <QTableView>
+
+namespace {
+
+class SwitchCheckBox : public QCheckBox
+{
+public:
+    explicit SwitchCheckBox(QWidget* parent = nullptr)
+        : QCheckBox(parent)
+    {
+        setCursor(Qt::PointingHandCursor);
+        setFixedSize(sizeHint());
+    }
+
+    QSize sizeHint() const override
+    {
+        return QSize(44, 24);
+    }
+
+protected:
+    bool hitButton(const QPoint& pos) const override
+    {
+        return rect().contains(pos);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        const QRectF trackRect(1.0, 3.0, 42.0, 18.0);
+        const QColor trackColor = isChecked()
+            ? palette().color(QPalette::Highlight)
+            : palette().color(QPalette::Mid);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(trackColor);
+        painter.drawRoundedRect(trackRect, 9.0, 9.0);
+
+        const qreal knobDiameter = 16.0;
+        const qreal knobX = isChecked()
+            ? trackRect.right() - knobDiameter - 1.0
+            : trackRect.left() + 1.0;
+        QRectF knobRect(knobX, trackRect.top() + 1.0, knobDiameter, knobDiameter);
+        painter.setBrush(palette().color(QPalette::Base));
+        painter.drawEllipse(knobRect);
+    }
+};
+
+} // namespace
 
 void LivoxViewerWindow::createParameterPanel()
 {
@@ -279,105 +328,109 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* fovTab = new QWidget();
     fovTab->setMinimumWidth(0);
     fovTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    QFormLayout* fovLayout = new QFormLayout(fovTab);
-    fovLayout->setSpacing(8);
+    QVBoxLayout* fovLayout = new QVBoxLayout(fovTab);
+    fovLayout->setSpacing(10);
     fovLayout->setContentsMargins(10, 10, 10, 10);
-    fovLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    fovLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    fovLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    fovLayout->setFormAlignment(Qt::AlignTop);
-    fovLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    fovLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    QCheckBox* fov0EnableCheck = new QCheckBox();
+    QCheckBox* fov0EnableCheck = new SwitchCheckBox(fovTab);
     parameterState.controls[kKeyFovCfgEn] = fov0EnableCheck;
-    QCheckBox* fov1EnableCheck = new QCheckBox();
+    QCheckBox* fov1EnableCheck = new SwitchCheckBox(fovTab);
     parameterState.controls[0x001F] = fov1EnableCheck;
     connect(fov0EnableCheck, &QCheckBox::toggled, [this, fov0EnableCheck, fov1EnableCheck]() { updateFovEnableState(fov0EnableCheck, fov1EnableCheck); });
     connect(fov1EnableCheck, &QCheckBox::toggled, [this, fov0EnableCheck, fov1EnableCheck]() { updateFovEnableState(fov0EnableCheck, fov1EnableCheck); });
-    // FOV0配置行，使用 FlowLayout 实现行内多控件自动换行
+
+    auto configureFovSpin = [](QSpinBox* spin, int minimum, int maximum) {
+        spin->setRange(minimum, maximum);
+        spin->setMinimumWidth(72);
+        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    };
+    auto configureFovApplyButton = [this](QPushButton* button) {
+        button->setText("应用");
+        button->setMinimumWidth(fontMetrics().horizontalAdvance("应用") + 34);
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    };
+    auto createFovSection = [this, fovTab](const QString& title,
+                                           QCheckBox* enableSwitch,
+                                           QWidget* controls,
+                                           QSpinBox* yawStart,
+                                           QSpinBox* yawStop,
+                                           QSpinBox* pitchStart,
+                                           QSpinBox* pitchStop,
+                                           QPushButton* applyButton) {
+        QFrame* section = new QFrame(fovTab);
+        section->setObjectName("FovConfigSection");
+        section->setFrameShape(QFrame::StyledPanel);
+        section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        section->setStyleSheet("QFrame#FovConfigSection { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+        QVBoxLayout* sectionLayout = new QVBoxLayout(section);
+        sectionLayout->setContentsMargins(10, 8, 10, 10);
+        sectionLayout->setSpacing(8);
+
+        QWidget* header = new QWidget(section);
+        QHBoxLayout* headerLayout = new QHBoxLayout(header);
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        QLabel* titleLabel = new QLabel(title, header);
+        QFont titleFont = titleLabel->font();
+        titleFont.setBold(true);
+        titleLabel->setFont(titleFont);
+        headerLayout->addWidget(titleLabel);
+        headerLayout->addStretch();
+        headerLayout->addWidget(enableSwitch);
+        sectionLayout->addWidget(header);
+
+        controls->setParent(section);
+        controls->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        QGridLayout* grid = new QGridLayout(controls);
+        grid->setContentsMargins(0, 0, 0, 0);
+        grid->setHorizontalSpacing(8);
+        grid->setVerticalSpacing(6);
+        grid->addWidget(new QLabel("Yaw:", controls), 0, 0);
+        grid->addWidget(yawStart, 0, 1);
+        grid->addWidget(new QLabel("~", controls), 0, 2, Qt::AlignCenter);
+        grid->addWidget(yawStop, 0, 3);
+        grid->addWidget(new QLabel("Pitch:", controls), 1, 0);
+        grid->addWidget(pitchStart, 1, 1);
+        grid->addWidget(new QLabel("~", controls), 1, 2, Qt::AlignCenter);
+        grid->addWidget(pitchStop, 1, 3);
+        grid->addWidget(applyButton, 0, 4, 2, 1, Qt::AlignVCenter);
+        grid->setColumnStretch(1, 1);
+        grid->setColumnStretch(3, 1);
+        sectionLayout->addWidget(controls);
+        return section;
+    };
+
     QSpinBox* fov0YawStartEdit = new QSpinBox();
     QSpinBox* fov0YawStopEdit = new QSpinBox();
     QSpinBox* fov0PitchStartEdit = new QSpinBox();
     QSpinBox* fov0PitchStopEdit = new QSpinBox();
-    QPushButton* fov0Button = new QPushButton("应用");
-    fov0YawStartEdit->setRange(0, 360);
-    fov0YawStopEdit->setRange(0, 360);
-    fov0PitchStartEdit->setRange(-10, 60);
-    fov0PitchStopEdit->setRange(-10, 60);
+    QPushButton* fov0Button = new QPushButton();
+    configureFovSpin(fov0YawStartEdit, 0, 360);
+    configureFovSpin(fov0YawStopEdit, 0, 360);
+    configureFovSpin(fov0PitchStartEdit, -10, 60);
+    configureFovSpin(fov0PitchStopEdit, -10, 60);
+    configureFovApplyButton(fov0Button);
     QWidget* fov0Container = new QWidget();
-    fov0Container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    QGridLayout* fov0Grid = new QGridLayout(fov0Container);
-    fov0Grid->setContentsMargins(0, 0, 0, 0);
-    fov0Grid->setHorizontalSpacing(8);
-    fov0Grid->setVerticalSpacing(4);
-    fov0Grid->addWidget(new QLabel("Yaw:"), 0, 0);
-    fov0Grid->addWidget(fov0YawStartEdit, 0, 1);
-    fov0Grid->addWidget(new QLabel("~"), 0, 2);
-    fov0Grid->addWidget(fov0YawStopEdit, 0, 3);
-    fov0Grid->addWidget(new QLabel("Pitch:"), 1, 0);
-    fov0Grid->addWidget(fov0PitchStartEdit, 1, 1);
-    fov0Grid->addWidget(new QLabel("~"), 1, 2);
-    fov0Grid->addWidget(fov0PitchStopEdit, 1, 3);
-    fov0Grid->setColumnStretch(1, 1);
-    fov0Grid->setColumnStretch(3, 1);
-    fov0Grid->addItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum), 1, 4);
-    fov0Grid->addWidget(fov0Button, 1, 5);
-    {
-        QWidget* fov0Label = new QWidget();
-        QHBoxLayout* fov0LabelLayout = new QHBoxLayout(fov0Label);
-        fov0LabelLayout->setContentsMargins(0,0,0,0);
-        fov0LabelLayout->addStretch();
-        fov0LabelLayout->addWidget(new QLabel("FOV0配置"));
-        fov0LabelLayout->addSpacing(6);
-        fov0LabelLayout->addWidget(fov0EnableCheck);
-        fovLayout->addRow(fov0Label, fov0Container);
-    }
+    fovLayout->addWidget(createFovSection("FOV0配置", fov0EnableCheck, fov0Container, fov0YawStartEdit, fov0YawStopEdit, fov0PitchStartEdit, fov0PitchStopEdit, fov0Button));
     parameterState.controls[kKeyFovCfg0] = fov0Container;
     connect(fov0Button, &QPushButton::clicked, [this, fov0YawStartEdit, fov0YawStopEdit, fov0PitchStartEdit, fov0PitchStopEdit]() { applyFovConfig(kKeyFovCfg0, fov0YawStartEdit->value(), fov0YawStopEdit->value(), fov0PitchStartEdit->value(), fov0PitchStopEdit->value()); });
 
-    // FOV1配置行，使用 FlowLayout
     QSpinBox* fov1YawStartEdit = new QSpinBox();
     QSpinBox* fov1YawStopEdit = new QSpinBox();
     QSpinBox* fov1PitchStartEdit = new QSpinBox();
     QSpinBox* fov1PitchStopEdit = new QSpinBox();
-    QPushButton* fov1Button = new QPushButton("应用");
-    fov1YawStartEdit->setRange(0, 360);
-    fov1YawStopEdit->setRange(0, 360);
-    fov1PitchStartEdit->setRange(-10, 60);
-    fov1PitchStopEdit->setRange(-10, 60);
+    QPushButton* fov1Button = new QPushButton();
+    configureFovSpin(fov1YawStartEdit, 0, 360);
+    configureFovSpin(fov1YawStopEdit, 0, 360);
+    configureFovSpin(fov1PitchStartEdit, -10, 60);
+    configureFovSpin(fov1PitchStopEdit, -10, 60);
+    configureFovApplyButton(fov1Button);
     QWidget* fov1Container = new QWidget();
-    fov1Container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    QGridLayout* fov1Grid = new QGridLayout(fov1Container);
-    fov1Grid->setContentsMargins(0, 0, 0, 0);
-    fov1Grid->setHorizontalSpacing(8);
-    fov1Grid->setVerticalSpacing(4);
-    fov1Grid->addWidget(new QLabel("Yaw:"), 0, 0);
-    fov1Grid->addWidget(fov1YawStartEdit, 0, 1);
-    fov1Grid->addWidget(new QLabel("~"), 0, 2);
-    fov1Grid->addWidget(fov1YawStopEdit, 0, 3);
-    fov1Grid->addWidget(new QLabel("Pitch:"), 1, 0);
-    fov1Grid->addWidget(fov1PitchStartEdit, 1, 1);
-    fov1Grid->addWidget(new QLabel("~"), 1, 2);
-    fov1Grid->addWidget(fov1PitchStopEdit, 1, 3);
-    fov1Grid->setColumnStretch(1, 1);
-    fov1Grid->setColumnStretch(3, 1);
-    fov1Grid->addItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum), 1, 4);
-    fov1Grid->addWidget(fov1Button, 1, 5);
-    {
-        QWidget* fov1Label = new QWidget();
-        QHBoxLayout* fov1LabelLayout = new QHBoxLayout(fov1Label);
-        fov1LabelLayout->setContentsMargins(0,0,0,0);
-        fov1LabelLayout->addStretch();
-        fov1LabelLayout->addWidget(new QLabel("FOV1配置"));
-        fov1LabelLayout->addSpacing(6);
-        fov1LabelLayout->addWidget(fov1EnableCheck);
-        fovLayout->addRow(fov1Label, fov1Container);
-    }
+    fovLayout->addWidget(createFovSection("FOV1配置", fov1EnableCheck, fov1Container, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit, fov1Button));
     parameterState.controls[kKeyFovCfg1] = fov1Container;
     connect(fov1Button, &QPushButton::clicked, [this, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit]() { applyFovConfig(kKeyFovCfg1, fov1YawStartEdit->value(), fov1YawStopEdit->value(), fov1PitchStartEdit->value(), fov1PitchStopEdit->value()); });
 
+    fovLayout->addStretch();
     paramTabWidget->addTab(fovTab, "FOV配置");
-    fovTab->setLayout(fovLayout);
 
     // 外参配置页
     QWidget* attitudeTab = new QWidget();
