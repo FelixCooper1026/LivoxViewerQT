@@ -7,8 +7,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMessageBox>
-#include <QSignalBlocker>
 #include <QStandardPaths>
+#include <QToolButton>
 
 #include <algorithm>
 #include <memory>
@@ -36,6 +36,20 @@ static int visiblePlaybackFrameCount(const Playback::Source* source,
 
     const int rawFramesPerStep = rawFramesPerPlaybackFrame(frameIntervalMs);
     return (rawFrameCount + rawFramesPerStep - 1) / rawFramesPerStep;
+}
+
+static void updatePlaybackDeviceCardState(bool visible,
+                                          QToolButton* visibleButton,
+                                          QLabel* modelLabel,
+                                          QLabel* snLabel,
+                                          QLabel* ipLabel)
+{
+    visibleButton->setIcon(QIcon(visible ? QStringLiteral(":/icons/eye.svg") : QStringLiteral(":/icons/eye_off.svg")));
+    visibleButton->setToolTip(visible ? QStringLiteral("隐藏设备") : QStringLiteral("显示设备"));
+    const QString textStyle = visible ? QString() : QStringLiteral("color: palette(mid);");
+    for (QLabel* label : {modelLabel, snLabel, ipLabel}) {
+        label->setStyleSheet(textStyle);
+    }
 }
 
 } // namespace
@@ -272,63 +286,93 @@ QString LivoxViewerWindow::lvx2DeviceTypeToModel(uint8_t deviceType) const
 
 void LivoxViewerWindow::rebuildLvx2DeviceTab()
 {
-    if (!lvx2DeviceTable) {
+    if (!lvx2DeviceListWidget) {
         return;
     }
-    QSignalBlocker blocker(lvx2DeviceTable);
-    lvx2DeviceTable->clearContents();
-    lvx2DeviceTable->setRowCount(playbackState.devices.size());
+    QVBoxLayout* deviceListLayout = static_cast<QVBoxLayout*>(lvx2DeviceListWidget->layout());
+
+    while (QLayoutItem* item = deviceListLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
     for (int row = 0; row < playbackState.devices.size(); ++row) {
         const auto& info = playbackState.devices[row];
-        auto* visibleItem = new QTableWidgetItem();
-        visibleItem->setFlags((visibleItem->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        const bool visible = playbackState.deviceVisible.value(info.lidarId, true);
-        visibleItem->setCheckState(visible ? Qt::Checked : Qt::Unchecked);
-        visibleItem->setData(Qt::UserRole, static_cast<qulonglong>(info.lidarId));
-        lvx2DeviceTable->setItem(row, 0, visibleItem);
         const QString modelName =
             info.modelDisplay.isEmpty() ? lvx2DeviceTypeToModel(info.deviceType) : info.modelDisplay;
         const QString lidarIp = PushMsgParser::lidarIdToIpString(info.lidarId);
-        QTableWidgetItem* modelItem = new QTableWidgetItem(modelName);
-        QTableWidgetItem* snItem = new QTableWidgetItem(info.lidarSn);
-        QTableWidgetItem* ipItem = new QTableWidgetItem(lidarIp);
         const QString deviceTip = QString("型号: %1\nSN: %2\nIP: %3").arg(modelName, info.lidarSn, lidarIp);
-        visibleItem->setToolTip(deviceTip);
-        modelItem->setToolTip(deviceTip);
-        snItem->setToolTip(deviceTip);
-        ipItem->setToolTip(deviceTip);
-        lvx2DeviceTable->setItem(row, 1, modelItem);
-        lvx2DeviceTable->setItem(row, 2, snItem);
-        lvx2DeviceTable->setItem(row, 3, ipItem);
+        const uint32_t lidarId = info.lidarId;
+
+        QFrame* card = new QFrame(lvx2DeviceListWidget);
+        card->setObjectName("PlaybackDeviceCard");
+        card->setFrameShape(QFrame::StyledPanel);
+        card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        card->setToolTip(deviceTip);
+        card->setStyleSheet("QFrame#PlaybackDeviceCard { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+        QVBoxLayout* cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(8, 6, 8, 6);
+        cardLayout->setSpacing(4);
+
+        QHBoxLayout* headerLayout = new QHBoxLayout();
+        headerLayout->setContentsMargins(0, 0, 0, 0);
+        headerLayout->setSpacing(6);
+        const bool visible = playbackState.deviceVisible.value(lidarId, true);
+        QToolButton* visibleButton = new QToolButton(card);
+        visibleButton->setCheckable(true);
+        visibleButton->setChecked(visible);
+        visibleButton->setAutoRaise(true);
+        visibleButton->setIconSize(QSize(20, 20));
+        visibleButton->setFixedSize(28, 28);
+        QLabel* modelLabel = new QLabel(modelName, card);
+        QFont modelFont = modelLabel->font();
+        modelFont.setBold(true);
+        modelLabel->setFont(modelFont);
+        modelLabel->setToolTip(deviceTip);
+        modelLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        modelLabel->setWordWrap(true);
+        headerLayout->addWidget(visibleButton);
+        headerLayout->addWidget(modelLabel, 1);
+        cardLayout->addLayout(headerLayout);
+
+        QLabel* snLabel = new QLabel(QStringLiteral("SN: %1").arg(info.lidarSn), card);
+        QLabel* ipLabel = new QLabel(QStringLiteral("IP: %1").arg(lidarIp), card);
+        for (QLabel* label : {snLabel, ipLabel}) {
+            label->setToolTip(deviceTip);
+            label->setWordWrap(true);
+        }
+        cardLayout->addWidget(snLabel);
+        cardLayout->addWidget(ipLabel);
+        updatePlaybackDeviceCardState(visible, visibleButton, modelLabel, snLabel, ipLabel);
+
+        const std::shared_ptr<Playback::Source> source = playbackState.source;
+        connect(visibleButton, &QToolButton::toggled, this, [this, source, lidarId, visibleButton, modelLabel, snLabel, ipLabel](bool checked) {
+            updatePlaybackDeviceCardState(checked, visibleButton, modelLabel, snLabel, ipLabel);
+            playbackState.deviceVisible[lidarId] = checked;
+            source->invalidateCache();
+            playbackState.resetSlidingWindow();
+            if (playbackState.active && playbackState.frame >= 0) {
+                showLvx2PlaybackFrame(playbackState.frame);
+            }
+        });
+
+        deviceListLayout->addWidget(card);
     }
 
-    disconnect(lvx2DeviceTable, &QTableWidget::itemChanged, this, nullptr);
-    connect(lvx2DeviceTable, &QTableWidget::itemChanged, this, [this](QTableWidgetItem* item) {
-        if (!item || item->column() != 0) {
-            return;
-        }
-        const uint32_t lidarId = static_cast<uint32_t>(item->data(Qt::UserRole).toULongLong());
-        playbackState.deviceVisible[lidarId] = (item->checkState() == Qt::Checked);
-        if (playbackState.source) {
-            playbackState.source->invalidateCache();
-        }
-        playbackState.slidingWindowStart = -1;
-        playbackState.slidingWindowEnd = -1;
-        playbackState.slidingWindowPoints.clear();
-        playbackState.slidingWindowSegmentPointCounts.clear();
-        if (playbackState.active && playbackState.frame >= 0) {
-            showLvx2PlaybackFrame(playbackState.frame);
-        }
-    });
+    deviceListLayout->addStretch();
 }
 
 void LivoxViewerWindow::updateLvx2PlaybackUi()
 {
     if (lvx2FileDock) {
-        const bool showDock = playbackState.active;
-        lvx2FileDock->setVisible(showDock);
-        if (showDock) {
-            lvx2FileDock->raise();
+        if (playbackState.active) {
+            if (!playbackState.fileInfoDockVisible) {
+                lvx2FileDock->show();
+                playbackState.fileInfoDockVisible = true;
+            }
+        } else {
+            lvx2FileDock->hide();
+            playbackState.fileInfoDockVisible = false;
         }
     }
 

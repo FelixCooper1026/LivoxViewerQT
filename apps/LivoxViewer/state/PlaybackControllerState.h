@@ -28,6 +28,7 @@ struct PlaybackControllerState
     bool active = false;
     bool loading = false;
     bool playing = false;
+    bool fileInfoDockVisible = false;
     int frame = -1;
     int frameCount = 0;
     quint64 loadToken = 0;

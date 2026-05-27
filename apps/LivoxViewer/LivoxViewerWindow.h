@@ -50,7 +50,6 @@
 #include <QColor>
 #include <QFrame>
 #include <QTableView>
-#include <QTableWidget>
 #include <QProgressBar>
 #include <QFile>
 #include <QSlider>
@@ -267,7 +266,7 @@ private:
     QMutex upgradeProgressMutex;  // 升级进度映射的互斥锁
 	// GPS RMC 模拟
     ImuRuntimeState imuState;
-    QTableWidget* lvx2DeviceTable = nullptr;
+    QWidget* lvx2DeviceListWidget = nullptr;
 
     int colorMode = ColorByReflectivity;
     int themeMode = ThemeFollowSystem;
