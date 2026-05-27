@@ -6,11 +6,103 @@
 #include <QLayout>
 #include <QLayoutItem>
 #include <QApplication>
+#include <QSignalBlocker>
 #include <algorithm>
 #include <cstring>
 
 namespace {
 constexpr double kImuChartRetentionSec = 60.0;
+
+QString lidarTypeName(uint8_t devType)
+{
+    switch (devType) {
+    case kLivoxLidarTypeMid40: return "Mid40";
+    case kLivoxLidarTypeMid70: return "Mid70";
+    case kLivoxLidarTypeMid360: return "Mid360";
+    case kLivoxLidarTypeMid360s: return "Mid360s";
+    case kLivoxLidarTypeHorizon: return "Horizon";
+    case kLivoxLidarTypeAvia: return "Avia";
+    case kLivoxLidarTypeAvia2: return "Avia2";
+    case kLivoxLidarTypeTele: return "Tele";
+    case kLivoxLidarTypeHAP: return "HAP";
+    case kLivoxLidarTypePA: return "PA";
+    default: return "Unknown";
+    }
+}
+}
+
+void LivoxViewerWindow::activateConnectedDevice(const LidarDeviceInfo& device)
+{
+    if (statusLabel) {
+        statusLabel->setText("状态: 已连接");
+    }
+    setCurrentDeviceHandle(device.handle);
+
+    if (lidarDeviceList) {
+        const QSignalBlocker blocker(lidarDeviceList);
+        for (int i = 0; i < lidarDeviceList->count(); ++i) {
+            QListWidgetItem* item = lidarDeviceList->item(i);
+            if (item->data(Qt::UserRole).toUInt() == device.handle) {
+                lidarDeviceList->setCurrentRow(i);
+                break;
+            }
+        }
+    }
+
+}
+
+void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type)
+{
+    if (lastDiscoveredLidarSn.isEmpty() || lastDiscoveredLidarIp.isEmpty()) {
+        return;
+    }
+
+    LidarDeviceInfo device;
+    bool inserted = false;
+    bool streamingChanged = false;
+    {
+        QMutexLocker locker(&lidarDeviceMutex);
+        auto existing = lidarDevices.find(handle);
+        if (existing != lidarDevices.end()) {
+            if (!existing->is_streaming) {
+                existing->is_streaming = true;
+                device = existing.value();
+                streamingChanged = true;
+            }
+        } else {
+            QList<uint32_t> handlesToRemove;
+            for (auto it = lidarDevices.begin(); it != lidarDevices.end(); ++it) {
+                if (it.value().sn == lastDiscoveredLidarSn) {
+                    handlesToRemove.append(it.key());
+                }
+            }
+            for (uint32_t oldHandle : handlesToRemove) {
+                lidarDevices.remove(oldHandle);
+            }
+
+            const uint8_t type = dev_type != 0 ? dev_type : lastDiscoveredLidarType;
+            device.handle = handle;
+            device.dev_type = type;
+            device.sn = lastDiscoveredLidarSn;
+            device.lidar_ip = lastDiscoveredLidarIp;
+            device.product_info = lidarTypeName(type);
+            device.is_connected = true;
+            device.is_streaming = true;
+            device.parameter_query_ready = false;
+            lidarDevices[handle] = device;
+            inserted = true;
+        }
+    }
+
+    if (!inserted && !streamingChanged) {
+        return;
+    }
+
+    updateLidarDeviceList();
+    if (inserted) {
+        activateConnectedDevice(device);
+        logMessage(QString("发现设备: %1 (%2) - IP: %3").arg(device.sn).arg(device.product_info).arg(device.lidar_ip));
+    }
 }
 
 void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLidarInfo* info, void* client_data)
@@ -29,22 +121,8 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
         device.lidar_ip = QString::fromLatin1(info->lidar_ip);
         device.is_connected = true;
         device.is_streaming = false;
-
-        QString deviceTypeName;
-        switch (info->dev_type) {
-        case kLivoxLidarTypeMid40: deviceTypeName = "Mid40"; break;
-        case kLivoxLidarTypeMid70: deviceTypeName = "Mid70"; break;
-        case kLivoxLidarTypeMid360: deviceTypeName = "Mid360"; break;
-        case kLivoxLidarTypeMid360s: deviceTypeName = "Mid360s"; break;
-        case kLivoxLidarTypeHorizon: deviceTypeName = "Horizon"; break;
-        case kLivoxLidarTypeAvia: deviceTypeName = "Avia"; break;
-        case kLivoxLidarTypeAvia2: deviceTypeName = "Avia2"; break;
-        case kLivoxLidarTypeTele: deviceTypeName = "Tele"; break;
-        case kLivoxLidarTypeHAP: deviceTypeName = "HAP"; break;
-        case kLivoxLidarTypePA: deviceTypeName = "PA"; break;
-        default: deviceTypeName = "Unknown"; break;
-        }
-        device.product_info = deviceTypeName;
+        device.parameter_query_ready = true;
+        device.product_info = lidarTypeName(info->dev_type);
 
         QMetaObject::invokeMethod(window, [window, device]() {
             if (window->shutting_down) {
@@ -52,18 +130,25 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
             }
 
             // 去重逻辑：同 SN 只保留一条（最新一次上报的句柄）
+            bool wasKnown = false;
             {
                 QMutexLocker locker(&window->lidarDeviceMutex);
+                wasKnown = window->lidarDevices.contains(device.handle);
                 QList<uint32_t> handlesToRemove;
                 for (auto it = window->lidarDevices.begin(); it != window->lidarDevices.end(); ++it) {
                     if (it.value().sn == device.sn && it.key() != device.handle) {
+                        wasKnown = true;
                         handlesToRemove.append(it.key());
                     }
                 }
                 for (uint32_t oldHandle : handlesToRemove) {
                     window->lidarDevices.remove(oldHandle);
                 }
-                window->lidarDevices[device.handle] = device;
+                LidarDeviceInfo updatedDevice = device;
+                if (window->lidarDevices.contains(device.handle)) {
+                    updatedDevice.is_streaming = window->lidarDevices.value(device.handle).is_streaming;
+                }
+                window->lidarDevices[device.handle] = updatedDevice;
             }
 
             window->updateLidarDeviceList();
@@ -89,7 +174,9 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 }
             }
 
-            window->logMessage(QString("发现设备: %1 (%2) - IP: %3").arg(device.sn).arg(device.product_info).arg(device.lidar_ip));
+            if (!wasKnown) {
+                window->logMessage(QString("发现设备: %1 (%2) - IP: %3").arg(device.sn).arg(device.product_info).arg(device.lidar_ip));
+            }
         }, Qt::QueuedConnection);
     } else {
         // 设备信息不存在时的处理逻辑
@@ -147,7 +234,7 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
         LivoxLidarEthernetPacket* packet_copy = reinterpret_cast<LivoxLidarEthernetPacket*>(data_copy);
         
         // 使用QueuedConnection确保在主线程中执行
-        QMetaObject::invokeMethod(window, [window, handle, packet_copy]() {
+        QMetaObject::invokeMethod(window, [window, handle, dev_type, packet_copy]() {
             if (window->shutting_down || !window->pointCloudCallbackEnabled) {
                 delete[] reinterpret_cast<uint8_t*>(packet_copy);
                 return;
@@ -161,6 +248,7 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             }
             
             // 处理点云数据
+            window->registerPointCloudDeviceIfNeeded(handle, dev_type);
             window->decodePointCloudPacket(handle, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入

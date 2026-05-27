@@ -110,6 +110,7 @@ public:
         WaitingNetwork,
         Discovering,
         ReconfiguringNetwork,
+        WaitingSdkReady,
         InitializingSdk,
         Running,
         Stopping,
@@ -354,6 +355,9 @@ private:
     void updateHostIPForDeviceAsync(const NetworkInterfaceService::NetworkInterfaceInfo& iface,
                                     const QString& targetHostIp,
                                     const QString& netmask);
+    void waitForHostIpThenInitializeSdk(const QString& interfaceName,
+                                        const QString& targetHostIp,
+                                        int remainingAttempts);
     bool updateConfigFileIP(const QString& newHostIP);
     bool updateConfigFileDeviceTypeIfNeeded(const QString& configPath);
     QString calculateCompatibleHostIP(const QString& deviceIP);
@@ -406,6 +410,8 @@ private:
     // 最近一次发现到的雷达型号（用于自动校正配置文件中的 Device type）
     uint8_t lastDiscoveredLidarType = 0;
     bool hasLastDiscoveredLidarType = false;
+    QString lastDiscoveredLidarSn;
+    QString lastDiscoveredLidarIp;
 
 private slots:
     void onParamQueryTimeout();
@@ -419,6 +425,8 @@ private slots:
     void onLidarDeviceSelected();
     void updateLidarDeviceList();
     void updateLidarDeviceInfo(const LidarDeviceInfo& device);
+    void activateConnectedDevice(const LidarDeviceInfo& device);
+    void registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type);
     void updateStatus();
     void logMessage(const QString& message);
     void addLidarDeviceToList(const LidarDeviceInfo& device);

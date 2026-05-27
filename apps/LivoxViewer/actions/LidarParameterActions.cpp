@@ -15,7 +15,9 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
     }
 
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) ||
+        !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready) {
         return;
     }
     
@@ -466,7 +468,9 @@ void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fo
 void LivoxViewerWindow::onParamQueryTimeout()
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) ||
+        !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready) {
         return;
     }
     

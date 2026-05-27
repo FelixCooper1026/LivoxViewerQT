@@ -12,6 +12,7 @@ struct LidarDeviceInfo {
     QString product_info;
     bool is_connected;
     bool is_streaming;
+    bool parameter_query_ready = false;
 };
 
 #endif // LIVOXCORE_LIDARDEVICEINFO_H

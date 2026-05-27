@@ -155,7 +155,11 @@ void LivoxViewerWindow::updateLidarDeviceInfo(const LidarDeviceInfo& device)
 void LivoxViewerWindow::onTabChanged(int index)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) return;
+    if (!tryGetCurrentDevice(currentDevice) ||
+        !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready) {
+        return;
+    }
 
     // 清除旧的配置标记，准备接受新一轮查询结果
     parameterState.updatedConfigKeys.clear();

@@ -27,6 +27,7 @@ QString stateName(LivoxViewerWindow::RealtimeConnectionState state)
     case LivoxViewerWindow::RealtimeConnectionState::WaitingNetwork: return "WaitingNetwork";
     case LivoxViewerWindow::RealtimeConnectionState::Discovering: return "Discovering";
     case LivoxViewerWindow::RealtimeConnectionState::ReconfiguringNetwork: return "ReconfiguringNetwork";
+    case LivoxViewerWindow::RealtimeConnectionState::WaitingSdkReady: return "WaitingSdkReady";
     case LivoxViewerWindow::RealtimeConnectionState::InitializingSdk: return "InitializingSdk";
     case LivoxViewerWindow::RealtimeConnectionState::Running: return "Running";
     case LivoxViewerWindow::RealtimeConnectionState::Stopping: return "Stopping";
@@ -51,6 +52,10 @@ QString prefixLengthFromNetmask(const QString& netmask)
     }
     return QString::number(prefix);
 }
+
+constexpr int kSdkReadyDelayMs = 3000;
+constexpr int kSdkInitRetryDelayMs = 1000;
+constexpr int kMaxSdkInitRetries = 3;
 
 } // namespace
 
@@ -197,6 +202,10 @@ void LivoxViewerWindow::resetDiscoverySessionState()
     discoveryBindLogCount = 0;
     sdkInitRetryCount = 0;
     lastAttemptedAutoConfigIp.clear();
+    lastDiscoveredLidarType = 0;
+    hasLastDiscoveredLidarType = false;
+    lastDiscoveredLidarSn.clear();
+    lastDiscoveredLidarIp.clear();
 }
 
 bool LivoxViewerWindow::createAndBindDiscoverySocket(const NetworkInterfaceService::NetworkInterfaceInfo& iface)
@@ -266,7 +275,8 @@ void LivoxViewerWindow::startLidarDiscovery()
     resetDiscoverySessionState();
 
     if (!createAndBindDiscoverySocket(*iface)) {
-        setRealtimeState(RealtimeConnectionState::Error);
+        logMessage("[Discovery] Bind failed. Will retry in 5 seconds.");
+        setRealtimeState(RealtimeConnectionState::Idle);
         scheduleDiscoveryRetry(5000);
         return;
     }
@@ -366,6 +376,8 @@ void LivoxViewerWindow::handleParsedDiscoveryResponse(const LidarDiscoveryServic
 {
     lastDiscoveredLidarType = response.deviceType;
     hasLastDiscoveredLidarType = true;
+    lastDiscoveredLidarSn = response.serialNumber;
+    lastDiscoveredLidarIp = response.deviceIp;
 
     logMessage(QString("[Discovery] Valid ACK from %1, SN=%2, type=%3, cmdPort=%4")
                    .arg(response.deviceIp, response.serialNumber)
@@ -422,6 +434,8 @@ QString LivoxViewerWindow::calculateCompatibleHostIP(const QString& deviceIP)
     const QString candidate = NetworkInterfaceService::calculateCompatibleHostIp(deviceIP);
     if (!candidate.isEmpty()) {
         logMessage(QString("[Network] Compatible host IP candidate: %1").arg(candidate));
+    } else {
+        logMessage(QString("[Network] No available compatible host IP candidate for device %1").arg(deviceIP));
     }
     return candidate;
 }
@@ -448,21 +462,21 @@ void LivoxViewerWindow::updateHostIPForDeviceAsync(const NetworkInterfaceService
     logMessage(QString("[Network] Start async IP reconfiguration: iface=%1, newIp=%2")
                    .arg(iface.displayName, targetHostIp));
 
+    const QString interfaceName = iface.systemName;
     QProcess* process = new QProcess(this);
     connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, process, targetHostIp](int exitCode, QProcess::ExitStatus exitStatus) {
+            this, [this, process, interfaceName, targetHostIp](int exitCode, QProcess::ExitStatus exitStatus) {
         const QString stdoutText = QString::fromLocal8Bit(process->readAllStandardOutput()).trimmed();
         const QString stderrText = QString::fromLocal8Bit(process->readAllStandardError()).trimmed();
         process->deleteLater();
 
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
             logMessage("[Network] IP reconfiguration success");
-            refreshNetworkInterfaces();
-            if (updateConfigFileIP(targetHostIp)) {
-                logMessage(QString("[Config] host_ip updated to %1").arg(targetHostIp));
+            if (!updateConfigFileIP(targetHostIp)) {
+                setRealtimeState(RealtimeConnectionState::Error);
+                return;
             }
-            setRealtimeState(RealtimeConnectionState::Idle);
-            scheduleDiscoveryRetry(1000);
+            waitForHostIpThenInitializeSdk(interfaceName, targetHostIp, 20);
             return;
         }
 
@@ -486,6 +500,34 @@ void LivoxViewerWindow::updateHostIPForDeviceAsync(const NetworkInterfaceService
                                            << QString("%1/%2").arg(targetHostIp, prefix)
                                            << "dev" << iface.systemName);
 #endif
+}
+
+void LivoxViewerWindow::waitForHostIpThenInitializeSdk(const QString& interfaceName,
+                                                       const QString& targetHostIp,
+                                                       int remainingAttempts)
+{
+    const auto iface = NetworkInterfaceService::findInterfaceByName(interfaceName);
+    if (iface.has_value() && iface->ipv4 == targetHostIp) {
+        selectLidarInterface(*iface);
+        refreshNetworkInterfaces();
+        sdkInitRetryCount = 0;
+        setRealtimeState(RealtimeConnectionState::WaitingSdkReady);
+        logMessage(QString("[Network] Host IP %1 is active on %2. Initialize SDK without rediscovery after delay.")
+                       .arg(targetHostIp, iface->displayName));
+        QTimer::singleShot(kSdkReadyDelayMs, this, &LivoxViewerWindow::initializeLivoxSdk);
+        return;
+    }
+
+    if (remainingAttempts <= 0) {
+        logMessage(QString("[Network] Host IP %1 is not active yet. Restart discovery.").arg(targetHostIp));
+        setRealtimeState(RealtimeConnectionState::Idle);
+        scheduleDiscoveryRetry(5000);
+        return;
+    }
+
+    QTimer::singleShot(500, this, [this, interfaceName, targetHostIp, remainingAttempts]() {
+        waitForHostIpThenInitializeSdk(interfaceName, targetHostIp, remainingAttempts - 1);
+    });
 }
 
 void LivoxViewerWindow::initializeLivoxSdk()
@@ -559,12 +601,31 @@ void LivoxViewerWindow::initializeLivoxSdk()
 
     logMessage(QString("[SDK] LivoxLidarSdkInit start: %1").arg(configPath));
     if (!LidarSdkService::initialize(configPath)) {
-        logMessage("[SDK] LivoxLidarSdkInit failed");
-        setRealtimeState(RealtimeConnectionState::Error);
+        LidarSdkService::clearCallbacks();
+        LidarSdkService::shutdown();
+        sdk_started = false;
+        sdk_initialized = false;
+        pointCloudCallbackEnabled = false;
+
+        if (sdkInitRetryCount < kMaxSdkInitRetries) {
+            ++sdkInitRetryCount;
+            logMessage(QString("[SDK] LivoxLidarSdkInit failed. Retry SDK init in %1 ms (%2/%3).")
+                           .arg(kSdkInitRetryDelayMs)
+                           .arg(sdkInitRetryCount)
+                           .arg(kMaxSdkInitRetries));
+            setRealtimeState(RealtimeConnectionState::WaitingSdkReady);
+            QTimer::singleShot(kSdkInitRetryDelayMs, this, &LivoxViewerWindow::initializeLivoxSdk);
+            return;
+        }
+
+        logMessage("[SDK] LivoxLidarSdkInit failed repeatedly. Fallback to discovery.");
+        sdkInitRetryCount = 0;
+        setRealtimeState(RealtimeConnectionState::Idle);
         scheduleDiscoveryRetry(5000);
         return;
     }
 
+    sdkInitRetryCount = 0;
     sdk_initialized = true;
     logMessage("[SDK] LivoxLidarSdkInit success");
     logMessage(QString("Livox SDK version: %1").arg(LidarSdkService::versionString()));

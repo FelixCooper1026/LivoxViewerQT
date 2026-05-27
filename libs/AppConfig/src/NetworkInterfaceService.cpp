@@ -188,13 +188,18 @@ QString calculateCompatibleHostIp(const QString& deviceIp)
         return QString();
     }
 
+    const QSet<QString> usedLocalIps = existingIpv4Addresses();
     const quint32 deviceIpInt = deviceAddr.toIPv4Address();
     const quint32 networkPart = deviceIpInt & 0xFFFFFF00;
     for (int host = 2; host <= 254; ++host) {
         if (host == static_cast<int>(deviceIpInt & 0xFF)) {
             continue;
         }
-        return QHostAddress(networkPart | host).toString();
+        const QString candidate = QHostAddress(networkPart | host).toString();
+        if (usedLocalIps.contains(candidate)) {
+            continue;
+        }
+        return candidate;
     }
     return QString();
 }
