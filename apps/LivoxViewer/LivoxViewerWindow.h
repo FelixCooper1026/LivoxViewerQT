@@ -129,6 +129,7 @@ private:
     void showFormatConvertDialog();
     void showFirmwareUpgradeDialog();
     void showPointCloudFilterDialog();
+    void showTimeSyncDialog();
     void createCaptureActions(QMenu* toolsMenu);
     void createDeviceActions();
     void createHelpActions();
@@ -350,6 +351,7 @@ private:
     void sendLidarBroadcastDiscovery();
     void onLidarDiscoveryResponse(const QByteArray& data, const QHostAddress& sender);
     void handleParsedDiscoveryResponse(const LidarDiscoveryService::DiscoveryResponse& response, const QHostAddress& sender);
+    void finalizeDiscoveredLidars();
     bool updateHostIPForDevice(const QString& deviceIP);
     void updateHostIPForDeviceAsync(const NetworkInterfaceService::NetworkInterfaceInfo& iface,
                                     const QString& targetHostIp,
@@ -358,7 +360,7 @@ private:
                                         const QString& targetHostIp,
                                         int remainingAttempts);
     bool updateConfigFileIP(const QString& newHostIP);
-    bool updateConfigFileDeviceTypeIfNeeded(const QString& configPath);
+    bool updateConfigFileDeviceTypesIfNeeded(const QString& configPath);
     QString calculateCompatibleHostIP(const QString& deviceIP);
     void setRealtimeState(RealtimeConnectionState state);
     void enterWaitingNetworkState();
@@ -402,6 +404,7 @@ private:
     QTimer* discoveryTimeoutTimer = nullptr;
     QTimer* discoveryRetryTimer = nullptr;
     QTimer* networkWaitTimer = nullptr;
+    QTimer* discoverySettleTimer = nullptr;
     bool lidarDiscoveryActive;
     RealtimeConnectionState realtimeState = RealtimeConnectionState::Idle;
     QSet<QString> localIPv4SetForCurrentSession;
@@ -409,11 +412,7 @@ private:
     int discoveryBindLogCount = 0;
     int sdkInitRetryCount = 0;
     QString lastAttemptedAutoConfigIp;
-    // 最近一次发现到的雷达型号（用于自动校正配置文件中的 Device type）
-    uint8_t lastDiscoveredLidarType = 0;
-    bool hasLastDiscoveredLidarType = false;
-    QString lastDiscoveredLidarSn;
-    QString lastDiscoveredLidarIp;
+    QMap<QString, LidarDiscoveryService::DiscoveryResponse> discoveredLidarsBySn;
 
 private slots:
     void onParamQueryTimeout();

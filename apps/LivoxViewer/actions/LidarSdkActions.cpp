@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QHostAddress>
 #include <QProcess>
+#include <QStringList>
 #include <QTimer>
 #include <QUdpSocket>
 
@@ -56,6 +57,16 @@ QString prefixLengthFromNetmask(const QString& netmask)
 constexpr int kSdkReadyDelayMs = 3000;
 constexpr int kSdkInitRetryDelayMs = 1000;
 constexpr int kMaxSdkInitRetries = 3;
+constexpr int kDiscoverySettleMs = 1200;
+
+QString discoverySummary(const QMap<QString, LidarDiscoveryService::DiscoveryResponse>& devices)
+{
+    QStringList parts;
+    for (const LidarDiscoveryService::DiscoveryResponse& device : devices) {
+        parts << QString("%1/%2/type%3").arg(device.serialNumber, device.deviceIp).arg(device.deviceType);
+    }
+    return parts.join(", ");
+}
 
 } // namespace
 
@@ -206,10 +217,7 @@ void LivoxViewerWindow::resetDiscoverySessionState()
     discoveryBindLogCount = 0;
     sdkInitRetryCount = 0;
     lastAttemptedAutoConfigIp.clear();
-    lastDiscoveredLidarType = 0;
-    hasLastDiscoveredLidarType = false;
-    lastDiscoveredLidarSn.clear();
-    lastDiscoveredLidarIp.clear();
+    discoveredLidarsBySn.clear();
 }
 
 bool LivoxViewerWindow::createAndBindDiscoverySocket(const NetworkInterfaceService::NetworkInterfaceInfo& iface)
@@ -308,6 +316,7 @@ void LivoxViewerWindow::stopLidarDiscovery()
     lidarDiscoveryActive = false;
     stopAndDeleteTimer(discoveryBroadcastTimer);
     stopAndDeleteTimer(discoveryTimeoutTimer);
+    stopAndDeleteTimer(discoverySettleTimer);
     stopAndDeleteTimer(lidarDiscoveryTimer);
 
     if (lidarDiscoverySocket) {
@@ -378,16 +387,31 @@ void LivoxViewerWindow::onLidarDiscoveryResponse(const QByteArray& data, const Q
 void LivoxViewerWindow::handleParsedDiscoveryResponse(const LidarDiscoveryService::DiscoveryResponse& response,
                                                       const QHostAddress& sender)
 {
-    lastDiscoveredLidarType = response.deviceType;
-    hasLastDiscoveredLidarType = true;
-    lastDiscoveredLidarSn = response.serialNumber;
-    lastDiscoveredLidarIp = response.deviceIp;
+    Q_UNUSED(sender);
 
     logMessage(QString("[Discovery] Valid ACK from %1, SN=%2, type=%3, cmdPort=%4")
                    .arg(response.deviceIp, response.serialNumber)
                    .arg(response.deviceType)
                    .arg(response.commandPort));
-    Q_UNUSED(sender);
+
+    const QString key = response.serialNumber.isEmpty() ? response.deviceIp : response.serialNumber;
+    discoveredLidarsBySn.insert(key, response);
+
+    if (!discoverySettleTimer) {
+        discoverySettleTimer = new QTimer(this);
+        discoverySettleTimer->setSingleShot(true);
+        connect(discoverySettleTimer, &QTimer::timeout, this, &LivoxViewerWindow::finalizeDiscoveredLidars);
+    }
+    if (!discoverySettleTimer->isActive()) {
+        discoverySettleTimer->start(kDiscoverySettleMs);
+    }
+}
+
+void LivoxViewerWindow::finalizeDiscoveredLidars()
+{
+    if (!lidarDiscoveryActive || discoveredLidarsBySn.isEmpty()) {
+        return;
+    }
 
     const auto iface = selectedLidarInterface();
     if (!iface.has_value()) {
@@ -395,42 +419,74 @@ void LivoxViewerWindow::handleParsedDiscoveryResponse(const LidarDiscoveryServic
         return;
     }
 
-    const bool ipConflict = response.deviceIp == iface->ipv4;
-    const bool sameSubnet = NetworkInterfaceService::isInSameSubnet(response.deviceIp,
-                                                                    iface->ipv4,
-                                                                    netmaskOrDefault(iface->netmask));
-    if (ipConflict || !sameSubnet) {
-        logMessage(QString("[Discovery] Device and host are not in same subnet. host=%1, device=%2")
-                       .arg(iface->ipv4, response.deviceIp));
+    QVector<LidarDiscoveryService::DiscoveryResponse> devices;
+    devices.reserve(discoveredLidarsBySn.size());
+    for (const LidarDiscoveryService::DiscoveryResponse& device : discoveredLidarsBySn) {
+        devices.append(device);
+    }
 
-        const QString newHostIp = calculateCompatibleHostIP(response.deviceIp);
-        if (newHostIp.isEmpty()) {
-            scheduleDiscoveryRetry(5000);
-            return;
+    const QString netmask = netmaskOrDefault(iface->netmask);
+    QVector<LidarDiscoveryService::DiscoveryResponse> sameSubnetDevices;
+    QVector<LidarDiscoveryService::DiscoveryResponse> incompatibleDevices;
+    for (const LidarDiscoveryService::DiscoveryResponse& device : devices) {
+        const bool ipConflict = device.deviceIp == iface->ipv4;
+        const bool sameSubnet = NetworkInterfaceService::isInSameSubnet(device.deviceIp, iface->ipv4, netmask);
+        if (!ipConflict && sameSubnet) {
+            sameSubnetDevices.append(device);
+        } else {
+            incompatibleDevices.append(device);
         }
-        if (!autoConfigHostIpEnabled) {
-            logMessage(QString("[Network] Auto host IP config disabled. Suggested host IP: %1").arg(newHostIp));
-            stopLidarDiscovery();
-            scheduleDiscoveryRetry(5000);
-            return;
-        }
-        if (lastAttemptedAutoConfigIp == newHostIp) {
-            logMessage(QString("[Network] IP %1 already attempted in this discovery session").arg(newHostIp));
-            stopLidarDiscovery();
-            scheduleDiscoveryRetry(5000);
-            return;
-        }
+    }
 
-        lastAttemptedAutoConfigIp = newHostIp;
+    if (incompatibleDevices.isEmpty()) {
+        logMessage(QString("[Discovery] Collected %1 device(s) in same subnet: %2")
+                       .arg(devices.size())
+                       .arg(discoverySummary(discoveredLidarsBySn)));
         stopLidarDiscovery();
-        updateHostIPForDeviceAsync(*iface, newHostIp, netmaskOrDefault(iface->netmask));
+        QTimer::singleShot(500, this, &LivoxViewerWindow::initializeLivoxSdk);
         return;
     }
 
-    logMessage(QString("[Discovery] Device and host are in same subnet. host=%1, device=%2")
-                   .arg(iface->ipv4, response.deviceIp));
+    const QString newHostIp = calculateCompatibleHostIP(incompatibleDevices.first().deviceIp);
+    bool canUseOneHostIp = !newHostIp.isEmpty() && sameSubnetDevices.isEmpty();
+    if (canUseOneHostIp) {
+        for (const LidarDiscoveryService::DiscoveryResponse& device : devices) {
+            if (device.deviceIp == newHostIp ||
+                !NetworkInterfaceService::isInSameSubnet(device.deviceIp, newHostIp, netmask)) {
+                canUseOneHostIp = false;
+                break;
+            }
+        }
+    }
+
+    if (!canUseOneHostIp) {
+        logMessage(QString("[Discovery] Found devices in incompatible subnets. host=%1, devices=%2. Please adjust network settings.")
+                       .arg(iface->ipv4, discoverySummary(discoveredLidarsBySn)));
+        stopLidarDiscovery();
+        setRealtimeState(RealtimeConnectionState::Error);
+        return;
+    }
+
+    logMessage(QString("[Discovery] Devices and host are not in same subnet. host=%1, devices=%2")
+                   .arg(iface->ipv4, discoverySummary(discoveredLidarsBySn)));
+
+    if (!autoConfigHostIpEnabled) {
+        logMessage(QString("[Network] Auto host IP config disabled. Suggested host IP: %1").arg(newHostIp));
+        stopLidarDiscovery();
+        scheduleDiscoveryRetry(5000);
+        return;
+    }
+    if (lastAttemptedAutoConfigIp == newHostIp) {
+        logMessage(QString("[Network] IP %1 already attempted in this discovery session").arg(newHostIp));
+        stopLidarDiscovery();
+        scheduleDiscoveryRetry(5000);
+        return;
+    }
+
+    lastAttemptedAutoConfigIp = newHostIp;
     stopLidarDiscovery();
-    QTimer::singleShot(500, this, &LivoxViewerWindow::initializeLivoxSdk);
+    updateHostIPForDeviceAsync(*iface, newHostIp, netmask);
+    return;
 }
 
 QString LivoxViewerWindow::calculateCompatibleHostIP(const QString& deviceIP)
@@ -604,7 +660,7 @@ void LivoxViewerWindow::initializeLivoxSdk()
         logMessage(netCheckDetails);
     }
 
-    if (!updateConfigFileDeviceTypeIfNeeded(configPath)) {
+    if (!updateConfigFileDeviceTypesIfNeeded(configPath)) {
         logMessage("[Config] Device type update failed; continue with current config.");
     }
 
@@ -714,13 +770,19 @@ bool LivoxViewerWindow::updateConfigFileIP(const QString& newHostIP)
     return updated;
 }
 
-bool LivoxViewerWindow::updateConfigFileDeviceTypeIfNeeded(const QString& configPath)
+bool LivoxViewerWindow::updateConfigFileDeviceTypesIfNeeded(const QString& configPath)
 {
     QString message;
-    const bool updated = LidarConfigService::updateDeviceTypeIfNeeded(configPath,
-                                                                      hasLastDiscoveredLidarType,
-                                                                      lastDiscoveredLidarType,
-                                                                      &message);
+    QSet<uint8_t> discoveredTypes;
+    for (const LidarDiscoveryService::DiscoveryResponse& device : discoveredLidarsBySn) {
+        if (device.deviceType != 0) {
+            discoveredTypes.insert(device.deviceType);
+        }
+    }
+
+    const bool updated = LidarConfigService::updateDeviceTypesForDiscoveredTypes(configPath,
+                                                                                 discoveredTypes,
+                                                                                 &message);
     if (!message.isEmpty()) {
         logMessage(message);
     }

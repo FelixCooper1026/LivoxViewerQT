@@ -91,11 +91,15 @@ void LivoxViewerWindow::showFirmwareUpgradeDialog()
         titleLabel->setWordWrap(true);
         QLabel* snLabel = new QLabel(QString("SN: %1").arg(device.sn), card);
         QLabel* ipLabel = new QLabel(QString("IP: %1").arg(device.lidar_ip), card);
+        const QString firmwareVersion = device.firmware_version.isEmpty() ? QStringLiteral("读取中") : device.firmware_version;
+        QLabel* firmwareLabel = new QLabel(QString("固件: %1").arg(firmwareVersion), card);
         snLabel->setWordWrap(true);
         ipLabel->setWordWrap(true);
+        firmwareLabel->setWordWrap(true);
         textLayout->addWidget(titleLabel);
         textLayout->addWidget(snLabel);
         textLayout->addWidget(ipLabel);
+        textLayout->addWidget(firmwareLabel);
         cardLayout->addLayout(textLayout, 1);
 
         listLayout->addWidget(card);
@@ -118,9 +122,12 @@ void LivoxViewerWindow::showFirmwareUpgradeDialog()
     connect(browseButton, &QPushButton::clicked, &dialog, [&]() {
         const QString currentPath = firmwareEdit->text().trimmed();
         const QString initialDir = currentPath.isEmpty() ? lastDir : QFileInfo(currentPath).absolutePath();
-        const QString fw = QFileDialog::getOpenFileName(&dialog, "选择固件文件", initialDir, "固件 (*.bin *.img);;所有文件 (*.*)");
-        if (!fw.isEmpty()) {
-            firmwareEdit->setText(QDir::toNativeSeparators(fw));
+        QFileDialog fileDialog(&dialog, "选择固件文件", initialDir, "固件 (*.bin *.img);;所有文件 (*.*)");
+        fileDialog.setFileMode(QFileDialog::ExistingFile);
+        fileDialog.setAcceptMode(QFileDialog::AcceptOpen);
+        fileDialog.setOption(QFileDialog::DontUseNativeDialog, true);
+        if (fileDialog.exec() == QDialog::Accepted && !fileDialog.selectedFiles().isEmpty()) {
+            firmwareEdit->setText(QDir::toNativeSeparators(fileDialog.selectedFiles().first()));
         }
     });
     connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);

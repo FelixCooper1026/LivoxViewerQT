@@ -41,10 +41,6 @@ void LivoxViewerWindow::activateConnectedDevice(const LidarDeviceInfo& device)
 
 void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type)
 {
-    if (lastDiscoveredLidarSn.isEmpty() || lastDiscoveredLidarIp.isEmpty()) {
-        return;
-    }
-
     LidarDeviceInfo device;
     bool inserted = false;
     bool streamingChanged = false;
@@ -58,9 +54,31 @@ void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_
                 streamingChanged = true;
             }
         } else {
+            LidarDiscoveryService::DiscoveryResponse discoveryDevice;
+            int discoveryCandidateCount = 0;
+            for (const LidarDiscoveryService::DiscoveryResponse& candidate : discoveredLidarsBySn) {
+                if (dev_type != 0 && candidate.deviceType != dev_type) {
+                    continue;
+                }
+                bool alreadyKnown = false;
+                for (auto it = lidarDevices.constBegin(); it != lidarDevices.constEnd(); ++it) {
+                    if (it.value().sn == candidate.serialNumber) {
+                        alreadyKnown = true;
+                        break;
+                    }
+                }
+                if (!alreadyKnown) {
+                    discoveryDevice = candidate;
+                    ++discoveryCandidateCount;
+                }
+            }
+            if (discoveryCandidateCount != 1) {
+                return;
+            }
+
             QList<uint32_t> handlesToRemove;
             for (auto it = lidarDevices.begin(); it != lidarDevices.end(); ++it) {
-                if (it.value().sn == lastDiscoveredLidarSn) {
+                if (it.value().sn == discoveryDevice.serialNumber) {
                     handlesToRemove.append(it.key());
                 }
             }
@@ -68,12 +86,13 @@ void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_
                 lidarDevices.remove(oldHandle);
             }
 
-            const uint8_t type = dev_type != 0 ? dev_type : lastDiscoveredLidarType;
+            const uint8_t type = dev_type != 0 ? dev_type : discoveryDevice.deviceType;
             device.handle = handle;
             device.dev_type = type;
-            device.sn = lastDiscoveredLidarSn;
-            device.lidar_ip = lastDiscoveredLidarIp;
+            device.sn = discoveryDevice.serialNumber;
+            device.lidar_ip = discoveryDevice.deviceIp;
             device.product_info = lidarTypeName(type);
+            device.work_state = QStringLiteral("读取中");
             device.is_connected = true;
             device.is_streaming = true;
             device.parameter_query_ready = false;
@@ -108,6 +127,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
         device.dev_type = info->dev_type;
         device.sn = QString::fromLatin1(info->sn);
         device.lidar_ip = QString::fromLatin1(info->lidar_ip);
+        device.work_state = QStringLiteral("读取中");
         device.is_connected = true;
         device.is_streaming = false;
         device.parameter_query_ready = true;
@@ -135,16 +155,24 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 }
                 LidarDeviceInfo updatedDevice = device;
                 if (window->lidarDevices.contains(device.handle)) {
-                    updatedDevice.is_streaming = window->lidarDevices.value(device.handle).is_streaming;
+                    const LidarDeviceInfo oldDevice = window->lidarDevices.value(device.handle);
+                    updatedDevice.is_streaming = oldDevice.is_streaming;
+                    updatedDevice.firmware_version = oldDevice.firmware_version;
+                    updatedDevice.work_state = oldDevice.work_state.isEmpty() ? updatedDevice.work_state : oldDevice.work_state;
                 }
                 window->lidarDevices[device.handle] = updatedDevice;
             }
 
             if (window->statusLabel) window->statusLabel->setText("状态: 已连接");
-            window->setCurrentDeviceHandle(device.handle);
+            if (!window->hasCurrentLidarHandle) {
+                window->setCurrentDeviceHandle(device.handle);
+            }
             window->updateLidarDeviceList();
 
-            window->parameterState.updatedConfigKeys.clear();
+            const bool isCurrentDevice = window->hasCurrentLidarHandle && window->currentLidarHandle == device.handle;
+            if (isCurrentDevice) {
+                window->parameterState.updatedConfigKeys.clear();
+            }
             if (device.is_connected) {
                 livox_status status = QueryLivoxLidarInternalInfo(device.handle, onQueryInternalInfoResponse, window);
                 if (status != kLivoxLidarStatusSuccess) {
@@ -484,6 +512,8 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
             // 解析参数数据 - 使用深拷贝的安全数据
             uint16_t off = 0;
             uint16_t paramNum = param_num; // 使用拷贝的param_num
+            const bool isCurrentResponse = window->hasCurrentLidarHandle && window->currentLidarHandle == handle;
+            bool deviceCardNeedsRefresh = false;
             
             // 使用字节级别的安全解析 - 基于拷贝的数据
             for (uint16_t i = 0; i < paramNum; ++i) {
@@ -503,6 +533,25 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 // 检查参数长度是否合理
                 if (length > 0 && length <= 1024) {
                     QString valueStr = window->formatLidarParameterValue(key, const_cast<uint8_t*>(value), length);
+                    if (key == kKeyVersionApp || key == kKeyCurWorkState) {
+                        QMutexLocker locker(&window->lidarDeviceMutex);
+                        auto it = window->lidarDevices.find(handle);
+                        if (it != window->lidarDevices.end()) {
+                            if (key == kKeyVersionApp) {
+                                it->firmware_version = valueStr;
+                            } else {
+                                it->work_state = valueStr;
+                            }
+                            deviceCardNeedsRefresh = true;
+                        }
+                    }
+
+                    if (!isCurrentResponse) {
+                        off += sizeof(uint16_t) * 2;
+                        off += length;
+                        continue;
+                    }
+
                     window->parameterState.values[key] = valueStr;
                     
                     // window->logMessage(QString("参数解析结果: key=0x%1, value='%2'").arg(key, 0, 16).arg(valueStr));
@@ -744,8 +793,12 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 off += length;                 // value length
             }
 
+            if (deviceCardNeedsRefresh) {
+                window->updateLidarDeviceList();
+            }
+
             // 在参数解析完成后，检查是否正在记录参数
-            if (window->parameterState.isRecording && window->parameterState.recordFile.isOpen()) {
+            if (isCurrentResponse && window->parameterState.isRecording && window->parameterState.recordFile.isOpen()) {
                 // 获取当前时间戳
                 QString timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
                 
