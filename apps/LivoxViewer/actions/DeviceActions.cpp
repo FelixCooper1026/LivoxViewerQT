@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "LivoxCore/LidarSdkService.h"
 
 void LivoxViewerWindow::createDeviceActions()
 {
@@ -35,18 +36,29 @@ void LivoxViewerWindow::createDeviceActions()
         if (QMessageBox::warning(this, "恢复出厂设置", "雷达将会恢复出厂设置，雷达IP将恢复为192.168.1.3，请确认操作", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) {
             livox_status st = LivoxLidarRequestReset(currentDevice.handle, nullptr, this);
             if (st == kLivoxLidarStatusSuccess) {
+                shutting_down = true;
+                pointCloudCallbackEnabled = false;
+                LidarSdkService::clearCallbacks();
                 logMessage("已发送恢复出厂设置命令，请等待雷达重启并恢复默认IP 192.168.1.3...");
                  // 清空当前设备缓存，避免显示旧IP设备
                  {
                      QMutexLocker locker(&lidarDeviceMutex);
                      lidarDevices.clear();
                  }
+                 {
+                     QMutexLocker locker(&frameMutex);
+                     pendingFrames.clear();
+                     lastSeenTimestamp.clear();
+                     lastFrameTimestamp.clear();
+                 }
                  clearCurrentDevice();
                  updateLidarDeviceList();
                  statusLabelBar->setText("等待设备重启上线...");
-                 // 分步重启SDK：先清理，稍后再初始化，避免竞态
-                 QTimer::singleShot(1000, this, [this]() { shutdownLivoxSdk(); });
-                 QTimer::singleShot(10000, this, [this]() { initializeLivoxSdk(); });
+                 // 分步重启SDK：先清理，稍后重新发现设备，避免竞态
+                 QTimer::singleShot(5000, this, [this]() {
+                     shutdownLivoxSdk();
+                     startLidarDiscovery();
+                 });
             } else {
                 logMessage(QString("发送恢复出厂设置命令失败: %1").arg(st));
             }

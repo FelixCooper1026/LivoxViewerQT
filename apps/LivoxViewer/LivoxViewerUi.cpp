@@ -503,7 +503,9 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
 {
     if (!networkInterfaceCombo) return;
 
-    const QString previousName = selectedInterfaceName;
+    const QString previousName = selectedInterfaceName.isEmpty()
+        ? selectedNetworkInterfaceSysName
+        : selectedInterfaceName;
     networkInterfaceCombo->blockSignals(true);
     networkInterfaceCombo->clear();
 
@@ -523,7 +525,7 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
         }
     }
 
-    if (selectedIndex < 0 && !interfaces.isEmpty()) {
+    if (selectedIndex < 0 && previousName.isEmpty() && !interfaces.isEmpty()) {
         selectedIndex = 0;
     }
 
@@ -532,6 +534,10 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
         selectLidarInterface(interfaces.at(selectedIndex));
         logMessage(QString("[Network] Selected lidar interface: %1 (%2)")
                        .arg(selectedInterfaceDisplayName, selectedHostIp));
+    } else if (!previousName.isEmpty()) {
+        networkInterfaceCombo->setCurrentIndex(-1);
+        logMessage(QString("[Network] Selected lidar interface %1 is unavailable; keep selection and wait.")
+                       .arg(previousName));
     } else {
         selectedInterfaceName.clear();
         selectedInterfaceDisplayName.clear();

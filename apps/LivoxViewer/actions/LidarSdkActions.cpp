@@ -142,6 +142,10 @@ std::optional<NetworkInterfaceService::NetworkInterfaceInfo> LivoxViewerWindow::
         return selected;
     }
 
+    if (!selectedInterfaceName.isEmpty() || !selectedNetworkInterfaceSysName.isEmpty()) {
+        return std::nullopt;
+    }
+
     const QList<NetworkInterfaceService::NetworkInterfaceInfo> interfaces =
         NetworkInterfaceService::availableLidarInterfaces();
     if (interfaces.isEmpty()) {
