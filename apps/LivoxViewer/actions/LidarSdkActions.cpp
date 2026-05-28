@@ -471,7 +471,7 @@ void LivoxViewerWindow::updateHostIPForDeviceAsync(const NetworkInterfaceService
         process->deleteLater();
 
         if (exitStatus == QProcess::NormalExit && exitCode == 0) {
-            logMessage("[Network] IP reconfiguration success");
+            logMessage("[Network] IP reconfiguration command completed");
             if (!updateConfigFileIP(targetHostIp)) {
                 setRealtimeState(RealtimeConnectionState::Error);
                 return;
@@ -496,9 +496,14 @@ void LivoxViewerWindow::updateHostIPForDeviceAsync(const NetworkInterfaceService
     process->start("netsh", arguments);
 #else
     const QString prefix = prefixLengthFromNetmask(netmask);
-    process->start("pkexec", QStringList() << "ip" << "addr" << "replace"
-                                           << QString("%1/%2").arg(targetHostIp, prefix)
-                                           << "dev" << iface.systemName);
+    const QString cidr = QString("%1/%2").arg(targetHostIp, prefix);
+    const QString script =
+        "set -e; "
+        "ip -4 addr flush dev \"$1\" scope global; "
+        "ip addr add \"$2\" dev \"$1\"; "
+        "ip link set dev \"$1\" up";
+    process->start("pkexec", QStringList() << "/bin/sh" << "-c" << script
+                                           << "livox-ip-config" << iface.systemName << cidr);
 #endif
 }
 
@@ -512,7 +517,7 @@ void LivoxViewerWindow::waitForHostIpThenInitializeSdk(const QString& interfaceN
         refreshNetworkInterfaces();
         sdkInitRetryCount = 0;
         setRealtimeState(RealtimeConnectionState::WaitingSdkReady);
-        logMessage(QString("[Network] Host IP %1 is active on %2. Initialize SDK without rediscovery after delay.")
+        logMessage(QString("[Network] IP reconfiguration success: host IP %1 is active on %2. Initialize SDK without rediscovery after delay.")
                        .arg(targetHostIp, iface->displayName));
         QTimer::singleShot(kSdkReadyDelayMs, this, &LivoxViewerWindow::initializeLivoxSdk);
         return;
