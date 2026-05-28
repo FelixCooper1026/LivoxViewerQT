@@ -14,7 +14,7 @@ void LivoxViewerWindow::createDevicePanel()
     lidarDevicesLayout->setContentsMargins(8, 8, 8, 8);
     lidarDevicesLayout->setSpacing(8);
 
-    // 网络接口选择（放在设备管理dock上方）
+    // 网络接口选择
     QWidget* networkBlock = new QWidget(lidarDevicesDockContent);
     QVBoxLayout* hostnetworkLayout = new QVBoxLayout(networkBlock);
     hostnetworkLayout->setContentsMargins(0, 0, 0, 0);
@@ -43,82 +43,19 @@ void LivoxViewerWindow::createDevicePanel()
     connect(networkInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &LivoxViewerWindow::onNetworkInterfaceChanged);
     connect(btnRefreshNetwork, &QPushButton::clicked, this, &LivoxViewerWindow::refreshNetworkInterfaces);
 
-    QGroupBox* deviceGroup = new QGroupBox("设备管理", lidarDevicesDockContent);
-    deviceGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    QVBoxLayout* deviceLayout = new QVBoxLayout(deviceGroup);
-    deviceLayout->setContentsMargins(8,8,8,8);
-    deviceLayout->setSpacing(6);
-
-    // 设备列表（高度压缩）
-    realtimeDeviceListWidget = new QWidget(deviceGroup);
+    realtimeDeviceListWidget = new QWidget(lidarDevicesDockContent);
     realtimeDeviceListWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
     QVBoxLayout* realtimeDeviceListLayout = new QVBoxLayout(realtimeDeviceListWidget);
     realtimeDeviceListLayout->setContentsMargins(0, 0, 0, 0);
     realtimeDeviceListLayout->setSpacing(6);
 
-    QScrollArea* realtimeDeviceScroll = new QScrollArea(deviceGroup);
+    QScrollArea* realtimeDeviceScroll = new QScrollArea(lidarDevicesDockContent);
     realtimeDeviceScroll->setWidgetResizable(true);
     realtimeDeviceScroll->setFrameShape(QFrame::NoFrame);
     realtimeDeviceScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     realtimeDeviceScroll->setMinimumHeight(80);
     realtimeDeviceScroll->setWidget(realtimeDeviceListWidget);
-    deviceLayout->addWidget(realtimeDeviceScroll);
-
-    // 设备管理区不再放置点云控制（移至顶部工具栏）
-
-    lidarDevicesLayout->addWidget(deviceGroup);
-
-    // GPS模拟与串口转发输入控件
-    {
-        QGroupBox* gpsGroup = new QGroupBox("时间同步", lidarDevicesDockContent);
-        QVBoxLayout* gpsLayout = new QVBoxLayout(gpsGroup);
-        imuState.gpsSimulateCheck = new QCheckBox("GPS模拟输入", gpsGroup);
-        imuState.gpsSimulateCheck->setToolTip("启用 GPS 模拟输入（GPRMC）");
-        // 第1行：启用GPS模拟输入（左对齐）
-        {
-            QWidget* rowSim = new QWidget(gpsGroup);
-            QHBoxLayout* hSim = new QHBoxLayout(rowSim);
-            hSim->setContentsMargins(0,0,0,0);
-            hSim->addWidget(imuState.gpsSimulateCheck);
-            hSim->addStretch();
-            gpsLayout->addWidget(rowSim);
-        }
-        connect(imuState.gpsSimulateCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onGpsSimulateToggled);
-        // 第2行：启用串口转发输入（左对齐）
-        imuState.serialEnableCheck = new QCheckBox("串口转发输入", gpsGroup);
-        imuState.serialEnableCheck->setToolTip("启用串口转发输入（GPRMC）");
-        {
-            QWidget* rowEnable = new QWidget(gpsGroup);
-            QHBoxLayout* hEn = new QHBoxLayout(rowEnable);
-            hEn->setContentsMargins(0,0,0,0);
-            hEn->addWidget(imuState.serialEnableCheck);
-            hEn->addStretch();
-            gpsLayout->addWidget(rowEnable);
-        }
-        connect(imuState.serialEnableCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onSerialEnableToggled);
-        // 第3行：串口选择与刷新
-        imuState.serialPortCombo = new QComboBox(gpsGroup);
-        imuState.serialPortCombo->setMinimumWidth(0);
-        QPushButton* btnRefreshSerial = new QPushButton(gpsGroup);
-        btnRefreshSerial->setIcon(QIcon(":/icons/refresh.svg"));
-        btnRefreshSerial->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
-        btnRefreshSerial->setFixedWidth(fontMetrics().height() + 18);
-        btnRefreshSerial->setToolTip("刷新串口列表");
-        {
-            QWidget* rowSer = new QWidget(gpsGroup);
-            QHBoxLayout* hSer = new QHBoxLayout(rowSer);
-            hSer->setContentsMargins(0,0,0,0);
-            hSer->addWidget(new QLabel("串口:"));
-            hSer->addWidget(imuState.serialPortCombo, 1);
-            hSer->addWidget(btnRefreshSerial);
-            gpsLayout->addWidget(rowSer);
-        }
-        gpsGroup->setLayout(gpsLayout);
-        lidarDevicesLayout->addWidget(gpsGroup);
-        connect(btnRefreshSerial, &QPushButton::clicked, this, &LivoxViewerWindow::refreshSerialPorts);
-        // 初始化串口列表
-        refreshSerialPorts();
-    }
+    lidarDevicesLayout->addWidget(realtimeDeviceScroll);
 
     lidarDevicesLayout->addStretch();
     lidarDevicesDockContent->setLayout(lidarDevicesLayout);

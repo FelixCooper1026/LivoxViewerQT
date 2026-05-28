@@ -1,12 +1,81 @@
 #include "LivoxViewerWindow.h"
 
+#include <QCheckBox>
+#include <QComboBox>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QIcon>
+#include <QLabel>
+#include <QPushButton>
+#include <QSize>
+#include <QVBoxLayout>
 
 static QString nmeaChecksum(const QString& payload)
 {
     quint8 cs = 0;
     for (QChar c : payload) cs ^= c.toLatin1();
     return QString("*%1").arg(cs, 2, 16, QChar('0')).toUpper();
+}
+
+void LivoxViewerWindow::showTimeSyncDialog()
+{
+    if (!imuState.timeSyncDialog) {
+        imuState.timeSyncDialog = new QDialog(this);
+        imuState.timeSyncDialog->setWindowTitle("时间同步");
+        imuState.timeSyncDialog->resize(360, 180);
+
+        QVBoxLayout* rootLayout = new QVBoxLayout(imuState.timeSyncDialog);
+        rootLayout->setContentsMargins(12, 12, 12, 12);
+        rootLayout->setSpacing(10);
+
+        QGroupBox* gpsGroup = new QGroupBox("GPS模拟", imuState.timeSyncDialog);
+        QVBoxLayout* gpsLayout = new QVBoxLayout(gpsGroup);
+        imuState.gpsSimulateCheck = new QCheckBox("GPS模拟输入", gpsGroup);
+        imuState.gpsSimulateCheck->setToolTip("启用 GPS 模拟输入（GPRMC）");
+        gpsLayout->addWidget(imuState.gpsSimulateCheck);
+        connect(imuState.gpsSimulateCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onGpsSimulateToggled);
+        rootLayout->addWidget(gpsGroup);
+
+        QGroupBox* serialGroup = new QGroupBox("串口转发", imuState.timeSyncDialog);
+        QVBoxLayout* serialLayout = new QVBoxLayout(serialGroup);
+        imuState.serialEnableCheck = new QCheckBox("串口转发输入", serialGroup);
+        imuState.serialEnableCheck->setToolTip("启用串口转发输入（GPRMC）");
+        serialLayout->addWidget(imuState.serialEnableCheck);
+        connect(imuState.serialEnableCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onSerialEnableToggled);
+
+        QWidget* serialRow = new QWidget(serialGroup);
+        QHBoxLayout* serialRowLayout = new QHBoxLayout(serialRow);
+        serialRowLayout->setContentsMargins(0, 0, 0, 0);
+        serialRowLayout->setSpacing(6);
+        imuState.serialPortCombo = new QComboBox(serialRow);
+        imuState.serialPortCombo->setMinimumWidth(0);
+        QPushButton* refreshSerialButton = new QPushButton(serialRow);
+        refreshSerialButton->setIcon(QIcon(":/icons/refresh.svg"));
+        refreshSerialButton->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
+        refreshSerialButton->setFixedWidth(fontMetrics().height() + 18);
+        refreshSerialButton->setToolTip("刷新串口列表");
+        serialRowLayout->addWidget(new QLabel("串口:", serialRow));
+        serialRowLayout->addWidget(imuState.serialPortCombo, 1);
+        serialRowLayout->addWidget(refreshSerialButton);
+        serialLayout->addWidget(serialRow);
+        connect(refreshSerialButton, &QPushButton::clicked, this, &LivoxViewerWindow::refreshSerialPorts);
+        rootLayout->addWidget(serialGroup);
+
+        QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, imuState.timeSyncDialog);
+        connect(buttonBox, &QDialogButtonBox::rejected, imuState.timeSyncDialog, &QDialog::hide);
+        rootLayout->addWidget(buttonBox);
+
+        refreshSerialPorts();
+    } else {
+        refreshSerialPorts();
+    }
+
+    imuState.timeSyncDialog->show();
+    imuState.timeSyncDialog->raise();
+    imuState.timeSyncDialog->activateWindow();
 }
 
 void LivoxViewerWindow::onGpsSimulateToggled(bool enabled)

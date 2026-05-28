@@ -13,6 +13,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QDialog;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -95,6 +96,7 @@ struct ImuRuntimeState
 
     QComboBox* serialPortCombo = nullptr;
     QCheckBox* serialEnableCheck = nullptr;
+    QDialog* timeSyncDialog = nullptr;
     std::atomic_bool serialRunning{false};
     std::thread serialThread;
 };

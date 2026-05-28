@@ -227,6 +227,15 @@ void LivoxViewerWindow::setActiveRealtimeDevice(uint32_t handle)
     if (statusLabel) {
         statusLabel->setText(device.is_connected ? QStringLiteral("状态: 已连接") : QStringLiteral("状态: 未连接"));
     }
+    {
+        QMutexLocker locker(&frameMutex);
+        pendingFrames.clear();
+        lastSeenTimestamp.clear();
+        lastFrameTimestamp.clear();
+    }
+    if (pointCloudView) {
+        pointCloudView->clearPointCloud();
+    }
     updateLidarDeviceList();
     if (paramTabWidget) {
         onTabChanged(paramTabWidget->currentIndex());
@@ -237,11 +246,9 @@ QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& devi
 {
     const bool active = hasCurrentLidarHandle && currentLidarHandle == device.handle;
     const QString modelName = device.product_info.isEmpty() ? QStringLiteral("Unknown") : device.product_info;
-    const QString statusText = device.is_streaming
-        ? QStringLiteral("数据流中")
-        : (device.is_connected ? QStringLiteral("已连接") : QStringLiteral("未连接"));
-    const QString tip = QStringLiteral("型号: %1\nSN: %2\nIP: %3")
-                            .arg(modelName, device.sn, device.lidar_ip);
+    const QString statusText = device.work_state.isEmpty() ? QStringLiteral("读取中") : device.work_state;
+    const QString tip = QStringLiteral("型号: %1\nSN: %2\nIP: %3\n状态: %4")
+                            .arg(modelName, device.sn, device.lidar_ip, statusText);
 
     RealtimeDeviceCard* card = new RealtimeDeviceCard(realtimeDeviceListWidget);
     card->setObjectName("RealtimeDeviceCard");

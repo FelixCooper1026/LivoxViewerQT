@@ -11,6 +11,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
+#include <QMap>
 #include <QStandardPaths>
 #include <QStringList>
 #include <QDebug>
@@ -107,6 +108,11 @@ QJsonObject defaultLidarNetInfo(const QString& deviceKey)
         lidarNet.insert("log_data_port", 59000);
     }
     return lidarNet;
+}
+
+QStringList orderedDeviceKeys()
+{
+    return {"Mid360s", "MID360", "Avia2", "HAP"};
 }
 
 } // namespace
@@ -360,6 +366,104 @@ bool updateDeviceTypeIfNeeded(const QString& configPath,
     }
     if (message) {
         *message = QString("config.json Device type changed from %1 to %2").arg(oldKey, expectedKey);
+    }
+    return true;
+}
+
+bool updateDeviceTypesForDiscoveredTypes(const QString& configPath,
+                                         const QSet<uint8_t>& discoveredDeviceTypes,
+                                         QString* message)
+{
+    QSet<QString> expectedKeys;
+    for (uint8_t deviceType : discoveredDeviceTypes) {
+        const QString key = expectedDeviceKey(deviceType);
+        if (!key.isEmpty()) {
+            expectedKeys.insert(key);
+        }
+    }
+    if (expectedKeys.isEmpty()) {
+        return true;
+    }
+
+    QJsonObject root;
+    if (!readJsonObject(configPath, &root, message)) {
+        return false;
+    }
+
+    QMap<QString, QJsonObject> existingDevices;
+    QJsonArray templateHostInfo;
+    for (auto it = root.begin(); it != root.end(); ++it) {
+        if (!isDeviceConfigKey(it.key(), it.value())) {
+            continue;
+        }
+        const QJsonObject deviceObj = it.value().toObject();
+        existingDevices.insert(it.key(), deviceObj);
+        if (templateHostInfo.isEmpty() && deviceObj.value("host_net_info").isArray()) {
+            templateHostInfo = deviceObj.value("host_net_info").toArray();
+        }
+    }
+
+    if (templateHostInfo.isEmpty()) {
+        if (message) {
+            *message = "config.json does not contain host_net_info for discovered device types";
+        }
+        return false;
+    }
+
+    bool changed = false;
+    QJsonObject orderedRoot;
+    if (root.contains("lidar_log_enable")) {
+        orderedRoot.insert("lidar_log_enable", root.value("lidar_log_enable"));
+    }
+    if (root.contains("lidar_log_cache_size_MB")) {
+        orderedRoot.insert("lidar_log_cache_size_MB", root.value("lidar_log_cache_size_MB"));
+    }
+    if (root.contains("lidar_log_path")) {
+        orderedRoot.insert("lidar_log_path", root.value("lidar_log_path"));
+    }
+
+    QStringList writtenKeys;
+    for (const QString& key : orderedDeviceKeys()) {
+        if (!expectedKeys.contains(key)) {
+            continue;
+        }
+
+        QJsonObject deviceObj;
+        if (existingDevices.contains(key)) {
+            deviceObj = existingDevices.value(key);
+            if (!deviceObj.value("host_net_info").isArray()) {
+                deviceObj.insert("host_net_info", templateHostInfo);
+                changed = true;
+            }
+            if (!deviceObj.value("lidar_net_info").isObject()) {
+                deviceObj.insert("lidar_net_info", defaultLidarNetInfo(key));
+                changed = true;
+            }
+        } else {
+            deviceObj.insert("lidar_net_info", defaultLidarNetInfo(key));
+            deviceObj.insert("host_net_info", templateHostInfo);
+            changed = true;
+        }
+        orderedRoot.insert(key, deviceObj);
+        writtenKeys.append(key);
+    }
+
+    for (const QString& key : existingDevices.keys()) {
+        if (!expectedKeys.contains(key)) {
+            changed = true;
+            break;
+        }
+    }
+
+    if (!changed) {
+        return true;
+    }
+
+    if (!writeJsonObject(configPath, orderedRoot, message)) {
+        return false;
+    }
+    if (message) {
+        *message = QString("config.json device blocks updated for discovered types: %1").arg(writtenKeys.join(", "));
     }
     return true;
 }

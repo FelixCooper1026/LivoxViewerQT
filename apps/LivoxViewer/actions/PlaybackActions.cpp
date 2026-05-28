@@ -104,7 +104,9 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
 
     // 点云滤波
     QAction* actionPointCloudFilter = toolsMenu->addAction("点云滤波...");
+    QAction* actionTimeSync = toolsMenu->addAction("时间同步...");
 
     // 点云滤波对话框
     connect(actionPointCloudFilter, &QAction::triggered, this, &LivoxViewerWindow::showPointCloudFilterDialog);
+    connect(actionTimeSync, &QAction::triggered, this, &LivoxViewerWindow::showTimeSyncDialog);
 }

@@ -2,6 +2,7 @@
 #define APPCONFIG_LIDARCONFIGSERVICE_H
 
 #include <QString>
+#include <QSet>
 
 #include <cstdint>
 
@@ -25,6 +26,10 @@ bool updateDeviceTypeIfNeeded(const QString& configPath,
                               bool hasDiscoveredDeviceType,
                               uint8_t discoveredDeviceType,
                               QString* message = nullptr);
+
+bool updateDeviceTypesForDiscoveredTypes(const QString& configPath,
+                                         const QSet<uint8_t>& discoveredDeviceTypes,
+                                         QString* message = nullptr);
 
 } // namespace LidarConfigService
 
