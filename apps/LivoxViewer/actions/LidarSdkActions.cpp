@@ -676,10 +676,8 @@ void LivoxViewerWindow::shutdownLivoxSdk()
         lastSeenTimestamp.clear();
         lastFrameTimestamp.clear();
     }
-    if (lidarDeviceList) {
-        lidarDeviceList->clear();
-    }
     clearCurrentDevice();
+    updateLidarDeviceList();
 
     LidarSdkService::shutdown();
 

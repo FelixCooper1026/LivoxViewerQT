@@ -3,7 +3,6 @@
 
 #include <QMainWindow>
 #include <QTimer>
-#include <QListWidget>
 #include <QPushButton>
 #include <QLabel>
 #include <QTextEdit>
@@ -201,7 +200,7 @@ private:
     static QString getRetCodeString(uint8_t ret_code);
     
     // UI components
-    QListWidget* lidarDeviceList;
+    QWidget* realtimeDeviceListWidget = nullptr;
     QTabWidget* paramTabWidget;  // 添加QTabWidget成员变量
 
     QLabel* statusLabel;
@@ -366,6 +365,9 @@ private:
     void scheduleDiscoveryRetry(int delayMs);
     void stopAndDeleteTimer(QTimer*& timer);
     void resetDiscoverySessionState();
+    QVector<LidarDeviceInfo> connectedLidarDevicesSnapshot();
+    void rebuildRealtimeDeviceCards();
+    QWidget* createRealtimeDeviceCard(const LidarDeviceInfo& device);
     bool createAndBindDiscoverySocket(const NetworkInterfaceService::NetworkInterfaceInfo& iface);
     std::optional<NetworkInterfaceService::NetworkInterfaceInfo> selectedLidarInterface() const;
     std::optional<NetworkInterfaceService::NetworkInterfaceInfo> ensureSelectedLidarInterface();
@@ -422,14 +424,13 @@ private slots:
     void applyAttitudeConfig(uint16_t key, double roll, double pitch, double yaw, int x, int y, int z);
     void onFrameIntervalChanged(int ms);
     void updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fov1Check);
-    void onLidarDeviceSelected();
     void updateLidarDeviceList();
     void updateLidarDeviceInfo(const LidarDeviceInfo& device);
+    void setActiveRealtimeDevice(uint32_t handle);
     void activateConnectedDevice(const LidarDeviceInfo& device);
     void registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type);
     void updateStatus();
     void logMessage(const QString& message);
-    void addLidarDeviceToList(const LidarDeviceInfo& device);
     void onTabChanged(int index);  // 添加标签页切换槽函数
     void onRenderTick();           // 渲染定时器回调（滑动窗口）
     void onPointSizeChanged(int px);

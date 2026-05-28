@@ -201,6 +201,7 @@ set(SOURCES
      apps/LivoxViewer/state/ParameterUiState.h
      apps/LivoxViewer/state/PlaybackControllerState.h
      apps/LivoxViewer/state/PointCloudFilterState.h
+     apps/LivoxViewer/widgets/SwitchCheckBox.h
      libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
     libs/LivoxCore/include/LivoxCore/LidarPacketUtils.h

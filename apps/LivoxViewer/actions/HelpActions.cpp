@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QListWidget>
 #include <QUrl>
 void LivoxViewerWindow::createHelpActions()
 {

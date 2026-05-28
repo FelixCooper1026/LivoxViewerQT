@@ -50,13 +50,19 @@ void LivoxViewerWindow::createDevicePanel()
     deviceLayout->setSpacing(6);
 
     // 设备列表（高度压缩）
-    lidarDeviceList = new QListWidget(deviceGroup);
-    lidarDeviceList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    lidarDeviceList->setMinimumHeight(80);
-    lidarDeviceList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
-    lidarDeviceList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    lidarDeviceList->setSelectionMode(QAbstractItemView::ExtendedSelection); // 支持多选
-    deviceLayout->addWidget(lidarDeviceList);
+    realtimeDeviceListWidget = new QWidget(deviceGroup);
+    realtimeDeviceListWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    QVBoxLayout* realtimeDeviceListLayout = new QVBoxLayout(realtimeDeviceListWidget);
+    realtimeDeviceListLayout->setContentsMargins(0, 0, 0, 0);
+    realtimeDeviceListLayout->setSpacing(6);
+
+    QScrollArea* realtimeDeviceScroll = new QScrollArea(deviceGroup);
+    realtimeDeviceScroll->setWidgetResizable(true);
+    realtimeDeviceScroll->setFrameShape(QFrame::NoFrame);
+    realtimeDeviceScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    realtimeDeviceScroll->setMinimumHeight(80);
+    realtimeDeviceScroll->setWidget(realtimeDeviceListWidget);
+    deviceLayout->addWidget(realtimeDeviceScroll);
 
     // 设备管理区不再放置点云控制（移至顶部工具栏）
 

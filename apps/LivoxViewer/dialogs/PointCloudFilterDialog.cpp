@@ -1,4 +1,6 @@
 #include "LivoxViewerWindow.h"
+#include <QListWidget>
+
 void LivoxViewerWindow::showPointCloudFilterDialog()
 {
         if (!filterState.dialog) {

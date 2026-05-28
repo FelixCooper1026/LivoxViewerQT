@@ -6,7 +6,6 @@
 #include <QLayout>
 #include <QLayoutItem>
 #include <QApplication>
-#include <QSignalBlocker>
 #include <algorithm>
 #include <cstring>
 
@@ -37,18 +36,7 @@ void LivoxViewerWindow::activateConnectedDevice(const LidarDeviceInfo& device)
         statusLabel->setText("状态: 已连接");
     }
     setCurrentDeviceHandle(device.handle);
-
-    if (lidarDeviceList) {
-        const QSignalBlocker blocker(lidarDeviceList);
-        for (int i = 0; i < lidarDeviceList->count(); ++i) {
-            QListWidgetItem* item = lidarDeviceList->item(i);
-            if (item->data(Qt::UserRole).toUInt() == device.handle) {
-                lidarDeviceList->setCurrentRow(i);
-                break;
-            }
-        }
-    }
-
+    updateLidarDeviceList();
 }
 
 void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type)
@@ -98,10 +86,11 @@ void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_
         return;
     }
 
-    updateLidarDeviceList();
     if (inserted) {
         activateConnectedDevice(device);
         logMessage(QString("发现设备: %1 (%2) - IP: %3").arg(device.sn).arg(device.product_info).arg(device.lidar_ip));
+    } else {
+        updateLidarDeviceList();
     }
 }
 
@@ -151,26 +140,15 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 window->lidarDevices[device.handle] = updatedDevice;
             }
 
+            if (window->statusLabel) window->statusLabel->setText("状态: 已连接");
+            window->setCurrentDeviceHandle(device.handle);
             window->updateLidarDeviceList();
 
-            if (window->lidarDevices.size() > 0) {
-                if (window->statusLabel) window->statusLabel->setText("状态: 已连接");
-                window->setCurrentDeviceHandle(device.handle);
-
-                for (int i = 0; i < window->lidarDeviceList->count(); ++i) {
-                    QListWidgetItem* item = window->lidarDeviceList->item(i);
-                    if (item->data(Qt::UserRole).toUInt() == device.handle) {
-                        window->lidarDeviceList->setCurrentRow(i);
-                        break;
-                    }
-                }
-
-                window->parameterState.updatedConfigKeys.clear();
-                if (device.is_connected) {
-                    livox_status status = QueryLivoxLidarInternalInfo(device.handle, onQueryInternalInfoResponse, window);
-                    if (status != kLivoxLidarStatusSuccess) {
-                        window->logMessage(QString("查询设备配置参数失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
-                    }
+            window->parameterState.updatedConfigKeys.clear();
+            if (device.is_connected) {
+                livox_status status = QueryLivoxLidarInternalInfo(device.handle, onQueryInternalInfoResponse, window);
+                if (status != kLivoxLidarStatusSuccess) {
+                    window->logMessage(QString("查询设备配置参数失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
                 }
             }
 
@@ -185,7 +163,9 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 return;
             }
 
-            // 从设备列表中移除
+            const bool removedCurrent = window->hasCurrentLidarHandle && window->currentLidarHandle == handle;
+            bool hasRemainingDevice = false;
+            uint32_t nextHandle = 0;
             {
                 QMutexLocker locker(&window->lidarDeviceMutex);
                 if (window->lidarDevices.contains(handle)) {
@@ -198,16 +178,19 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 } else {
                     window->logMessage(QString("未发现设备，句柄: %1").arg(handle));
                 }
+                hasRemainingDevice = !window->lidarDevices.isEmpty();
+                if (hasRemainingDevice) {
+                    nextHandle = window->lidarDevices.firstKey();
+                }
             }
 
-            window->updateLidarDeviceList();
-
-            if (window->lidarDevices.isEmpty()) {
+            if (!hasRemainingDevice) {
                 if (window->statusLabel) window->statusLabel->setText("状态: 未连接");
                 window->clearCurrentDevice();
-            } else if (window->hasCurrentLidarHandle && window->currentLidarHandle == handle) {
-                window->setCurrentDeviceHandle(window->lidarDevices.firstKey());
+            } else if (removedCurrent) {
+                window->setCurrentDeviceHandle(nextHandle);
             }
+            window->updateLidarDeviceList();
         }, Qt::QueuedConnection);
     }
 }

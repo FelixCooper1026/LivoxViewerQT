@@ -238,7 +238,7 @@ void LivoxViewerWindow::onIpConfigResponse(livox_status status, uint32_t handle,
                     window->lastFrameTimestamp.clear();
                 }
                 window->clearCurrentDevice();
-                if (window->lidarDeviceList) window->updateLidarDeviceList();
+                window->updateLidarDeviceList();
                 if (window->statusLabelBar) window->statusLabelBar->setText("等待设备重启上线...");
                 QTimer::singleShot(5000, window, [window]() {
                     window->shutdownLivoxSdk();

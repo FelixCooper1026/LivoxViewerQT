@@ -16,10 +16,6 @@ void LivoxViewerWindow::createStatusBarAndTimers()
     captureState.progress->setTextVisible(true);
     statusBar->addPermanentWidget(captureState.progress, 0);
 
-    // 信号槽连接
-    // 刷新按钮已移除，无需实现 onRefreshClicked
-    connect(lidarDeviceList, &QListWidget::currentRowChanged, this, &LivoxViewerWindow::onLidarDeviceSelected);
-
     // 标签页切换
     connect(paramTabWidget, &QTabWidget::currentChanged, this, &LivoxViewerWindow::onTabChanged);
 

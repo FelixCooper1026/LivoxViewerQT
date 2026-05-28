@@ -21,9 +21,50 @@
 #include <QDesktopServices>
 #include <QStandardPaths>
 #include <QRadioButton>
-#include <QSignalBlocker>
 
-#include <algorithm>
+namespace {
+
+void clearLayoutItems(QLayout* layout)
+{
+    if (!layout) {
+        return;
+    }
+
+    while (QLayoutItem* item = layout->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            widget->deleteLater();
+        }
+        if (QLayout* childLayout = item->layout()) {
+            clearLayoutItems(childLayout);
+        }
+        delete item;
+    }
+}
+
+class RealtimeDeviceCard : public QFrame
+{
+public:
+    explicit RealtimeDeviceCard(QWidget* parent = nullptr)
+        : QFrame(parent)
+    {
+        setCursor(Qt::PointingHandCursor);
+    }
+
+    std::function<void()> onClicked;
+
+protected:
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton && onClicked) {
+            onClicked();
+            event->accept();
+            return;
+        }
+        QFrame::mousePressEvent(event);
+    }
+};
+
+} // namespace
 
 void LivoxViewerWindow::initializeUserInterface()
 {
@@ -89,66 +130,162 @@ void LivoxViewerWindow::initializeUserInterface()
 
 // 刷新按钮已移除，无需实现 onRefreshClicked
 
-void LivoxViewerWindow::onLidarDeviceSelected()
+void LivoxViewerWindow::updateLidarDeviceList()
+{
+    if (!realtimeDeviceListWidget) {
+        return;
+    }
+
+    QVector<LidarDeviceInfo> devices;
+    {
+        QMutexLocker locker(&lidarDeviceMutex);
+        const QList<LidarDeviceInfo> values = lidarDevices.values();
+        devices.reserve(values.size());
+        for (const LidarDeviceInfo& device : values) {
+            devices.append(device);
+        }
+    }
+
+    bool currentExists = false;
+    for (const LidarDeviceInfo& device : devices) {
+        if (hasCurrentLidarHandle && device.handle == currentLidarHandle) {
+            currentExists = true;
+            break;
+        }
+    }
+    if (devices.isEmpty()) {
+        clearCurrentDevice();
+    } else if (!hasCurrentLidarHandle || !currentExists) {
+        setCurrentDeviceHandle(devices.first().handle);
+    }
+
+    rebuildRealtimeDeviceCards();
+}
+
+void LivoxViewerWindow::rebuildRealtimeDeviceCards()
+{
+    if (!realtimeDeviceListWidget) {
+        return;
+    }
+
+    QVector<LidarDeviceInfo> devices;
+    {
+        QMutexLocker locker(&lidarDeviceMutex);
+        const QList<LidarDeviceInfo> values = lidarDevices.values();
+        devices.reserve(values.size());
+        for (const LidarDeviceInfo& device : values) {
+            devices.append(device);
+        }
+    }
+
+    QVBoxLayout* deviceListLayout = qobject_cast<QVBoxLayout*>(realtimeDeviceListWidget->layout());
+    clearLayoutItems(deviceListLayout);
+    for (const LidarDeviceInfo& device : devices) {
+        deviceListLayout->addWidget(createRealtimeDeviceCard(device));
+    }
+    deviceListLayout->addStretch();
+}
+
+void LivoxViewerWindow::updateLidarDeviceInfo(const LidarDeviceInfo& device)
+{
+    {
+        QMutexLocker locker(&lidarDeviceMutex);
+        lidarDevices[device.handle] = device;
+    }
+    updateLidarDeviceList();
+}
+
+QVector<LidarDeviceInfo> LivoxViewerWindow::connectedLidarDevicesSnapshot()
+{
+    QVector<LidarDeviceInfo> devices;
+    QMutexLocker locker(&lidarDeviceMutex);
+    for (const LidarDeviceInfo& device : lidarDevices) {
+        if (device.is_connected) {
+            devices.append(device);
+        }
+    }
+    return devices;
+}
+
+void LivoxViewerWindow::setActiveRealtimeDevice(uint32_t handle)
 {
     if (shutting_down) {
         return;
     }
 
-    int currentRow = lidarDeviceList->currentRow();
-    if (currentRow >= 0 && currentRow < lidarDevices.size()) {
+    LidarDeviceInfo device;
+    {
         QMutexLocker locker(&lidarDeviceMutex);
-        auto it = lidarDevices.begin();
-        std::advance(it, currentRow);
-        setCurrentDeviceHandle(it.key());
-        if (it.value().is_connected) {
-            if (statusLabel) statusLabel->setText("状态: 已连接");
-        } else {
-            if (statusLabel) statusLabel->setText("状态: 未连接");
+        auto it = lidarDevices.constFind(handle);
+        if (it == lidarDevices.constEnd()) {
+            return;
         }
+        device = it.value();
     }
-    // 切换设备后，立即触发当前标签页的刷新逻辑
-    // 这会清空 parameterState.updatedConfigKeys 并发送 QueryInternalInfo 命令，从而刷新所有 Tab 的参数显示
+
+    setCurrentDeviceHandle(handle);
+    if (statusLabel) {
+        statusLabel->setText(device.is_connected ? QStringLiteral("状态: 已连接") : QStringLiteral("状态: 未连接"));
+    }
+    updateLidarDeviceList();
     if (paramTabWidget) {
         onTabChanged(paramTabWidget->currentIndex());
     }
 }
 
-void LivoxViewerWindow::updateLidarDeviceList()
+QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& device)
 {
-    QList<LidarDeviceInfo> devices;
-    {
-        QMutexLocker locker(&lidarDeviceMutex);
-        devices = lidarDevices.values();
-    }
+    const bool active = hasCurrentLidarHandle && currentLidarHandle == device.handle;
+    const QString modelName = device.product_info.isEmpty() ? QStringLiteral("Unknown") : device.product_info;
+    const QString statusText = device.is_streaming
+        ? QStringLiteral("数据流中")
+        : (device.is_connected ? QStringLiteral("已连接") : QStringLiteral("未连接"));
+    const QString tip = QStringLiteral("型号: %1\nSN: %2\nIP: %3")
+                            .arg(modelName, device.sn, device.lidar_ip);
 
-    const QSignalBlocker blocker(lidarDeviceList);
-    lidarDeviceList->clear();
-    for (const auto& device : devices) {
-        addLidarDeviceToList(device);
-    }
-}
+    RealtimeDeviceCard* card = new RealtimeDeviceCard(realtimeDeviceListWidget);
+    card->setObjectName("RealtimeDeviceCard");
+    card->setFrameShape(QFrame::StyledPanel);
+    card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    card->setToolTip(tip);
+    card->setStyleSheet(active
+        ? "QFrame#RealtimeDeviceCard { border: 2px solid palette(highlight); border-radius: 6px; background: palette(alternate-base); }"
+        : "QFrame#RealtimeDeviceCard { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+    card->onClicked = [this, handle = device.handle]() {
+        setActiveRealtimeDevice(handle);
+    };
 
-void LivoxViewerWindow::addLidarDeviceToList(const LidarDeviceInfo& device)
-{
-    QString deviceText = QString("%1 (%2) - %3").arg(device.sn).arg(device.product_info).arg(device.is_streaming ? "数据流中" : "已连接");
-    QListWidgetItem* item = new QListWidgetItem(deviceText);
-    item->setData(Qt::UserRole, device.handle);
-    lidarDeviceList->addItem(item);
-}
+    QVBoxLayout* cardLayout = new QVBoxLayout(card);
+    cardLayout->setContentsMargins(8, 6, 8, 6);
+    cardLayout->setSpacing(4);
 
-void LivoxViewerWindow::updateLidarDeviceInfo(const LidarDeviceInfo& device)
-{
-    QMutexLocker locker(&lidarDeviceMutex);
-    lidarDevices[device.handle] = device;
-    for (int i = 0; i < lidarDeviceList->count(); ++i) {
-        QListWidgetItem* item = lidarDeviceList->item(i);
-        if (item->data(Qt::UserRole).toUInt() == device.handle) {
-            QString deviceText = QString("%1 (%2) - %3").arg(device.sn).arg(device.product_info).arg(device.is_streaming ? "数据流中" : "已连接");
-            item->setText(deviceText);
-            break;
-        }
+    QHBoxLayout* headerLayout = new QHBoxLayout();
+    headerLayout->setContentsMargins(0, 0, 0, 0);
+    headerLayout->setSpacing(6);
+    QLabel* modelLabel = new QLabel(modelName, card);
+    QFont modelFont = modelLabel->font();
+    modelFont.setBold(true);
+    modelLabel->setFont(modelFont);
+    modelLabel->setWordWrap(true);
+    modelLabel->setToolTip(tip);
+    modelLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    QLabel* deviceStatusLabel = new QLabel(statusText, card);
+    deviceStatusLabel->setToolTip(tip);
+    deviceStatusLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    headerLayout->addWidget(modelLabel, 1);
+    headerLayout->addWidget(deviceStatusLabel);
+    cardLayout->addLayout(headerLayout);
+
+    QLabel* snLabel = new QLabel(QStringLiteral("SN: %1").arg(device.sn), card);
+    QLabel* ipLabel = new QLabel(QStringLiteral("IP: %1").arg(device.lidar_ip), card);
+    for (QLabel* label : {snLabel, ipLabel}) {
+        label->setToolTip(tip);
+        label->setWordWrap(true);
+        label->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
+    cardLayout->addWidget(snLabel);
+    cardLayout->addWidget(ipLabel);
+    return card;
 }
 
 
