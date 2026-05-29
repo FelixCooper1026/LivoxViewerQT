@@ -41,6 +41,8 @@ void LivoxViewerWindow::createHelpActions()
             "<li>IMU 数据显示与记录</li>"
             "<li>设备LOG数据采集与保存</li>"
             "<li>设备固件升级</li>"
+            "<li>点云数据格式转换</li>"
+            "<li>离线点云文件回放</li>"
             "</ul>"
             "<p><b>项目地址:</b> <a href=\"https://github.com/FelixCooper1026/LivoxViewerQT\">https://github.com/FelixCooper1026/LivoxViewerQT</a></p>"
             "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>"

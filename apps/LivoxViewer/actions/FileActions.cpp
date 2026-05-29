@@ -64,7 +64,7 @@ void LivoxViewerWindow::createFileActions()
             this,
             "选择Pcap点云文件",
             lastDir,
-            "Pcap文件 (*.pcap *.pcapng);;所有文件 (*.*)");
+            "Pcap文件 (*.pcap *.pcapng *.cap);;所有文件 (*.*)");
         if (filePath.isEmpty()) {
             return;
         }
