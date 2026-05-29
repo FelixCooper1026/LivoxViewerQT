@@ -46,6 +46,11 @@ else()
     set(PLATFORM_NAME "Unknown")
 endif()
 
+# Windows 资源文件支持，用于编译 .rc 图标资源
+if(IS_WINDOWS)
+    enable_language(RC)
+endif()
+
 message(STATUS "Building for ${PLATFORM_NAME} platform")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
@@ -237,14 +242,29 @@ set(SOURCES
     libs/AppConfig/include/AppConfig/NetworkInterfaceService.h
 )
 
-# 资源文件
+# 资源文件：Qt 内部资源，用于运行时窗口图标、按钮图标等
 set(RESOURCE_FILES
     icons/icons.qrc
 )
 
-# Windows 下应用图标资源
-if(WIN32)
+# 应用图标配置
+set(APP_ICON_RESOURCE "")
+set(APP_LINUX_ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.png")
+set(APP_LINUX_ICON_NAME "livoxviewerqt")
+
+# Windows exe 文件图标资源
+if(IS_WINDOWS)
     set(APP_ICON_RESOURCE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.rc")
+
+    if(NOT EXISTS "${APP_ICON_RESOURCE}")
+        message(FATAL_ERROR "Windows icon resource not found: ${APP_ICON_RESOURCE}")
+    endif()
+
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.ico")
+        message(FATAL_ERROR "Windows icon file not found: ${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.ico")
+    endif()
+
+    set_source_files_properties("${APP_ICON_RESOURCE}" PROPERTIES LANGUAGE RC)
 endif()
 
 
@@ -284,13 +304,13 @@ else()
         WIN32 MACOSX_BUNDLE
         ${SOURCES}
         ${HEADERS}
-        ${RESOURCE_FILES}
+        ${APP_ICON_RESOURCE}
     )
-    
+
     # 处理UI文件
     qt5_wrap_ui(UI_HEADERS ${UI_FILES})
     target_sources(LivoxViewerQT PRIVATE ${UI_HEADERS})
-    
+
     # 处理资源文件
     if(RESOURCE_FILES)
         qt5_add_resources(QRC_SOURCES ${RESOURCE_FILES})
@@ -552,12 +572,21 @@ else()
         )
     endif()
     
-    # 安装图标文件
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.png")
-        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.png"
-            DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps
-            RENAME livoxviewerqt.png
+    # 安装 Linux 桌面 / AppImage 图标
+    if(EXISTS "${APP_LINUX_ICON_FILE}")
+        # 标准 hicolor 图标路径：推荐给 Linux 桌面环境和 AppImage 使用
+        install(FILES "${APP_LINUX_ICON_FILE}"
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+            RENAME ${APP_LINUX_ICON_NAME}.png
         )
+
+        # 兼容传统 pixmaps 路径
+        install(FILES "${APP_LINUX_ICON_FILE}"
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/pixmaps
+            RENAME ${APP_LINUX_ICON_NAME}.png
+        )
+    else()
+        message(WARNING "Linux icon file not found: ${APP_LINUX_ICON_FILE}")
     endif()
     
     # 创建启动脚本

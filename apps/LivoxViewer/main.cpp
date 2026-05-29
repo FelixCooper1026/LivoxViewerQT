@@ -18,13 +18,20 @@ int main(int argc, char *argv[])
 
     QApplication app(argc, argv);
 
-    // 设置应用程序信息
     app.setApplicationName("LivoxViewerQT");
+    app.setApplicationDisplayName("LivoxViewerQT");
     app.setApplicationVersion(QStringLiteral(LIVOX_VIEWER_VERSION));
     app.setOrganizationName("FelixCooper1026");
-    app.setWindowIcon(QIcon(":/resources/app_icon.ico"));
+
+#ifndef _WIN32
+    app.setDesktopFileName("LivoxViewerQT");
+#endif
+
+    const QIcon appIcon(":/icons/app_icon.png");
+    app.setWindowIcon(appIcon);
 
     LivoxViewerWindow w;
+    w.setWindowIcon(appIcon);
     w.show();
 
     return app.exec();

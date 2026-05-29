@@ -75,13 +75,11 @@ CMakeLists.txt.user
 *.autogen
 *_autogen/
 
-# Installer outputs and scripts
-installer_output/
+# build scripts
 scripts/
-LivoxViewerQT_Setup.iss
 
-# Portable version
-LivoxViewerQT_Portable/
+# distribution files
+dist/
 
 # Log files
 lidar_log/

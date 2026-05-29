@@ -1,1 +1,3 @@
-IDI_ICON1 ICON "app_icon.ico"
+#include <windows.h>
+
+IDI_ICON1 ICON DISCARDABLE "app_icon.ico"

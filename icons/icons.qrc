@@ -9,5 +9,7 @@
     <file>point_cloud_frozen.svg</file>
     <file>eye.svg</file>
     <file>eye_off.svg</file>
+
+    <file alias="app_icon.png">../resources/app_icon.png</file>
   </qresource>
 </RCC>
