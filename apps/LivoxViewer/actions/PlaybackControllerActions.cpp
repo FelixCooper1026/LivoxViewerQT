@@ -368,6 +368,7 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         if (playbackState.active) {
             if (!playbackState.fileInfoDockVisible) {
                 lvx2FileDock->show();
+                lvx2FileDock->raise();
                 playbackState.fileInfoDockVisible = true;
             }
         } else {
