@@ -34,6 +34,11 @@ public:
         Top = 5
     };
 
+    enum class ProjectionMode {
+        Perspective = 0,
+        Orthographic = 1
+    };
+
     struct GridConfig {
         enum Type {
             Square = 0,
@@ -81,6 +86,8 @@ public:
 
     void setTopDownView();
     void setViewPreset(ViewPreset preset);
+    void setProjectionMode(ProjectionMode mode);
+    ProjectionMode projectionMode() const { return m_projectionMode; }
 
 protected:
     void initializeGL() override;
@@ -135,6 +142,7 @@ private:
     bool m_mousePressed;
 
     float m_pointSize = 2.0f;
+    ProjectionMode m_projectionMode = ProjectionMode::Perspective;
 
     bool m_legendVisible = false;
     int m_legendMode = 0;

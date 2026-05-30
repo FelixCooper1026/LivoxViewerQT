@@ -375,7 +375,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarContent->setLayout(toolbarLayout);
     viewerLayout->addWidget(toolbarContent);
 
-    const QSize toolbarIconSize(fontMetrics().height() + 4, fontMetrics().height() + 4);
+    const QSize toolbarIconSize(fontMetrics().height() + 8, fontMetrics().height() + 8);
 
     ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar);
     displayGroup->setLeadingSeparatorVisible(true);
@@ -457,15 +457,15 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     addWidgetAction(displayGroup->moreMenu(), "着色", overflowColorMode);
     toolbarLayout->addWidget(displayGroup);
 
-    ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);
-    projectionControlsGroup = projectionGroup;
-    projectionDepthCheck = new QCheckBox("球面投影", projectionGroup);
+    ToolbarGroup* transformGroup = new ToolbarGroup("点云变换", viewerToolbar);
+    projectionControlsGroup = transformGroup;
+    projectionDepthCheck = new QCheckBox("球面投影", transformGroup);
     projectionDepthCheck->setChecked(projectionDepthEnabled);
     projectionDepthCheck->setToolTip("启用后按固定距离对深度进行投影，仅在球坐标点云时生效");
     connect(projectionDepthCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onProjectionDepthToggled);
-    projectionGroup->addPrimaryWidget(projectionDepthCheck);
+    transformGroup->addPrimaryWidget(projectionDepthCheck);
 
-    projectionDepthSpin = new QDoubleSpinBox(projectionGroup);
+    projectionDepthSpin = new QDoubleSpinBox(transformGroup);
     projectionDepthSpin->setRange(0.0, 10000.0);
     projectionDepthSpin->setDecimals(1);
     projectionDepthSpin->setSingleStep(1.0);
@@ -473,16 +473,16 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     projectionDepthSpin->setSuffix(" m");
     projectionDepthSpin->setToolTip("球坐标时，将 depth 投影到指定距离；0 表示使用原始 depth");
     connect(projectionDepthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &LivoxViewerWindow::onProjectionDepthChanged);
-    QWidget* depthRow = createLabeledWidget("深度:", projectionDepthSpin, projectionGroup);
-    projectionGroup->addSecondaryWidget(depthRow);
+    QWidget* depthRow = createLabeledWidget("深度:", projectionDepthSpin, transformGroup);
+    transformGroup->addSecondaryWidget(depthRow);
 
-    planarProjectionCheck = new QCheckBox("平面投影", projectionGroup);
+    planarProjectionCheck = new QCheckBox("平面投影", transformGroup);
     planarProjectionCheck->setChecked(planarProjectionEnabled);
     planarProjectionCheck->setToolTip("启用平面投影模式，将半球面展开为平面图");
     connect(planarProjectionCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onPlanarProjectionToggled);
-    projectionGroup->addPrimaryWidget(planarProjectionCheck);
+    transformGroup->addPrimaryWidget(planarProjectionCheck);
 
-    planarRadiusSpin = new QDoubleSpinBox(projectionGroup);
+    planarRadiusSpin = new QDoubleSpinBox(transformGroup);
     planarRadiusSpin->setRange(1.0, 1000.0);
     planarRadiusSpin->setDecimals(1);
     planarRadiusSpin->setSingleStep(1.0);
@@ -490,10 +490,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     planarRadiusSpin->setSuffix(" m");
     planarRadiusSpin->setToolTip("平面投影的半径大小");
     connect(planarRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &LivoxViewerWindow::onPlanarProjectionRadiusChanged);
-    QWidget* radiusRow = createLabeledWidget("半径:", planarRadiusSpin, projectionGroup);
-    projectionGroup->addSecondaryWidget(radiusRow);
+    QWidget* radiusRow = createLabeledWidget("半径:", planarRadiusSpin, transformGroup);
+    transformGroup->addSecondaryWidget(radiusRow);
 
-    QAction* projectionDepthAction = projectionGroup->moreMenu()->addAction("球面投影");
+    QAction* projectionDepthAction = transformGroup->moreMenu()->addAction("球面投影");
     projectionDepthAction->setCheckable(true);
     projectionDepthAction->setChecked(projectionDepthEnabled);
     connect(projectionDepthAction, &QAction::toggled, projectionDepthCheck, &QCheckBox::setChecked);
@@ -501,8 +501,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         QSignalBlocker blocker(projectionDepthAction);
         projectionDepthAction->setChecked(checked);
     });
-    addWidgetAction(projectionGroup->moreMenu(), "投影深度", cloneDoubleSpinBox(projectionDepthSpin, projectionGroup->moreMenu()));
-    QAction* planarProjectionAction = projectionGroup->moreMenu()->addAction("平面投影");
+    addWidgetAction(transformGroup->moreMenu(), "投影深度", cloneDoubleSpinBox(projectionDepthSpin, transformGroup->moreMenu()));
+    QAction* planarProjectionAction = transformGroup->moreMenu()->addAction("平面投影");
     planarProjectionAction->setCheckable(true);
     planarProjectionAction->setChecked(planarProjectionEnabled);
     connect(planarProjectionAction, &QAction::toggled, planarProjectionCheck, &QCheckBox::setChecked);
@@ -510,9 +510,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         QSignalBlocker blocker(planarProjectionAction);
         planarProjectionAction->setChecked(checked);
     });
-    addWidgetAction(projectionGroup->moreMenu(), "投影半径", cloneDoubleSpinBox(planarRadiusSpin, projectionGroup->moreMenu()));
-    projectionGroup->setVisible(false);
-    toolbarLayout->addWidget(projectionGroup);
+    addWidgetAction(transformGroup->moreMenu(), "投影半径", cloneDoubleSpinBox(planarRadiusSpin, transformGroup->moreMenu()));
+    transformGroup->setVisible(false);
 
     ToolbarGroup* toolsGroup = new ToolbarGroup("点云工具", viewerToolbar);
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
@@ -578,14 +577,37 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->moreMenu()->addAction(selectionAction);
     toolbarLayout->addWidget(toolsGroup);
 
+    ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);
+    QActionGroup* projectionModeGroup = new QActionGroup(projectionGroup);
+    projectionModeGroup->setExclusive(true);
+
+    QAction* perspectiveProjectionAction = new QAction(QIcon(":/icons/projection_perspective.svg"), "透视投影", this);
+    perspectiveProjectionAction->setCheckable(true);
+    perspectiveProjectionAction->setChecked(true);
+    perspectiveProjectionAction->setToolTip("透视投影");
+    projectionModeGroup->addAction(perspectiveProjectionAction);
+    connect(perspectiveProjectionAction, &QAction::triggered, this, [this]() {
+        pointCloudView->setProjectionMode(PointCloudView::ProjectionMode::Perspective);
+    });
+    projectionGroup->addPrimaryWidget(createIconButton(perspectiveProjectionAction, projectionGroup, toolbarIconSize));
+
+    QAction* orthographicProjectionAction = new QAction(QIcon(":/icons/projection_orthographic.svg"), "正交投影", this);
+    orthographicProjectionAction->setCheckable(true);
+    orthographicProjectionAction->setToolTip("正交投影");
+    projectionModeGroup->addAction(orthographicProjectionAction);
+    connect(orthographicProjectionAction, &QAction::triggered, this, [this]() {
+        pointCloudView->setProjectionMode(PointCloudView::ProjectionMode::Orthographic);
+    });
+    projectionGroup->addPrimaryWidget(createIconButton(orthographicProjectionAction, projectionGroup, toolbarIconSize));
+    projectionGroup->moreMenu()->addAction(perspectiveProjectionAction);
+    projectionGroup->moreMenu()->addAction(orthographicProjectionAction);
+    toolbarLayout->addWidget(projectionGroup);
+
     ToolbarGroup* viewGroup = new ToolbarGroup("视角控制", viewerToolbar);
-    QComboBox* viewPresetCombo = new QComboBox(viewGroup);
-    viewPresetCombo->addItems({"俯视图", "前视图", "左视图", "右视图", "后视图"});
-    auto applyViewPreset = [this, viewPresetCombo](int index) {
+    auto applyViewPreset = [this](int index) {
         if (!pointCloudView) {
             return;
         }
-        viewPresetCombo->setCurrentIndex(index);
         switch (index) {
         case 0:
             pointCloudView->setViewPreset(PointCloudView::ViewPreset::Top);
@@ -607,9 +629,29 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             break;
         }
     };
-    connect(viewPresetCombo, QOverload<int>::of(&QComboBox::activated), this, applyViewPreset);
-    QWidget* viewPresetRow = createLabeledWidget("视角:", viewPresetCombo, viewGroup);
-    viewGroup->addPrimaryWidget(viewPresetRow);
+
+    QActionGroup* viewActionGroup = new QActionGroup(viewGroup);
+    viewActionGroup->setExclusive(true);
+    const QStringList viewNames = {"俯视图", "前视图", "左视图", "右视图", "后视图"};
+    const QStringList viewIcons = {
+        ":/icons/view_top.svg",
+        ":/icons/view_front.svg",
+        ":/icons/view_left.svg",
+        ":/icons/view_right.svg",
+        ":/icons/view_back.svg"
+    };
+    for (int i = 0; i < viewNames.size(); ++i) {
+        QAction* action = new QAction(QIcon(viewIcons.at(i)), viewNames.at(i), this);
+        action->setCheckable(true);
+        action->setChecked(i == 0);
+        action->setToolTip(viewNames.at(i));
+        viewActionGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [applyViewPreset, i]() {
+            applyViewPreset(i);
+        });
+        viewGroup->addPrimaryWidget(createIconButton(action, viewGroup, toolbarIconSize));
+        viewGroup->moreMenu()->addAction(action);
+    }
 
     QAction* resetViewAction = new QAction(QIcon(":/icons/reset_view.svg"), "重置视图", this);
     resetViewAction->setToolTip("重置视图");
@@ -619,28 +661,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
     });
     viewGroup->addSecondaryWidget(createIconButton(resetViewAction, viewGroup, toolbarIconSize));
-
-    QActionGroup* viewActionGroup = new QActionGroup(viewGroup);
-    const QStringList viewNames = {"俯视图", "前视图", "左视图", "右视图", "后视图"};
-    for (int i = 0; i < viewNames.size(); ++i) {
-        QAction* action = viewGroup->moreMenu()->addAction(viewNames.at(i));
-        action->setCheckable(true);
-        viewActionGroup->addAction(action);
-        action->setChecked(i == 0);
-        connect(action, &QAction::triggered, this, [applyViewPreset, i]() {
-            applyViewPreset(i);
-        });
-    }
-    connect(viewPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), viewActionGroup, [viewActionGroup](int index) {
-        QList<QAction*> actions = viewActionGroup->actions();
-        if (index >= 0 && index < actions.size()) {
-            QSignalBlocker blocker(actions.at(index));
-            actions.at(index)->setChecked(true);
-        }
-    });
     viewGroup->moreMenu()->addSeparator();
     viewGroup->moreMenu()->addAction(resetViewAction);
     toolbarLayout->addWidget(viewGroup);
+    toolbarLayout->addWidget(transformGroup);
 
     return viewerToolbar;
 }

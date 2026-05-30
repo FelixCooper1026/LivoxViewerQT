@@ -1,0 +1,18 @@
+<svg width="200" height="200" viewBox="7 7 86 86" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 1. 实线部分：外部轮廓和前方可见边 -->
+  <g stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 外部六边形轮廓 -->
+    <path d="M15.4 30 L50 10 L84.6 30 L84.6 70 L50 90 L15.4 70 Z" />
+    
+    <!-- 前方可见的交汇边 (Y字形) -->
+    <path d="M15.4 30 L50 50 L84.6 30" />
+    <path d="M50 50 L50 90" />
+  </g>
+
+  <!-- 2. 虚线部分：调疏后的后方隐藏边 -->
+  <g stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="15 12">
+    <path d="M50 10 L50 50" />
+    <path d="M15.4 70 L50 50" />
+    <path d="M84.6 70 L50 50" />
+  </g>
+</svg>

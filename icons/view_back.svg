@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="9 9 82 88"
+     fill="none"
+     stroke="black"
+     stroke-width="6"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+
+    <!-- 后面的面：蓝灰色 -->
+    <polygon points="35,15 85,25 85,75 35,65"
+             fill="#7F9CB8"
+             stroke="black"></polygon>
+
+    <!-- 前侧大面：透明 -->
+    <polygon points="15,35 65,45 65,95 15,85"
+             fill="none"
+             stroke="black"></polygon>
+
+    <!-- 右侧面：透明 -->
+    <polygon points="65,45 85,25 85,75 65,95"
+             fill="none"
+             stroke="black"></polygon>
+
+    <!-- 顶面：透明 -->
+    <polygon points="15,35 35,15 85,25 65,45"
+             fill="none"
+             stroke="black"></polygon>
+
+    <!-- 补上左下连接边 -->
+    <line x1="15" y1="85" x2="35" y2="65" stroke="black"></line>
+</svg>

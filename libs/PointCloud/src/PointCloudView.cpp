@@ -474,7 +474,15 @@ void PointCloudView::paintGL()
     m_projection.setToIdentity();
     const float nearPlane = 0.1f;
     float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
-    m_projection.perspective(45.0f, float(width()) / float(height()), nearPlane, farPlane);    
+    const float fovY = 45.0f;
+    const float aspect = float(qMax(1, width())) / float(qMax(1, height()));
+    if (m_projectionMode == ProjectionMode::Perspective) {
+        m_projection.perspective(fovY, aspect, nearPlane, farPlane);
+    } else {
+        const float halfHeight = m_distance * std::tan((fovY * float(M_PI) / 180.0f) * 0.5f);
+        const float halfWidth = halfHeight * aspect;
+        m_projection.ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane);
+    }
     m_program->setUniformValue("modelView", m_modelView);
     m_program->setUniformValue("projection", m_projection);
     m_program->setUniformValue("uPointSize", m_pointSize);
@@ -1013,6 +1021,12 @@ void PointCloudView::resetView()
 void PointCloudView::setPointSize(float sizePixels)
 {
     m_pointSize = qBound(1.0f, sizePixels, 10.0f);
+    update();
+}
+
+void PointCloudView::setProjectionMode(ProjectionMode mode)
+{
+    m_projectionMode = mode;
     update();
 }
 

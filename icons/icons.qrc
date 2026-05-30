@@ -5,6 +5,13 @@
     <file>reset_view.svg</file>
     <file>refresh.svg</file>
     <file>grid.svg</file>
+    <file>projection_perspective.svg</file>
+    <file>projection_orthographic.svg</file>
+    <file>view_top.svg</file>
+    <file>view_front.svg</file>
+    <file>view_left.svg</file>
+    <file>view_right.svg</file>
+    <file>view_back.svg</file>
     <file>point_cloud_live.svg</file>
     <file>point_cloud_frozen.svg</file>
     <file>eye.svg</file>

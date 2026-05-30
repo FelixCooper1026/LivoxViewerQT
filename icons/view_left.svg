@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="9 9 82 88"
+     fill="none"
+     stroke="black"
+     stroke-width="6"
+     stroke-linecap="round"
+     stroke-linejoin="round">
+
+  <!-- Left Face -->
+  <polygon points="15,25 35,45 35,95 15,75"
+           fill="#7F9CB8"
+           stroke="black"/>
+
+  <!-- Right Face -->
+  <polygon points="35,45 85,35 85,85 35,95"
+           fill="none"
+           stroke="black"/>
+
+  <!-- Top Face -->
+  <polygon points="15,25 65,15 85,35 35,45"
+           fill="none"
+           stroke="black"/>
+</svg>
