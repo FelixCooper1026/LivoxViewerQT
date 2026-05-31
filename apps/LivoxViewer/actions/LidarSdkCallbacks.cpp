@@ -1,7 +1,9 @@
 #include "LivoxViewerWindow.h"
+#include "LivoxCore/LidarDiagnostics.h"
 #include "LivoxCore/LidarPacketUtils.h"
 #include "LivoxCore/LidarSdkService.h"
 #include <QRegularExpression>
+#include <QStringList>
 #include <QTime>
 #include <QLayout>
 #include <QLayoutItem>
@@ -27,6 +29,20 @@ QString lidarTypeName(uint8_t devType)
     case kLivoxLidarTypePA: return "PA";
     default: return "Unknown";
     }
+}
+
+QString hmsRichText(const QString& text, const QVector<LivoxCore::HmsCodeInfo>& codes)
+{
+    const QStringList lines = text.split('\n');
+    QStringList richLines;
+    for (int i = 0; i < lines.size(); ++i) {
+        const int severity = i < codes.size() ? LivoxCore::hmsSeverity(codes.at(i).level) : 0;
+        richLines.append(QString("<span style=\"color:%1; font-weight:%2;\">%3</span>")
+                         .arg(LivoxCore::hmsSeverityColor(severity))
+                         .arg(severity >= 3 ? "600" : "400")
+                         .arg(lines.at(i).toHtmlEscaped()));
+    }
+    return richLines.join("<br/>");
 }
 }
 
@@ -159,6 +175,8 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                     updatedDevice.is_streaming = oldDevice.is_streaming;
                     updatedDevice.firmware_version = oldDevice.firmware_version;
                     updatedDevice.work_state = oldDevice.work_state.isEmpty() ? updatedDevice.work_state : oldDevice.work_state;
+                    updatedDevice.diagnostic_summary = oldDevice.diagnostic_summary;
+                    updatedDevice.diagnostic_severity = oldDevice.diagnostic_severity;
                 }
                 window->lidarDevices[device.handle] = updatedDevice;
             }
@@ -533,6 +551,8 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 // 检查参数长度是否合理
                 if (length > 0 && length <= 1024) {
                     QString valueStr = window->formatLidarParameterValue(key, const_cast<uint8_t*>(value), length);
+                    const QVector<LivoxCore::HmsCodeInfo> hmsCodes =
+                        key == kKeyHmsCode ? LivoxCore::parseHmsCodes(value, length) : QVector<LivoxCore::HmsCodeInfo>();
                     if (key == kKeyVersionApp || key == kKeyCurWorkState) {
                         QMutexLocker locker(&window->lidarDeviceMutex);
                         auto it = window->lidarDevices.find(handle);
@@ -542,6 +562,15 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                             } else {
                                 it->work_state = valueStr;
                             }
+                            deviceCardNeedsRefresh = true;
+                        }
+                    }
+                    if (key == kKeyHmsCode) {
+                        QMutexLocker locker(&window->lidarDeviceMutex);
+                        auto it = window->lidarDevices.find(handle);
+                        if (it != window->lidarDevices.end()) {
+                            it->diagnostic_summary = LivoxCore::hmsSummary(hmsCodes);
+                            it->diagnostic_severity = LivoxCore::maxHmsSeverity(hmsCodes);
                             deviceCardNeedsRefresh = true;
                         }
                     }
@@ -559,7 +588,14 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                     // 更新UI显示
                     if (window->parameterState.labels.contains(key)) {
                         // 状态参数：实时更新
-                        window->parameterState.labels[key]->setText(valueStr);
+                        QLabel* label = window->parameterState.labels[key];
+                        if (key == kKeyHmsCode) {
+                            label->setTextFormat(Qt::RichText);
+                            label->setText(hmsRichText(valueStr, hmsCodes));
+                        } else {
+                            label->setTextFormat(Qt::PlainText);
+                            label->setText(valueStr);
+                        }
                     } else if (window->parameterState.controls.contains(key)) {
                         // 可配置参数：只在设备连接时更新一次，避免与用户配置冲突
                         // 只处理非状态参数的可配置参数，且只在设备连接时更新一次

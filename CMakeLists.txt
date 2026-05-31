@@ -209,6 +209,7 @@ set(SOURCES
      apps/LivoxViewer/widgets/SwitchCheckBox.h
      libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
+    libs/LivoxCore/include/LivoxCore/LidarDiagnostics.h
     libs/LivoxCore/include/LivoxCore/LidarPacketUtils.h
     libs/LivoxCore/include/LivoxCore/LidarParameterService.h
     libs/LivoxCore/include/LivoxCore/LidarSdkService.h

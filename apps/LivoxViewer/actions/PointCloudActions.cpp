@@ -1,5 +1,8 @@
 #include "LivoxViewerWindow.h"
 
+#include <QIcon>
+#include <QSignalBlocker>
+
 #include <algorithm>
 
 void LivoxViewerWindow::onFrameIntervalChanged(int ms)
@@ -39,7 +42,7 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
     if (pointCloudView) pointCloudView->setPointSize(pointSizePx);
 }
 
-void LivoxViewerWindow::onColorModeChanged(int index)
+void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;
     if (colorModeCombo) {
@@ -68,6 +71,8 @@ void LivoxViewerWindow::updatePointCloudLegend()
         pointCloudView->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
     } else if (mode == ColorSolid) {
         pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
+    } else if (mode == ColorByLine) {
+        pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, false);
     } else if (mode == ColorByPlanarProjection) {
         pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
     }
@@ -127,9 +132,28 @@ void LivoxViewerWindow::onPlanarProjectionRadiusChanged(double radius)
 void LivoxViewerWindow::onPointCloudVisualizationToggled(bool enabled)
 {
     pointCloudVisualizationEnabled = enabled;
+    syncPointCloudVisualizationAction();
     if (enabled) {
         logMessage("实时点云显示已恢复");
     } else {
         logMessage("实时点云显示已冻结");
     }
+}
+
+void LivoxViewerWindow::syncPointCloudVisualizationAction()
+{
+    if (!actionPointCloudVisualization) {
+        return;
+    }
+
+    actionPointCloudVisualization->setText(pointCloudVisualizationEnabled ? "冻结实时点云" : "恢复实时点云");
+    actionPointCloudVisualization->setToolTip(pointCloudVisualizationEnabled
+        ? "冻结实时点云显示，不控制离线播放"
+        : "恢复实时点云显示，不控制离线播放");
+    actionPointCloudVisualization->setIcon(QIcon(pointCloudVisualizationEnabled
+        ? ":/icons/point_cloud_live.svg"
+        : ":/icons/point_cloud_frozen.svg"));
+    actionPointCloudVisualization->setEnabled(!measurementModeActive);
+    QSignalBlocker blocker(actionPointCloudVisualization);
+    actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);
 }

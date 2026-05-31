@@ -5,12 +5,19 @@
 #include "PointCloud/PointCloudPipeline.h"
 
 #include <QColor>
+#include <QVector>
 
 namespace PointCloudColorizer {
 
 struct Config {
     int mode = 0;
     QColor solidColor = QColor(255, 255, 255);
+    QVector<QColor> lineColors = {
+        QColor(33, 150, 243),
+        QColor(46, 204, 113),
+        QColor(255, 193, 7),
+        QColor(233, 30, 99)
+    };
     float distanceColorMin = 0.0f;
     float distanceColorMax = 100.0f;
     float elevationColorMin = -5.0f;

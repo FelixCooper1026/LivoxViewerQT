@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "LivoxCore/LidarDiagnostics.h"
 #include <QApplication>
 #include <QSplitter>
 #include <QScrollArea>
@@ -247,8 +248,11 @@ QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& devi
     const bool active = hasCurrentLidarHandle && currentLidarHandle == device.handle;
     const QString modelName = device.product_info.isEmpty() ? QStringLiteral("Unknown") : device.product_info;
     const QString statusText = device.work_state.isEmpty() ? QStringLiteral("读取中") : device.work_state;
-    const QString tip = QStringLiteral("型号: %1\nSN: %2\nIP: %3\n状态: %4")
-                            .arg(modelName, device.sn, device.lidar_ip, statusText);
+    const QString diagnosticText = device.diagnostic_summary.isEmpty()
+        ? QStringLiteral("诊断码: 未知")
+        : device.diagnostic_summary;
+    const QString tip = QStringLiteral("型号: %1\nSN: %2\nIP: %3\n状态: %4\n%5")
+                            .arg(modelName, device.sn, device.lidar_ip, statusText, diagnosticText);
 
     RealtimeDeviceCard* card = new RealtimeDeviceCard(realtimeDeviceListWidget);
     card->setObjectName("RealtimeDeviceCard");
@@ -285,13 +289,18 @@ QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& devi
 
     QLabel* snLabel = new QLabel(QStringLiteral("SN: %1").arg(device.sn), card);
     QLabel* ipLabel = new QLabel(QStringLiteral("IP: %1").arg(device.lidar_ip), card);
-    for (QLabel* label : {snLabel, ipLabel}) {
+    QLabel* diagnosticLabel = new QLabel(diagnosticText, card);
+    diagnosticLabel->setStyleSheet(QString("color: %1; font-weight: %2;")
+                                       .arg(LivoxCore::hmsSeverityColor(device.diagnostic_severity))
+                                       .arg(device.diagnostic_severity >= 3 ? "600" : "400"));
+    for (QLabel* label : {snLabel, ipLabel, diagnosticLabel}) {
         label->setToolTip(tip);
         label->setWordWrap(true);
         label->setAttribute(Qt::WA_TransparentForMouseEvents);
     }
     cardLayout->addWidget(snLabel);
     cardLayout->addWidget(ipLabel);
+    cardLayout->addWidget(diagnosticLabel);
     return card;
 }
 

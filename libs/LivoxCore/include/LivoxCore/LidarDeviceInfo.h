@@ -12,6 +12,8 @@ struct LidarDeviceInfo {
     QString product_info;
     QString firmware_version;
     QString work_state;
+    QString diagnostic_summary;
+    int diagnostic_severity = 0;
     bool is_connected;
     bool is_streaming;
     bool parameter_query_ready = false;

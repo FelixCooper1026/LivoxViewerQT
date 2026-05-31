@@ -685,13 +685,14 @@ void PointCloudView::paintGL()
              case 1: title = "Distance"; break;
              case 2: title = "Elevation"; break;
              case 3: title = "Color"; break;
-             case 4: title = "Planar Projection"; break;
+             case 4: title = "Line"; break;
+             case 5: title = "Planar Projection"; break;
              default: title = "Unknown"; break;
          }
          QStringList tickLabels;
          if (m_legendMode == 0) {
              tickLabels = {"255", "204", "153", "102", "51", "0"};
-         } else if (m_legendMode == 1 || m_legendMode == 2 || m_legendMode == 4) {
+         } else if (m_legendMode == 1 || m_legendMode == 2 || m_legendMode == 5) {
              auto fmt = [](float v) { return QString::number(v, 'f', 2); };
              tickLabels = { fmt(m_legendMax), fmt((m_legendMin + m_legendMax) * 0.5f), fmt(m_legendMin) };
          } else {
@@ -723,7 +724,7 @@ void PointCloudView::paintGL()
          };
          if (m_legendMode == 0 || m_legendMode == 1) addRefDistStops();
          else if (m_legendMode == 2) addElevationStops();
-         else if (m_legendMode == 4) {
+         else if (m_legendMode == 5) {
              // 平面投影：使用HSV渐变
              grad.setColorAt(0.0, QColor(255, 0, 0));      // 红色
              grad.setColorAt(0.2, QColor(255, 255, 0));    // 黄色
@@ -756,7 +757,7 @@ void PointCloudView::paintGL()
              drawTick(0.4f,  "102");
              drawTick(0.2f,  "51");
              drawTick(0.0f,  "0");
-         } else if (m_legendMode == 1 || m_legendMode == 2 || m_legendMode == 4) {
+         } else if (m_legendMode == 1 || m_legendMode == 2 || m_legendMode == 5) {
              auto fmt = [](float v) { return QString::number(v, 'f', 2); };
              drawTick(1.0f, fmt(m_legendMax));
              drawTick(0.5f, fmt((m_legendMin + m_legendMax) * 0.5f));

@@ -27,6 +27,7 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStackedWidget>
+#include <QStringList>
 #include <QTextStream>
 #include <QToolButton>
 #include <QtGlobal>
@@ -417,6 +418,13 @@ void LivoxViewerWindow::loadViewPreferences()
     elevationLegendMin = settings.value("legend/elevationMin", elevationLegendMin).toFloat();
     elevationLegendMax = settings.value("legend/elevationMax", elevationLegendMax).toFloat();
     solidColor = settings.value("color/solidColor", solidColor).value<QColor>();
+    const QStringList storedLineColors = settings.value("color/lineColors").toStringList();
+    for (int i = 0; i < storedLineColors.size() && i < lineColors.size(); ++i) {
+        const QColor color(storedLineColors.at(i));
+        if (color.isValid()) {
+            lineColors[i] = color;
+        }
+    }
     if (distanceLegendMax <= distanceLegendMin) {
         distanceLegendMax = distanceLegendMin + 1.0f;
     }
@@ -456,6 +464,11 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("legend/elevationMin", elevationLegendMin);
     settings.setValue("legend/elevationMax", elevationLegendMax);
     settings.setValue("color/solidColor", solidColor);
+    QStringList storedLineColors;
+    for (const QColor& color : lineColors) {
+        storedLineColors.append(color.name(QColor::HexRgb));
+    }
+    settings.setValue("color/lineColors", storedLineColors);
     settings.setValue("theme/mode", themeMode);
     settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
 }
@@ -538,6 +551,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QVBoxLayout* legendLayout = qobject_cast<QVBoxLayout*>(legendTab->layout());
     QVBoxLayout* colorPageLayout = qobject_cast<QVBoxLayout*>(colorTab->layout());
     QColor selectedSolidColor = solidColor;
+    QVector<QColor> selectedLineColors = lineColors;
     QButtonGroup* themeGroup = new QButtonGroup(&dlg);
     QWidget* themeOptions = new QWidget(themeTab);
     QHBoxLayout* themeOptionsLayout = new QHBoxLayout(themeOptions);
@@ -654,6 +668,32 @@ void LivoxViewerWindow::showPreferencesDialog()
         solidColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSolidColor.name()));
     });
 
+    QVector<QWidget*> lineColorRows;
+    for (int i = 0; i < selectedLineColors.size(); ++i) {
+        QWidget* row = new QWidget(&dlg);
+        QHBoxLayout* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(8);
+        QFrame* preview = new QFrame(row);
+        preview->setFixedSize(28, 20);
+        preview->setFrameShape(QFrame::Box);
+        preview->setLineWidth(1);
+        preview->setStyleSheet(QString("background-color: %1;").arg(selectedLineColors.at(i).name()));
+        QPushButton* button = new QPushButton("选择颜色", row);
+        rowLayout->addWidget(preview);
+        rowLayout->addWidget(button);
+        rowLayout->addStretch();
+        connect(button, &QPushButton::clicked, &dlg, [&dlg, &selectedLineColors, preview, i]() {
+            QColor color = QColorDialog::getColor(selectedLineColors.at(i), &dlg, QString("选择 Line %1 点云颜色").arg(i));
+            if (!color.isValid()) {
+                return;
+            }
+            selectedLineColors[i] = color;
+            preview->setStyleSheet(QString("background-color: %1;").arg(color.name()));
+        });
+        lineColorRows.append(row);
+    }
+
     connect(distanceMinSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
             [distanceMaxSpin](double value) { distanceMaxSpin->setMinimum(value + 0.01); });
     connect(distanceMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
@@ -704,6 +744,15 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* colorSection = createPreferenceSection(colorTab);
     addPreferenceRow(colorSection, "点云颜色", "设置纯色着色模式下所有点的显示颜色。", solidColorRow);
     colorPageLayout->addWidget(colorSection);
+    addPreferenceSectionTitle(colorPageLayout, "线号模式");
+    QFrame* lineColorSection = createPreferenceSection(colorTab);
+    for (int i = 0; i < lineColorRows.size(); ++i) {
+        addPreferenceRow(lineColorSection,
+                         QString("Line %1").arg(i),
+                         QString("设置线号 %1 的点云颜色。").arg(i),
+                         lineColorRows.at(i));
+    }
+    colorPageLayout->addWidget(lineColorSection);
     colorPageLayout->addStretch();
 
     const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色"};
@@ -751,6 +800,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     elevationLegendMin = float(elevationMinSpin->value());
     elevationLegendMax = float(elevationMaxSpin->value());
     solidColor = selectedSolidColor;
+    lineColors = selectedLineColors;
     themeMode = themeGroup->checkedId();
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();

@@ -12,7 +12,8 @@ constexpr int kColorByReflectivity = 0;
 constexpr int kColorByDistance = 1;
 constexpr int kColorByElevation = 2;
 constexpr int kColorSolid = 3;
-constexpr int kColorByPlanarProjection = 4;
+constexpr int kColorByLine = 4;
+constexpr int kColorByPlanarProjection = 5;
 
 void calculateReflectivityColor(uint8_t reflectivity, float& r, float& g, float& b)
 {
@@ -43,7 +44,7 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
     legend.mode = config.mode;
     legend.minValue = 0.0f;
     legend.maxValue = 1.0f;
-    legend.visible = (config.mode != kColorSolid);
+    legend.visible = (config.mode != kColorSolid && config.mode != kColorByLine);
 
     if (points.isEmpty()) {
         return legend;
@@ -102,6 +103,14 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
             point.r = config.solidColor.redF();
             point.g = config.solidColor.greenF();
             point.b = config.solidColor.blueF();
+        }
+        legend.visible = false;
+    } else if (config.mode == kColorByLine) {
+        for (PointCloudPoint& point : points) {
+            const QColor color = config.lineColors.at(int(point.line) % config.lineColors.size());
+            point.r = color.redF();
+            point.g = color.greenF();
+            point.b = color.blueF();
         }
         legend.visible = false;
     } else if (config.mode == kColorByPlanarProjection) {

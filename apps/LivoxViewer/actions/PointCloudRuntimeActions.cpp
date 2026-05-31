@@ -41,6 +41,7 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
     PointCloudColorizer::Config colorConfig;
     colorConfig.mode = effectiveColorMode();
     colorConfig.solidColor = solidColor;
+    colorConfig.lineColors = lineColors;
     colorConfig.distanceColorMin = distanceLegendMin;
     colorConfig.distanceColorMax = distanceLegendMax;
     colorConfig.elevationColorMin = elevationLegendMin;

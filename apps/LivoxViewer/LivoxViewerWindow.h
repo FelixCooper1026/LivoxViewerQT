@@ -147,6 +147,7 @@ private:
     int effectiveColorMode() const;
     void updatePointCloudLegend();
     void updateProjectionControlsVisibility();
+    void syncPointCloudVisualizationAction();
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
@@ -180,7 +181,8 @@ private:
         ColorByDistance = 1,
         ColorByElevation = 2,
         ColorSolid = 3,
-        ColorByPlanarProjection = 4  // 新增：平面投影模式
+        ColorByLine = 4,
+        ColorByPlanarProjection = 5  // 新增：平面投影模式
     };
 
     enum ThemeMode {
@@ -224,6 +226,7 @@ private:
     QAction* actionShowImuCharts = nullptr;
     QAction* actionPlayLvx2 = nullptr;
     QAction* actionPlayPcap = nullptr;
+    QAction* actionPointCloudVisualization = nullptr;
 
     // Livox SDK related
     bool sdk_initialized;
@@ -291,6 +294,12 @@ private:
     int colorMode = ColorByReflectivity;
     int themeMode = ThemeFollowSystem;
     QColor solidColor = QColor(255, 255, 255);
+    QVector<QColor> lineColors = {
+        QColor(33, 150, 243),
+        QColor(46, 204, 113),
+        QColor(255, 193, 7),
+        QColor(233, 30, 99)
+    };
     float pointSizePx = 2.0f;
     float distanceLegendMin = 0.0f;
     float distanceLegendMax = 100.0f;
@@ -314,6 +323,7 @@ private:
 
     // 测距暂停播放
     bool measurementModeActive = false;
+    bool pointCloudVisualizationBeforeMeasurement = true;
 
     // 更新选中点属性表
     void updateSelectionTableAndLog();
@@ -433,7 +443,7 @@ private slots:
     void onTabChanged(int index);  // 添加标签页切换槽函数
     void onRenderTick();           // 渲染定时器回调（滑动窗口）
     void onPointSizeChanged(int px);
-    void onColorModeChanged(int index);
+    void onColorModeClicked(int index);
     void onProjectionDepthToggled(bool enabled);
     void onProjectionDepthChanged(double meters);
     void onPlanarProjectionToggled(bool enabled);

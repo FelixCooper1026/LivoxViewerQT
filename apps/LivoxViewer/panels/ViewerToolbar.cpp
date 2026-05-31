@@ -407,26 +407,14 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     displayGroup->addPrimaryWidget(createIconButton(gridAction, displayGroup, toolbarIconSize));
 
-    QAction* visualizationAction = new QAction(QIcon(":/icons/point_cloud_live.svg"), "冻结实时点云", this);
-    visualizationAction->setCheckable(true);
-    visualizationAction->setChecked(pointCloudVisualizationEnabled);
-    auto syncVisualizationAction = [this, visualizationAction]() {
-        visualizationAction->setText(pointCloudVisualizationEnabled ? "冻结实时点云" : "恢复实时点云");
-        visualizationAction->setToolTip(pointCloudVisualizationEnabled
-            ? "冻结实时点云显示，不控制离线播放"
-            : "恢复实时点云显示，不控制离线播放");
-        visualizationAction->setIcon(QIcon(pointCloudVisualizationEnabled
-            ? ":/icons/point_cloud_live.svg"
-            : ":/icons/point_cloud_frozen.svg"));
-        QSignalBlocker blocker(visualizationAction);
-        visualizationAction->setChecked(pointCloudVisualizationEnabled);
-    };
-    connect(visualizationAction, &QAction::triggered, this, [this, syncVisualizationAction](bool checked) {
+    actionPointCloudVisualization = new QAction(QIcon(":/icons/point_cloud_live.svg"), "冻结实时点云", this);
+    actionPointCloudVisualization->setCheckable(true);
+    actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);
+    connect(actionPointCloudVisualization, &QAction::triggered, this, [this](bool checked) {
         onPointCloudVisualizationToggled(checked);
-        syncVisualizationAction();
     });
-    syncVisualizationAction();
-    displayGroup->addPrimaryWidget(createIconButton(visualizationAction, displayGroup, toolbarIconSize));
+    syncPointCloudVisualizationAction();
+    displayGroup->addPrimaryWidget(createIconButton(actionPointCloudVisualization, displayGroup, toolbarIconSize));
 
     QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
     spinFrameIntervalTop->setRange(100, 30000);
@@ -447,29 +435,30 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->addPrimaryWidget(pointSizeRow);
 
     colorModeCombo = new QComboBox(displayGroup);
-    colorModeCombo->addItems({"反射率", "距离", "高度", "纯色"});
+    colorModeCombo->addItems({"反射率", "距离", "高度", "纯色", "线号"});
     colorModeCombo->setCurrentIndex(colorMode);
     colorModeCombo->setToolTip("点云着色模式");
-    connect(colorModeCombo, QOverload<int>::of(&QComboBox::activated), this, &LivoxViewerWindow::onColorModeChanged);
     QWidget* colorModeRow = createLabeledWidget("着色:", colorModeCombo, displayGroup);
     displayGroup->addPrimaryWidget(colorModeRow);
 
     displayGroup->moreMenu()->addAction(gridAction);
-    displayGroup->moreMenu()->addAction(visualizationAction);
+    displayGroup->moreMenu()->addAction(actionPointCloudVisualization);
     addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(spinFrameIntervalTop, displayGroup->moreMenu()));
     addWidgetAction(displayGroup->moreMenu(), "点大小", cloneSpinBox(pointSizeSpin, displayGroup->moreMenu()));
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
-    overflowColorMode->addItems({"反射率", "距离", "高度", "纯色"});
+    overflowColorMode->addItems({"反射率", "距离", "高度", "纯色", "线号"});
     overflowColorMode->setCurrentIndex(colorModeCombo->currentIndex());
-    connect(colorModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), overflowColorMode, [overflowColorMode](int index) {
+    connect(colorModeCombo, QOverload<int>::of(&QComboBox::activated), this, [this, overflowColorMode](int index) {
         QSignalBlocker blocker(overflowColorMode);
         overflowColorMode->setCurrentIndex(index);
+        onColorModeClicked(index);
     });
     connect(overflowColorMode, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
         if (colorModeCombo) {
+            QSignalBlocker blocker(colorModeCombo);
             colorModeCombo->setCurrentIndex(index);
         }
-        onColorModeChanged(index);
+        onColorModeClicked(index);
     });
     addWidgetAction(displayGroup->moreMenu(), "着色", overflowColorMode);
     toolbarLayout->addWidget(displayGroup);
@@ -542,12 +531,16 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
         const bool enable = !pointCloudView->isMeasurementModeEnabled();
         pointCloudView->setMeasurementModeEnabled(enable);
+        measurementModeActive = enable;
         QSignalBlocker blocker(measureAction);
         measureAction->setChecked(enable);
         if (enable) {
+            pointCloudVisualizationBeforeMeasurement = pointCloudVisualizationEnabled;
+            onPointCloudVisualizationToggled(false);
             statusLabelBar->setText("测距模式：按住Ctrl+左键选择第一点");
             logMessage("进入测距模式，已暂停点云播放");
         } else {
+            onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
             statusLabelBar->setText("已连接 - 采样中");
             logMessage("退出测距模式，恢复点云播放");
         }
