@@ -1,24 +1,34 @@
 #include "LivoxViewerWindow.h"
+#include "widgets/SwitchCheckBox.h"
 
+#include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QApplication>
+#include <QButtonGroup>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
-#include <QFormLayout>
+#include <QDir>
+#include <QFile>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QPalette>
+#include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QSizePolicy>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
-#include <QTabWidget>
+#include <QStackedWidget>
+#include <QTextStream>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QtGlobal>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -66,6 +76,131 @@ bool defaultAutoConfigHostIp()
 #else
     return true;
 #endif
+}
+
+#ifdef Q_OS_LINUX
+int linuxSystemDarkThemeState()
+{
+    const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    const QStringList envKeys = {
+        "COLOR_SCHEME",
+        "GTK_THEME",
+        "XDG_CURRENT_DESKTOP",
+        "DESKTOP_SESSION"
+    };
+    for (const QString& key : envKeys) {
+        const QString value = env.value(key).toLower();
+        if (value.contains("dark")) {
+            return 1;
+        }
+        if (value.contains("light")) {
+            return 0;
+        }
+    }
+
+    auto readTextFile = [](const QString& path) {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            return QString();
+        }
+        QTextStream stream(&file);
+        return stream.readAll().toLower();
+    };
+
+    const QString gtkSettings = readTextFile(QDir::homePath() + "/.config/gtk-3.0/settings.ini");
+    if (gtkSettings.contains("gtk-application-prefer-dark-theme=true") ||
+        (gtkSettings.contains("gtk-theme-name") && gtkSettings.contains("dark"))) {
+        return 1;
+    }
+    if (gtkSettings.contains("gtk-application-prefer-dark-theme=false") ||
+        (gtkSettings.contains("gtk-theme-name") && gtkSettings.contains("light"))) {
+        return 0;
+    }
+
+    const QString kdeGlobals = readTextFile(QDir::homePath() + "/.config/kdeglobals");
+    if (kdeGlobals.contains("colorscheme") && kdeGlobals.contains("dark")) {
+        return 1;
+    }
+    if (kdeGlobals.contains("colorscheme") && kdeGlobals.contains("light")) {
+        return 0;
+    }
+
+    return -1;
+}
+#endif
+
+QLabel* createPreferenceDescription(const QString& text, QWidget* parent)
+{
+    QLabel* label = new QLabel(text, parent);
+    label->setWordWrap(true);
+    label->setStyleSheet("color: palette(mid);");
+    return label;
+}
+
+QFrame* createPreferenceSection(QWidget* parent)
+{
+    QFrame* section = new QFrame(parent);
+    section->setObjectName("PreferenceSection");
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+
+    QVBoxLayout* layout = new QVBoxLayout(section);
+    layout->setContentsMargins(16, 10, 16, 10);
+    layout->setSpacing(0);
+
+    section->setStyleSheet(
+        "#PreferenceSection {"
+        "  background: palette(base);"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "}"
+    );
+    return section;
+}
+
+void addPreferenceSectionTitle(QVBoxLayout* pageLayout, const QString& title)
+{
+    QLabel* label = new QLabel(title, pageLayout->parentWidget());
+    QFont font = label->font();
+    font.setBold(true);
+    font.setPointSizeF(font.pointSizeF() * 1.1);
+    label->setFont(font);
+    pageLayout->addWidget(label);
+}
+
+void addPreferenceRow(QFrame* section, const QString& title, const QString& description, QWidget* control)
+{
+    QVBoxLayout* sectionLayout = qobject_cast<QVBoxLayout*>(section->layout());
+    const int rowCount = section->property("rowCount").toInt();
+    if (rowCount > 0) {
+        QFrame* separator = new QFrame(section);
+        separator->setFrameShape(QFrame::HLine);
+        separator->setFrameShadow(QFrame::Plain);
+        separator->setStyleSheet("color: palette(mid);");
+        sectionLayout->addWidget(separator);
+    }
+
+    QWidget* row = new QWidget(section);
+    QHBoxLayout* rowLayout = new QHBoxLayout(row);
+    rowLayout->setContentsMargins(0, 10, 0, 10);
+    rowLayout->setSpacing(18);
+
+    QVBoxLayout* textLayout = new QVBoxLayout();
+    textLayout->setContentsMargins(0, 0, 0, 0);
+    textLayout->setSpacing(4);
+
+    QLabel* titleLabel = new QLabel(title, row);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    textLayout->addWidget(titleLabel);
+    if (!description.isEmpty()) {
+        textLayout->addWidget(createPreferenceDescription(description, row));
+    }
+
+    rowLayout->addLayout(textLayout, 1);
+    rowLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
+    sectionLayout->addWidget(row);
+    section->setProperty("rowCount", rowCount + 1);
 }
 
 } // namespace
@@ -143,11 +278,22 @@ bool LivoxViewerWindow::shouldUseDarkTheme() const
     if (themeMode == ThemeLight) {
         return false;
     }
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
-#else
-    return QApplication::style()->standardPalette().color(QPalette::Window).lightness() < 128;
+#ifdef Q_OS_LINUX
+    const int linuxDarkState = linuxSystemDarkThemeState();
+    if (linuxDarkState >= 0) {
+        return linuxDarkState == 1;
+    }
 #endif
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    const Qt::ColorScheme colorScheme = QGuiApplication::styleHints()->colorScheme();
+    if (colorScheme == Qt::ColorScheme::Dark) {
+        return true;
+    }
+    if (colorScheme == Qt::ColorScheme::Light) {
+        return false;
+    }
+#endif
+    return QApplication::style()->standardPalette().color(QPalette::Window).lightness() < 128;
 }
 
 void LivoxViewerWindow::applyUiTheme()
@@ -266,29 +412,78 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QDialog dlg(this);
     dlg.setWindowTitle("首选项");
-    dlg.resize(520, 360);
+    dlg.resize(760, 520);
+    const int originalThemeMode = themeMode;
 
     PointCloudView::GridConfig config = pointCloudView->gridConfig();
     QColor selectedColor = config.color;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
-    QTabWidget* tabs = new QTabWidget(&dlg);
-    QWidget* gridTab = new QWidget(tabs);
-    QVBoxLayout* gridLayout = new QVBoxLayout(gridTab);
-    QFormLayout* form = new QFormLayout();
-    QWidget* legendTab = new QWidget(tabs);
-    QFormLayout* legendForm = new QFormLayout(legendTab);
-    QWidget* colorTab = new QWidget(tabs);
-    QFormLayout* colorForm = new QFormLayout(colorTab);
+    QHBoxLayout* contentLayout = new QHBoxLayout();
+    contentLayout->setSpacing(12);
+
+    QTreeWidget* navigation = new QTreeWidget(&dlg);
+    navigation->setHeaderHidden(true);
+    navigation->setRootIsDecorated(false);
+    navigation->setFixedWidth(150);
+    navigation->setSelectionMode(QAbstractItemView::SingleSelection);
+
+    QStackedWidget* pages = new QStackedWidget(&dlg);
+    auto createSettingsPage = [pages](const QString& title, const QString& description) {
+        QWidget* page = new QWidget(pages);
+        QVBoxLayout* pageLayout = new QVBoxLayout(page);
+        pageLayout->setContentsMargins(24, 18, 24, 18);
+        pageLayout->setSpacing(12);
+
+        QLabel* titleLabel = new QLabel(title, page);
+        QFont titleFont = titleLabel->font();
+        titleFont.setPointSizeF(titleFont.pointSizeF() * 1.35);
+        titleFont.setBold(true);
+        titleLabel->setFont(titleFont);
+        pageLayout->addWidget(titleLabel);
+        pageLayout->addWidget(createPreferenceDescription(description, page));
+        pages->addWidget(page);
+        return page;
+    };
+
+    QWidget* themeTab = createSettingsPage("主题", "设置应用界面的颜色模式。");
+    QWidget* connectionTab = createSettingsPage("连接", "配置与雷达连接时的主机网络行为。");
+    QWidget* gridTab = createSettingsPage("网格", "调整点云视图中的世界坐标网格。");
+    QWidget* legendTab = createSettingsPage("图例", "设置距离和高度着色图例的数值范围。");
+    QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
+
+    QVBoxLayout* themeLayout = qobject_cast<QVBoxLayout*>(themeTab->layout());
+    QVBoxLayout* connectionLayout = qobject_cast<QVBoxLayout*>(connectionTab->layout());
+    QVBoxLayout* gridLayout = qobject_cast<QVBoxLayout*>(gridTab->layout());
+    QVBoxLayout* legendLayout = qobject_cast<QVBoxLayout*>(legendTab->layout());
+    QVBoxLayout* colorPageLayout = qobject_cast<QVBoxLayout*>(colorTab->layout());
     QColor selectedSolidColor = solidColor;
-    QWidget* themeTab = new QWidget(tabs);
-    QFormLayout* themeForm = new QFormLayout(themeTab);
-    QComboBox* themeCombo = new QComboBox(themeTab);
-    themeCombo->addItems({"跟随系统", "浅色", "深色"});
-    themeCombo->setCurrentIndex(std::clamp(themeMode, int(ThemeFollowSystem), int(ThemeDark)));
-    QWidget* connectionTab = new QWidget(tabs);
-    QFormLayout* connectionForm = new QFormLayout(connectionTab);
-    QCheckBox* autoConfigHostIpPreferenceCheck = new QCheckBox("自动配置主机 IP", connectionTab);
+    QButtonGroup* themeGroup = new QButtonGroup(&dlg);
+    QWidget* themeOptions = new QWidget(themeTab);
+    QHBoxLayout* themeOptionsLayout = new QHBoxLayout(themeOptions);
+    themeOptionsLayout->setContentsMargins(0, 0, 0, 0);
+    themeOptionsLayout->setSpacing(12);
+    QRadioButton* followThemeRadio = new QRadioButton("跟随系统", themeOptions);
+    QRadioButton* lightThemeRadio = new QRadioButton("浅色", themeOptions);
+    QRadioButton* darkThemeRadio = new QRadioButton("深色", themeOptions);
+    themeGroup->addButton(followThemeRadio, ThemeFollowSystem);
+    themeGroup->addButton(lightThemeRadio, ThemeLight);
+    themeGroup->addButton(darkThemeRadio, ThemeDark);
+    if (QAbstractButton* checkedThemeButton = themeGroup->button(std::clamp(themeMode, int(ThemeFollowSystem), int(ThemeDark)))) {
+        checkedThemeButton->setChecked(true);
+    }
+    themeOptionsLayout->addWidget(followThemeRadio);
+    themeOptionsLayout->addWidget(lightThemeRadio);
+    themeOptionsLayout->addWidget(darkThemeRadio);
+    themeOptionsLayout->addStretch();
+    connect(themeGroup, &QButtonGroup::idToggled, &dlg, [this](int id, bool checked) {
+        if (checked) {
+            themeMode = id;
+            applyUiTheme();
+        }
+    });
+
+    SwitchCheckBox* autoConfigHostIpPreferenceCheck = new SwitchCheckBox(connectionTab);
     autoConfigHostIpPreferenceCheck->setChecked(autoConfigHostIpEnabled);
     autoConfigHostIpPreferenceCheck->setToolTip("开启后程序会尝试自动将所选网卡的 IPv4 配置到与雷达同网段。\nLinux 可能需要 sudo/root 权限；默认关闭以避免权限导致的失败。");
 
@@ -388,33 +583,80 @@ void LivoxViewerWindow::showPreferencesDialog()
     connect(elevationMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
             [elevationMinSpin](double value) { elevationMinSpin->setMaximum(value - 0.01); });
 
-    form->addRow("网格范围:", rangeSpin);
-    form->addRow("网格间距:", stepSpin);
-    form->addRow("网格颜色:", colorRow);
-    form->addRow("网格类型:", typeRow);
-    legendForm->addRow("距离低值:", distanceMinSpin);
-    legendForm->addRow("距离高值:", distanceMaxSpin);
-    legendForm->addRow("高度低值:", elevationMinSpin);
-    legendForm->addRow("高度高值:", elevationMaxSpin);
-    colorForm->addRow("纯色模式颜色:", solidColorRow);
-    themeForm->addRow("应用主题:", themeCombo);
-    connectionForm->addRow("主机网络:", autoConfigHostIpPreferenceCheck);
-
     QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
-    gridLayout->addLayout(form);
+    addPreferenceSectionTitle(themeLayout, "外观");
+    QFrame* themeSection = createPreferenceSection(themeTab);
+    addPreferenceRow(themeSection, "应用主题", "选择应用界面的明暗模式。", themeOptions);
+    themeLayout->addWidget(themeSection);
+    themeLayout->addStretch();
+
+    addPreferenceSectionTitle(connectionLayout, "主机网络");
+    QFrame* connectionSection = createPreferenceSection(connectionTab);
+    addPreferenceRow(connectionSection, "自动配置主机 IP", "启用后，程序会在连接前尝试把所选网卡 IP 调整到与雷达同网段。", autoConfigHostIpPreferenceCheck);
+    connectionLayout->addWidget(connectionSection);
+    connectionLayout->addStretch();
+
+    addPreferenceSectionTitle(gridLayout, "世界坐标网格");
+    QFrame* gridSection = createPreferenceSection(gridTab);
+    addPreferenceRow(gridSection, "范围", "控制网格从中心向外显示的最大距离。", rangeSpin);
+    addPreferenceRow(gridSection, "间距", "控制相邻网格线或圆环之间的距离。", stepSpin);
+    addPreferenceRow(gridSection, "颜色", "设置网格线的显示颜色。", colorRow);
+    addPreferenceRow(gridSection, "类型", "选择方形网格或同心圆网格。", typeRow);
+    gridLayout->addWidget(gridSection);
     gridLayout->addStretch();
-    tabs->addTab(themeTab, "主题");
-    tabs->addTab(connectionTab, "连接");
-    tabs->addTab(gridTab, "网格");
-    tabs->addTab(legendTab, "图例");
-    tabs->addTab(colorTab, "着色");
-    layout->addWidget(tabs);
+
+    addPreferenceSectionTitle(legendLayout, "距离图例");
+    QFrame* distanceLegendSection = createPreferenceSection(legendTab);
+    addPreferenceRow(distanceLegendSection, "低值", "距离颜色映射的下限。", distanceMinSpin);
+    addPreferenceRow(distanceLegendSection, "高值", "距离颜色映射的上限。", distanceMaxSpin);
+    legendLayout->addWidget(distanceLegendSection);
+    addPreferenceSectionTitle(legendLayout, "高度图例");
+    QFrame* elevationLegendSection = createPreferenceSection(legendTab);
+    addPreferenceRow(elevationLegendSection, "低值", "高度颜色映射的下限。", elevationMinSpin);
+    addPreferenceRow(elevationLegendSection, "高值", "高度颜色映射的上限。", elevationMaxSpin);
+    legendLayout->addWidget(elevationLegendSection);
+    legendLayout->addStretch();
+
+    addPreferenceSectionTitle(colorPageLayout, "纯色模式");
+    QFrame* colorSection = createPreferenceSection(colorTab);
+    addPreferenceRow(colorSection, "点云颜色", "设置纯色着色模式下所有点的显示颜色。", solidColorRow);
+    colorPageLayout->addWidget(colorSection);
+    colorPageLayout->addStretch();
+
+    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色"};
+    const QStringList navigationIcons = {
+        ":/icons/settings_theme.svg",
+        ":/icons/settings_connection.svg",
+        ":/icons/settings_grid.svg",
+        ":/icons/settings_legend.svg",
+        ":/icons/settings_color.svg"
+    };
+    for (int i = 0; i < navigationNames.size(); ++i) {
+        QTreeWidgetItem* item = new QTreeWidgetItem();
+        item->setText(0, navigationNames.at(i));
+        item->setIcon(0, QIcon(navigationIcons.at(i)));
+        item->setData(0, Qt::UserRole, i);
+        navigation->addTopLevelItem(item);
+    }
+    connect(navigation, &QTreeWidget::currentItemChanged, pages,
+            [pages](QTreeWidgetItem* current, QTreeWidgetItem*) {
+        if (current) {
+            pages->setCurrentIndex(current->data(0, Qt::UserRole).toInt());
+        }
+    });
+    navigation->setCurrentItem(navigation->topLevelItem(0));
+
+    contentLayout->addWidget(navigation);
+    contentLayout->addWidget(pages, 1);
+    layout->addLayout(contentLayout, 1);
     layout->addWidget(box);
 
     if (dlg.exec() != QDialog::Accepted) {
+        themeMode = originalThemeMode;
+        applyUiTheme();
         return;
     }
 
@@ -429,7 +671,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     elevationLegendMin = float(elevationMinSpin->value());
     elevationLegendMax = float(elevationMaxSpin->value());
     solidColor = selectedSolidColor;
-    themeMode = themeCombo->currentIndex();
+    themeMode = themeGroup->checkedId();
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
 

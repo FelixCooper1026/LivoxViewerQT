@@ -308,6 +308,23 @@ QWidget* createLabeledWidget(const QString& label, QWidget* control, QWidget* pa
     return row;
 }
 
+QWidget* createIconLabeledWidget(const QString& iconPath, const QString& toolTip, QWidget* control, QWidget* parent, const QSize& iconSize)
+{
+    QWidget* row = new QWidget(parent);
+    QHBoxLayout* layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(4);
+
+    QLabel* icon = new QLabel(row);
+    icon->setPixmap(QIcon(iconPath).pixmap(iconSize));
+    icon->setFixedSize(iconSize);
+    icon->setToolTip(toolTip);
+    icon->setAttribute(Qt::WA_TransparentForMouseEvents);
+    layout->addWidget(icon);
+    layout->addWidget(control);
+    return row;
+}
+
 QSpinBox* cloneSpinBox(QSpinBox* source, QWidget* parent)
 {
     QSpinBox* spin = new QSpinBox(parent);
@@ -418,7 +435,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     spinFrameIntervalTop->setValue(static_cast<int>(frameIntervalMs));
     spinFrameIntervalTop->setToolTip("点云积分时间/帧间隔");
     connect(spinFrameIntervalTop, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
-    QWidget* frameIntervalRow = createLabeledWidget("积分时间:", spinFrameIntervalTop, displayGroup);
+    QWidget* frameIntervalRow = createIconLabeledWidget(":/icons/integration_time.svg", "积分时间", spinFrameIntervalTop, displayGroup, toolbarIconSize);
     displayGroup->addPrimaryWidget(frameIntervalRow);
 
     pointSizeSpin = new QSpinBox(displayGroup);
