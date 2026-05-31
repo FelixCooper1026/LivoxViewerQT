@@ -2,7 +2,6 @@
 #include "widgets/SwitchCheckBox.h"
 
 #include <QAbstractButton>
-#include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QCheckBox>
@@ -16,19 +15,20 @@
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QPalette>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
+#include <QSize>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStackedWidget>
 #include <QTextStream>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
+#include <QToolButton>
 #include <QtGlobal>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -201,6 +201,62 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
     rowLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
     sectionLayout->addWidget(row);
     section->setProperty("rowCount", rowCount + 1);
+}
+
+QPushButton* createPreferenceNavButton(const QString& text, const QString& iconPath, QWidget* parent)
+{
+    QPushButton* button = new QPushButton(text, parent);
+    button->setCheckable(true);
+    button->setMinimumHeight(44);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setIcon(QIcon(iconPath));
+    button->setIconSize(QSize(22, 22));
+    QFont font = button->font();
+    font.setPointSizeF(font.pointSizeF() * 1.08);
+    button->setFont(font);
+    button->setStyleSheet(
+        "QPushButton {"
+        "  text-align: left;"
+        "  padding: 8px 14px;"
+        "  border: none;"
+        "  border-radius: 6px;"
+        "}"
+        "QPushButton:hover {"
+        "  background: palette(base);"
+        "}"
+        "QPushButton:checked {"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
+        "}"
+    );
+    return button;
+}
+
+QToolButton* createThemeModeButton(const QString& text, const QString& iconPath, QWidget* parent)
+{
+    QToolButton* button = new QToolButton(parent);
+    button->setCheckable(true);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setIcon(QIcon(iconPath));
+    button->setIconSize(QSize(24, 24));
+    button->setText(text);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setMinimumHeight(36);
+    button->setStyleSheet(
+        "QToolButton {"
+        "  border: none;"
+        "  border-radius: 18px;"
+        "  padding: 4px 14px;"
+        "  background: transparent;"
+        "}"
+        "QToolButton:hover {"
+        "  background: palette(alternate-base);"
+        "}"
+        "QToolButton:checked {"
+        "  background: palette(mid);"
+        "}"
+    );
+    return button;
 }
 
 } // namespace
@@ -419,16 +475,40 @@ void LivoxViewerWindow::showPreferencesDialog()
     QColor selectedColor = config.color;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
     QHBoxLayout* contentLayout = new QHBoxLayout();
-    contentLayout->setSpacing(12);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(0);
 
-    QTreeWidget* navigation = new QTreeWidget(&dlg);
-    navigation->setHeaderHidden(true);
-    navigation->setRootIsDecorated(false);
-    navigation->setFixedWidth(150);
-    navigation->setSelectionMode(QAbstractItemView::SingleSelection);
+    QWidget* navigation = new QWidget(&dlg);
+    navigation->setFixedWidth(190);
+    navigation->setObjectName("PreferencesNavPanel");
+    QVBoxLayout* navigationLayout = new QVBoxLayout(navigation);
+    navigationLayout->setContentsMargins(14, 18, 14, 18);
+    navigationLayout->setSpacing(8);
 
-    QStackedWidget* pages = new QStackedWidget(&dlg);
+    QLabel* navigationTitle = new QLabel("首选项", navigation);
+    QFont navigationTitleFont = navigationTitle->font();
+    navigationTitleFont.setBold(true);
+    navigationTitle->setFont(navigationTitleFont);
+    navigationLayout->addWidget(navigationTitle);
+
+    QButtonGroup* navigationGroup = new QButtonGroup(navigation);
+    navigationGroup->setExclusive(true);
+    navigation->setStyleSheet(
+        "#PreferencesNavPanel {"
+        "  background: palette(alternate-base);"
+        "  border-right: 1px solid palette(mid);"
+        "}"
+    );
+
+    QWidget* settingsContent = new QWidget(&dlg);
+    QVBoxLayout* settingsContentLayout = new QVBoxLayout(settingsContent);
+    settingsContentLayout->setContentsMargins(0, 0, 18, 14);
+    settingsContentLayout->setSpacing(0);
+
+    QStackedWidget* pages = new QStackedWidget(settingsContent);
     auto createSettingsPage = [pages](const QString& title, const QString& description) {
         QWidget* page = new QWidget(pages);
         QVBoxLayout* pageLayout = new QVBoxLayout(page);
@@ -462,19 +542,19 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* themeOptions = new QWidget(themeTab);
     QHBoxLayout* themeOptionsLayout = new QHBoxLayout(themeOptions);
     themeOptionsLayout->setContentsMargins(0, 0, 0, 0);
-    themeOptionsLayout->setSpacing(12);
-    QRadioButton* followThemeRadio = new QRadioButton("跟随系统", themeOptions);
-    QRadioButton* lightThemeRadio = new QRadioButton("浅色", themeOptions);
-    QRadioButton* darkThemeRadio = new QRadioButton("深色", themeOptions);
-    themeGroup->addButton(followThemeRadio, ThemeFollowSystem);
-    themeGroup->addButton(lightThemeRadio, ThemeLight);
-    themeGroup->addButton(darkThemeRadio, ThemeDark);
+    themeOptionsLayout->setSpacing(4);
+    QToolButton* lightThemeButton = createThemeModeButton("浅色", ":/icons/settings_theme_light.svg", themeOptions);
+    QToolButton* darkThemeButton = createThemeModeButton("深色", ":/icons/settings_theme_dark.svg", themeOptions);
+    QToolButton* followThemeButton = createThemeModeButton("系统", ":/icons/settings_theme_system.svg", themeOptions);
+    themeGroup->addButton(lightThemeButton, ThemeLight);
+    themeGroup->addButton(darkThemeButton, ThemeDark);
+    themeGroup->addButton(followThemeButton, ThemeFollowSystem);
     if (QAbstractButton* checkedThemeButton = themeGroup->button(std::clamp(themeMode, int(ThemeFollowSystem), int(ThemeDark)))) {
         checkedThemeButton->setChecked(true);
     }
-    themeOptionsLayout->addWidget(followThemeRadio);
-    themeOptionsLayout->addWidget(lightThemeRadio);
-    themeOptionsLayout->addWidget(darkThemeRadio);
+    themeOptionsLayout->addWidget(lightThemeButton);
+    themeOptionsLayout->addWidget(darkThemeButton);
+    themeOptionsLayout->addWidget(followThemeButton);
     themeOptionsLayout->addStretch();
     connect(themeGroup, &QButtonGroup::idToggled, &dlg, [this](int id, bool checked) {
         if (checked) {
@@ -583,7 +663,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     connect(elevationMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
             [elevationMinSpin](double value) { elevationMinSpin->setMaximum(value - 0.01); });
 
-    QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, settingsContent);
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 
@@ -635,24 +715,24 @@ void LivoxViewerWindow::showPreferencesDialog()
         ":/icons/settings_color.svg"
     };
     for (int i = 0; i < navigationNames.size(); ++i) {
-        QTreeWidgetItem* item = new QTreeWidgetItem();
-        item->setText(0, navigationNames.at(i));
-        item->setIcon(0, QIcon(navigationIcons.at(i)));
-        item->setData(0, Qt::UserRole, i);
-        navigation->addTopLevelItem(item);
+        QPushButton* button = createPreferenceNavButton(navigationNames.at(i), navigationIcons.at(i), navigation);
+        navigationGroup->addButton(button, i);
+        navigationLayout->addWidget(button);
     }
-    connect(navigation, &QTreeWidget::currentItemChanged, pages,
-            [pages](QTreeWidgetItem* current, QTreeWidgetItem*) {
-        if (current) {
-            pages->setCurrentIndex(current->data(0, Qt::UserRole).toInt());
-        }
+    navigationLayout->addStretch();
+    connect(navigationGroup, &QButtonGroup::idClicked, pages, [pages](int id) {
+        pages->setCurrentIndex(id);
     });
-    navigation->setCurrentItem(navigation->topLevelItem(0));
+    if (QAbstractButton* firstButton = navigationGroup->button(0)) {
+        firstButton->setChecked(true);
+    }
+
+    settingsContentLayout->addWidget(pages, 1);
+    settingsContentLayout->addWidget(box, 0, Qt::AlignRight);
 
     contentLayout->addWidget(navigation);
-    contentLayout->addWidget(pages, 1);
+    contentLayout->addWidget(settingsContent, 1);
     layout->addLayout(contentLayout, 1);
-    layout->addWidget(box);
 
     if (dlg.exec() != QDialog::Accepted) {
         themeMode = originalThemeMode;
