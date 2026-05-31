@@ -677,6 +677,36 @@ void PointCloudView::paintGL()
          f.setItalic(true);
          painter.setFont(f);
          QFontMetrics fm(painter.font());
+
+         if (m_legendMode == 4) {
+             const int swatchSize = 14;
+             const int rowGap = 6;
+             const int rowHeight = swatchSize + rowGap;
+             const int titleHeight = 18;
+             const int rightPadding = 10;
+             int labelMaxWidth = 0;
+             for (int i = 0; i < m_lineLegendColors.size(); ++i) {
+                 labelMaxWidth = std::max(labelMaxWidth, fm.horizontalAdvance(QString("Line %1").arg(m_lineLegendNumbers.at(i))));
+             }
+             const int legendWidth = swatchSize + 8 + labelMaxWidth + rightPadding;
+             const int legendHeight = titleHeight + 8 + m_lineLegendColors.size() * rowHeight - rowGap;
+             const int left = width() - margin - legendWidth;
+             const int top = height() - margin - legendHeight;
+             painter.drawText(QRect(left, top, legendWidth, titleHeight), Qt::AlignLeft | Qt::AlignVCenter, "Line");
+             int y = top + titleHeight + 8;
+             for (int i = 0; i < m_lineLegendColors.size(); ++i) {
+                 const QString label = QString("Line %1").arg(m_lineLegendNumbers.at(i));
+                 const QRect swatch(left, y, swatchSize, swatchSize);
+                 painter.fillRect(swatch, m_lineLegendColors.at(i));
+                 painter.setPen(QColor(255,255,255,200));
+                 painter.drawRect(swatch.adjusted(0,0,-1,-1));
+                 painter.setPen(Qt::white);
+                 painter.drawText(QRect(swatch.right() + 8, y - 2, labelMaxWidth + rightPadding, swatchSize + 4),
+                                  Qt::AlignLeft | Qt::AlignVCenter,
+                                  label);
+                 y += rowHeight;
+             }
+         } else {
  
          // 准备标签文本并计算最大宽度
          QString title;
@@ -762,6 +792,7 @@ void PointCloudView::paintGL()
              drawTick(1.0f, fmt(m_legendMax));
              drawTick(0.5f, fmt((m_legendMin + m_legendMax) * 0.5f));
              drawTick(0.0f, fmt(m_legendMin));
+         }
          }
      }
 
@@ -1031,12 +1062,19 @@ void PointCloudView::setProjectionMode(ProjectionMode mode)
     update();
 }
 
-void PointCloudView::setLegend(int mode, float minVal, float maxVal, bool visible)
+void PointCloudView::setLegend(int mode,
+                               float minVal,
+                               float maxVal,
+                               bool visible,
+                               const QVector<QColor>& lineColors,
+                               const QVector<int>& lineNumbers)
 {
     m_legendMode = mode;
     m_legendMin = minVal;
     m_legendMax = maxVal;
     m_legendVisible = visible;
+    m_lineLegendColors = lineColors;
+    m_lineLegendNumbers = lineNumbers;
     update();
 }
 

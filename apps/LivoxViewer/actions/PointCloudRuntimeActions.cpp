@@ -50,7 +50,12 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
 
     const PointCloudPipelineLegend legend = PointCloudColorizer::apply(frame.points, colorConfig);
     if (pointCloudView) {
-        pointCloudView->setLegend(legend.mode, legend.minValue, legend.maxValue, legend.visible);
+        pointCloudView->setLegend(legend.mode,
+                                  legend.minValue,
+                                  legend.maxValue,
+                                  legend.visible,
+                                  legend.lineColors,
+                                  legend.lineNumbers);
     }
 
     PointCloudFilter::Config filterConfig;

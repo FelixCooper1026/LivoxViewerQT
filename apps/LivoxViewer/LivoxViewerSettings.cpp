@@ -669,6 +669,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     });
 
     QVector<QWidget*> lineColorRows;
+    QVector<QWidget*> lineLegendRows;
     for (int i = 0; i < selectedLineColors.size(); ++i) {
         QWidget* row = new QWidget(&dlg);
         QHBoxLayout* rowLayout = new QHBoxLayout(row);
@@ -683,15 +684,31 @@ void LivoxViewerWindow::showPreferencesDialog()
         rowLayout->addWidget(preview);
         rowLayout->addWidget(button);
         rowLayout->addStretch();
-        connect(button, &QPushButton::clicked, &dlg, [&dlg, &selectedLineColors, preview, i]() {
+        QWidget* legendRow = new QWidget(&dlg);
+        QHBoxLayout* legendRowLayout = new QHBoxLayout(legendRow);
+        legendRowLayout->setContentsMargins(0, 0, 0, 0);
+        legendRowLayout->setSpacing(8);
+        QFrame* legendPreview = new QFrame(legendRow);
+        legendPreview->setFixedSize(28, 20);
+        legendPreview->setFrameShape(QFrame::Box);
+        legendPreview->setLineWidth(1);
+        legendPreview->setStyleSheet(QString("background-color: %1;").arg(selectedLineColors.at(i).name()));
+        QLabel* legendColorLabel = new QLabel(selectedLineColors.at(i).name(QColor::HexRgb).toUpper(), legendRow);
+        legendRowLayout->addWidget(legendPreview);
+        legendRowLayout->addWidget(legendColorLabel);
+        legendRowLayout->addStretch();
+        connect(button, &QPushButton::clicked, &dlg, [&dlg, &selectedLineColors, preview, legendPreview, legendColorLabel, i]() {
             QColor color = QColorDialog::getColor(selectedLineColors.at(i), &dlg, QString("选择 Line %1 点云颜色").arg(i));
             if (!color.isValid()) {
                 return;
             }
             selectedLineColors[i] = color;
             preview->setStyleSheet(QString("background-color: %1;").arg(color.name()));
+            legendPreview->setStyleSheet(QString("background-color: %1;").arg(color.name()));
+            legendColorLabel->setText(color.name(QColor::HexRgb).toUpper());
         });
         lineColorRows.append(row);
+        lineLegendRows.append(legendRow);
     }
 
     connect(distanceMinSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
@@ -738,6 +755,12 @@ void LivoxViewerWindow::showPreferencesDialog()
     addPreferenceRow(elevationLegendSection, "低值", "高度颜色映射的下限。", elevationMinSpin);
     addPreferenceRow(elevationLegendSection, "高值", "高度颜色映射的上限。", elevationMaxSpin);
     legendLayout->addWidget(elevationLegendSection);
+    addPreferenceSectionTitle(legendLayout, "线号图例");
+    QFrame* lineLegendSection = createPreferenceSection(legendTab);
+    for (int i = 0; i < lineLegendRows.size(); ++i) {
+        addPreferenceRow(lineLegendSection, QString("Line %1").arg(i), QString(), lineLegendRows.at(i));
+    }
+    legendLayout->addWidget(lineLegendSection);
     legendLayout->addStretch();
 
     addPreferenceSectionTitle(colorPageLayout, "纯色模式");
@@ -808,6 +831,9 @@ void LivoxViewerWindow::showPreferencesDialog()
     pointCloudView->setGridConfig(config);
     applyUiTheme();
     updatePointCloudLegend();
+    if (playbackState.active && playbackState.frame >= 0) {
+        showLvx2PlaybackFrame(playbackState.frame);
+    }
     saveViewPreferences();
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
         logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));

@@ -17,6 +17,7 @@
 #include <QPoint>
 #include <QQuaternion>
 #include <QRect>
+#include <QVector>
 #include <QVector3D>
 #include <QWheelEvent>
 
@@ -62,7 +63,12 @@ public:
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);
-    void setLegend(int mode, float minVal, float maxVal, bool visible);
+    void setLegend(int mode,
+                   float minVal,
+                   float maxVal,
+                   bool visible,
+                   const QVector<QColor>& lineColors = {},
+                   const QVector<int>& lineNumbers = {});
     QRect currentSelectionRect() const { return m_selectionRect(); }
     QVector<PointCloudPoint> currentPoints() const { QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex)); return m_points; }
     void setSelectionModeEnabled(bool enabled);
@@ -148,6 +154,8 @@ private:
     int m_legendMode = 0;
     float m_legendMin = 0.0f;
     float m_legendMax = 1.0f;
+    QVector<QColor> m_lineLegendColors;
+    QVector<int> m_lineLegendNumbers;
 
     bool m_selecting = false;
     QPoint m_selStart;

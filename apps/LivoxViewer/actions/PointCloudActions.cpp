@@ -49,6 +49,9 @@ void LivoxViewerWindow::onColorModeClicked(int index)
         colorModeCombo->setEnabled(!planarProjectionEnabled);
     }
     updatePointCloudLegend();
+    if (playbackState.active && playbackState.frame >= 0) {
+        showLvx2PlaybackFrame(playbackState.frame);
+    }
 }
 
 int LivoxViewerWindow::effectiveColorMode() const
@@ -72,7 +75,12 @@ void LivoxViewerWindow::updatePointCloudLegend()
     } else if (mode == ColorSolid) {
         pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
     } else if (mode == ColorByLine) {
-        pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, false);
+        QVector<int> lineNumbers;
+        lineNumbers.reserve(lineColors.size());
+        for (int i = 0; i < lineColors.size(); ++i) {
+            lineNumbers.append(i);
+        }
+        pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, true, lineColors, lineNumbers);
     } else if (mode == ColorByPlanarProjection) {
         pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
     }

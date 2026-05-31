@@ -44,7 +44,14 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
     legend.mode = config.mode;
     legend.minValue = 0.0f;
     legend.maxValue = 1.0f;
-    legend.visible = (config.mode != kColorSolid && config.mode != kColorByLine);
+    legend.visible = (config.mode != kColorSolid);
+    if (config.mode == kColorByLine) {
+        legend.lineColors = config.lineColors;
+        legend.lineNumbers.reserve(config.lineColors.size());
+        for (int i = 0; i < config.lineColors.size(); ++i) {
+            legend.lineNumbers.append(i);
+        }
+    }
 
     if (points.isEmpty()) {
         return legend;
@@ -106,13 +113,24 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
         }
         legend.visible = false;
     } else if (config.mode == kColorByLine) {
+        QVector<int> usedLines;
         for (PointCloudPoint& point : points) {
-            const QColor color = config.lineColors.at(int(point.line) % config.lineColors.size());
+            const int line = int(point.line);
+            const QColor color = config.lineColors.at(line % config.lineColors.size());
             point.r = color.redF();
             point.g = color.greenF();
             point.b = color.blueF();
+            if (!usedLines.contains(line)) {
+                usedLines.append(line);
+            }
         }
-        legend.visible = false;
+        std::sort(usedLines.begin(), usedLines.end());
+        legend.lineNumbers = usedLines;
+        legend.lineColors.clear();
+        for (int line : usedLines) {
+            legend.lineColors.append(config.lineColors.at(line % config.lineColors.size()));
+        }
+        legend.visible = true;
     } else if (config.mode == kColorByPlanarProjection) {
         float minX = std::numeric_limits<float>::max();
         float maxX = std::numeric_limits<float>::lowest();
