@@ -19,6 +19,11 @@ PointCloudPoint projectSpherical(uint32_t depthRaw,
 {
     PointCloudPoint point{};
     float depth = depthRaw / 1000.0f;
+    point.spherical = true;
+    point.theta = thetaRaw / 100.0f;
+    point.phi = phiRaw / 100.0f;
+    point.depth = depth;
+
     const float theta = thetaRaw / 100.0f * kPi / 180.0f;
     const float phi = phiRaw / 100.0f * kPi / 180.0f;
 

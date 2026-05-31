@@ -1,5 +1,6 @@
 #include "Lvx2/Lvx2PointParser.h"
 
+#include "LivoxCore/LidarModelUtils.h"
 #include "LivoxCore/LidarSdkTypes.h"
 
 #include <QVector4D>
@@ -54,7 +55,8 @@ void applyExtrinsicTransform(const Extrinsic* extrinsic, PointCloudPoint& point)
 void appendPackagePoints(const Lvx2PackageHeader& header,
                          const QByteArray& payload,
                          const Extrinsic* extrinsic,
-                         QVector<PointCloudPoint>& points)
+                         QVector<PointCloudPoint>& points,
+                         int lineCount)
 {
     if (payload.isEmpty()) {
         return;
@@ -73,6 +75,7 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             point.z = raw.z / 1000.0f;
             point.reflectivity = raw.reflectivity;
             point.tag = raw.tag;
+            point.line = LivoxCore::lineForPointIndex(i, lineCount);
             applyExtrinsicTransform(extrinsic, point);
             points.push_back(point);
         }
@@ -88,6 +91,7 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             point.z = raw.z / 100.0f;
             point.reflectivity = raw.reflectivity;
             point.tag = raw.tag;
+            point.line = LivoxCore::lineForPointIndex(i, lineCount);
             applyExtrinsicTransform(extrinsic, point);
             points.push_back(point);
         }
@@ -99,6 +103,10 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             auto raw = safeReadPoint<LivoxLidarSpherPoint>(rawData, i);
             PointCloudPoint point{};
             const float depth = raw.depth / 1000.0f;
+            point.spherical = true;
+            point.theta = raw.theta / 100.0f;
+            point.phi = raw.phi / 100.0f;
+            point.depth = depth;
             const float theta = raw.theta / 100.0f * kPi / 180.0f;
             const float phi = raw.phi / 100.0f * kPi / 180.0f;
             point.x = depth * std::sin(theta) * std::cos(phi);
@@ -106,6 +114,7 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             point.z = depth * std::cos(theta);
             point.reflectivity = raw.reflectivity;
             point.tag = raw.tag;
+            point.line = LivoxCore::lineForPointIndex(i, lineCount);
             applyExtrinsicTransform(extrinsic, point);
             points.push_back(point);
         }
@@ -121,6 +130,7 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             p1.z = raw.z1 / 1000.0f;
             p1.reflectivity = raw.reflectivity1;
             p1.tag = raw.tag1;
+            p1.line = LivoxCore::lineForPointIndex(i * 2, lineCount);
             applyExtrinsicTransform(extrinsic, p1);
             points.push_back(p1);
 
@@ -130,6 +140,7 @@ void appendPackagePoints(const Lvx2PackageHeader& header,
             p2.z = raw.z2 / 1000.0f;
             p2.reflectivity = raw.reflectivity2;
             p2.tag = raw.tag2;
+            p2.line = LivoxCore::lineForPointIndex(i * 2 + 1, lineCount);
             applyExtrinsicTransform(extrinsic, p2);
             points.push_back(p2);
         }

@@ -32,6 +32,7 @@ private:
     QString errorMessage_;
     QVector<Playback::FrameRef> frames_;
     QMap<uint32_t, Playback::Extrinsic> extrinsics_;
+    QMap<uint32_t, int> lineCounts_;
     QVector<Playback::DeviceInfo> devices_;
     QVector<PointCloudFrame> frameCache_;
     QVector<bool> frameCacheValid_;

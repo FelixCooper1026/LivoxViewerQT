@@ -19,7 +19,8 @@ void applyExtrinsicTransform(const Extrinsic* extrinsic, PointCloudPoint& point)
 void appendPackagePoints(const Lvx2PackageHeader& header,
                          const QByteArray& payload,
                          const Extrinsic* extrinsic,
-                         QVector<PointCloudPoint>& points);
+                         QVector<PointCloudPoint>& points,
+                         int lineCount = 1);
 
 } // namespace Lvx2PointParser
 

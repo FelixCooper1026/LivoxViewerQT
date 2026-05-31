@@ -1,5 +1,6 @@
 #include "Lvx2/Lvx2Reader.h"
 
+#include "LivoxCore/LidarModelUtils.h"
 #include "Lvx2/Lvx2PointParser.h"
 
 #include <QFile>
@@ -33,6 +34,7 @@ bool Lvx2Reader::load(const QString& filePath)
     errorMessage_.clear();
     frames_.clear();
     extrinsics_.clear();
+    lineCounts_.clear();
     devices_.clear();
     frameCache_.clear();
     frameCacheValid_.clear();
@@ -66,6 +68,7 @@ bool Lvx2Reader::load(const QString& filePath)
         }
 
         extrinsics_.insert(deviceInfo.lidar_id, Lvx2PointParser::makeExtrinsic(deviceInfo));
+        lineCounts_.insert(deviceInfo.lidar_id, LivoxCore::lineCountForDeviceType(deviceInfo.device_type));
 
         Playback::DeviceInfo uiInfo;
         uiInfo.lidarId = deviceInfo.lidar_id;
@@ -198,7 +201,11 @@ bool Lvx2Reader::readFrame(int frameIndex,
         const auto extrinsicIt = extrinsics_.constFind(packageHeader.lidar_id);
         const Playback::Extrinsic* extrinsic =
             (extrinsicIt == extrinsics_.constEnd()) ? nullptr : &extrinsicIt.value();
-        Lvx2PointParser::appendPackagePoints(packageHeader, payload, extrinsic, parsed.points);
+        Lvx2PointParser::appendPackagePoints(packageHeader,
+                                             payload,
+                                             extrinsic,
+                                             parsed.points,
+                                             lineCounts_.value(packageHeader.lidar_id, 1));
     }
 
     frameCache_[frameIndex] = parsed;

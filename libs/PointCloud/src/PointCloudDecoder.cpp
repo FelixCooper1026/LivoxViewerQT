@@ -1,5 +1,6 @@
 #include "PointCloud/PointCloudDecoder.h"
 
+#include "LivoxCore/LidarModelUtils.h"
 #include "LivoxCore/LidarPacketUtils.h"
 
 namespace PointCloudDecoder {
@@ -27,6 +28,7 @@ bool decodeLivoxPacket(uint32_t handle,
             point.z = pointData[i].z / 1000.0f;
             point.reflectivity = pointData[i].reflectivity;
             point.tag = pointData[i].tag;
+            point.line = LivoxCore::lineForPointIndex(int(i), options.lineCount);
             frame.points.append(point);
         }
         return true;
@@ -40,6 +42,7 @@ bool decodeLivoxPacket(uint32_t handle,
             point.z = pointData[i].z / 100.0f;
             point.reflectivity = pointData[i].reflectivity;
             point.tag = pointData[i].tag;
+            point.line = LivoxCore::lineForPointIndex(int(i), options.lineCount);
             frame.points.append(point);
         }
         return true;
@@ -47,12 +50,14 @@ bool decodeLivoxPacket(uint32_t handle,
     case kLivoxLidarSphericalCoordinateData: {
         const auto* pointData = reinterpret_cast<const LivoxLidarSpherPoint*>(packet->data);
         for (uint32_t i = 0; i < packet->dot_num; ++i) {
-            frame.points.append(PointCloudProjection::projectSpherical(pointData[i].depth,
-                                                                       pointData[i].theta,
-                                                                       pointData[i].phi,
-                                                                       pointData[i].reflectivity,
-                                                                       pointData[i].tag,
-                                                                       options));
+            PointCloudPoint point = PointCloudProjection::projectSpherical(pointData[i].depth,
+                                                                           pointData[i].theta,
+                                                                           pointData[i].phi,
+                                                                           pointData[i].reflectivity,
+                                                                           pointData[i].tag,
+                                                                           options);
+            point.line = LivoxCore::lineForPointIndex(int(i), options.lineCount);
+            frame.points.append(point);
         }
         return true;
     }
@@ -65,6 +70,7 @@ bool decodeLivoxPacket(uint32_t handle,
             point1.z = pointData[i].z1 / 1000.0f;
             point1.reflectivity = pointData[i].reflectivity1;
             point1.tag = pointData[i].tag1;
+            point1.line = LivoxCore::lineForPointIndex(int(i) * 2, options.lineCount);
 
             PointCloudPoint point2{};
             point2.x = pointData[i].x2 / 1000.0f;
@@ -72,6 +78,7 @@ bool decodeLivoxPacket(uint32_t handle,
             point2.z = pointData[i].z2 / 1000.0f;
             point2.reflectivity = pointData[i].reflectivity2;
             point2.tag = pointData[i].tag2;
+            point2.line = LivoxCore::lineForPointIndex(int(i) * 2 + 1, options.lineCount);
 
             frame.points.append(point1);
             frame.points.append(point2);

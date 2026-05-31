@@ -12,6 +12,7 @@ struct SphericalConfig {
     float depthMeters = 1.0f;
     bool planarProjectionEnabled = false;
     float planarRadius = 10.0f;
+    int lineCount = 1;
 };
 
 PointCloudPoint projectSpherical(uint32_t depthRaw,

@@ -149,7 +149,7 @@ private:
     void updateProjectionControlsVisibility();
 
     // 点云处理
-    void decodePointCloudPacket(uint32_t handle, const LivoxLidarEthernetPacket* packet);
+    void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
     void presentPointCloudFrame(const PointCloudFrame& frame);
     void applyPointCloudPipeline(PointCloudFrame& frame);
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);

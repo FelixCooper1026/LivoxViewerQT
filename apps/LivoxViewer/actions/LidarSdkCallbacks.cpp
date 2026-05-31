@@ -260,7 +260,7 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             
             // 处理点云数据
             window->registerPointCloudDeviceIfNeeded(handle, dev_type);
-            window->decodePointCloudPacket(handle, packet_copy);
+            window->decodePointCloudPacket(handle, dev_type, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入
             if (window->captureState.lvx2SaveActive && packet_copy->data_type == 0x01) {

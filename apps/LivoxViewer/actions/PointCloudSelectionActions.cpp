@@ -10,6 +10,17 @@ namespace {
 
 constexpr int kSelectionRoiRows = 500;
 
+enum SelectionPointColumn {
+    ColumnId = 0,
+    ColumnCoordA,
+    ColumnCoordB,
+    ColumnCoordC,
+    ColumnReflectivity,
+    ColumnTag,
+    ColumnLine,
+    ColumnCount
+};
+
 struct SelectionPointRow
 {
     PointCloudPoint point;
@@ -31,7 +42,7 @@ public:
 
     int columnCount(const QModelIndex& parent = QModelIndex()) const override
     {
-        return parent.isValid() ? 0 : 6;
+        return parent.isValid() ? 0 : ColumnCount;
     }
 
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override
@@ -40,7 +51,11 @@ public:
             return {};
         }
         if (orientation == Qt::Horizontal) {
-            static const QStringList headers = {"Index", "X(m)", "Y(m)", "Z(m)", "Refl", "Tag"};
+            if (useSphericalColumns_) {
+                static const QStringList headers = {"ID", "Theta", "Phi", "Depth", "Refl", "Tag", "Line"};
+                return headers.value(section);
+            }
+            static const QStringList headers = {"ID", "X(m)", "Y(m)", "Z(m)", "Refl", "Tag", "Line"};
             return headers.value(section);
         }
         return {};
@@ -65,12 +80,13 @@ public:
         const SelectionPointRow& row = rows_.at(index.row());
         const PointCloudPoint& p = row.point;
         switch (index.column()) {
-        case 0: return row.originalIndex + 1;
-        case 1: return QString::number(p.x, 'f', 3);
-        case 2: return QString::number(p.y, 'f', 3);
-        case 3: return QString::number(p.z, 'f', 3);
-        case 4: return int(p.reflectivity);
-        case 5: return int(p.tag);
+        case ColumnId: return row.originalIndex + 1;
+        case ColumnCoordA: return QString::number(useSphericalColumns_ ? p.theta : p.x, 'f', 3);
+        case ColumnCoordB: return QString::number(useSphericalColumns_ ? p.phi : p.y, 'f', 3);
+        case ColumnCoordC: return QString::number(useSphericalColumns_ ? p.depth : p.z, 'f', 3);
+        case ColumnReflectivity: return int(p.reflectivity);
+        case ColumnTag: return int(p.tag);
+        case ColumnLine: return int(p.line);
         default: return {};
         }
     }
@@ -93,6 +109,7 @@ public:
     {
         beginResetModel();
         const int previousRoiStart = roiStart_;
+        useSphericalColumns_ = !points.isEmpty() && points.first().spherical;
         rows_.clear();
         rows_.reserve(points.size());
         for (int i = 0; i < points.size(); ++i) {
@@ -109,6 +126,7 @@ public:
     {
         beginResetModel();
         rows_.clear();
+        useSphericalColumns_ = false;
         roiStart_ = 0;
         endResetModel();
     }
@@ -139,15 +157,17 @@ private:
     {
         const int column = sortColumn_;
         const Qt::SortOrder order = sortOrder_;
-        std::stable_sort(rows_.begin(), rows_.end(), [column, order](const SelectionPointRow& a, const SelectionPointRow& b) {
+        const bool useSphericalColumns = useSphericalColumns_;
+        std::stable_sort(rows_.begin(), rows_.end(), [column, order, useSphericalColumns](const SelectionPointRow& a, const SelectionPointRow& b) {
             int comparison = 0;
             switch (column) {
-            case 0: comparison = compare(a.originalIndex, b.originalIndex); break;
-            case 1: comparison = compare(a.point.x, b.point.x); break;
-            case 2: comparison = compare(a.point.y, b.point.y); break;
-            case 3: comparison = compare(a.point.z, b.point.z); break;
-            case 4: comparison = compare(a.point.reflectivity, b.point.reflectivity); break;
-            case 5: comparison = compare(a.point.tag, b.point.tag); break;
+            case ColumnId: comparison = compare(a.originalIndex, b.originalIndex); break;
+            case ColumnCoordA: comparison = useSphericalColumns ? compare(a.point.theta, b.point.theta) : compare(a.point.x, b.point.x); break;
+            case ColumnCoordB: comparison = useSphericalColumns ? compare(a.point.phi, b.point.phi) : compare(a.point.y, b.point.y); break;
+            case ColumnCoordC: comparison = useSphericalColumns ? compare(a.point.depth, b.point.depth) : compare(a.point.z, b.point.z); break;
+            case ColumnReflectivity: comparison = compare(a.point.reflectivity, b.point.reflectivity); break;
+            case ColumnTag: comparison = compare(a.point.tag, b.point.tag); break;
+            case ColumnLine: comparison = compare(a.point.line, b.point.line); break;
             default: comparison = compare(a.originalIndex, b.originalIndex); break;
             }
             return order == Qt::AscendingOrder ? comparison < 0 : comparison > 0;
@@ -175,8 +195,25 @@ private:
     QVector<SelectionPointRow> rows_;
     int roiStart_ = 0;
     int sortColumn_ = -1;
+    bool useSphericalColumns_ = false;
     Qt::SortOrder sortOrder_ = Qt::AscendingOrder;
 };
+
+void configureSelectionTable(QTableView* table)
+{
+    QHeaderView* header = table->horizontalHeader();
+    header->setSortIndicatorShown(true);
+    header->setSectionsClickable(true);
+    header->setStretchLastSection(false);
+    header->setMinimumSectionSize(52);
+    header->setSectionResizeMode(ColumnId, QHeaderView::ResizeToContents);
+    header->setSectionResizeMode(ColumnCoordA, QHeaderView::Stretch);
+    header->setSectionResizeMode(ColumnCoordB, QHeaderView::Stretch);
+    header->setSectionResizeMode(ColumnCoordC, QHeaderView::Stretch);
+    header->setSectionResizeMode(ColumnReflectivity, QHeaderView::Stretch);
+    header->setSectionResizeMode(ColumnTag, QHeaderView::Stretch);
+    header->setSectionResizeMode(ColumnLine, QHeaderView::Stretch);
+}
 
 SelectionPointTableModel* ensureSelectionModel(QTableView* table)
 {
@@ -185,14 +222,14 @@ SelectionPointTableModel* ensureSelectionModel(QTableView* table)
     }
 
     if (auto* model = dynamic_cast<SelectionPointTableModel*>(table->model())) {
+        configureSelectionTable(table);
         return model;
     }
 
     auto* model = new SelectionPointTableModel(table);
     table->setModel(model);
     table->setSortingEnabled(true);
-    table->horizontalHeader()->setSortIndicatorShown(true);
-    table->horizontalHeader()->setSectionsClickable(true);
+    configureSelectionTable(table);
     QObject::connect(table, &QTableView::pressed, table, [model](const QModelIndex& index) {
         if (index.isValid()) {
             model->setRoiStart(index.row());

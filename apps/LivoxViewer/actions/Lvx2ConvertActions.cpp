@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include "Export/PointCloudExport.h"
+#include "LivoxCore/LidarModelUtils.h"
 #include "Lvx2/Lvx2PointParser.h"
 
 #include <QCoreApplication>
@@ -54,6 +55,7 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
     }
 
     QMap<uint32_t, Lvx2PlaybackExtrinsic> extrinsics;
+    QMap<uint32_t, int> lineCounts;
     const int deviceCount = std::max(0, int(privateHeader.device_count));
     for (int i = 0; i < deviceCount; ++i) {
         Lvx2DeviceInfo deviceInfo{};
@@ -61,6 +63,7 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
             return false;
         }
         extrinsics.insert(deviceInfo.lidar_id, Lvx2PointParser::makeExtrinsic(deviceInfo));
+        lineCounts.insert(deviceInfo.lidar_id, LivoxCore::lineCountForDeviceType(deviceInfo.device_type));
     }
 
     QVector<Lvx2PlaybackFrameIndex> rawFrames;
@@ -174,7 +177,11 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
                 const Lvx2PlaybackExtrinsic* extrinsic =
                     (extrinsicIt == extrinsics.constEnd()) ? nullptr : &extrinsicIt.value();
                 QVector<PointCloudPoint> packagePoints;
-                Lvx2PointParser::appendPackagePoints(packageHeader, payload, extrinsic, packagePoints);
+                Lvx2PointParser::appendPackagePoints(packageHeader,
+                                                     payload,
+                                                     extrinsic,
+                                                     packagePoints,
+                                                     lineCounts.value(packageHeader.lidar_id, 1));
                 for (const PointCloudPoint& p : packagePoints) {
                     if (writeFailed) {
                         break;
@@ -298,7 +305,11 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
                 const auto extrinsicIt = extrinsics.constFind(packageHeader.lidar_id);
                 const Lvx2PlaybackExtrinsic* extrinsic =
                     (extrinsicIt == extrinsics.constEnd()) ? nullptr : &extrinsicIt.value();
-                Lvx2PointParser::appendPackagePoints(packageHeader, payload, extrinsic, points);
+                Lvx2PointParser::appendPackagePoints(packageHeader,
+                                                     payload,
+                                                     extrinsic,
+                                                     points,
+                                                     lineCounts.value(packageHeader.lidar_id, 1));
             }
         }
         const QString filePath = QString("%1_%2%3").arg(outputPathNoExt).arg(g + 1, 5, 10, QChar('0')).arg(ext);
