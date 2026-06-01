@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -22,11 +23,14 @@
 #include <QSettings>
 #include <QSet>
 #include <QSize>
+#include <QSizePolicy>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <algorithm>
 
 namespace {
 
@@ -37,6 +41,9 @@ constexpr int kColumnStatus = 3;
 constexpr int kColumnAction = 4;
 constexpr int kPathRole = Qt::UserRole;
 constexpr int kStateRole = Qt::UserRole + 1;
+constexpr int kOptionRowHeight = 36;
+constexpr int kOptionLabelSpacing = 6;
+constexpr int kOptionRadioSpacing = 14;
 
 enum class JobState {
     Pending = 0,
@@ -318,7 +325,15 @@ void updateAllActionButtons(QTableWidget* table, bool converting)
     }
 }
 
-QWidget* createActionCell(QTableWidget* table, QLineEdit* outputDirEdit, QSet<QString>* addedPaths)
+QString outputDirForSource(const QString& srcPath, bool useSourceDir, const QString& customOutputDir)
+{
+    return useSourceDir ? QFileInfo(srcPath).absolutePath() : customOutputDir;
+}
+
+QWidget* createActionCell(QTableWidget* table,
+                          QRadioButton* sameSourceRadio,
+                          QLineEdit* outputDirEdit,
+                          QSet<QString>* addedPaths)
 {
     QWidget* cell = new QWidget();
     QHBoxLayout* layout = new QHBoxLayout(cell);
@@ -335,8 +350,14 @@ QWidget* createActionCell(QTableWidget* table, QLineEdit* outputDirEdit, QSet<QS
     layout->addWidget(deleteButton);
     layout->addStretch();
 
-    QObject::connect(openButton, &QToolButton::clicked, cell, [outputDirEdit]() {
-        const QString outputDir = outputDirEdit->text().trimmed();
+    QObject::connect(openButton, &QToolButton::clicked, cell, [table, cell, sameSourceRadio, outputDirEdit]() {
+        const int row = rowForWidget(table, cell);
+        if (row < 0) {
+            return;
+        }
+        const QString outputDir = outputDirForSource(rowPath(table, row),
+                                                     sameSourceRadio->isChecked(),
+                                                     outputDirEdit->text().trimmed());
         if (!outputDir.isEmpty()) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(outputDir));
         }
@@ -356,6 +377,7 @@ QWidget* createActionCell(QTableWidget* table, QLineEdit* outputDirEdit, QSet<QS
 void addJobRow(QTableWidget* table,
                const QString& path,
                Lvx2Convert::Mode mode,
+               QRadioButton* sameSourceRadio,
                QLineEdit* outputDirEdit,
                QSet<QString>* addedPaths)
 {
@@ -376,7 +398,7 @@ void addJobRow(QTableWidget* table,
     table->setItem(row, kColumnFileSize, new QTableWidgetItem(formatFileSize(fileInfo.size())));
     table->setItem(row, kColumnMode, new QTableWidgetItem(modeText(mode)));
     setStatusPending(table, row);
-    table->setCellWidget(row, kColumnAction, createActionCell(table, outputDirEdit, addedPaths));
+    table->setCellWidget(row, kColumnAction, createActionCell(table, sameSourceRadio, outputDirEdit, addedPaths));
     table->resizeRowToContents(row);
 }
 
@@ -525,33 +547,103 @@ void LivoxViewerWindow::showFormatConvertDialog()
     footerFieldsLayout->setContentsMargins(0, 0, 0, 0);
     footerFieldsLayout->setSpacing(8);
 
-    QWidget* modeRow = new QWidget(footerFields);
+    QWidget* modeBlock = new QWidget(footerFields);
+    QVBoxLayout* modeBlockLayout = new QVBoxLayout(modeBlock);
+    modeBlockLayout->setContentsMargins(0, 0, 0, 0);
+    modeBlockLayout->setSpacing(kOptionLabelSpacing);
+    QLabel* modeLabel = new QLabel("转换模式", modeBlock);
+    modeBlockLayout->addWidget(modeLabel);
+
+    QWidget* modeRow = new QWidget(modeBlock);
+    modeRow->setFixedHeight(kOptionRowHeight);
     QHBoxLayout* modeLayout = new QHBoxLayout(modeRow);
     modeLayout->setContentsMargins(0, 0, 0, 0);
-    QLabel* modeLabel = new QLabel("转换模式", modeRow);
-    modeLabel->setFixedWidth(92);
+    modeLayout->setSpacing(kOptionRadioSpacing);
     QRadioButton* mergeModeButton = new QRadioButton("合并为单个文件", modeRow);
     QRadioButton* splitModeButton = new QRadioButton("按 100ms 拆分", modeRow);
     mergeModeButton->setChecked(true);
-    modeLayout->addWidget(modeLabel);
-    modeLayout->addWidget(mergeModeButton);
-    modeLayout->addWidget(splitModeButton);
+    modeLayout->addWidget(mergeModeButton, 0, Qt::AlignVCenter);
+    modeLayout->addWidget(splitModeButton, 0, Qt::AlignVCenter);
     modeLayout->addStretch();
-    footerFieldsLayout->addWidget(modeRow);
+    modeBlockLayout->addWidget(modeRow);
+    footerFieldsLayout->addWidget(modeBlock);
 
-    QWidget* outputRow = new QWidget(footerFields);
+    QWidget* outputBlock = new QWidget(footerFields);
+    QVBoxLayout* outputBlockLayout = new QVBoxLayout(outputBlock);
+    outputBlockLayout->setContentsMargins(0, 0, 0, 0);
+    outputBlockLayout->setSpacing(kOptionLabelSpacing);
+    QLabel* outputLabel = new QLabel("输出", outputBlock);
+    outputBlockLayout->addWidget(outputLabel);
+
+    QWidget* outputRow = new QWidget(outputBlock);
+    outputRow->setFixedHeight(kOptionRowHeight);
     QHBoxLayout* outputLayout = new QHBoxLayout(outputRow);
     outputLayout->setContentsMargins(0, 0, 0, 0);
-    QLabel* outputLabel = new QLabel("输出目录", outputRow);
-    outputLabel->setFixedWidth(92);
-    QLineEdit* outputDirEdit = new QLineEdit(outputRow);
+    outputLayout->setSpacing(kOptionRadioSpacing);
+    QRadioButton* sameSourceOutputRadio = new QRadioButton("与源文件相同", outputRow);
+    QRadioButton* customOutputRadio = new QRadioButton("自定义", outputRow);
+    const bool useSourceOutputDir = state->settings.value("convert/useSourceDir", true).toBool();
+    sameSourceOutputRadio->setChecked(useSourceOutputDir);
+    customOutputRadio->setChecked(!useSourceOutputDir);
+
+    QFrame* outputPathFrame = new QFrame(outputRow);
+    outputPathFrame->setObjectName("ConvertOutputPathFrame");
+    outputPathFrame->setFixedHeight(kOptionRowHeight - 2);
+    outputPathFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    outputPathFrame->setStyleSheet(
+        "QFrame#ConvertOutputPathFrame {"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "  background: palette(base);"
+        "}"
+    );
+    QHBoxLayout* outputPathLayout = new QHBoxLayout(outputPathFrame);
+    outputPathLayout->setContentsMargins(10, 0, 4, 0);
+    outputPathLayout->setSpacing(4);
+    QLineEdit* outputDirEdit = new QLineEdit(outputPathFrame);
     outputDirEdit->setPlaceholderText("选择输出目录");
-    outputDirEdit->setText(state->settings.value("convert/lastSourceDir", "").toString());
-    QToolButton* outputFolderButton = createIconButton(":/icons/convert_browse_folder.svg", "浏览", outputRow);
-    outputLayout->addWidget(outputLabel);
-    outputLayout->addWidget(outputDirEdit, 1);
-    outputLayout->addWidget(outputFolderButton);
-    footerFieldsLayout->addWidget(outputRow);
+    outputDirEdit->setText(state->settings.value("convert/lastOutputDir", "").toString());
+    outputDirEdit->setFrame(false);
+    outputDirEdit->setStyleSheet(
+        "QLineEdit { border: none; background: transparent; }"
+        "QLineEdit:disabled { color: #9aa0a6; }"
+    );
+    QToolButton* outputFolderButton = createIconButton(":/icons/convert_browse_folder.svg", "浏览", outputPathFrame);
+    outputPathLayout->addWidget(outputDirEdit, 1);
+    outputPathLayout->addWidget(outputFolderButton);
+
+    const int firstRadioWidth = std::max(mergeModeButton->sizeHint().width(),
+                                         sameSourceOutputRadio->sizeHint().width());
+    mergeModeButton->setFixedWidth(firstRadioWidth);
+    sameSourceOutputRadio->setFixedWidth(firstRadioWidth);
+
+    outputLayout->addWidget(sameSourceOutputRadio, 0, Qt::AlignVCenter);
+    outputLayout->addWidget(customOutputRadio, 0, Qt::AlignVCenter);
+    outputLayout->addWidget(outputPathFrame, 1, Qt::AlignVCenter);
+    outputBlockLayout->addWidget(outputRow);
+    footerFieldsLayout->addWidget(outputBlock);
+
+    auto updateOutputPathEnabled = [customOutputRadio, outputPathFrame, outputDirEdit, outputFolderButton]() {
+        const bool enabled = customOutputRadio->isChecked();
+        outputPathFrame->setStyleSheet(enabled
+            ? "QFrame#ConvertOutputPathFrame {"
+              "  border: 1px solid palette(mid);"
+              "  border-radius: 6px;"
+              "  background: palette(base);"
+              "}"
+            : "QFrame#ConvertOutputPathFrame {"
+              "  border: 1px solid #d4d8dd;"
+              "  border-radius: 6px;"
+              "  background: #f3f5f7;"
+              "}"
+        );
+        outputDirEdit->setEnabled(enabled);
+        outputFolderButton->setEnabled(enabled);
+    };
+    updateOutputPathEnabled();
+    QObject::connect(customOutputRadio, &QRadioButton::toggled, dlg, [updateOutputPathEnabled](bool) {
+        updateOutputPathEnabled();
+    });
 
     QPushButton* startButton = new QPushButton("开始转换", footer);
     startButton->setMinimumSize(140, 44);
@@ -587,7 +679,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
         startButton->setEnabled(table->rowCount() > 0);
     };
 
-    auto addPaths = [table, outputDirEdit, dialogStatusLabel, state, selectedMode, updateStartEnabled](const QStringList& paths) {
+    auto addPaths = [table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, selectedMode, updateStartEnabled](const QStringList& paths) {
         bool addedAny = false;
         for (const QString& path : paths) {
             const QFileInfo info(path);
@@ -595,14 +687,16 @@ void LivoxViewerWindow::showFormatConvertDialog()
                 continue;
             }
             const int before = table->rowCount();
-            addJobRow(table, info.absoluteFilePath(), selectedMode(), outputDirEdit, &state->addedPaths);
+            addJobRow(table,
+                      info.absoluteFilePath(),
+                      selectedMode(),
+                      sameSourceOutputRadio,
+                      outputDirEdit,
+                      &state->addedPaths);
             if (table->rowCount() > before) {
                 addedAny = true;
                 state->settings.setValue("convert/lastSource", info.absoluteFilePath());
                 state->settings.setValue("convert/lastSourceDir", info.absolutePath());
-                if (outputDirEdit->text().trimmed().isEmpty()) {
-                    outputDirEdit->setText(info.absolutePath());
-                }
             }
         }
         if (addedAny) {
@@ -661,14 +755,15 @@ void LivoxViewerWindow::showFormatConvertDialog()
         dialogStatusLabel->setText("任务已清空");
         updateStartEnabled();
     });
-    QObject::connect(outputFolderButton, &QToolButton::clicked, dlg, [dlg, outputDirEdit, state]() {
+    QObject::connect(outputFolderButton, &QToolButton::clicked, dlg, [dlg, customOutputRadio, outputDirEdit, state]() {
+        customOutputRadio->setChecked(true);
         const QString startDir = outputDirEdit->text().trimmed().isEmpty()
             ? state->settings.value("convert/lastSourceDir", QDir::homePath()).toString()
             : outputDirEdit->text().trimmed();
         const QString folder = selectFolder(dlg, startDir, "选择输出目录");
         if (!folder.isEmpty()) {
             outputDirEdit->setText(folder);
-            state->settings.setValue("convert/lastSourceDir", folder);
+            state->settings.setValue("convert/lastOutputDir", folder);
         }
     });
     QObject::connect(table->model(), &QAbstractItemModel::rowsRemoved, dlg, [table, dialogStatusLabel, updateStartEnabled]() {
@@ -688,24 +783,31 @@ void LivoxViewerWindow::showFormatConvertDialog()
         txtButton,
         mergeModeButton,
         splitModeButton,
+        sameSourceOutputRadio,
+        customOutputRadio,
         outputDirEdit,
         outputFolderButton,
         startButton
     };
 
-    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, table, outputDirEdit, dialogStatusLabel, state, lockedControls, updateStartEnabled]() {
+    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, lockedControls, updateStartEnabled]() {
         if (table->rowCount() == 0) {
             dialogStatusLabel->setText("请先添加 LVX2 文件");
             return;
         }
-        const QString outputDir = outputDirEdit->text().trimmed();
-        if (outputDir.isEmpty()) {
+        const bool useSourceDir = sameSourceOutputRadio->isChecked();
+        const QString customOutputDir = outputDirEdit->text().trimmed();
+        if (!useSourceDir && customOutputDir.isEmpty()) {
             dialogStatusLabel->setText("请选择输出目录");
             return;
         }
-        if (!QDir(outputDir).exists()) {
+        if (!useSourceDir && !QDir(customOutputDir).exists()) {
             dialogStatusLabel->setText("输出目录不存在");
             return;
+        }
+        state->settings.setValue("convert/useSourceDir", useSourceDir);
+        if (!customOutputDir.isEmpty()) {
+            state->settings.setValue("convert/lastOutputDir", customOutputDir);
         }
 
         setControlsEnabled(lockedControls, false);
@@ -715,6 +817,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
 
         for (int row = 0; row < table->rowCount(); ++row) {
             const QString srcPath = rowPath(table, row);
+            const QString outputDir = outputDirForSource(srcPath, useSourceDir, customOutputDir);
             const QString outputNoExt = QDir(outputDir).filePath(QFileInfo(srcPath).completeBaseName());
             if (QTableWidgetItem* item = table->item(row, kColumnMode)) {
                 item->setText(modeText(state->currentMode));
