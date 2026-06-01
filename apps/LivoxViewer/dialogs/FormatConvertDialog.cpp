@@ -184,7 +184,7 @@ QWidget* createStatusCell(const QString& text, int value, const QString& iconPat
 {
     QWidget* cell = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(cell);
-    layout->setContentsMargins(0, 4, 30, 4);
+    layout->setContentsMargins(0, 4, 0, 4);
     layout->setSpacing(4);
 
     QWidget* statusRow = new QWidget(cell);
@@ -505,13 +505,13 @@ void LivoxViewerWindow::showFormatConvertDialog()
     table->horizontalHeader()->setSectionResizeMode(kColumnAction, QHeaderView::Fixed);
     table->setColumnWidth(kColumnFileSize, 132);
     table->setColumnWidth(kColumnMode, 176);
-    table->setColumnWidth(kColumnStatus, 230);
+    table->setColumnWidth(kColumnStatus, 250);
     table->setColumnWidth(kColumnAction, 140);
     table->setMinimumHeight(310);
     table->setStyleSheet(
         "QTableWidget { gridline-color: transparent; }"
-        "QTableWidget::item { border: none; padding-left: 0; padding-right: 30px; }"
-        "QHeaderView::section { border: none; padding: 6px 30px 6px 0; }"
+        "QTableWidget::item { border: none; padding-left: 8px; padding-right: 30px; }"
+        "QHeaderView::section { border: none; padding: 6px 30px 6px 8px; }"
     );
     mainLayout->addWidget(table, 1);
 

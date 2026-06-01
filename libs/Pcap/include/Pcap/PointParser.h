@@ -25,6 +25,7 @@ bool isLivoxPointCloudPayload(const uint8_t* payload, size_t payloadLen);
 void appendPointCloudPayload(const uint8_t* payload,
                              size_t payloadLen,
                              uint32_t lidarId,
+                             int lineCount,
                              FrameBuilder& builder);
 
 uint64_t pcapTimestampNs(const pcap_pkthdr* header);

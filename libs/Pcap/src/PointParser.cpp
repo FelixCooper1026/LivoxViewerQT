@@ -1,5 +1,7 @@
 #include "Pcap/PointParser.h"
 
+#include "LivoxCore/LidarModelUtils.h"
+
 #include <pcap.h>
 
 #include <cmath>
@@ -11,7 +13,10 @@ namespace {
 
 constexpr double kLivoxPi = 3.14159265358979323846;
 
-static void appendCartesianHigh(const uint8_t* dataZone, uint16_t dotNum, QVector<PointCloudPoint>& points)
+static void appendCartesianHigh(const uint8_t* dataZone,
+                                uint16_t dotNum,
+                                int lineCount,
+                                QVector<PointCloudPoint>& points)
 {
     constexpr size_t stride = 14;
     for (uint16_t i = 0; i < dotNum; ++i) {
@@ -22,11 +27,15 @@ static void appendCartesianHigh(const uint8_t* dataZone, uint16_t dotNum, QVecto
         point.z = static_cast<float>(*reinterpret_cast<const int32_t*>(p + 8)) / 1000.0f;
         point.reflectivity = p[12];
         point.tag = p[13];
+        point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         points.push_back(point);
     }
 }
 
-static void appendCartesianLow(const uint8_t* dataZone, uint16_t dotNum, QVector<PointCloudPoint>& points)
+static void appendCartesianLow(const uint8_t* dataZone,
+                               uint16_t dotNum,
+                               int lineCount,
+                               QVector<PointCloudPoint>& points)
 {
     constexpr size_t stride = 8;
     for (uint16_t i = 0; i < dotNum; ++i) {
@@ -37,11 +46,15 @@ static void appendCartesianLow(const uint8_t* dataZone, uint16_t dotNum, QVector
         point.z = static_cast<float>(*reinterpret_cast<const int16_t*>(p + 4)) / 100.0f;
         point.reflectivity = p[6];
         point.tag = p[7];
+        point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         points.push_back(point);
     }
 }
 
-static void appendSpherical(const uint8_t* dataZone, uint16_t dotNum, QVector<PointCloudPoint>& points)
+static void appendSpherical(const uint8_t* dataZone,
+                            uint16_t dotNum,
+                            int lineCount,
+                            QVector<PointCloudPoint>& points)
 {
     constexpr size_t stride = 10;
     for (uint16_t i = 0; i < dotNum; ++i) {
@@ -58,11 +71,15 @@ static void appendSpherical(const uint8_t* dataZone, uint16_t dotNum, QVector<Po
         point.z = depth * std::cos(zenithRad);
         point.reflectivity = p[8];
         point.tag = p[9];
+        point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         points.push_back(point);
     }
 }
 
-static void appendDoubleEcho(const uint8_t* dataZone, uint16_t dotNum, QVector<PointCloudPoint>& points)
+static void appendDoubleEcho(const uint8_t* dataZone,
+                             uint16_t dotNum,
+                             int lineCount,
+                             QVector<PointCloudPoint>& points)
 {
     constexpr size_t stride = 28;
     for (uint16_t i = 0; i < dotNum; ++i) {
@@ -74,6 +91,7 @@ static void appendDoubleEcho(const uint8_t* dataZone, uint16_t dotNum, QVector<P
         pt1.z = static_cast<float>(*reinterpret_cast<const int32_t*>(p + 8)) / 1000.0f;
         pt1.reflectivity = p[12];
         pt1.tag = p[13];
+        pt1.line = LivoxCore::lineForPointIndex(int(i) * 2, lineCount);
         points.push_back(pt1);
 
         PointCloudPoint pt2{};
@@ -82,6 +100,7 @@ static void appendDoubleEcho(const uint8_t* dataZone, uint16_t dotNum, QVector<P
         pt2.z = static_cast<float>(*reinterpret_cast<const int32_t*>(p + 22)) / 1000.0f;
         pt2.reflectivity = p[26];
         pt2.tag = p[27];
+        pt2.line = LivoxCore::lineForPointIndex(int(i) * 2 + 1, lineCount);
         points.push_back(pt2);
     }
 }
@@ -120,6 +139,7 @@ bool isLivoxPointCloudPayload(const uint8_t* payload, size_t payloadLen)
 void appendPointCloudPayload(const uint8_t* payload,
                              size_t payloadLen,
                              uint32_t lidarId,
+                             int lineCount,
                              FrameBuilder& builder)
 {
     if (!isLivoxPointCloudPayload(payload, payloadLen)) {
@@ -140,25 +160,25 @@ void appendPointCloudPayload(const uint8_t* payload,
         if (availableDataBytes < dotNum * stride) {
             return;
         }
-        appendCartesianHigh(dataZone, dotNum, bucket);
+        appendCartesianHigh(dataZone, dotNum, lineCount, bucket);
     } else if (dataType == 2) {
         constexpr size_t stride = 8;
         if (availableDataBytes < dotNum * stride) {
             return;
         }
-        appendCartesianLow(dataZone, dotNum, bucket);
+        appendCartesianLow(dataZone, dotNum, lineCount, bucket);
     } else if (dataType == 3) {
         constexpr size_t stride = 10;
         if (availableDataBytes < dotNum * stride) {
             return;
         }
-        appendSpherical(dataZone, dotNum, bucket);
+        appendSpherical(dataZone, dotNum, lineCount, bucket);
     } else if (dataType == 17) {
         constexpr size_t stride = 28;
         if (availableDataBytes < dotNum * stride) {
             return;
         }
-        appendDoubleEcho(dataZone, dotNum, bucket);
+        appendDoubleEcho(dataZone, dotNum, lineCount, bucket);
     }
 }
 

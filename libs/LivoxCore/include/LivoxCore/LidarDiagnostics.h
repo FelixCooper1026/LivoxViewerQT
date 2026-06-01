@@ -72,7 +72,7 @@ inline QString hmsSeverityColor(int severity)
     case 2: return QStringLiteral("#D98C00");
     case 3: return QStringLiteral("#D64545");
     case 4: return QStringLiteral("#8B0000");
-    default: return QStringLiteral("#6B7280");
+    default: return QStringLiteral("#000000");
     }
 }
 

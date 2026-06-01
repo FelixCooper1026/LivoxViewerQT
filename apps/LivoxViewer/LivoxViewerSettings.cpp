@@ -23,6 +23,7 @@
 #include <QSettings>
 #include <QSize>
 #include <QSizePolicy>
+#include <QScrollArea>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
@@ -523,7 +524,17 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QStackedWidget* pages = new QStackedWidget(settingsContent);
     auto createSettingsPage = [pages](const QString& title, const QString& description) {
-        QWidget* page = new QWidget(pages);
+        QWidget* pageContainer = new QWidget(pages);
+        QVBoxLayout* containerLayout = new QVBoxLayout(pageContainer);
+        containerLayout->setContentsMargins(0, 0, 0, 0);
+        containerLayout->setSpacing(0);
+
+        QScrollArea* scrollArea = new QScrollArea(pageContainer);
+        scrollArea->setWidgetResizable(true);
+        scrollArea->setFrameShape(QFrame::NoFrame);
+        scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+        QWidget* page = new QWidget(scrollArea);
         QVBoxLayout* pageLayout = new QVBoxLayout(page);
         pageLayout->setContentsMargins(24, 18, 24, 18);
         pageLayout->setSpacing(12);
@@ -535,7 +546,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         titleLabel->setFont(titleFont);
         pageLayout->addWidget(titleLabel);
         pageLayout->addWidget(createPreferenceDescription(description, page));
-        pages->addWidget(page);
+        scrollArea->setWidget(page);
+        containerLayout->addWidget(scrollArea);
+        pages->addWidget(pageContainer);
         return page;
     };
 
