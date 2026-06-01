@@ -8,6 +8,10 @@
 void LivoxViewerWindow::onFrameIntervalChanged(int ms)
 {
     if (ms < 50) ms = 50;
+    const uint64_t previousFrameIntervalMs = frameIntervalMs;
+    const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame,
+                                                        playbackState.mode,
+                                                        previousFrameIntervalMs);
     frameIntervalMs = static_cast<uint64_t>(ms);
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
     if (playbackState.active) {
@@ -26,7 +30,7 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
         if (playbackState.frameCount <= 0) {
             playbackState.frameCount = 1;
         }
-        const int targetFrame = std::clamp(playbackState.frame, 0, playbackState.frameCount - 1);
+        const int targetFrame = playbackFrameIndexForRawEndIndex(rawEndIndex, playbackState.mode, frameIntervalMs);
         showLvx2PlaybackFrame(targetFrame);
         if (playbackState.playing) {
             setLvx2PlaybackPlaying(true);

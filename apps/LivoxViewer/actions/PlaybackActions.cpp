@@ -68,6 +68,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
         }
     });
     connect(playbackState.modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
+        const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
         playbackState.mode = (index == 1) ? Lvx2PlaybackMode::SlidingWindow : Lvx2PlaybackMode::FrameByFrame;
         playbackState.slidingWindowStart = -1;
         playbackState.slidingWindowEnd = -1;
@@ -88,7 +89,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
         if (playbackState.frameCount <= 0) {
             playbackState.frameCount = 1;
         }
-        const int targetFrame = std::clamp(playbackState.frame, 0, playbackState.frameCount - 1);
+        const int targetFrame = playbackFrameIndexForRawEndIndex(rawEndIndex, playbackState.mode, frameIntervalMs);
         showLvx2PlaybackFrame(targetFrame);
         if (playbackState.playing) {
             setLvx2PlaybackPlaying(true);

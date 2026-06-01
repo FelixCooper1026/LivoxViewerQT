@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QStandardPaths>
+#include <QStyleOptionSlider>
 #include <QToolButton>
 
 #include <algorithm>
@@ -15,6 +16,9 @@
 #include <thread>
 
 namespace {
+
+constexpr uint64_t kPlaybackDisplayFrameMs = 100;
+constexpr int kRawFramesPerDisplayFrame = 2;
 
 static int rawFramesPerPlaybackFrame(uint64_t frameIntervalMs)
 {
@@ -36,6 +40,51 @@ static int visiblePlaybackFrameCount(const Playback::Source* source,
 
     const int rawFramesPerStep = rawFramesPerPlaybackFrame(frameIntervalMs);
     return (rawFrameCount + rawFramesPerStep - 1) / rawFramesPerStep;
+}
+
+static int displayFrameNumberForRawEndIndex(int rawEndIndex)
+{
+    return (std::max(1, rawEndIndex) + kRawFramesPerDisplayFrame - 1) / kRawFramesPerDisplayFrame;
+}
+
+static int displayPlaybackFrameCount(const Playback::Source* source)
+{
+    if (!source) {
+        return 1;
+    }
+
+    const int rawFrameCount = source->frameCount();
+    return std::max(1, (rawFrameCount + kRawFramesPerDisplayFrame - 1) / kRawFramesPerDisplayFrame);
+}
+
+static QString formatPlaybackTime(int frameNumber, int totalFrameCount)
+{
+    const uint64_t totalMs = uint64_t(frameNumber) * kPlaybackDisplayFrameMs;
+    const uint64_t durationMs = uint64_t(std::max(1, totalFrameCount)) * kPlaybackDisplayFrameMs;
+    const uint64_t totalTenths = totalMs / 100ULL;
+    const uint64_t totalSeconds = totalTenths / 10ULL;
+    const uint64_t tenths = totalTenths % 10ULL;
+
+    if (durationMs < 60000ULL) {
+        return QString("%1.%2s").arg(totalSeconds).arg(tenths);
+    }
+
+    const uint64_t seconds = totalSeconds % 60ULL;
+    const uint64_t totalMinutes = totalSeconds / 60ULL;
+    if (durationMs < 3600000ULL) {
+        return QString("%1:%2.%3")
+            .arg(totalMinutes)
+            .arg(seconds, 2, 10, QLatin1Char('0'))
+            .arg(tenths);
+    }
+
+    const uint64_t minutes = totalMinutes % 60ULL;
+    const uint64_t hours = totalMinutes / 60ULL;
+    return QString("%1:%2:%3.%4")
+        .arg(hours)
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(seconds, 2, 10, QLatin1Char('0'))
+        .arg(tenths);
 }
 
 static void updatePlaybackDeviceCardState(bool visible,
@@ -175,6 +224,42 @@ void LivoxViewerWindow::closeLvx2Playback(bool clearView)
     if (statusLabelBar) {
         statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
     }
+}
+
+int LivoxViewerWindow::playbackRawEndIndexForFrame(int playbackFrameIndex,
+                                                   Lvx2PlaybackMode mode,
+                                                   uint64_t intervalMs) const
+{
+    const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
+    if (sourceFrameCount <= 0) {
+        return 0;
+    }
+
+    const int frameIndex = std::clamp(playbackFrameIndex, 0, std::max(0, playbackState.frameCount - 1));
+    if (mode == Lvx2PlaybackMode::SlidingWindow) {
+        return std::min(frameIndex + 1, sourceFrameCount);
+    }
+
+    const int rawFrameCount = rawFramesPerPlaybackFrame(intervalMs);
+    return std::min((frameIndex + 1) * rawFrameCount, sourceFrameCount);
+}
+
+int LivoxViewerWindow::playbackFrameIndexForRawEndIndex(int rawEndIndex,
+                                                        Lvx2PlaybackMode mode,
+                                                        uint64_t intervalMs) const
+{
+    const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
+    if (sourceFrameCount <= 0 || playbackState.frameCount <= 0) {
+        return 0;
+    }
+
+    const int rawEnd = std::clamp(rawEndIndex, 1, sourceFrameCount);
+    if (mode == Lvx2PlaybackMode::SlidingWindow) {
+        return std::clamp(rawEnd - 1, 0, playbackState.frameCount - 1);
+    }
+
+    const int rawFrameCount = rawFramesPerPlaybackFrame(intervalMs);
+    return std::clamp((rawEnd - 1) / rawFrameCount, 0, playbackState.frameCount - 1);
 }
 
 void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
@@ -404,9 +489,12 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
     }
     if (playbackState.progressSlider) {
         playbackState.updatingSlider = true;
-        playbackState.progressSlider->setRange(0, std::max(0, playbackState.frameCount - 1));
+        const int displayFrameCount = displayPlaybackFrameCount(playbackState.source.get());
+        const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
+        const int displayFrameIndex = displayFrameNumberForRawEndIndex(rawEndIndex) - 1;
+        playbackState.progressSlider->setRange(0, std::max(0, displayFrameCount - 1));
         playbackState.progressSlider->setEnabled(playbackState.active && !playbackState.loading && playbackState.frameCount > 0);
-        playbackState.progressSlider->setValue(std::max(0, playbackState.frame));
+        playbackState.progressSlider->setValue(std::clamp(displayFrameIndex, 0, std::max(0, displayFrameCount - 1)));
         playbackState.updatingSlider = false;
     }
     if (playbackState.closeButton) {
@@ -417,16 +505,54 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         playbackState.modeCombo->setCurrentIndex(playbackState.mode == Lvx2PlaybackMode::SlidingWindow ? 1 : 0);
     }
     if (playbackState.label) {
-        const QString name = playbackState.path.isEmpty() ? QString() : QFileInfo(playbackState.path).fileName();
+        const QString path = QDir::toNativeSeparators(playbackState.path);
         if (playbackState.loading) {
-            playbackState.label->setText(QString("%1  加载中...").arg(name));
+            playbackState.label->setText(QString("%1    加载中...").arg(path));
         } else {
-            playbackState.label->setText(QString("%1  %2/%3")
-                                       .arg(name)
-                                       .arg(std::max(0, playbackState.frame) + 1)
-                                       .arg(std::max(1, playbackState.frameCount)));
+            const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
+            const int currentFrame = displayFrameNumberForRawEndIndex(rawEndIndex);
+            const int totalFrames = displayPlaybackFrameCount(playbackState.source.get());
+            playbackState.label->setText(QString("%1    时间 %2 / %3    帧 %4 / %5")
+                                       .arg(path)
+                                       .arg(formatPlaybackTime(currentFrame, totalFrames))
+                                       .arg(formatPlaybackTime(totalFrames, totalFrames))
+                                       .arg(currentFrame)
+                                       .arg(totalFrames));
         }
     }
+}
+
+bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == playbackState.progressSlider &&
+        event->type() == QEvent::MouseButtonPress &&
+        playbackState.progressSlider &&
+        playbackState.progressSlider->isEnabled()) {
+        QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton) {
+            QStyleOptionSlider option;
+            option.initFrom(playbackState.progressSlider);
+            option.orientation = playbackState.progressSlider->orientation();
+            option.minimum = playbackState.progressSlider->minimum();
+            option.maximum = playbackState.progressSlider->maximum();
+            option.sliderPosition = playbackState.progressSlider->sliderPosition();
+            option.sliderValue = playbackState.progressSlider->value();
+            option.singleStep = playbackState.progressSlider->singleStep();
+            option.pageStep = playbackState.progressSlider->pageStep();
+            option.upsideDown = playbackState.progressSlider->invertedAppearance();
+
+            const int span = std::max(1, playbackState.progressSlider->width());
+            const int value = QStyle::sliderValueFromPosition(option.minimum,
+                                                              option.maximum,
+                                                              mouseEvent->pos().x(),
+                                                              span,
+                                                              option.upsideDown);
+            playbackState.progressSlider->setValue(value);
+            return true;
+        }
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void LivoxViewerWindow::setLvx2PlaybackPlaying(bool playing)
@@ -467,7 +593,9 @@ void LivoxViewerWindow::onLvx2PlaybackSliderMoved(int value)
         return;
     }
     setLvx2PlaybackPlaying(false);
-    showLvx2PlaybackFrame(value);
+    const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
+    const int rawEndIndex = std::min((value + 1) * kRawFramesPerDisplayFrame, sourceFrameCount);
+    showLvx2PlaybackFrame(playbackFrameIndexForRawEndIndex(rawEndIndex, playbackState.mode, frameIntervalMs));
 }
 
 void LivoxViewerWindow::onLvx2PlaybackFileDropped(const QString& filePath)

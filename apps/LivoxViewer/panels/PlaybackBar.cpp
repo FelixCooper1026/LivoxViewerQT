@@ -6,8 +6,11 @@
 QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
 {
     playbackState.bar = new QWidget(parent);
-        QHBoxLayout* playbackLayout = new QHBoxLayout(playbackState.bar);
-        playbackLayout->setContentsMargins(8, 4, 8, 4);
+        QVBoxLayout* playbackRootLayout = new QVBoxLayout(playbackState.bar);
+        playbackRootLayout->setContentsMargins(8, 4, 8, 4);
+        playbackRootLayout->setSpacing(2);
+        QHBoxLayout* playbackLayout = new QHBoxLayout();
+        playbackLayout->setContentsMargins(0, 0, 0, 0);
         playbackLayout->setSpacing(6);
         playbackState.playPauseButton = new QPushButton(playbackState.bar);
         playbackState.firstFrameButton = new QPushButton(playbackState.bar);
@@ -16,6 +19,7 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.lastFrameButton = new QPushButton(playbackState.bar);
         playbackState.progressSlider = new QSlider(Qt::Horizontal, playbackState.bar);
         playbackState.progressSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        playbackState.progressSlider->installEventFilter(this);
         playbackState.speedCombo = new QComboBox(playbackState.bar);
         playbackState.speedCombo->addItems({"x0.1", "x0.5", "x1.0", "x2.0", "x4.0", "x8.0"});
         playbackState.speedCombo->setCurrentText("x1.0");
@@ -46,7 +50,12 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.nextFrameButton->setToolTip("下一帧");
         playbackState.lastFrameButton->setToolTip("尾帧");
         playbackState.label = new QLabel(playbackState.bar);
-        playbackState.closeButton = new QPushButton("关闭文件", playbackState.bar);
+        playbackState.label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        playbackState.closeButton = new QPushButton(playbackState.bar);
+        playbackState.closeButton->setIcon(QIcon(":/icons/close_file.svg"));
+        playbackState.closeButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
+        playbackState.closeButton->setFixedSize(QSize(playbackIconSize + 10, playbackIconSize + 10));
+        playbackState.closeButton->setToolTip("关闭文件");
         playbackLayout->addWidget(playbackState.firstFrameButton);
         playbackLayout->addWidget(playbackState.prevFrameButton);
         playbackLayout->addWidget(playbackState.playPauseButton);
@@ -55,8 +64,9 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackLayout->addWidget(playbackState.progressSlider, 1);
         playbackLayout->addWidget(playbackState.speedCombo);
         playbackLayout->addWidget(playbackState.modeCombo);
-        playbackLayout->addWidget(playbackState.label);
         playbackLayout->addWidget(playbackState.closeButton);
+        playbackRootLayout->addLayout(playbackLayout);
+        playbackRootLayout->addWidget(playbackState.label);
         playbackState.bar->setVisible(false);
     return playbackState.bar;
 }

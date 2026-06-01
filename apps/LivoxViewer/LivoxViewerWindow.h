@@ -161,6 +161,8 @@ private:
     void updateLvx2PlaybackUi();
     void setLvx2PlaybackPlaying(bool playing);
     void finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source);
+    int playbackRawEndIndexForFrame(int playbackFrameIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
+    int playbackFrameIndexForRawEndIndex(int rawEndIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
     int lvx2PlaybackIntervalMs() const;
@@ -466,6 +468,9 @@ private slots:
     void onLvx2PlaybackTick();
     void onLvx2PlaybackSliderMoved(int value);
     void onLvx2PlaybackFileDropped(const QString& filePath);
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 };
 
