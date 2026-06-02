@@ -372,6 +372,35 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
     }
 }
 
+void LivoxViewerWindow::applyNtpServerIpConfig(const QString& ip)
+{
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+        logMessage("设备未连接，无法配置");
+        return;
+    }
+
+    const QString ipClean = ip.trimmed();
+    static const QRegularExpression ipRe(R"(^\s*((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)\s*$)");
+    if (!ipRe.match(ipClean).hasMatch()) {
+        logMessage("NTP服务器IP地址格式错误");
+        return;
+    }
+
+    NTPServerIpInfo serverIp;
+    std::memset(&serverIp, 0, sizeof(serverIp));
+    QByteArray ipBytes = ipClean.toLatin1();
+    std::strncpy(serverIp.host_ip, ipBytes.constData(), sizeof(serverIp.host_ip) - 1);
+
+    livox_status status = SetNTPServerIp(currentDevice.handle, &serverIp, onAsyncControlResponse, this);
+    if (status == kLivoxLidarStatusSuccess) {
+        logMessage(QString("已发送NTP服务器IP配置命令: %1").arg(ipClean));
+        parameterState.updatedConfigKeys.insert(kKeySetNTPServerIp);
+    } else {
+        logMessage(QString("NTP服务器IP配置命令发送失败: %1").arg(status));
+    }
+}
+
 void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, int pitchStart, int pitchStop)
 {
     LidarDeviceInfo currentDevice;
@@ -554,7 +583,7 @@ void LivoxViewerWindow::onRecordParamsClicked()
             kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode,
             kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
             kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
-            kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode
+            kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp
         };
 
         // 保存顺序
@@ -596,6 +625,7 @@ void LivoxViewerWindow::onRecordParamsClicked()
                 case kKeySetPpsSyncMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
                 case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
                 case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
+                case kKeySetNTPServerIp: parameterState.recordedKeys[key] = "NTP服务器IP"; break;
                 default: parameterState.recordedKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
             }
         }

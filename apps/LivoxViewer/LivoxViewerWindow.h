@@ -401,6 +401,8 @@ private:
     QString selectedNetmask;
     QString selectedBroadcast;
     QSet<QString> lastKnownSysNames; // 记录上一次刷新时的网卡系统名称集合
+    QElapsedTimer networkWaitLogTimer;
+    QString lastNetworkWaitLogMessage;
     void refreshNetworkInterfaces();
     void onNetworkInterfaceChanged(int index);
     QString getSelectedHostIP() const;
@@ -431,6 +433,7 @@ private slots:
     void onParamConfigChanged(uint16_t key);
     void applyIpConfig(uint16_t key, const QString& ip, const QString& mask, const QString& gateway);
     void applyHostIpConfig(uint16_t key, const QString& ip, int port);
+    void applyNtpServerIpConfig(const QString& ip);
     void applyFovConfig(uint16_t key, int yawStart, int yawStop, int pitchStart, int pitchStop);
     void applyAttitudeConfig(uint16_t key, double roll, double pitch, double yaw, int x, int y, int z);
     void onFrameIntervalChanged(int ms);

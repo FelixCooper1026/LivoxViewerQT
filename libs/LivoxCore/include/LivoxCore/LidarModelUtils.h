@@ -14,7 +14,10 @@ inline int lineCountForDeviceType(uint8_t devType)
     case kLivoxLidarTypeMid360s:
         return 4;
     case kLivoxLidarTypeAvia2:
+    case kLivoxLidarTypeMid360l:
         return 1;
+    case kLivoxLidarTypeHAP:
+        return 6;
     default:
         return 1;
     }

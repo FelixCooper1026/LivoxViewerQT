@@ -355,14 +355,10 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 QString LivoxViewerWindow::lvx2DeviceTypeToModel(uint8_t deviceType) const
 {
     switch (deviceType) {
-    case kLivoxLidarTypeMid40: return "Mid40";
-    case kLivoxLidarTypeMid70: return "Mid70";
     case kLivoxLidarTypeMid360: return "Mid360";
     case kLivoxLidarTypeMid360s: return "Mid360s";
-    case kLivoxLidarTypeHorizon: return "Horizon";
-    case kLivoxLidarTypeAvia: return "Avia";
+    case kLivoxLidarTypeMid360l: return "Mid360l";
     case kLivoxLidarTypeAvia2: return "Avia2";
-    case kLivoxLidarTypeTele: return "Tele";
     case kLivoxLidarTypeHAP: return "HAP";
     case kLivoxLidarTypePA: return "PA";
     default: return QString("Unknown(%1)").arg(deviceType);

@@ -347,6 +347,16 @@ livox_status StartForcedHeating(uint32_t handle, LivoxLidarAsyncControlCallback 
  */
 livox_status StopForcedHeating(uint32_t handle, LivoxLidarAsyncControlCallback cb, void* client_data);
 
+/**
+ * Set NTP server Ip info, only avia2 support this function.
+ * @param  handle                 device handle.
+ * @param  ipconfig               NTP server ip info.
+ * @param  cb                     callback for the command.
+ * @param  client_data            user data associated with the command.
+ * @return kStatusSuccess on successful return, see \ref LivoxStatus for other error code.
+ */
+livox_status SetNTPServerIp(uint32_t handle, NTPServerIpInfo* server_ip, LivoxLidarAsyncControlCallback cb, void* client_data);
+
 // mid360 and hap lidar does not support this function.
 /**
  * Disable LiDAR force heat function.

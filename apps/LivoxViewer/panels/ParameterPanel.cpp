@@ -39,6 +39,7 @@ void LivoxViewerWindow::createParameterPanel()
     QVector<uint16_t> configurableKeysVec = {
         kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
         kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
+        kKeySetNTPServerIp,
         kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude
     };
     // 状态参数
@@ -277,6 +278,29 @@ void LivoxViewerWindow::createParameterPanel()
         logMessage(QString("数据发送目标 IP 已同步为当前主机 IP: %1").arg(hostIp));
     });
     networkLayout->addWidget(targetGroup);
+
+    QGroupBox* ntpGroup = new QGroupBox("NTP 服务器", networkTab);
+    ntpGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    QGridLayout* ntpLayout = new QGridLayout(ntpGroup);
+    ntpLayout->setContentsMargins(10, 14, 10, 10);
+    ntpLayout->setHorizontalSpacing(8);
+    ntpLayout->setVerticalSpacing(7);
+    ntpLayout->setColumnStretch(1, 1);
+
+    QLineEdit* ntpIpEdit = new QLineEdit(ntpGroup);
+    ntpIpEdit->setObjectName("ntpServerIpEdit");
+    ntpIpEdit->setToolTip("应用 NTP 服务器 IP");
+    configureIpEdit(ntpIpEdit);
+    QPushButton* ntpApplyButton = new QPushButton(ntpGroup);
+    configureApplyButton(ntpApplyButton, "应用 NTP 服务器 IP");
+
+    ntpLayout->addWidget(new QLabel("服务器 IP", ntpGroup), 0, 0);
+    ntpLayout->addWidget(ntpIpEdit, 0, 1);
+    ntpLayout->addWidget(ntpApplyButton, 0, 2);
+    networkLayout->addWidget(ntpGroup);
+    parameterState.controls[kKeySetNTPServerIp] = ntpGroup;
+    connect(ntpApplyButton, &QPushButton::clicked, [this, ntpIpEdit]() { applyNtpServerIpConfig(ntpIpEdit->text()); });
+
     networkLayout->addStretch();
 
     paramTabWidget->addTab(networkTab, "网络配置");

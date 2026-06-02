@@ -32,8 +32,8 @@
 #pragma pack(1)
 
 #define LIVOX_LIDAR_SDK_MAJOR_VERSION       1
-#define LIVOX_LIDAR_SDK_MINOR_VERSION       4
-#define LIVOX_LIDAR_SDK_PATCH_VERSION       2
+#define LIVOX_LIDAR_SDK_MINOR_VERSION       5
+#define LIVOX_LIDAR_SDK_PATCH_VERSION       0
 
 #define kBroadcastCodeSize 16
 
@@ -68,6 +68,7 @@ typedef enum {
   kLivoxLidarTypePA = 16,
   kLivoxLidarTypeMid360s = 35,
   kLivoxLidarTypeAvia2 = 40,
+  kLivoxLidarTypeMid360l = 41,
 } LivoxLidarDeviceType;
 
 typedef enum {
@@ -281,6 +282,10 @@ typedef enum {
   kLivoxEscSpeedNormal = 0x00,
   kLivoxEscSpeedSlow = 0x01,
 } LivoxLidarEscMode;
+
+typedef struct {
+  char host_ip[16];
+} NTPServerIpInfo;
 
 typedef enum {
   kLivoxPpsSyncNormal = 0x00,

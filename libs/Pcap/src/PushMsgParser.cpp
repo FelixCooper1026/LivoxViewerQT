@@ -27,8 +27,9 @@ DeviceTypeConfig getDeviceConfig(uint8_t firmwareMajor)
 {
     switch (firmwareMajor) {
         case 13: return { 9,  QStringLiteral("Mid360") };
-        case 35: return { 35, QStringLiteral("Mid360S") }; 
-        case 40: return { 40, QStringLiteral("Avia2") }; 
+        case 35: return { 35, QStringLiteral("Mid360S") };
+        case 40: return { 40, QStringLiteral("Avia2") };
+        case 41: return { 41, QStringLiteral("Mid360L") };
         default: return { 0,  QStringLiteral("未知") };
     }
 }

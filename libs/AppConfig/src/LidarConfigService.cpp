@@ -71,6 +71,8 @@ QString expectedDeviceKey(uint8_t deviceType)
         return "MID360";
     case kLivoxLidarTypeMid360s:
         return "Mid360s";
+    case kLivoxLidarTypeMid360l:
+        return "Mid360l";
     case kLivoxLidarTypeHAP:
         return "HAP";
     case kLivoxLidarTypeAvia2:
@@ -94,7 +96,7 @@ bool isDeviceConfigKey(const QString& key, const QJsonValue& value)
 QJsonObject defaultLidarNetInfo(const QString& deviceKey)
 {
     QJsonObject lidarNet;
-    if (deviceKey == "MID360" || deviceKey == "Mid360s" || deviceKey == "Avia2") {
+    if (deviceKey == "MID360" || deviceKey == "Mid360s" || deviceKey == "Mid360l" || deviceKey == "Avia2") {
         lidarNet.insert("cmd_data_port", 56100);
         lidarNet.insert("push_msg_port", 56200);
         lidarNet.insert("point_data_port", 56300);
@@ -112,7 +114,7 @@ QJsonObject defaultLidarNetInfo(const QString& deviceKey)
 
 QStringList orderedDeviceKeys()
 {
-    return {"Mid360s", "MID360", "Avia2", "HAP"};
+    return {"Mid360s", "MID360", "Mid360l", "Avia2", "HAP"};
 }
 
 } // namespace

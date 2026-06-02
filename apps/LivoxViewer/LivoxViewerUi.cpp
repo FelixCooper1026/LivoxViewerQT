@@ -393,7 +393,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 	};
 
 	auto createLidarNetDefaults = [&](const QString& type, QJsonObject& out) {
-        if (type == "MID360" || type == "Mid360s" || type == "Avia2") {
+        if (type == "MID360" || type == "Mid360s" || type == "Mid360l" || type == "Avia2") {
 			out.insert("cmd_data_port", 56100);
 			out.insert("push_msg_port", 56200);
 			out.insert("point_data_port", 56300);
@@ -409,7 +409,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 	};
 
 	auto applyHostPortDefaults = [&](const QString& type, DeviceRow* row) {
-        if (type == "MID360" || type == "Mid360s" || type == "Avia2") {
+        if (type == "MID360" || type == "Mid360s" || type == "Mid360l" || type == "Avia2") {
 			row->hp1->setValue(56101);
 			row->hp2->setValue(56201);
 			row->hp3->setValue(56301);
@@ -454,7 +454,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 		grid->setContentsMargins(0,0,0,0);
 
 		r->devType = new QComboBox(r->root);
-        r->devType->addItems({"MID360", "Mid360s", "Avia2", "HAP"});
+        r->devType->addItems({"MID360", "Mid360s", "Mid360l", "Avia2", "HAP"});
         r->hostIp = new QComboBox(r->root);
 		populateHostIpsTo(r->hostIp);
 		r->mcIp = new QLineEdit(r->root);
@@ -524,6 +524,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 
     QJsonArray hostArrMID360;
     QJsonArray hostArrMid360s;
+    QJsonArray hostArrMid360l;
     QJsonArray hostArrAvia2;
     QJsonArray hostArrHap;
     for (DeviceRow* r : deviceRows) {
@@ -539,6 +540,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 
         if (type == "MID360") hostArrMID360.append(hostObj);
         else if (type == "Mid360s") hostArrMid360s.append(hostObj);
+        else if (type == "Mid360l") hostArrMid360l.append(hostObj);
         else if (type == "Avia2") hostArrAvia2.append(hostObj);
         else hostArrHap.append(hostObj);
     }
@@ -556,6 +558,13 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         devObj.insert("lidar_net_info", lidarNet);
         devObj.insert("host_net_info", hostArrMid360s);
         root.insert("Mid360s", devObj);
+    }
+    if (!hostArrMid360l.isEmpty()) {
+        QJsonObject devObj;
+        QJsonObject lidarNet; createLidarNetDefaults("Mid360l", lidarNet);
+        devObj.insert("lidar_net_info", lidarNet);
+        devObj.insert("host_net_info", hostArrMid360l);
+        root.insert("Mid360l", devObj);
     }
     if (!hostArrAvia2.isEmpty()) {
         QJsonObject devObj;
@@ -617,6 +626,9 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     if (!hostArrMID360.isEmpty()) {
         orderedRoot.insert("MID360", makeDeviceObject("MID360", hostArrMID360));
     }
+    if (!hostArrMid360l.isEmpty()) {
+        orderedRoot.insert("Mid360l", makeDeviceObject("Mid360l", hostArrMid360l));
+    }
     if (!hostArrAvia2.isEmpty()) {
         orderedRoot.insert("Avia2", makeDeviceObject("Avia2", hostArrAvia2));
     }
@@ -656,6 +668,17 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
 {
     if (!networkInterfaceCombo) return;
 
+    constexpr qint64 kNetworkWaitLogIntervalMs = 30000;
+    auto logNetworkWaitMessage = [this](const QString& message) {
+        if (lastNetworkWaitLogMessage != message ||
+            !networkWaitLogTimer.isValid() ||
+            networkWaitLogTimer.elapsed() >= kNetworkWaitLogIntervalMs) {
+            logMessage(message);
+            lastNetworkWaitLogMessage = message;
+            networkWaitLogTimer.restart();
+        }
+    };
+
     const QString previousName = selectedInterfaceName.isEmpty()
         ? selectedNetworkInterfaceSysName
         : selectedInterfaceName;
@@ -685,12 +708,14 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
     if (selectedIndex >= 0) {
         networkInterfaceCombo->setCurrentIndex(selectedIndex);
         selectLidarInterface(interfaces.at(selectedIndex));
+        lastNetworkWaitLogMessage.clear();
+        networkWaitLogTimer.invalidate();
         logMessage(QString("[Network] Selected lidar interface: %1 (%2)")
                        .arg(selectedInterfaceDisplayName, selectedHostIp));
     } else if (!previousName.isEmpty()) {
         networkInterfaceCombo->setCurrentIndex(-1);
-        logMessage(QString("[Network] Selected lidar interface %1 is unavailable; keep selection and wait.")
-                       .arg(previousName));
+        logNetworkWaitMessage(QString("[Network] Selected lidar interface %1 is unavailable; keep selection and wait.")
+                                  .arg(previousName));
     } else {
         selectedInterfaceName.clear();
         selectedInterfaceDisplayName.clear();
@@ -700,7 +725,7 @@ void LivoxViewerWindow::refreshNetworkInterfaces()
         selectedNetworkIP.clear();
         selectedNetworkInterfaceHumanName.clear();
         selectedNetworkInterfaceSysName.clear();
-        logMessage("[Network] No valid lidar network interface found");
+        logNetworkWaitMessage("[Network] No valid lidar network interface found");
     }
 
     networkInterfaceCombo->blockSignals(false);

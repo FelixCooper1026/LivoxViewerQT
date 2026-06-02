@@ -69,6 +69,7 @@ CMakeLists.txt.user
 
 # VSCode
 .vscode/
+.VsCodeCounter/
 !.vscode/settings.json
 
 # Auto-generated files

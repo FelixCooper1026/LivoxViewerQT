@@ -17,14 +17,10 @@ constexpr double kImuChartRetentionSec = 60.0;
 QString lidarTypeName(uint8_t devType)
 {
     switch (devType) {
-    case kLivoxLidarTypeMid40: return "Mid40";
-    case kLivoxLidarTypeMid70: return "Mid70";
     case kLivoxLidarTypeMid360: return "Mid360";
     case kLivoxLidarTypeMid360s: return "Mid360s";
-    case kLivoxLidarTypeHorizon: return "Horizon";
-    case kLivoxLidarTypeAvia: return "Avia";
+    case kLivoxLidarTypeMid360l: return "Mid360l";
     case kLivoxLidarTypeAvia2: return "Avia2";
-    case kLivoxLidarTypeTele: return "Tele";
     case kLivoxLidarTypeHAP: return "HAP";
     case kLivoxLidarTypePA: return "PA";
     default: return "Unknown";
@@ -645,7 +641,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                         if (valueStr.contains("最强回波")) combo->setCurrentIndex(0);
                                         else if (valueStr.contains("第一回波")) combo->setCurrentIndex(1);
                                     }
-                                    
+
                                     // 恢复信号连接
                                     combo->blockSignals(false);
                                 } else if (QCheckBox* checkBox = qobject_cast<QCheckBox*>(control)) {
@@ -750,6 +746,14 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                             }
                                             if (QSpinBox* spin = container->findChild<QSpinBox*>(portSpinName)) {
                                                 spin->setValue(port);
+                                            }
+                                        }
+                                    } else if (key == kKeySetNTPServerIp) {
+                                        QRegularExpression ntpRegex(R"(NTP:(\d+\.\d+\.\d+\.\d+))");
+                                        QRegularExpressionMatch match = ntpRegex.match(valueStr);
+                                        if (match.hasMatch()) {
+                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("ntpServerIpEdit")) {
+                                                edit->setText(match.captured(1));
                                             }
                                         }
                                     } else if (key == kKeyFovCfg0 || key == kKeyFovCfg1) {
