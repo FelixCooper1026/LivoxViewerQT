@@ -326,6 +326,9 @@ private:
     // 测距暂停播放
     bool measurementModeActive = false;
     bool pointCloudVisualizationBeforeMeasurement = true;
+    bool crossSectionModeActive = false;
+    bool pointCloudVisualizationBeforeCrossSection = true;
+    bool playbackPlayingBeforeCrossSection = false;
 
     // 更新选中点属性表
     void updateSelectionTableAndLog();

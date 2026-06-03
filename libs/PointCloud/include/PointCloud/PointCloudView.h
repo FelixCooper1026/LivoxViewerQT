@@ -2,6 +2,7 @@
 #define POINTCLOUD_POINTCLOUDVIEW_H
 
 #include "PointCloud/PointCloudFrame.h"
+#include "PointCloud/PointCloudCrossSection.h"
 
 #include <QColor>
 #include <QDragEnterEvent>
@@ -77,6 +78,13 @@ public:
     QVector<PointCloudPoint> pointsInAabb(const QVector3D& min, const QVector3D& max, int maxPoints = 5000);
     QVector<PointCloudPoint> pointsInPersistSelection(int maxPoints = 5000);
 
+    void setCrossSectionModeEnabled(bool enabled);
+    bool isCrossSectionModeEnabled() const { return m_crossSectionState.enabled; }
+    QVector<PointCloudPoint> currentCrossSectionPoints() const { return m_crossSectionState.clippedPoints; }
+    void resetCrossSectionBoxToCurrentCloud();
+    void setCrossSectionControlsVisible(bool visible);
+    bool crossSectionControlsVisible() const { return m_crossSectionState.controlsVisible; }
+
     void setSelectionAabb(const QVector3D& min, const QVector3D& max) { m_aabbMin = min; m_aabbMax = max; m_selectionLocked = true; update(); }
     void clearSelectionAabb() { m_selectionLocked = false; update(); }
     bool hasSelectionAabb() const { return m_selectionLocked; }
@@ -111,13 +119,19 @@ protected:
 
 signals:
     void lvx2FileDropped(const QString& filePath);
+    void crossSectionChanged(int clippedPointCount, int sourcePointCount);
 
 private:
     void setupShaders();
     void setupBuffers();
     void setupAxesBuffers();
+    void setupCrossSectionBuffers();
     QVector3D mapToArcball(const QPoint& p) const;
     bool pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius = 10);
+    void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
+    void updateCrossSectionPointCloud();
+    void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
+    PointCloudCrossSection::Camera crossSectionCamera() const;
 
     QOpenGLShaderProgram *m_program;
     QOpenGLBuffer m_vbo;
@@ -126,6 +140,10 @@ private:
     QOpenGLBuffer m_axesVbo;
     QOpenGLVertexArrayObject m_axesVao;
     int m_axesVertexCount = 0;
+
+    QOpenGLBuffer m_crossSectionVbo;
+    QOpenGLVertexArrayObject m_crossSectionVao;
+    int m_crossSectionVertexCount = 0;
 
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelView;
@@ -162,6 +180,8 @@ private:
     QPoint m_selEnd;
     QRect m_selectionRect() const { return QRect(m_selStart, m_selEnd).normalized(); }
     bool m_selectionModeEnabled = false;
+
+    PointCloudCrossSection::State m_crossSectionState;
 
     bool m_selectionLocked = false;
     QVector3D m_aabbMin;

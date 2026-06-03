@@ -110,6 +110,7 @@ void PointCloudView::initializeGL()
     setupBuffers();
     setupAxesBuffers();
     setupGridBuffers();
+    setupCrossSectionBuffers();
 }
 
 void PointCloudView::setupShaders()
@@ -317,6 +318,25 @@ void PointCloudView::setupAxesBuffers()
     m_axesVbo.release();
 
     m_axesVertexCount = int(vertices.size());
+}
+
+void PointCloudView::setupCrossSectionBuffers()
+{
+    m_crossSectionVao.create();
+    m_crossSectionVao.bind();
+
+    m_crossSectionVbo.create();
+    m_crossSectionVbo.bind();
+    m_crossSectionVbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    m_crossSectionVbo.allocate(1);
+
+    m_program->enableAttributeArray(0);
+    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(PointCloudCrossSection::ColoredVertex, x), 3, sizeof(PointCloudCrossSection::ColoredVertex));
+    m_program->enableAttributeArray(1);
+    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(PointCloudCrossSection::ColoredVertex, r), 3, sizeof(PointCloudCrossSection::ColoredVertex));
+
+    m_crossSectionVao.release();
+    m_crossSectionVbo.release();
 }
 
 void PointCloudView::setGridVisible(bool visible)
@@ -548,6 +568,23 @@ void PointCloudView::paintGL()
         m_vao.bind();
         glDrawArrays(GL_POINTS, 0, m_points.size());
         m_vao.release();
+    }
+
+    if (m_crossSectionState.enabled && m_crossSectionState.initialized) {
+        const PointCloudCrossSection::Camera camera = crossSectionCamera();
+        QVector<PointCloudCrossSection::ColoredVertex> crossSectionLines =
+            PointCloudCrossSection::buildBoxLines(m_crossSectionState);
+        crossSectionLines += PointCloudCrossSection::buildGizmoLines(m_crossSectionState, camera);
+        uploadCrossSectionLines(crossSectionLines);
+
+        m_program->setUniformValue("uPersistEnabled", 0);
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(2.0f);
+        m_crossSectionVao.bind();
+        glDrawArrays(GL_LINES, 0, m_crossSectionVertexCount);
+        m_crossSectionVao.release();
+        glLineWidth(1.0f);
+        glEnable(GL_DEPTH_TEST);
     }
     
     // ==========================================
@@ -809,6 +846,7 @@ void PointCloudView::paintGL()
         painter.setPen(pen);
         painter.drawRect(r.adjusted(0,0,-1,-1));
     }
+
 }
 
 void PointCloudView::resizeGL(int w, int h)
@@ -821,6 +859,14 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
     m_lastMousePos = event->pos();
     m_activeButton = event->button();
     m_mousePressed = true;
+
+    if (m_crossSectionState.enabled &&
+        event->button() == Qt::LeftButton &&
+        PointCloudCrossSection::beginDrag(m_crossSectionState, crossSectionCamera(), event->pos())) {
+        setCursor(Qt::ClosedHandCursor);
+        updateCrossSectionPointCloud();
+        return;
+    }
 
     // 测距：按住Ctrl+左键依次选择P1与P2
     if (m_measureMode && event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
@@ -858,9 +904,29 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
 
 void PointCloudView::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!m_mousePressed) return;
+    if (!m_mousePressed) {
+        if (m_crossSectionState.enabled) {
+            const bool changed = PointCloudCrossSection::updateHover(m_crossSectionState, crossSectionCamera(), event->pos());
+            if (m_crossSectionState.hoverHandle != PointCloudCrossSection::HandleType::None) {
+                setCursor(Qt::PointingHandCursor);
+            } else {
+                setCursor(Qt::ArrowCursor);
+            }
+            if (changed) {
+                update();
+            }
+        }
+        return;
+    }
     
     QPoint delta = event->pos() - m_lastMousePos;
+
+    if (m_crossSectionState.dragging) {
+        PointCloudCrossSection::updateDrag(m_crossSectionState, crossSectionCamera(), event->pos());
+        updateCrossSectionPointCloud();
+        update();
+        return;
+    }
 
     // 移除拖动更新第二点的逻辑，改为仅在Ctrl+点击时更新
 
@@ -905,6 +971,15 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
 void PointCloudView::mouseReleaseEvent(QMouseEvent *event)
 {
     Q_UNUSED(event);
+    if (m_crossSectionState.dragging) {
+        PointCloudCrossSection::endDrag(m_crossSectionState);
+        m_mousePressed = false;
+        m_activeButton = Qt::NoButton;
+        setCursor(Qt::ArrowCursor);
+        update();
+        return;
+    }
+
     if (m_selectionModeEnabled && m_selecting && m_activeButton == Qt::LeftButton) {
         // 完成框选：记录选择当时的矩阵、视口以及选择矩形与深度范围
         m_selecting = false;
@@ -958,6 +1033,10 @@ void PointCloudView::leaveEvent(QEvent *event)
 {
     Q_UNUSED(event);
     setCursor(Qt::ArrowCursor);
+    if (m_crossSectionState.hoverHandle != PointCloudCrossSection::HandleType::None) {
+        m_crossSectionState.hoverHandle = PointCloudCrossSection::HandleType::None;
+        update();
+    }
     QOpenGLWidget::leaveEvent(event);
 }
 
@@ -1013,32 +1092,68 @@ void PointCloudView::dropEvent(QDropEvent* event)
     }
 }
 
-void PointCloudView::updatePointCloud(const PointCloudFrame& frame)
+void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
 {
     QMutexLocker locker(&m_pointsMutex);
-    m_points = frame.points;
-    m_vbo.bind();
-    m_vbo.allocate(m_points.constData(), m_points.size() * sizeof(PointCloudPoint));
-    m_vbo.release();
+    m_points = std::move(points);
+    if (m_vbo.isCreated()) {
+        m_vbo.bind();
+        m_vbo.allocate(m_points.constData(), static_cast<int>(m_points.size() * qsizetype(sizeof(PointCloudPoint))));
+        m_vbo.release();
+    }
     update();
+}
+
+void PointCloudView::uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices)
+{
+    m_crossSectionVertexCount = vertices.size();
+    if (!m_crossSectionVbo.isCreated()) {
+        return;
+    }
+    m_crossSectionVbo.bind();
+    m_crossSectionVbo.allocate(vertices.constData(), static_cast<int>(vertices.size() * qsizetype(sizeof(PointCloudCrossSection::ColoredVertex))));
+    m_crossSectionVbo.release();
+}
+
+PointCloudCrossSection::Camera PointCloudView::crossSectionCamera() const
+{
+    return PointCloudCrossSection::Camera{m_modelView, m_projection, QSize(width(), height())};
+}
+
+void PointCloudView::updateCrossSectionPointCloud()
+{
+    PointCloudCrossSection::updateClip(m_crossSectionState);
+    uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+    emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+}
+
+void PointCloudView::updatePointCloud(const PointCloudFrame& frame)
+{
+    if (m_crossSectionState.enabled) {
+        PointCloudCrossSection::setSourcePoints(m_crossSectionState, frame.points);
+        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        return;
+    }
+    uploadPointCloudPoints(QVector<PointCloudPoint>(frame.points));
 }
 
 void PointCloudView::updatePointCloud(PointCloudFrame&& frame)
 {
-    QMutexLocker locker(&m_pointsMutex);
-    m_points = std::move(frame.points);
-    m_vbo.bind();
-    m_vbo.allocate(m_points.constData(), m_points.size() * sizeof(PointCloudPoint));
-    m_vbo.release();
-    update();
+    if (m_crossSectionState.enabled) {
+        PointCloudCrossSection::setSourcePoints(m_crossSectionState, frame.points);
+        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        return;
+    }
+    uploadPointCloudPoints(std::move(frame.points));
 }
 
 void PointCloudView::clearPointCloud()
 {
-    QMutexLocker locker(&m_pointsMutex);
-    m_points.clear();
+    uploadPointCloudPoints(QVector<PointCloudPoint>());
+    m_crossSectionState = PointCloudCrossSection::State();
     printf("PointCloudView: cleared all points\n");
-    update();
 }
 
 void PointCloudView::resetView()
@@ -1135,6 +1250,51 @@ void PointCloudView::setSelectionModeEnabled(bool enabled)
         m_selViewZMax = 0.0f;
         update();
     }
+}
+
+void PointCloudView::setCrossSectionModeEnabled(bool enabled)
+{
+    if (m_crossSectionState.enabled == enabled) {
+        return;
+    }
+
+    if (enabled) {
+        QVector<PointCloudPoint> sourcePoints;
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            sourcePoints = m_points;
+        }
+        if (!PointCloudCrossSection::initializeBox(m_crossSectionState, sourcePoints)) {
+            m_crossSectionState.enabled = false;
+            emit crossSectionChanged(0, 0);
+            return;
+        }
+        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        update();
+        return;
+    }
+
+    QVector<PointCloudPoint> restored = std::move(m_crossSectionState.sourcePoints);
+    const int restoredCount = restored.size();
+    m_crossSectionState = PointCloudCrossSection::State();
+    uploadPointCloudPoints(std::move(restored));
+    emit crossSectionChanged(restoredCount, restoredCount);
+}
+
+void PointCloudView::resetCrossSectionBoxToCurrentCloud()
+{
+    if (!m_crossSectionState.enabled) {
+        return;
+    }
+    PointCloudCrossSection::initializeBox(m_crossSectionState, m_crossSectionState.sourcePoints);
+    updateCrossSectionPointCloud();
+}
+
+void PointCloudView::setCrossSectionControlsVisible(bool visible)
+{
+    PointCloudCrossSection::setControlsVisible(m_crossSectionState, visible);
+    update();
 }
 
 QVector<PointCloudPoint> PointCloudView::pointsInRect(const QRect& rect, int maxPoints)

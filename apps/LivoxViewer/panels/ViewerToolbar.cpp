@@ -1,10 +1,18 @@
 #include "LivoxViewerWindow.h"
 
+#include "Export/PointCloudExport.h"
+
 #include <QActionGroup>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QIcon>
 #include <QLayout>
 #include <QMenu>
+#include <QMessageBox>
+#include <QSettings>
 #include <QSignalBlocker>
+#include <QStandardPaths>
 #include <QStyle>
 #include <QToolButton>
 #include <QWidgetAction>
@@ -374,6 +382,70 @@ void addWidgetAction(QMenu* menu, const QString& label, QWidget* widget)
     menu->addAction(action);
 }
 
+QString extensionForSelectedFilter(const QString& selectedFilter)
+{
+    if (selectedFilter.contains("LAS")) {
+        return QStringLiteral("las");
+    }
+    if (selectedFilter.contains("CSV")) {
+        return QStringLiteral("csv");
+    }
+    if (selectedFilter.contains("TXT")) {
+        return QStringLiteral("txt");
+    }
+    return QStringLiteral("pcd");
+}
+
+bool saveCrossSectionPoints(QWidget* parent, const QVector<PointCloudPoint>& points, QString& savedPath)
+{
+    QSettings settings("Livox", "LivoxViewerQT");
+    QString lastDir = settings.value("save/lastCrossSectionDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    QString selectedFilter = QStringLiteral("PCD (*.pcd)");
+    QString filePath = QFileDialog::getSaveFileName(parent,
+                                                    QStringLiteral("导出当前切片"),
+                                                    lastDir,
+                                                    QStringLiteral("PCD (*.pcd);;LAS (*.las);;CSV (*.csv);;TXT (*.txt)"),
+                                                    &selectedFilter);
+    if (filePath.isEmpty()) {
+        return false;
+    }
+
+    QFileInfo fileInfo(filePath);
+    QString suffix = fileInfo.suffix().toLower();
+    if (suffix.isEmpty()) {
+        suffix = extensionForSelectedFilter(selectedFilter);
+        filePath += QStringLiteral(".") + suffix;
+        fileInfo.setFile(filePath);
+    }
+
+    bool ok = false;
+    if (suffix == QStringLiteral("pcd")) {
+        ok = PointCloudExport::saveAsPCD(filePath, points);
+    } else if (suffix == QStringLiteral("las")) {
+        ok = PointCloudExport::saveAsLAS(filePath, points);
+    } else if (suffix == QStringLiteral("csv")) {
+        ok = PointCloudExport::saveAsCSV(filePath, points);
+    } else if (suffix == QStringLiteral("txt")) {
+        ok = PointCloudExport::saveAsTXT(filePath, points);
+    } else {
+        QMessageBox::warning(parent, QStringLiteral("导出当前切片"), QStringLiteral("不支持的导出格式"));
+        return false;
+    }
+
+    if (!ok) {
+        QMessageBox::warning(parent, QStringLiteral("导出当前切片"), QStringLiteral("切片导出失败"));
+        return false;
+    }
+
+    settings.setValue("save/lastCrossSectionDir", fileInfo.absolutePath());
+    savedPath = filePath;
+    return true;
+}
+
 } // namespace
 
 QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
@@ -585,6 +657,133 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
+
+    QAction* crossSectionAction = new QAction(QIcon(":/icons/select_box.svg"), "Cross Section", this);
+    crossSectionAction->setCheckable(true);
+    crossSectionAction->setToolTip("Cross Section");
+    QAction* crossSectionControlsAction = new QAction("显示交互控件", this);
+    crossSectionControlsAction->setCheckable(true);
+    crossSectionControlsAction->setChecked(true);
+    crossSectionControlsAction->setEnabled(false);
+    QCheckBox* crossSectionControlsCheck = new QCheckBox("控件", toolsGroup);
+    crossSectionControlsCheck->setChecked(true);
+    crossSectionControlsCheck->setEnabled(false);
+    crossSectionControlsCheck->setToolTip("显示/隐藏Cross Section交互控件");
+    connect(crossSectionControlsAction, &QAction::toggled, crossSectionControlsCheck, [crossSectionControlsCheck](bool checked) {
+        QSignalBlocker blocker(crossSectionControlsCheck);
+        crossSectionControlsCheck->setChecked(checked);
+    });
+    connect(crossSectionControlsCheck, &QCheckBox::toggled, crossSectionControlsAction, [crossSectionControlsAction](bool checked) {
+        crossSectionControlsAction->setChecked(checked);
+    });
+    connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsCheck, measureAction, selectionAction]() {
+        if (!pointCloudView) {
+            QSignalBlocker blocker(crossSectionAction);
+            crossSectionAction->setChecked(false);
+            return;
+        }
+
+        const bool enable = !pointCloudView->isCrossSectionModeEnabled();
+        if (enable) {
+            if (pointCloudView->isMeasurementModeEnabled()) {
+                pointCloudView->setMeasurementModeEnabled(false);
+                measurementModeActive = false;
+                QSignalBlocker blocker(measureAction);
+                measureAction->setChecked(false);
+            }
+            if (pointCloudView->isSelectionModeEnabled()) {
+                pointCloudView->setSelectionModeEnabled(false);
+                selectionRealtimeEnabled = false;
+                QSignalBlocker blocker(selectionAction);
+                selectionAction->setChecked(false);
+            }
+
+            measureAction->setEnabled(false);
+            selectionAction->setEnabled(false);
+            pointCloudVisualizationBeforeCrossSection = pointCloudVisualizationEnabled;
+            playbackPlayingBeforeCrossSection = playbackState.playing;
+            crossSectionModeActive = true;
+            pointCloudView->setCrossSectionModeEnabled(true);
+            pointCloudView->setCrossSectionControlsVisible(true);
+            if (!pointCloudView->isCrossSectionModeEnabled()) {
+                crossSectionModeActive = false;
+                measureAction->setEnabled(true);
+                selectionAction->setEnabled(true);
+                QSignalBlocker blocker(crossSectionAction);
+                crossSectionAction->setChecked(false);
+                statusLabelBar->setText("Cross Section: 当前点云为空");
+                logMessage("Cross Section未启动：当前点云为空");
+                return;
+            }
+            crossSectionControlsAction->setEnabled(true);
+            crossSectionControlsCheck->setEnabled(true);
+            {
+                QSignalBlocker blocker(crossSectionControlsAction);
+                crossSectionControlsAction->setChecked(true);
+            }
+            {
+                QSignalBlocker blocker(crossSectionControlsCheck);
+                crossSectionControlsCheck->setChecked(true);
+            }
+            statusLabelBar->setText("Cross Section: 拖动箭头/面/圆环调整裁剪盒");
+            logMessage("进入Cross Section");
+        } else {
+            pointCloudView->setCrossSectionModeEnabled(false);
+            pointCloudView->setCrossSectionControlsVisible(true);
+            crossSectionModeActive = false;
+            measureAction->setEnabled(true);
+            selectionAction->setEnabled(true);
+            updateLvx2PlaybackUi();
+            statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
+            logMessage("退出Cross Section，已恢复点云显示");
+            crossSectionControlsAction->setEnabled(false);
+            crossSectionControlsCheck->setEnabled(false);
+            {
+                QSignalBlocker blocker(crossSectionControlsAction);
+                crossSectionControlsAction->setChecked(true);
+            }
+            {
+                QSignalBlocker blocker(crossSectionControlsCheck);
+                crossSectionControlsCheck->setChecked(true);
+            }
+        }
+
+        QSignalBlocker blocker(crossSectionAction);
+        crossSectionAction->setChecked(enable);
+    });
+    connect(pointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
+        if (crossSectionModeActive && statusLabelBar) {
+            statusLabelBar->setText(QString("Cross Section: %1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
+        }
+    });
+    connect(crossSectionControlsAction, &QAction::toggled, this, [this](bool visible) {
+        if (pointCloudView) {
+            pointCloudView->setCrossSectionControlsVisible(visible);
+        }
+    });
+
+    QAction* exportCrossSectionAction = new QAction("导出当前切片...", this);
+    connect(exportCrossSectionAction, &QAction::triggered, this, [this]() {
+        if (!pointCloudView || !pointCloudView->isCrossSectionModeEnabled()) {
+            QMessageBox::warning(this, "导出当前切片", "请先进入Cross Section模式");
+            return;
+        }
+        const QVector<PointCloudPoint> points = pointCloudView->currentCrossSectionPoints();
+        if (points.isEmpty()) {
+            QMessageBox::warning(this, "导出当前切片", "当前切片为空");
+            return;
+        }
+        QString savedPath;
+        if (saveCrossSectionPoints(this, points, savedPath)) {
+            logMessage(QString("当前切片已导出: %1").arg(QDir::toNativeSeparators(savedPath)));
+        }
+    });
+
+    toolsGroup->addPrimaryWidget(createIconButton(crossSectionAction, toolsGroup, toolbarIconSize));
+    toolsGroup->addPrimaryWidget(crossSectionControlsCheck);
+    toolsGroup->moreMenu()->addAction(crossSectionAction);
+    toolsGroup->moreMenu()->addAction(crossSectionControlsAction);
+    toolsGroup->moreMenu()->addAction(exportCrossSectionAction);
     toolbarLayout->addWidget(toolsGroup);
 
     ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);

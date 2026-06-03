@@ -83,13 +83,13 @@ void LivoxViewerWindow::initializeUserInterface()
     centralLayout->setContentsMargins(0,0,0,0);
     centralLayout->setSpacing(0);
 
-    // 顶部可视化功能栏（两行）
-    QWidget* viewerToolbar = createViewerToolbar(centralContainer);
-
     pointCloudView = new PointCloudView(centralContainer);
     pointCloudView->setMinimumSize(200, 200);
     pointCloudView->setPointSize(pointSizePx);
     connect(pointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
+
+    // 顶部可视化功能栏（两行）
+    QWidget* viewerToolbar = createViewerToolbar(centralContainer);
 
     createPlaybackBar(centralContainer);
 
