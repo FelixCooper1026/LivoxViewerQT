@@ -3,6 +3,7 @@
 
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudCrossSection.h"
+#include "plugins/StlModel/StlModelLoader.h"
 
 #include <QColor>
 #include <QDragEnterEvent>
@@ -84,6 +85,10 @@ public:
     void resetCrossSectionBoxToCurrentCloud();
     void setCrossSectionControlsVisible(bool visible);
     bool crossSectionControlsVisible() const { return m_crossSectionState.controlsVisible; }
+    void setStlModelMesh(const StlModel::Mesh& mesh);
+    void setStlModelVisible(bool visible);
+    bool isStlModelVisible() const { return m_stlModelVisible; }
+    bool hasStlModel() const { return !m_stlModelVertices.isEmpty(); }
 
     void setSelectionAabb(const QVector3D& min, const QVector3D& max) { m_aabbMin = min; m_aabbMax = max; m_selectionLocked = true; update(); }
     void clearSelectionAabb() { m_selectionLocked = false; update(); }
@@ -132,6 +137,8 @@ private:
     void updateCrossSectionPointCloud();
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
+    void setupStlModelBuffers();
+    void uploadStlModelVertices();
     PointCloudCrossSection::Camera crossSectionCamera() const;
 
     QOpenGLShaderProgram *m_program;
@@ -148,6 +155,10 @@ private:
     QOpenGLBuffer m_crossSectionTriangleVbo;
     QOpenGLVertexArrayObject m_crossSectionTriangleVao;
     int m_crossSectionTriangleVertexCount = 0;
+    QOpenGLBuffer m_stlModelVbo;
+    QOpenGLVertexArrayObject m_stlModelVao;
+    QVector<StlModel::Vertex> m_stlModelVertices;
+    bool m_stlModelVisible = false;
 
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelView;

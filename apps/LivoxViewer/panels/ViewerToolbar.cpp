@@ -2,6 +2,7 @@
 
 #include "Export/PointCloudExport.h"
 #include "widgets/SwitchCheckBox.h"
+#include "plugins/StlModel/StlModelLoader.h"
 
 #include <QActionGroup>
 #include <QDir>
@@ -661,6 +662,59 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
+
+    QAction* stlModelAction = new QAction(style()->standardIcon(QStyle::SP_FileIcon), "STL模型", this);
+    stlModelAction->setCheckable(true);
+    stlModelAction->setToolTip("加载/显示STL模型");
+    connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction](bool checked) {
+        if (!pointCloudView) {
+            QSignalBlocker blocker(stlModelAction);
+            stlModelAction->setChecked(false);
+            return;
+        }
+
+        if (!checked) {
+            pointCloudView->setStlModelVisible(false);
+            statusLabelBar->setText("STL模型已隐藏");
+            logMessage("STL模型已隐藏");
+            return;
+        }
+
+        if (!pointCloudView->hasStlModel()) {
+            QSettings settings("Livox", "LivoxViewerQT");
+            const QString lastDir = settings.value("stl/lastDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+            const QString filePath = QFileDialog::getOpenFileName(this,
+                                                                  "加载STL模型",
+                                                                  lastDir,
+                                                                  "STL模型 (*.stl)");
+            if (filePath.isEmpty()) {
+                QSignalBlocker blocker(stlModelAction);
+                stlModelAction->setChecked(false);
+                return;
+            }
+
+            StlModel::Mesh mesh;
+            QString errorMessage;
+            if (!StlModel::load(filePath, mesh, errorMessage)) {
+                QMessageBox::warning(this, "加载STL模型", errorMessage);
+                QSignalBlocker blocker(stlModelAction);
+                stlModelAction->setChecked(false);
+                return;
+            }
+
+            settings.setValue("stl/lastDir", QFileInfo(filePath).absolutePath());
+            pointCloudView->setStlModelMesh(mesh);
+            statusLabelBar->setText(QString("STL模型: %1 面").arg(mesh.triangles.size() / 3));
+            logMessage(QString("STL模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
+            return;
+        }
+
+        pointCloudView->setStlModelVisible(true);
+        statusLabelBar->setText("STL模型已显示");
+        logMessage("STL模型已显示");
+    });
+    toolsGroup->addPrimaryWidget(createIconButton(stlModelAction, toolsGroup, toolbarIconSize));
+    toolsGroup->moreMenu()->addAction(stlModelAction);
 
     QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
     crossSectionAction->setCheckable(true);

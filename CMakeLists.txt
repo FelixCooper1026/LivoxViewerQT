@@ -185,6 +185,7 @@ set(SOURCES
     libs/PointCloud/src/PointCloudFilter.cpp
     libs/PointCloud/src/PointCloudProjection.cpp
     libs/PointCloud/src/PointCloudCrossSection.cpp
+    plugins/StlModel/StlModelLoader.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/PcapParser.cpp
@@ -226,6 +227,7 @@ set(SOURCES
     libs/PointCloud/include/PointCloud/PointCloudCrossSection.h
     libs/PointCloud/include/PointCloud/PointCloudPipeline.h
     libs/PointCloud/include/PointCloud/PointCloudPersistence.h
+    plugins/StlModel/StlModelLoader.h
     libs/Playback/include/Playback/PlaybackSource.h
     libs/Lvx2/include/Lvx2/Lvx2Types.h
     libs/Lvx2/include/Lvx2/Lvx2Reader.h

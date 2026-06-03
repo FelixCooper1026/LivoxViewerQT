@@ -111,6 +111,7 @@ void PointCloudView::initializeGL()
     setupAxesBuffers();
     setupGridBuffers();
     setupCrossSectionBuffers();
+    setupStlModelBuffers();
 }
 
 void PointCloudView::setupShaders()
@@ -355,6 +356,25 @@ void PointCloudView::setupCrossSectionBuffers()
     m_crossSectionTriangleVbo.release();
 }
 
+void PointCloudView::setupStlModelBuffers()
+{
+    m_stlModelVao.create();
+    m_stlModelVao.bind();
+
+    m_stlModelVbo.create();
+    m_stlModelVbo.bind();
+    m_stlModelVbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    m_stlModelVbo.allocate(1);
+
+    m_program->enableAttributeArray(0);
+    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(StlModel::Vertex, x), 3, sizeof(StlModel::Vertex));
+    m_program->enableAttributeArray(1);
+    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(StlModel::Vertex, r), 3, sizeof(StlModel::Vertex));
+
+    m_stlModelVao.release();
+    m_stlModelVbo.release();
+}
+
 void PointCloudView::setGridVisible(bool visible)
 {
     if (m_gridVisible != visible) {
@@ -584,6 +604,15 @@ void PointCloudView::paintGL()
         m_vao.bind();
         glDrawArrays(GL_POINTS, 0, m_points.size());
         m_vao.release();
+    }
+
+    if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
+        m_program->setUniformValue("uPersistEnabled", 0);
+        m_program->setUniformValue("uSelectionEnabled", 0);
+        glEnable(GL_DEPTH_TEST);
+        m_stlModelVao.bind();
+        glDrawArrays(GL_TRIANGLES, 0, m_stlModelVertices.size());
+        m_stlModelVao.release();
     }
 
     if (m_crossSectionState.enabled && m_crossSectionState.initialized) {
@@ -1148,6 +1177,16 @@ void PointCloudView::uploadCrossSectionTriangles(const QVector<PointCloudCrossSe
     m_crossSectionTriangleVbo.release();
 }
 
+void PointCloudView::uploadStlModelVertices()
+{
+    if (!m_stlModelVbo.isCreated()) {
+        return;
+    }
+    m_stlModelVbo.bind();
+    m_stlModelVbo.allocate(m_stlModelVertices.constData(), static_cast<int>(m_stlModelVertices.size() * qsizetype(sizeof(StlModel::Vertex))));
+    m_stlModelVbo.release();
+}
+
 PointCloudCrossSection::Camera PointCloudView::crossSectionCamera() const
 {
     return PointCloudCrossSection::Camera{m_modelView, m_projection, QSize(width(), height())};
@@ -1327,6 +1366,20 @@ void PointCloudView::resetCrossSectionBoxToCurrentCloud()
 void PointCloudView::setCrossSectionControlsVisible(bool visible)
 {
     PointCloudCrossSection::setControlsVisible(m_crossSectionState, visible);
+    update();
+}
+
+void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh)
+{
+    m_stlModelVertices = mesh.triangles;
+    m_stlModelVisible = true;
+    uploadStlModelVertices();
+    update();
+}
+
+void PointCloudView::setStlModelVisible(bool visible)
+{
+    m_stlModelVisible = visible && !m_stlModelVertices.isEmpty();
     update();
 }
 
