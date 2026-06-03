@@ -131,6 +131,7 @@ private:
     void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
     void updateCrossSectionPointCloud();
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
+    void uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     PointCloudCrossSection::Camera crossSectionCamera() const;
 
     QOpenGLShaderProgram *m_program;
@@ -144,6 +145,9 @@ private:
     QOpenGLBuffer m_crossSectionVbo;
     QOpenGLVertexArrayObject m_crossSectionVao;
     int m_crossSectionVertexCount = 0;
+    QOpenGLBuffer m_crossSectionTriangleVbo;
+    QOpenGLVertexArrayObject m_crossSectionTriangleVao;
+    int m_crossSectionTriangleVertexCount = 0;
 
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelView;

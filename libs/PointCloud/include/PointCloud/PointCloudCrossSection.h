@@ -37,8 +37,11 @@ struct Camera {
 enum class HandleType {
     None = 0,
     Center,
+    TranslateMinX,
     TranslateX,
+    TranslateMinY,
     TranslateY,
+    TranslateMinZ,
     TranslateZ,
     ScaleMinX,
     ScaleMaxX,
@@ -94,6 +97,7 @@ void setControlsVisible(State& state, bool visible);
 
 QVector<ColoredVertex> buildBoxLines(const State& state);
 QVector<ColoredVertex> buildGizmoLines(const State& state, const Camera& camera);
+QVector<ColoredVertex> buildGizmoTriangles(const State& state, const Camera& camera);
 
 } // namespace PointCloudCrossSection
 

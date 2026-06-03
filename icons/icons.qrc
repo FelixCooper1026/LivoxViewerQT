@@ -2,6 +2,7 @@
   <qresource prefix="/icons">
     <file>measure.svg</file>
     <file>select_box.svg</file>
+    <file>cross_section.svg</file>
     <file>reset_view.svg</file>
     <file>refresh.svg</file>
     <file>grid.svg</file>

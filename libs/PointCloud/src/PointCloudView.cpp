@@ -337,6 +337,22 @@ void PointCloudView::setupCrossSectionBuffers()
 
     m_crossSectionVao.release();
     m_crossSectionVbo.release();
+
+    m_crossSectionTriangleVao.create();
+    m_crossSectionTriangleVao.bind();
+
+    m_crossSectionTriangleVbo.create();
+    m_crossSectionTriangleVbo.bind();
+    m_crossSectionTriangleVbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    m_crossSectionTriangleVbo.allocate(1);
+
+    m_program->enableAttributeArray(0);
+    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(PointCloudCrossSection::ColoredVertex, x), 3, sizeof(PointCloudCrossSection::ColoredVertex));
+    m_program->enableAttributeArray(1);
+    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(PointCloudCrossSection::ColoredVertex, r), 3, sizeof(PointCloudCrossSection::ColoredVertex));
+
+    m_crossSectionTriangleVao.release();
+    m_crossSectionTriangleVbo.release();
 }
 
 void PointCloudView::setGridVisible(bool visible)
@@ -575,11 +591,17 @@ void PointCloudView::paintGL()
         QVector<PointCloudCrossSection::ColoredVertex> crossSectionLines =
             PointCloudCrossSection::buildBoxLines(m_crossSectionState);
         crossSectionLines += PointCloudCrossSection::buildGizmoLines(m_crossSectionState, camera);
+        const QVector<PointCloudCrossSection::ColoredVertex> crossSectionTriangles =
+            PointCloudCrossSection::buildGizmoTriangles(m_crossSectionState, camera);
         uploadCrossSectionLines(crossSectionLines);
+        uploadCrossSectionTriangles(crossSectionTriangles);
 
         m_program->setUniformValue("uPersistEnabled", 0);
         glDisable(GL_DEPTH_TEST);
-        glLineWidth(2.0f);
+        m_crossSectionTriangleVao.bind();
+        glDrawArrays(GL_TRIANGLES, 0, m_crossSectionTriangleVertexCount);
+        m_crossSectionTriangleVao.release();
+        glLineWidth(4.0f);
         m_crossSectionVao.bind();
         glDrawArrays(GL_LINES, 0, m_crossSectionVertexCount);
         m_crossSectionVao.release();
@@ -1113,6 +1135,17 @@ void PointCloudView::uploadCrossSectionLines(const QVector<PointCloudCrossSectio
     m_crossSectionVbo.bind();
     m_crossSectionVbo.allocate(vertices.constData(), static_cast<int>(vertices.size() * qsizetype(sizeof(PointCloudCrossSection::ColoredVertex))));
     m_crossSectionVbo.release();
+}
+
+void PointCloudView::uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices)
+{
+    m_crossSectionTriangleVertexCount = vertices.size();
+    if (!m_crossSectionTriangleVbo.isCreated()) {
+        return;
+    }
+    m_crossSectionTriangleVbo.bind();
+    m_crossSectionTriangleVbo.allocate(vertices.constData(), static_cast<int>(vertices.size() * qsizetype(sizeof(PointCloudCrossSection::ColoredVertex))));
+    m_crossSectionTriangleVbo.release();
 }
 
 PointCloudCrossSection::Camera PointCloudView::crossSectionCamera() const

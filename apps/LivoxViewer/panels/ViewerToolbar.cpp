@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include "Export/PointCloudExport.h"
+#include "widgets/SwitchCheckBox.h"
 
 #include <QActionGroup>
 #include <QDir>
@@ -239,6 +240,9 @@ private:
 
         int visibleControlCount = 0;
         auto addWidgetWidth = [&](QWidget* widget) {
+            if (widget->property("toolbarOptionalHidden").toBool()) {
+                return;
+            }
             controlsWidth += widget->sizeHint().width();
             ++visibleControlCount;
         };
@@ -658,25 +662,28 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
 
-    QAction* crossSectionAction = new QAction(QIcon(":/icons/select_box.svg"), "Cross Section", this);
+    QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
     crossSectionAction->setCheckable(true);
     crossSectionAction->setToolTip("Cross Section");
     QAction* crossSectionControlsAction = new QAction("显示交互控件", this);
     crossSectionControlsAction->setCheckable(true);
     crossSectionControlsAction->setChecked(true);
     crossSectionControlsAction->setEnabled(false);
-    QCheckBox* crossSectionControlsCheck = new QCheckBox("控件", toolsGroup);
-    crossSectionControlsCheck->setChecked(true);
-    crossSectionControlsCheck->setEnabled(false);
-    crossSectionControlsCheck->setToolTip("显示/隐藏Cross Section交互控件");
-    connect(crossSectionControlsAction, &QAction::toggled, crossSectionControlsCheck, [crossSectionControlsCheck](bool checked) {
-        QSignalBlocker blocker(crossSectionControlsCheck);
-        crossSectionControlsCheck->setChecked(checked);
+    crossSectionControlsAction->setVisible(false);
+    SwitchCheckBox* crossSectionControlsSwitch = new SwitchCheckBox(toolsGroup);
+    crossSectionControlsSwitch->setChecked(true);
+    crossSectionControlsSwitch->setEnabled(false);
+    crossSectionControlsSwitch->setVisible(false);
+    crossSectionControlsSwitch->setProperty("toolbarOptionalHidden", true);
+    crossSectionControlsSwitch->setToolTip("显示/隐藏Cross Section交互控件");
+    connect(crossSectionControlsAction, &QAction::toggled, crossSectionControlsSwitch, [crossSectionControlsSwitch](bool checked) {
+        QSignalBlocker blocker(crossSectionControlsSwitch);
+        crossSectionControlsSwitch->setChecked(checked);
     });
-    connect(crossSectionControlsCheck, &QCheckBox::toggled, crossSectionControlsAction, [crossSectionControlsAction](bool checked) {
+    connect(crossSectionControlsSwitch, &QCheckBox::toggled, crossSectionControlsAction, [crossSectionControlsAction](bool checked) {
         crossSectionControlsAction->setChecked(checked);
     });
-    connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsCheck, measureAction, selectionAction]() {
+    connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsSwitch, measureAction, selectionAction]() {
         if (!pointCloudView) {
             QSignalBlocker blocker(crossSectionAction);
             crossSectionAction->setChecked(false);
@@ -716,14 +723,17 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 return;
             }
             crossSectionControlsAction->setEnabled(true);
-            crossSectionControlsCheck->setEnabled(true);
+            crossSectionControlsSwitch->setEnabled(true);
+            crossSectionControlsAction->setVisible(true);
+            crossSectionControlsSwitch->setProperty("toolbarOptionalHidden", false);
+            crossSectionControlsSwitch->setVisible(true);
             {
                 QSignalBlocker blocker(crossSectionControlsAction);
                 crossSectionControlsAction->setChecked(true);
             }
             {
-                QSignalBlocker blocker(crossSectionControlsCheck);
-                crossSectionControlsCheck->setChecked(true);
+                QSignalBlocker blocker(crossSectionControlsSwitch);
+                crossSectionControlsSwitch->setChecked(true);
             }
             statusLabelBar->setText("Cross Section: 拖动箭头/面/圆环调整裁剪盒");
             logMessage("进入Cross Section");
@@ -737,14 +747,17 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
             logMessage("退出Cross Section，已恢复点云显示");
             crossSectionControlsAction->setEnabled(false);
-            crossSectionControlsCheck->setEnabled(false);
+            crossSectionControlsSwitch->setEnabled(false);
+            crossSectionControlsAction->setVisible(false);
+            crossSectionControlsSwitch->setProperty("toolbarOptionalHidden", true);
+            crossSectionControlsSwitch->setVisible(false);
             {
                 QSignalBlocker blocker(crossSectionControlsAction);
                 crossSectionControlsAction->setChecked(true);
             }
             {
-                QSignalBlocker blocker(crossSectionControlsCheck);
-                crossSectionControlsCheck->setChecked(true);
+                QSignalBlocker blocker(crossSectionControlsSwitch);
+                crossSectionControlsSwitch->setChecked(true);
             }
         }
 
@@ -780,7 +793,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
 
     toolsGroup->addPrimaryWidget(createIconButton(crossSectionAction, toolsGroup, toolbarIconSize));
-    toolsGroup->addPrimaryWidget(crossSectionControlsCheck);
+    toolsGroup->addPrimaryWidget(crossSectionControlsSwitch);
     toolsGroup->moreMenu()->addAction(crossSectionAction);
     toolsGroup->moreMenu()->addAction(crossSectionControlsAction);
     toolsGroup->moreMenu()->addAction(exportCrossSectionAction);
