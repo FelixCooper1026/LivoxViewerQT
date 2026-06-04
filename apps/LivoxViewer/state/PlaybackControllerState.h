@@ -47,6 +47,7 @@ struct PlaybackControllerState
     QComboBox* modeCombo = nullptr;
 
     bool updatingSlider = false;
+    bool progressSliderDragging = false;
     double speed = 1.0;
     Lvx2Playback::Mode mode = Lvx2Playback::Mode::SlidingWindow;
 

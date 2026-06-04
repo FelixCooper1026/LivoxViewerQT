@@ -521,11 +521,9 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
 bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == playbackState.progressSlider &&
-        event->type() == QEvent::MouseButtonPress &&
         playbackState.progressSlider &&
         playbackState.progressSlider->isEnabled()) {
-        QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
-        if (mouseEvent->button() == Qt::LeftButton) {
+        auto sliderValueAt = [this](const QPoint& pos) {
             QStyleOptionSlider option;
             option.initFrom(playbackState.progressSlider);
             option.orientation = playbackState.progressSlider->orientation();
@@ -538,14 +536,45 @@ bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
             option.upsideDown = playbackState.progressSlider->invertedAppearance();
 
             const int span = std::max(1, playbackState.progressSlider->width());
-            const int value = QStyle::sliderValueFromPosition(option.minimum,
-                                                              option.maximum,
-                                                              mouseEvent->pos().x(),
-                                                              span,
-                                                              option.upsideDown);
-            playbackState.progressSlider->setValue(value);
+            return QStyle::sliderValueFromPosition(option.minimum,
+                                                   option.maximum,
+                                                   pos.x(),
+                                                   span,
+                                                   option.upsideDown);
+        };
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                playbackState.progressSliderDragging = true;
+                playbackState.progressSlider->setSliderDown(true);
+                playbackState.progressSlider->grabMouse();
+                playbackState.progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove && playbackState.progressSliderDragging) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            playbackState.progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
             return true;
+        } else if (event->type() == QEvent::MouseButtonRelease && playbackState.progressSliderDragging) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                playbackState.progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
+                playbackState.progressSlider->releaseMouse();
+                playbackState.progressSlider->setSliderDown(false);
+                playbackState.progressSliderDragging = false;
+                return true;
+            }
         }
+    } else if (watched == playbackState.progressSlider &&
+               event->type() == QEvent::MouseButtonRelease &&
+               playbackState.progressSliderDragging) {
+        if (playbackState.progressSlider) {
+            playbackState.progressSlider->releaseMouse();
+            playbackState.progressSlider->setSliderDown(false);
+        }
+        playbackState.progressSliderDragging = false;
+        return true;
     }
 
     return QMainWindow::eventFilter(watched, event);
