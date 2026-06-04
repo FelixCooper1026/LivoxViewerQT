@@ -13,14 +13,16 @@ constexpr float kMinHalfExtent = 0.05f;
 constexpr float kHitThresholdPixels = 18.0f;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kCenterHitRadiusPixels = 24.0f;
-constexpr float kTranslateGapPixels = 56.0f;
-constexpr float kTranslateLengthPixels = 168.0f;
-constexpr float kScaleHandlePixels = 96.0f;
-constexpr float kRotationRingRadiusPixels = 56.0f;
-constexpr float kArrowHeadPixels = 32.0f;
-constexpr float kScaleCrossPixels = 22.0f;
-constexpr float kCenterCrossPixels = 32.0f;
-constexpr float kCenterRingPixels = 36.0f;
+constexpr float kTranslateGapFactor = 0.12f;
+constexpr float kTranslateLengthFactor = 0.20f;
+constexpr float kScaleHandleFactor = 0.32f;
+constexpr float kRotationRingRadiusFactor = 0.18f;
+constexpr float kArrowHeadFactor = 0.10f;
+constexpr float kScaleCrossFactor = 0.07f;
+constexpr float kCenterCrossFactor = 0.10f;
+constexpr float kCenterRingFactor = 0.12f;
+constexpr float kDragGuideFactor = 0.50f;
+constexpr float kRotationSensitivity = 0.35f;
 
 QVector3D axisForHandle(const Box& box, HandleType handle)
 {
@@ -60,6 +62,11 @@ QVector3D axisForHandle(const Box& box, HandleType handle)
 float maxHalfExtent(const Box& box)
 {
     return std::max({box.halfExtents.x(), box.halfExtents.y(), box.halfExtents.z(), 0.1f});
+}
+
+float boxScaledSize(const Box& box, float factor)
+{
+    return maxHalfExtent(box) * factor;
 }
 
 bool isScaleHandle(HandleType handle)
@@ -216,11 +223,6 @@ float worldUnitsPerPixel(const Camera& camera, const QVector3D& world)
     return 1.0f / pixelsPerWorldUnit;
 }
 
-float worldSizeForPixels(const Camera& camera, const QVector3D& world, float pixels)
-{
-    return worldUnitsPerPixel(camera, world) * pixels;
-}
-
 float distanceToSegment(const QPointF& point, const QPointF& a, const QPointF& b)
 {
     const QPointF ab = b - a;
@@ -335,6 +337,7 @@ struct RingHandle {
 
 QVector<QPair<HandleType, QPair<QVector3D, QVector3D>>> handleSegments(const State& state, const Camera& camera)
 {
+    Q_UNUSED(camera);
     QVector<QPair<HandleType, QPair<QVector3D, QVector3D>>> segments;
     const Box& box = state.box;
     const QVector3D axes[] = {
@@ -368,19 +371,16 @@ QVector<QPair<HandleType, QPair<QVector3D, QVector3D>>> handleSegments(const Sta
         const float extent = halfExtentComponent(box.halfExtents, i);
         const QVector3D maxFace = box.center + axis * extent;
         const QVector3D minFace = box.center - axis * extent;
-        const float maxHandleLength = worldSizeForPixels(camera, maxFace, kScaleHandlePixels);
-        const float minHandleLength = worldSizeForPixels(camera, minFace, kScaleHandlePixels);
-        const float maxTranslateOffset = worldSizeForPixels(camera, maxFace, kScaleHandlePixels + kTranslateGapPixels);
-        const float minTranslateOffset = worldSizeForPixels(camera, minFace, kScaleHandlePixels + kTranslateGapPixels);
-        const float translateLength = worldSizeForPixels(camera, maxFace, kTranslateLengthPixels);
-        const float minTranslateLength = worldSizeForPixels(camera, minFace, kTranslateLengthPixels);
-        segments.push_back({maxTranslateHandles[i], {maxFace + axis * maxTranslateOffset,
-                                                     maxFace + axis * (maxTranslateOffset + translateLength)}});
-        segments.push_back({minTranslateHandles[i], {minFace - axis * minTranslateOffset,
-                                                     minFace - axis * (minTranslateOffset + minTranslateLength)}});
+        const float handleLength = boxScaledSize(box, kScaleHandleFactor);
+        const float translateOffset = handleLength + boxScaledSize(box, kTranslateGapFactor);
+        const float translateLength = boxScaledSize(box, kTranslateLengthFactor);
+        segments.push_back({maxTranslateHandles[i], {maxFace + axis * translateOffset,
+                                                     maxFace + axis * (translateOffset + translateLength)}});
+        segments.push_back({minTranslateHandles[i], {minFace - axis * translateOffset,
+                                                     minFace - axis * (translateOffset + translateLength)}});
 
-        segments.push_back({maxHandles[i], {maxFace, maxFace + axis * maxHandleLength}});
-        segments.push_back({minHandles[i], {minFace, minFace - axis * minHandleLength}});
+        segments.push_back({maxHandles[i], {maxFace, maxFace + axis * handleLength}});
+        segments.push_back({minHandles[i], {minFace, minFace - axis * handleLength}});
     }
 
     return segments;
@@ -388,6 +388,7 @@ QVector<QPair<HandleType, QPair<QVector3D, QVector3D>>> handleSegments(const Sta
 
 QVector<RingHandle> rotationRings(const State& state, const Camera& camera)
 {
+    Q_UNUSED(camera);
     QVector<RingHandle> rings;
     const Box& box = state.box;
     const QVector3D axes[] = {
@@ -412,10 +413,12 @@ QVector<RingHandle> rotationRings(const State& state, const Camera& camera)
         const float extent = halfExtentComponent(box.halfExtents, i);
         const QVector3D maxFace = box.center + axis * extent;
         const QVector3D minFace = box.center - axis * extent;
-        const QVector3D maxCenter = maxFace + axis * worldSizeForPixels(camera, maxFace, kScaleHandlePixels);
-        const QVector3D minCenter = minFace - axis * worldSizeForPixels(camera, minFace, kScaleHandlePixels);
-        rings.push_back({maxHandles[i], maxCenter, axis, worldSizeForPixels(camera, maxCenter, kRotationRingRadiusPixels)});
-        rings.push_back({minHandles[i], minCenter, -axis, worldSizeForPixels(camera, minCenter, kRotationRingRadiusPixels)});
+        const float handleLength = boxScaledSize(box, kScaleHandleFactor);
+        const float ringRadius = boxScaledSize(box, kRotationRingRadiusFactor);
+        const QVector3D maxCenter = maxFace + axis * handleLength;
+        const QVector3D minCenter = minFace - axis * handleLength;
+        rings.push_back({maxHandles[i], maxCenter, axis, ringRadius});
+        rings.push_back({minHandles[i], minCenter, -axis, ringRadius});
     }
     return rings;
 }
@@ -584,7 +587,7 @@ bool beginDrag(State& state, const Camera& camera, const QPoint& mousePos)
     state.dragUnitsPerPixel = worldUnitsPerPixel(camera, state.box.center);
     QPointF centerScreen;
     QPointF axisScreen;
-    const float guideLength = worldSizeForPixels(camera, state.box.center, 80.0f);
+    const float guideLength = boxScaledSize(state.box, kDragGuideFactor);
     if (isRotateHandle(hit.handle)) {
         const RingHandle ring = rotationRingForHandle(state, camera, hit.handle);
         projectPoint(camera, ring.center, state.dragRingCenterScreen);
@@ -633,7 +636,7 @@ bool updateDrag(State& state, const Camera& camera, const QPoint& mousePos)
         const QPointF currentVector = QPointF(mousePos) - state.dragRingCenterScreen;
         const float cross = float(startVector.x() * currentVector.y() - startVector.y() * currentVector.x());
         const float dot = float(startVector.x() * currentVector.x() + startVector.y() * currentVector.y());
-        const float angleDegrees = -std::atan2(cross, dot) * 180.0f / kPi * state.dragRotationSign;
+        const float angleDegrees = -std::atan2(cross, dot) * 180.0f / kPi * state.dragRotationSign * kRotationSensitivity;
         state.box = state.dragStartBox;
         state.box.orientation = (QQuaternion::fromAxisAndAngle(state.dragAxis, angleDegrees) *
                                  state.dragStartBox.orientation).normalized();
@@ -701,14 +704,14 @@ QVector<ColoredVertex> buildGizmoLines(const State& state, const Camera& camera)
         const QVector3D color = colorForHandle(segment.first, highlighted);
         if (isTranslateHandle(segment.first)) {
             const QVector3D axis = (segment.second.second - segment.second.first).normalized();
-            const float coneLength = worldSizeForPixels(camera, segment.second.second, kArrowHeadPixels);
+            const float coneLength = boxScaledSize(state.box, kArrowHeadFactor);
             appendLine(vertices, segment.second.first, segment.second.second - axis * coneLength, color);
         } else if (isScaleHandle(segment.first)) {
             appendLine(vertices, segment.second.first, segment.second.second, color);
             appendCross(vertices,
                         state.box,
                         segment.second.second,
-                        worldSizeForPixels(camera, segment.second.second, kScaleCrossPixels),
+                        boxScaledSize(state.box, kScaleCrossFactor),
                         color);
         } else {
             appendLine(vertices, segment.second.first, segment.second.second, color);
@@ -726,10 +729,10 @@ QVector<ColoredVertex> buildGizmoLines(const State& state, const Camera& camera)
     appendCross(vertices,
                 state.box,
                 state.box.center,
-                worldSizeForPixels(camera, state.box.center, kCenterCrossPixels),
+                boxScaledSize(state.box, kCenterCrossFactor),
                 colorForHandle(HandleType::Center, state.hoverHandle == HandleType::Center || state.activeHandle == HandleType::Center));
     const QVector3D centerColor = colorForHandle(HandleType::Center, state.hoverHandle == HandleType::Center || state.activeHandle == HandleType::Center);
-    const float centerRadius = worldSizeForPixels(camera, state.box.center, kCenterRingPixels);
+    const float centerRadius = boxScaledSize(state.box, kCenterRingFactor);
     appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 0), centerRadius, centerColor);
     appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 1), centerRadius, centerColor);
     appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 2), centerRadius, centerColor);
@@ -754,7 +757,7 @@ QVector<ColoredVertex> buildGizmoTriangles(const State& state, const Camera& cam
                    state.box,
                    segment.second.second,
                    axis,
-                   worldSizeForPixels(camera, segment.second.second, kArrowHeadPixels),
+                   boxScaledSize(state.box, kArrowHeadFactor),
                    color);
     }
     return vertices;

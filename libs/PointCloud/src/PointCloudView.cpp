@@ -619,6 +619,7 @@ void PointCloudView::paintGL()
         const PointCloudCrossSection::Camera camera = crossSectionCamera();
         QVector<PointCloudCrossSection::ColoredVertex> crossSectionLines =
             PointCloudCrossSection::buildBoxLines(m_crossSectionState);
+        m_crossSectionBoxLineVertexCount = crossSectionLines.size();
         crossSectionLines += PointCloudCrossSection::buildGizmoLines(m_crossSectionState, camera);
         const QVector<PointCloudCrossSection::ColoredVertex> crossSectionTriangles =
             PointCloudCrossSection::buildGizmoTriangles(m_crossSectionState, camera);
@@ -630,9 +631,13 @@ void PointCloudView::paintGL()
         m_crossSectionTriangleVao.bind();
         glDrawArrays(GL_TRIANGLES, 0, m_crossSectionTriangleVertexCount);
         m_crossSectionTriangleVao.release();
-        glLineWidth(4.0f);
         m_crossSectionVao.bind();
-        glDrawArrays(GL_LINES, 0, m_crossSectionVertexCount);
+        glLineWidth(2.0f);
+        glDrawArrays(GL_LINES, 0, m_crossSectionBoxLineVertexCount);
+        glLineWidth(3.5f);
+        glDrawArrays(GL_LINES,
+                     m_crossSectionBoxLineVertexCount,
+                     m_crossSectionVertexCount - m_crossSectionBoxLineVertexCount);
         m_crossSectionVao.release();
         glLineWidth(1.0f);
         glEnable(GL_DEPTH_TEST);

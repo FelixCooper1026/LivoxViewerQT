@@ -152,6 +152,7 @@ private:
     QOpenGLBuffer m_crossSectionVbo;
     QOpenGLVertexArrayObject m_crossSectionVao;
     int m_crossSectionVertexCount = 0;
+    int m_crossSectionBoxLineVertexCount = 0;
     QOpenGLBuffer m_crossSectionTriangleVbo;
     QOpenGLVertexArrayObject m_crossSectionTriangleVao;
     int m_crossSectionTriangleVertexCount = 0;
