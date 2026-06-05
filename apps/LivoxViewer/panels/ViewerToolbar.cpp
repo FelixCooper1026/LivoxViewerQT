@@ -15,7 +15,6 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QStandardPaths>
-#include <QStyle>
 #include <QToolButton>
 #include <QWidgetAction>
 
@@ -145,20 +144,22 @@ public:
     {
         setObjectName("ViewerToolbarGroup");
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        setFixedHeight(fontMetrics().height() * 4 + 6);
 
         QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(8, 5, 8, 3);
-        root->setSpacing(3);
+        root->setContentsMargins(8, 5, 8, 0);
+        root->setSpacing(5);
 
         m_controls = new QWidget(this);
         m_controlsLayout = new QHBoxLayout(m_controls);
         m_controlsLayout->setContentsMargins(0, 0, 0, 0);
         m_controlsLayout->setSpacing(6);
+        m_controlsLayout->setAlignment(Qt::AlignVCenter);
         root->addWidget(m_controls, 1);
 
         QWidget* titleRow = new QWidget(this);
         QHBoxLayout* titleLayout = new QHBoxLayout(titleRow);
-        titleLayout->setContentsMargins(0, 0, 0, 0);
+        titleLayout->setContentsMargins(0, 2, 0, 0);
         titleLayout->setSpacing(3);
         titleLayout->addStretch();
 
@@ -167,6 +168,7 @@ public:
         titleFont.setPointSizeF(std::max(7.0, titleFont.pointSizeF() * 0.9));
         m_title->setFont(titleFont);
         m_title->setAlignment(Qt::AlignCenter);
+        titleRow->setFixedHeight(m_title->sizeHint().height() + 5);
         titleLayout->addWidget(m_title);
 
         m_moreMenu = new QMenu(this);
@@ -179,7 +181,7 @@ public:
         m_moreButton->setVisible(false);
         titleLayout->addWidget(m_moreButton);
         titleLayout->addStretch();
-        root->addWidget(titleRow);
+        root->addWidget(titleRow, 0, Qt::AlignBottom);
 
         setStyleSheet(
             "#ViewerToolbarGroup {"
@@ -218,12 +220,12 @@ public:
 
     QSize sizeHint() const override
     {
-        return QSize(estimatedWidth(true, true), QWidget::sizeHint().height());
+        return QSize(estimatedWidth(true, true), height());
     }
 
     QSize minimumSizeHint() const override
     {
-        return QSize(estimatedWidth(true, false), QWidget::sizeHint().height());
+        return QSize(estimatedWidth(true, false), height());
     }
 
 protected:
@@ -451,6 +453,37 @@ bool saveCrossSectionPoints(QWidget* parent, const QVector<PointCloudPoint>& poi
     return true;
 }
 
+QString stlModelKey(QString modelName)
+{
+    modelName = modelName.trimmed();
+    const QString lower = modelName.toLower();
+    if (lower.contains(QStringLiteral("mid360s"))) {
+        return QStringLiteral("Mid360s");
+    }
+    if (lower.contains(QStringLiteral("mid360l"))) {
+        return QStringLiteral("Mid360l");
+    }
+    if (lower.contains(QStringLiteral("mid360"))) {
+        return QStringLiteral("Mid360");
+    }
+    if (lower.contains(QStringLiteral("avia2"))) {
+        return QStringLiteral("Avia2");
+    }
+    if (lower.contains(QStringLiteral("hap"))) {
+        return QStringLiteral("HAP");
+    }
+    if (lower == QStringLiteral("pa") || lower.contains(QStringLiteral("livox pa"))) {
+        return QStringLiteral("PA");
+    }
+    return {};
+}
+
+QString stlModelPathForKey(const QString& modelKey)
+{
+    return QDir(QStringLiteral(LIVOX_VIEWER_SOURCE_DIR))
+        .filePath(QStringLiteral("plugins/StlModel/models/%1.glb").arg(modelKey));
+}
+
 } // namespace
 
 QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
@@ -493,6 +526,94 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     syncPointCloudVisualizationAction();
     displayGroup->addPrimaryWidget(createIconButton(actionPointCloudVisualization, displayGroup, toolbarIconSize));
 
+    QAction* stlModelAction = new QAction(QIcon(":/icons/3d_model_off.svg"), "GLB模型", this);
+    stlModelAction->setCheckable(true);
+    stlModelAction->setToolTip("显示设备GLB模型");
+    connect(stlModelAction, &QAction::toggled, this, [stlModelAction](bool checked) {
+        stlModelAction->setIcon(QIcon(checked ? ":/icons/3d_model_on.svg" : ":/icons/3d_model_off.svg"));
+    });
+    QString loadedStlModelKey;
+    connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction, loadedStlModelKey](bool checked) mutable {
+        if (!pointCloudView) {
+            QSignalBlocker blocker(stlModelAction);
+            stlModelAction->setChecked(false);
+            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            return;
+        }
+
+        if (!checked) {
+            pointCloudView->setStlModelVisible(false);
+            statusLabelBar->setText("GLB模型已隐藏");
+            logMessage("GLB模型已隐藏");
+            return;
+        }
+
+        QString modelName;
+        if (playbackState.active && !playbackState.devices.isEmpty()) {
+            const Playback::DeviceInfo* selectedDevice = nullptr;
+            for (const Playback::DeviceInfo& device : playbackState.devices) {
+                if (playbackState.deviceVisible.value(device.lidarId, true)) {
+                    selectedDevice = &device;
+                    break;
+                }
+            }
+            if (!selectedDevice) {
+                selectedDevice = &playbackState.devices.first();
+            }
+            modelName = selectedDevice->modelDisplay.isEmpty()
+                ? lvx2DeviceTypeToModel(selectedDevice->deviceType)
+                : selectedDevice->modelDisplay;
+        } else {
+            LidarDeviceInfo currentDevice;
+            if (tryGetCurrentDevice(currentDevice)) {
+                modelName = currentDevice.product_info.isEmpty()
+                    ? lvx2DeviceTypeToModel(currentDevice.dev_type)
+                    : currentDevice.product_info;
+            }
+        }
+
+        const QString modelKey = stlModelKey(modelName);
+        if (modelKey.isEmpty()) {
+            QMessageBox::warning(this, "显示GLB模型", QString("没有匹配的设备模型: %1").arg(modelName));
+            QSignalBlocker blocker(stlModelAction);
+            stlModelAction->setChecked(false);
+            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            return;
+        }
+
+        const QString filePath = stlModelPathForKey(modelKey);
+        if (!QFileInfo::exists(filePath)) {
+            QMessageBox::warning(this, "显示GLB模型", QString("未找到GLB模型文件: %1").arg(QDir::toNativeSeparators(filePath)));
+            QSignalBlocker blocker(stlModelAction);
+            stlModelAction->setChecked(false);
+            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            return;
+        }
+
+        if (loadedStlModelKey != modelKey || !pointCloudView->hasStlModel()) {
+            StlModel::Mesh mesh;
+            QString errorMessage;
+            if (!StlModel::load(filePath, mesh, errorMessage)) {
+                QMessageBox::warning(this, "显示GLB模型", errorMessage);
+                QSignalBlocker blocker(stlModelAction);
+                stlModelAction->setChecked(false);
+                stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+                return;
+            }
+
+            pointCloudView->setStlModelMesh(mesh);
+            loadedStlModelKey = modelKey;
+            statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));
+            logMessage(QString("GLB模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
+            return;
+        }
+
+        pointCloudView->setStlModelVisible(true);
+        statusLabelBar->setText(QString("GLB模型已显示: %1").arg(modelKey));
+        logMessage(QString("GLB模型已显示: %1").arg(modelKey));
+    });
+    displayGroup->addPrimaryWidget(createIconButton(stlModelAction, displayGroup, toolbarIconSize));
+
     QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
     spinFrameIntervalTop->setRange(100, 30000);
     spinFrameIntervalTop->setSingleStep(100);
@@ -508,18 +629,19 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     pointSizeSpin->setValue(static_cast<int>(pointSizePx));
     pointSizeSpin->setToolTip("点大小（像素）");
     connect(pointSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onPointSizeChanged);
-    QWidget* pointSizeRow = createLabeledWidget("点大小:", pointSizeSpin, displayGroup);
+    QWidget* pointSizeRow = createIconLabeledWidget(":/icons/pixel_size.svg", "点大小（像素）", pointSizeSpin, displayGroup, toolbarIconSize);
     displayGroup->addPrimaryWidget(pointSizeRow);
 
     colorModeCombo = new QComboBox(displayGroup);
     colorModeCombo->addItems({"反射率", "距离", "高度", "纯色", "线号"});
     colorModeCombo->setCurrentIndex(colorMode);
     colorModeCombo->setToolTip("点云着色模式");
-    QWidget* colorModeRow = createLabeledWidget("着色:", colorModeCombo, displayGroup);
+    QWidget* colorModeRow = createIconLabeledWidget(":/icons/paint_bucket.svg", "点云着色模式", colorModeCombo, displayGroup, toolbarIconSize);
     displayGroup->addPrimaryWidget(colorModeRow);
 
     displayGroup->moreMenu()->addAction(gridAction);
     displayGroup->moreMenu()->addAction(actionPointCloudVisualization);
+    displayGroup->moreMenu()->addAction(stlModelAction);
     addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(spinFrameIntervalTop, displayGroup->moreMenu()));
     addWidgetAction(displayGroup->moreMenu(), "点大小", cloneSpinBox(pointSizeSpin, displayGroup->moreMenu()));
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
@@ -662,59 +784,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
-
-    QAction* stlModelAction = new QAction(style()->standardIcon(QStyle::SP_FileIcon), "STL模型", this);
-    stlModelAction->setCheckable(true);
-    stlModelAction->setToolTip("加载/显示STL模型");
-    connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction](bool checked) {
-        if (!pointCloudView) {
-            QSignalBlocker blocker(stlModelAction);
-            stlModelAction->setChecked(false);
-            return;
-        }
-
-        if (!checked) {
-            pointCloudView->setStlModelVisible(false);
-            statusLabelBar->setText("STL模型已隐藏");
-            logMessage("STL模型已隐藏");
-            return;
-        }
-
-        if (!pointCloudView->hasStlModel()) {
-            QSettings settings("Livox", "LivoxViewerQT");
-            const QString lastDir = settings.value("stl/lastDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-            const QString filePath = QFileDialog::getOpenFileName(this,
-                                                                  "加载STL模型",
-                                                                  lastDir,
-                                                                  "STL模型 (*.stl)");
-            if (filePath.isEmpty()) {
-                QSignalBlocker blocker(stlModelAction);
-                stlModelAction->setChecked(false);
-                return;
-            }
-
-            StlModel::Mesh mesh;
-            QString errorMessage;
-            if (!StlModel::load(filePath, mesh, errorMessage)) {
-                QMessageBox::warning(this, "加载STL模型", errorMessage);
-                QSignalBlocker blocker(stlModelAction);
-                stlModelAction->setChecked(false);
-                return;
-            }
-
-            settings.setValue("stl/lastDir", QFileInfo(filePath).absolutePath());
-            pointCloudView->setStlModelMesh(mesh);
-            statusLabelBar->setText(QString("STL模型: %1 面").arg(mesh.triangles.size() / 3));
-            logMessage(QString("STL模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
-            return;
-        }
-
-        pointCloudView->setStlModelVisible(true);
-        statusLabelBar->setText("STL模型已显示");
-        logMessage("STL模型已显示");
-    });
-    toolsGroup->addPrimaryWidget(createIconButton(stlModelAction, toolsGroup, toolbarIconSize));
-    toolsGroup->moreMenu()->addAction(stlModelAction);
 
     QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
     crossSectionAction->setCheckable(true);
@@ -906,8 +975,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
     };
 
-    QActionGroup* viewActionGroup = new QActionGroup(viewGroup);
-    viewActionGroup->setExclusive(true);
     const QStringList viewNames = {"俯视图", "前视图", "左视图", "右视图", "后视图"};
     const QStringList viewIcons = {
         ":/icons/view_top.svg",
@@ -918,10 +985,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     };
     for (int i = 0; i < viewNames.size(); ++i) {
         QAction* action = new QAction(QIcon(viewIcons.at(i)), viewNames.at(i), this);
-        action->setCheckable(true);
-        action->setChecked(i == 0);
         action->setToolTip(viewNames.at(i));
-        viewActionGroup->addAction(action);
         connect(action, &QAction::triggered, this, [applyViewPreset, i]() {
             applyViewPreset(i);
         });

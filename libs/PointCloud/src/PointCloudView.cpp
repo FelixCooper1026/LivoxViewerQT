@@ -41,26 +41,26 @@ private:
     bool m_madeCurrent = false;
 };
 
-constexpr float kStlMillimetersToMeters = 0.001f;
+constexpr float kModelMillimetersToMeters = 0.001f;
 
-StlModel::Vertex transformStlModelVertex(const StlModel::Vertex& vertex)
+StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex)
 {
     return {
-        -vertex.x * kStlMillimetersToMeters,
-        vertex.z * kStlMillimetersToMeters,
-        vertex.y * kStlMillimetersToMeters,
+        -vertex.x * kModelMillimetersToMeters,
+        vertex.z * kModelMillimetersToMeters,
+        vertex.y * kModelMillimetersToMeters,
         vertex.r,
         vertex.g,
         vertex.b
     };
 }
 
-QVector<StlModel::Vertex> transformStlModelVertices(const QVector<StlModel::Vertex>& vertices)
+QVector<StlModel::Vertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices)
 {
     QVector<StlModel::Vertex> transformed;
     transformed.reserve(vertices.size());
     for (const StlModel::Vertex& vertex : vertices) {
-        transformed.push_back(transformStlModelVertex(vertex));
+        transformed.push_back(transformDeviceModelVertex(vertex));
     }
     return transformed;
 }
@@ -1454,7 +1454,7 @@ void PointCloudView::setCrossSectionControlsVisible(bool visible)
 
 void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh)
 {
-    m_stlModelVertices = transformStlModelVertices(mesh.triangles);
+    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles);
     m_stlModelVisible = true;
     uploadStlModelVertices();
     update();

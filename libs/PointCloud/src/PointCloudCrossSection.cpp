@@ -580,11 +580,13 @@ bool beginDrag(State& state, const Camera& camera, const QPoint& mousePos)
     state.activeHandle = hit.handle;
     state.dragging = true;
     state.dragStart = mousePos;
+    state.dragPrevious = mousePos;
     state.dragStartBox = state.box;
     state.dragAxis = axisForHandle(state.box, hit.handle);
     state.dragCameraRight = cameraAxis(camera, QVector3D(1.0f, 0.0f, 0.0f));
     state.dragCameraUp = cameraAxis(camera, QVector3D(0.0f, 1.0f, 0.0f));
     state.dragUnitsPerPixel = worldUnitsPerPixel(camera, state.box.center);
+    state.dragRotationDegrees = 0.0f;
     QPointF centerScreen;
     QPointF axisScreen;
     const float guideLength = boxScaledSize(state.box, kDragGuideFactor);
@@ -632,13 +634,14 @@ bool updateDrag(State& state, const Camera& camera, const QPoint& mousePos)
     } else if (isScaleHandle(state.activeHandle)) {
         state.box.center = state.dragStartBox.center + state.dragAxis * units;
     } else if (isRotateHandle(state.activeHandle)) {
-        const QPointF startVector = QPointF(state.dragStart) - state.dragRingCenterScreen;
+        const QPointF startVector = QPointF(state.dragPrevious) - state.dragRingCenterScreen;
         const QPointF currentVector = QPointF(mousePos) - state.dragRingCenterScreen;
         const float cross = float(startVector.x() * currentVector.y() - startVector.y() * currentVector.x());
         const float dot = float(startVector.x() * currentVector.x() + startVector.y() * currentVector.y());
-        const float angleDegrees = -std::atan2(cross, dot) * 180.0f / kPi * state.dragRotationSign * kRotationSensitivity;
+        state.dragRotationDegrees += -std::atan2(cross, dot) * 180.0f / kPi * state.dragRotationSign * kRotationSensitivity;
+        state.dragPrevious = mousePos;
         state.box = state.dragStartBox;
-        state.box.orientation = (QQuaternion::fromAxisAndAngle(state.dragAxis, angleDegrees) *
+        state.box.orientation = (QQuaternion::fromAxisAndAngle(state.dragAxis, state.dragRotationDegrees) *
                                  state.dragStartBox.orientation).normalized();
     }
 

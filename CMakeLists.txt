@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.4.5
+    VERSION 1.4.6
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )
@@ -336,6 +336,7 @@ target_compile_definitions(LivoxViewerQT PRIVATE
     LIVOX_VIEWER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     LIVOX_VIEWER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     LIVOX_VIEWER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    LIVOX_VIEWER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # =============================================================================

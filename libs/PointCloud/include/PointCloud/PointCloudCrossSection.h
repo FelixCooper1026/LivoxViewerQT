@@ -73,12 +73,14 @@ struct State {
     bool controlsVisible = true;
     bool dragging = false;
     QPoint dragStart;
+    QPoint dragPrevious;
     Box dragStartBox;
     QVector3D dragAxis;
     QPointF dragAxisScreen;
     QPointF dragRingCenterScreen;
     float dragUnitsPerPixel = 0.0f;
     float dragRotationSign = 1.0f;
+    float dragRotationDegrees = 0.0f;
     QVector3D dragCameraRight;
     QVector3D dragCameraUp;
 };
