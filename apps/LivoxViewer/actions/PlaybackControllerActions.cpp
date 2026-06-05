@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QStyleOptionSlider>
@@ -19,6 +20,28 @@ namespace {
 
 constexpr uint64_t kPlaybackDisplayFrameMs = 100;
 constexpr int kRawFramesPerDisplayFrame = 2;
+constexpr const char* kPlaybackLabelFullTextProperty = "playbackFullText";
+
+void setElidedPlaybackLabelText(QLabel* label, const QString& text)
+{
+    if (!label) {
+        return;
+    }
+
+    label->setProperty(kPlaybackLabelFullTextProperty, text);
+    label->setToolTip(text);
+    label->setText(label->fontMetrics().elidedText(text, Qt::ElideMiddle, label->width()));
+}
+
+void refreshElidedPlaybackLabelText(QLabel* label)
+{
+    if (!label) {
+        return;
+    }
+
+    const QString text = label->property(kPlaybackLabelFullTextProperty).toString();
+    label->setText(label->fontMetrics().elidedText(text, Qt::ElideMiddle, label->width()));
+}
 
 static int rawFramesPerPlaybackFrame(uint64_t frameIntervalMs)
 {
@@ -502,19 +525,21 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
     }
     if (playbackState.label) {
         const QString path = QDir::toNativeSeparators(playbackState.path);
+        QString playbackInfo;
         if (playbackState.loading) {
-            playbackState.label->setText(QString("%1    加载中...").arg(path));
+            playbackInfo = QString("%1    加载中...").arg(path);
         } else {
             const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
             const int currentFrame = displayFrameNumberForRawEndIndex(rawEndIndex);
             const int totalFrames = displayPlaybackFrameCount(playbackState.source.get());
-            playbackState.label->setText(QString("%1    时间 %2 / %3    帧 %4 / %5")
-                                       .arg(path)
-                                       .arg(formatPlaybackTime(currentFrame, totalFrames))
-                                       .arg(formatPlaybackTime(totalFrames, totalFrames))
-                                       .arg(currentFrame)
-                                       .arg(totalFrames));
+            playbackInfo = QString("%1    时间 %2 / %3    帧 %4 / %5")
+                               .arg(path)
+                               .arg(formatPlaybackTime(currentFrame, totalFrames))
+                               .arg(formatPlaybackTime(totalFrames, totalFrames))
+                               .arg(currentFrame)
+                               .arg(totalFrames);
         }
+        setElidedPlaybackLabelText(playbackState.label, playbackInfo);
     }
 }
 
@@ -575,6 +600,9 @@ bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
         }
         playbackState.progressSliderDragging = false;
         return true;
+    } else if (watched == playbackState.label &&
+               event->type() == QEvent::Resize) {
+        refreshElidedPlaybackLabelText(playbackState.label);
     }
 
     return QMainWindow::eventFilter(watched, event);

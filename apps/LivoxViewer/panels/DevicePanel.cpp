@@ -34,14 +34,22 @@ void LivoxViewerWindow::createDevicePanel()
     btnRefreshNetwork->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
     btnRefreshNetwork->setFixedWidth(fontMetrics().height() + 18);
     btnRefreshNetwork->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    btnRefreshNetwork->setToolTip("刷新网卡列表");
+    btnRefreshNetwork->setToolTip("刷新网卡列表并重启设备发现");
     networkSelectLayout->addWidget(networkLabel);
     networkSelectLayout->addWidget(networkInterfaceCombo, 1);
     networkSelectLayout->addWidget(btnRefreshNetwork);
     hostnetworkLayout->addWidget(networkRow);
     lidarDevicesLayout->addWidget(networkBlock);
     connect(networkInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &LivoxViewerWindow::onNetworkInterfaceChanged);
-    connect(btnRefreshNetwork, &QPushButton::clicked, this, &LivoxViewerWindow::refreshNetworkInterfaces);
+    connect(btnRefreshNetwork, &QPushButton::clicked, this, [this]() {
+        refreshNetworkInterfaces();
+        if (sdk_started || sdk_initialized || realtimeState == RealtimeConnectionState::Running) {
+            restartRealtimeConnectionForNetworkChange();
+            return;
+        }
+        stopLidarDiscovery();
+        startLidarDiscovery();
+    });
 
     realtimeDeviceListWidget = new QWidget(lidarDevicesDockContent);
     realtimeDeviceListWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);

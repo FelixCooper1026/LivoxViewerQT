@@ -50,7 +50,10 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.nextFrameButton->setToolTip("下一帧");
         playbackState.lastFrameButton->setToolTip("尾帧");
         playbackState.label = new QLabel(playbackState.bar);
-        playbackState.label->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+        playbackState.label->setMinimumWidth(0);
+        playbackState.label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        playbackState.label->setWordWrap(false);
+        playbackState.label->installEventFilter(this);
         playbackState.closeButton = new QPushButton(playbackState.bar);
         playbackState.closeButton->setIcon(QIcon(":/icons/close_file.svg"));
         playbackState.closeButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
