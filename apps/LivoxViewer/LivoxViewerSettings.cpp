@@ -37,6 +37,8 @@
 
 namespace {
 
+constexpr int kDockStateVersion = 2;
+
 void refreshWidgetStyle(QWidget* widget)
 {
     if (!widget) {
@@ -300,8 +302,10 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
 
     // 恢复窗口布局与几何
     QSettings settings("Livox", "LivoxViewerQT");
-    restoreGeometry(settings.value("geometry").toByteArray());
-    restoreState(settings.value("windowState").toByteArray());
+    if (settings.value("layout/version", 0).toInt() == kDockStateVersion) {
+        restoreGeometry(settings.value("geometry").toByteArray());
+        restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
+    }
     if (lvx2FileDock) {
         lvx2FileDock->hide();
     }
@@ -320,8 +324,9 @@ LivoxViewerWindow::~LivoxViewerWindow()
     if (attrDock) {
         attrDock->hide();
     }
+    settings.setValue("layout/version", kDockStateVersion);
     settings.setValue("geometry", saveGeometry());
-    settings.setValue("windowState", saveState());
+    settings.setValue("windowState", saveState(kDockStateVersion));
     saveViewPreferences();
 
     stopLidarDiscovery();

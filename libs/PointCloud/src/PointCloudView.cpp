@@ -7,11 +7,41 @@
 #include <QPainter>
 #include <QLinearGradient>
 #include <QOpenGLFunctions>
+#include <QOpenGLContext>
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QUrl>
 #include <QVector4D>
+
+namespace {
+
+class ScopedOpenGLContext
+{
+public:
+    explicit ScopedOpenGLContext(QOpenGLWidget* widget)
+        : m_widget(widget)
+    {
+        QOpenGLContext* widgetContext = widget ? widget->context() : nullptr;
+        if (widgetContext && QOpenGLContext::currentContext() != widgetContext) {
+            widget->makeCurrent();
+            m_madeCurrent = true;
+        }
+    }
+
+    ~ScopedOpenGLContext()
+    {
+        if (m_madeCurrent) {
+            m_widget->doneCurrent();
+        }
+    }
+
+private:
+    QOpenGLWidget* m_widget = nullptr;
+    bool m_madeCurrent = false;
+};
+
+} // namespace
 
 // PointCloudView 实现
 PointCloudView::PointCloudView(QWidget *parent)
@@ -39,8 +69,28 @@ PointCloudView::PointCloudView(QWidget *parent)
 
 PointCloudView::~PointCloudView()
 {
+    const bool hasContext = context() != nullptr;
+    if (hasContext) {
+        makeCurrent();
+    }
+    m_stlModelVbo.destroy();
+    m_stlModelVao.destroy();
+    m_crossSectionTriangleVbo.destroy();
+    m_crossSectionTriangleVao.destroy();
+    m_crossSectionVbo.destroy();
+    m_crossSectionVao.destroy();
+    m_gridVbo.destroy();
+    m_gridVao.destroy();
+    m_axesVbo.destroy();
+    m_axesVao.destroy();
+    m_vbo.destroy();
+    m_vao.destroy();
     if (m_program) {
         delete m_program;
+        m_program = nullptr;
+    }
+    if (hasContext) {
+        doneCurrent();
     }
 }
 
@@ -1153,6 +1203,7 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
     QMutexLocker locker(&m_pointsMutex);
     m_points = std::move(points);
     if (m_vbo.isCreated()) {
+        ScopedOpenGLContext current(this);
         m_vbo.bind();
         m_vbo.allocate(m_points.constData(), static_cast<int>(m_points.size() * qsizetype(sizeof(PointCloudPoint))));
         m_vbo.release();
@@ -1166,6 +1217,7 @@ void PointCloudView::uploadCrossSectionLines(const QVector<PointCloudCrossSectio
     if (!m_crossSectionVbo.isCreated()) {
         return;
     }
+    ScopedOpenGLContext current(this);
     m_crossSectionVbo.bind();
     m_crossSectionVbo.allocate(vertices.constData(), static_cast<int>(vertices.size() * qsizetype(sizeof(PointCloudCrossSection::ColoredVertex))));
     m_crossSectionVbo.release();
@@ -1177,6 +1229,7 @@ void PointCloudView::uploadCrossSectionTriangles(const QVector<PointCloudCrossSe
     if (!m_crossSectionTriangleVbo.isCreated()) {
         return;
     }
+    ScopedOpenGLContext current(this);
     m_crossSectionTriangleVbo.bind();
     m_crossSectionTriangleVbo.allocate(vertices.constData(), static_cast<int>(vertices.size() * qsizetype(sizeof(PointCloudCrossSection::ColoredVertex))));
     m_crossSectionTriangleVbo.release();
@@ -1187,6 +1240,7 @@ void PointCloudView::uploadStlModelVertices()
     if (!m_stlModelVbo.isCreated()) {
         return;
     }
+    ScopedOpenGLContext current(this);
     m_stlModelVbo.bind();
     m_stlModelVbo.allocate(m_stlModelVertices.constData(), static_cast<int>(m_stlModelVertices.size() * qsizetype(sizeof(StlModel::Vertex))));
     m_stlModelVbo.release();
