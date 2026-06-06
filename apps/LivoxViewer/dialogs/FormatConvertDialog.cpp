@@ -165,14 +165,16 @@ QToolButton* createIconButton(const QString& iconPath, const QString& tooltip, Q
 QToolButton* createToolbarButton(const QString& iconPath, const QString& text, QWidget* parent)
 {
     QToolButton* button = new QToolButton(parent);
+    const QString displayText = QStringLiteral("  ") + text;
     button->setIcon(QIcon(iconPath));
     button->setIconSize(QSize(20, 20));
-    button->setText(text);
+    button->setText(displayText);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setToolTip(text);
     button->setAccessibleName(text);
     button->setCursor(Qt::PointingHandCursor);
-    button->setMinimumSize(104, 34);
+    const int width = 20 + button->fontMetrics().horizontalAdvance(displayText) + 24;
+    button->setMinimumSize(width, 34);
     button->setStyleSheet(
         "QToolButton {"
         "  padding: 0 12px;"

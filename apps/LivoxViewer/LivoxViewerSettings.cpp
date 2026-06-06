@@ -12,6 +12,7 @@
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFile>
+#include <QFont>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -38,6 +39,31 @@
 namespace {
 
 constexpr int kDockStateVersion = 2;
+constexpr int kPreferenceControlColumnWidth = 115;
+constexpr int kPreferenceSpinBoxWidth = 100;
+
+void setPreferenceFont(QWidget* widget, int pointSize, QFont::Weight weight)
+{
+    QFont font = widget->font();
+#ifdef Q_OS_WIN
+    font.setFamily(QStringLiteral("Microsoft YaHei UI"));
+#endif
+    font.setPointSize(pointSize);
+    font.setWeight(weight);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    widget->setFont(font);
+}
+
+void usePreferenceControlColumn(QWidget* widget)
+{
+    widget->setProperty("preferenceControlColumnWidth", kPreferenceControlColumnWidth);
+}
+
+void preparePreferenceSpinBox(QDoubleSpinBox* spin)
+{
+    spin->setFixedWidth(kPreferenceSpinBoxWidth);
+    usePreferenceControlColumn(spin);
+}
 
 void refreshWidgetStyle(QWidget* widget)
 {
@@ -164,10 +190,7 @@ QFrame* createPreferenceSection(QWidget* parent)
 void addPreferenceSectionTitle(QVBoxLayout* pageLayout, const QString& title)
 {
     QLabel* label = new QLabel(title, pageLayout->parentWidget());
-    QFont font = label->font();
-    font.setBold(true);
-    font.setPointSizeF(font.pointSizeF() * 1.1);
-    label->setFont(font);
+    setPreferenceFont(label, 10, QFont::DemiBold);
     pageLayout->addWidget(label);
 }
 
@@ -193,16 +216,26 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
     textLayout->setSpacing(4);
 
     QLabel* titleLabel = new QLabel(title, row);
-    QFont titleFont = titleLabel->font();
-    titleFont.setBold(true);
-    titleLabel->setFont(titleFont);
+    setPreferenceFont(titleLabel, 9, QFont::DemiBold);
     textLayout->addWidget(titleLabel);
     if (!description.isEmpty()) {
         textLayout->addWidget(createPreferenceDescription(description, row));
     }
 
     rowLayout->addLayout(textLayout, 1);
-    rowLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
+    const int controlColumnWidth = control->property("preferenceControlColumnWidth").toInt();
+    if (controlColumnWidth > 0) {
+        QWidget* controlCell = new QWidget(row);
+        controlCell->setFixedWidth(controlColumnWidth);
+        QHBoxLayout* controlLayout = new QHBoxLayout(controlCell);
+        controlLayout->setContentsMargins(0, 0, 0, 0);
+        controlLayout->setSpacing(0);
+        controlLayout->addWidget(control, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        controlLayout->addStretch();
+        rowLayout->addWidget(controlCell, 0, Qt::AlignRight | Qt::AlignVCenter);
+    } else {
+        rowLayout->addWidget(control, 0, Qt::AlignRight | Qt::AlignVCenter);
+    }
     sectionLayout->addWidget(row);
     section->setProperty("rowCount", rowCount + 1);
 }
@@ -215,9 +248,7 @@ QPushButton* createPreferenceNavButton(const QString& text, const QString& iconP
     button->setCursor(Qt::PointingHandCursor);
     button->setIcon(QIcon(iconPath));
     button->setIconSize(QSize(22, 22));
-    QFont font = button->font();
-    font.setPointSizeF(font.pointSizeF() * 1.08);
-    button->setFont(font);
+    setPreferenceFont(button, 10, QFont::Medium);
     button->setStyleSheet(
         "QPushButton {"
         "  text-align: left;"
@@ -246,6 +277,7 @@ QToolButton* createThemeModeButton(const QString& text, const QString& iconPath,
     button->setText(text);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setMinimumHeight(36);
+    setPreferenceFont(button, 10, QFont::Medium);
     button->setStyleSheet(
         "QToolButton {"
         "  border: none;"
@@ -507,12 +539,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     navigationLayout->setContentsMargins(14, 18, 14, 18);
     navigationLayout->setSpacing(8);
 
-    QLabel* navigationTitle = new QLabel("首选项", navigation);
-    QFont navigationTitleFont = navigationTitle->font();
-    navigationTitleFont.setBold(true);
-    navigationTitle->setFont(navigationTitleFont);
-    navigationLayout->addWidget(navigationTitle);
-
     QButtonGroup* navigationGroup = new QButtonGroup(navigation);
     navigationGroup->setExclusive(true);
     navigation->setStyleSheet(
@@ -545,10 +571,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         pageLayout->setSpacing(12);
 
         QLabel* titleLabel = new QLabel(title, page);
-        QFont titleFont = titleLabel->font();
-        titleFont.setPointSizeF(titleFont.pointSizeF() * 1.35);
-        titleFont.setBold(true);
-        titleLabel->setFont(titleFont);
+        setPreferenceFont(titleLabel, 13, QFont::Bold);
         pageLayout->addWidget(titleLabel);
         pageLayout->addWidget(createPreferenceDescription(description, page));
         scrollArea->setWidget(page);
@@ -605,6 +628,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     rangeSpin->setSingleStep(10.0);
     rangeSpin->setSuffix(" m");
     rangeSpin->setValue(config.range);
+    preparePreferenceSpinBox(rangeSpin);
 
     QDoubleSpinBox* stepSpin = new QDoubleSpinBox(&dlg);
     stepSpin->setRange(0.1, 1000.0);
@@ -612,8 +636,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     stepSpin->setSingleStep(0.5);
     stepSpin->setSuffix(" m");
     stepSpin->setValue(config.step);
+    preparePreferenceSpinBox(stepSpin);
 
     QWidget* colorRow = new QWidget(&dlg);
+    usePreferenceControlColumn(colorRow);
     QHBoxLayout* colorLayout = new QHBoxLayout(colorRow);
     colorLayout->setContentsMargins(0, 0, 0, 0);
     colorLayout->setSpacing(8);
@@ -636,6 +662,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     });
 
     QWidget* typeRow = new QWidget(&dlg);
+    usePreferenceControlColumn(typeRow);
     QHBoxLayout* typeLayout = new QHBoxLayout(typeRow);
     typeLayout->setContentsMargins(0, 0, 0, 0);
     typeLayout->setSpacing(12);
@@ -657,6 +684,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         spin->setSingleStep(0.5);
         spin->setSuffix(" m");
         spin->setValue(value);
+        preparePreferenceSpinBox(spin);
         return spin;
     };
     QDoubleSpinBox* distanceMinSpin = createLegendSpin(0.0, 100000.0, distanceLegendMin);
@@ -665,6 +693,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QDoubleSpinBox* elevationMaxSpin = createLegendSpin(elevationLegendMin + 0.01, 100000.0, elevationLegendMax);
 
     QWidget* solidColorRow = new QWidget(&dlg);
+    usePreferenceControlColumn(solidColorRow);
     QHBoxLayout* solidColorLayout = new QHBoxLayout(solidColorRow);
     solidColorLayout->setContentsMargins(0, 0, 0, 0);
     solidColorLayout->setSpacing(8);
@@ -690,6 +719,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QVector<QWidget*> lineLegendRows;
     for (int i = 0; i < selectedLineColors.size(); ++i) {
         QWidget* row = new QWidget(&dlg);
+        usePreferenceControlColumn(row);
         QHBoxLayout* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(0, 0, 0, 0);
         rowLayout->setSpacing(8);
@@ -726,6 +756,7 @@ void LivoxViewerWindow::showPreferencesDialog()
             legendColorLabel->setText(color.name(QColor::HexRgb).toUpper());
         });
         lineColorRows.append(row);
+        usePreferenceControlColumn(legendRow);
         lineLegendRows.append(legendRow);
     }
 
