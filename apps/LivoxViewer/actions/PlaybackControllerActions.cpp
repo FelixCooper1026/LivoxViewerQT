@@ -369,7 +369,12 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     frame.points = playbackState.slidingWindowPoints;
 
     applyPointCloudPipeline(frame);
-    presentPointCloudFrame(frame);
+    if (pointCloudView) {
+        pointCloudView->updatePointCloud(std::move(frame));
+    }
+    if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {
+        updateSelectionTableAndLog();
+    }
 
     playbackState.frame = playbackFrameIndex;
     updateLvx2PlaybackUi();
