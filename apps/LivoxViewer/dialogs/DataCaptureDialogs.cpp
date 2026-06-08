@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QFont>
+#include <QFrame>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -24,6 +25,7 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QSize>
+#include <QSizePolicy>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -42,6 +44,8 @@ constexpr int kDebugColumnDuration = 2;
 constexpr int kDebugColumnStatus = 3;
 constexpr int kDebugColumnRemaining = 4;
 constexpr int kDebugColumnAction = 5;
+constexpr int kTaskTableRowHeight = 44;
+constexpr int kTaskTableFramePadding = 1;
 
 QString defaultDocumentsDir()
 {
@@ -125,6 +129,7 @@ QPushButton* createStartButton(const QString& text, QWidget* parent)
 QTableWidget* createTaskTable(QWidget* parent, const QStringList& headers)
 {
     QTableWidget* table = new QTableWidget(parent);
+    table->setObjectName(QStringLiteral("CaptureTaskTable"));
     table->setColumnCount(headers.size());
     table->setHorizontalHeaderLabels(headers);
     table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -132,21 +137,56 @@ QTableWidget* createTaskTable(QWidget* parent, const QStringList& headers)
         table->horizontalHeaderItem(column)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     }
     table->verticalHeader()->setVisible(false);
-    table->verticalHeader()->setDefaultSectionSize(38);
+    table->verticalHeader()->setDefaultSectionSize(kTaskTableRowHeight);
     table->setSelectionMode(QAbstractItemView::NoSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setAlternatingRowColors(true);
     table->setShowGrid(false);
     table->setFocusPolicy(Qt::NoFocus);
+    table->setFrameShape(QFrame::NoFrame);
+    table->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     table->horizontalHeader()->setStretchLastSection(false);
     table->horizontalHeader()->setSectionsClickable(false);
     table->horizontalHeader()->setHighlightSections(false);
     table->setStyleSheet(
-        "QTableWidget { gridline-color: transparent; }"
+        "QTableWidget#CaptureTaskTable { border: none; gridline-color: transparent; background: palette(base); }"
+        "QTableWidget#CaptureTaskTable::viewport { background: palette(base); }"
         "QTableWidget::item { border: none; padding-left: 8px; padding-right: 18px; }"
         "QHeaderView::section { border: none; padding: 6px 18px 6px 8px; }"
     );
     return table;
+}
+
+int taskTableContentHeight(QTableWidget* table)
+{
+    return table->horizontalHeader()->sizeHint().height()
+        + table->rowCount() * table->verticalHeader()->defaultSectionSize();
+}
+
+QFrame* createTaskTableFrame(QTableWidget* table, QWidget* parent)
+{
+    QFrame* frame = new QFrame(parent);
+    frame->setObjectName(QStringLiteral("CaptureTaskTableFrame"));
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    frame->setStyleSheet(
+        "#CaptureTaskTableFrame {"
+        "  background: palette(base);"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "}"
+    );
+
+    QVBoxLayout* layout = new QVBoxLayout(frame);
+    layout->setContentsMargins(kTaskTableFramePadding, kTaskTableFramePadding, kTaskTableFramePadding, kTaskTableFramePadding);
+    layout->setSpacing(0);
+    layout->addWidget(table);
+
+    const int contentHeight = taskTableContentHeight(table);
+    table->setMinimumHeight(contentHeight);
+    frame->setMinimumHeight(contentHeight + kTaskTableFramePadding * 2);
+    return frame;
 }
 
 QWidget* createProgressCell(QProgressBar** progressOut, QLabel** labelOut, QLabel** iconOut)
@@ -443,14 +483,13 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     table->setColumnWidth(kTaskColumnStatus, 220);
     table->setColumnWidth(kTaskColumnRemaining, 110);
     table->setColumnWidth(kTaskColumnAction, 120);
-    table->setMinimumHeight(220);
     QProgressBar* progress = nullptr;
     QLabel* progressLabel = nullptr;
     QLabel* progressIcon = nullptr;
     table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel, &progressIcon));
     QToolButton* openButton = nullptr;
     table->setCellWidget(0, kTaskColumnAction, createSingleOpenActionCell(&openButton));
-    mainLayout->addWidget(table, 1);
+    mainLayout->addWidget(createTaskTableFrame(table, mainPanel), 1);
 
     QWidget* footer = new QWidget(mainPanel);
     QHBoxLayout* footerLayout = new QHBoxLayout(footer);
@@ -638,7 +677,6 @@ void LivoxViewerWindow::showImuCaptureDialog()
     table->setColumnWidth(kTaskColumnStatus, 220);
     table->setColumnWidth(kTaskColumnRemaining, 110);
     table->setColumnWidth(kTaskColumnAction, 120);
-    table->setMinimumHeight(190);
     setTextItem(table, 0, kTaskColumnType, QStringLiteral("CSV"));
     QProgressBar* progress = nullptr;
     QLabel* progressLabel = nullptr;
@@ -646,7 +684,7 @@ void LivoxViewerWindow::showImuCaptureDialog()
     table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel, &progressIcon));
     QToolButton* openButton = nullptr;
     table->setCellWidget(0, kTaskColumnAction, createSingleOpenActionCell(&openButton));
-    root->addWidget(table, 1);
+    root->addWidget(createTaskTableFrame(table, dlg), 1);
 
     QWidget* footer = new QWidget(dlg);
     QHBoxLayout* footerLayout = new QHBoxLayout(footer);
@@ -786,7 +824,6 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     table->setColumnWidth(kDebugColumnStatus, 220);
     table->setColumnWidth(kDebugColumnRemaining, 110);
     table->setColumnWidth(kDebugColumnAction, 150);
-    table->setMinimumHeight(240);
 
     setTextItem(table, 0, kDebugColumnType, QStringLiteral("LOG数据"));
     setTextItem(table, 1, kDebugColumnType, QStringLiteral("Debug点云"));
@@ -821,7 +858,7 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     QToolButton* debugOpenButton = nullptr;
     table->setCellWidget(0, kDebugColumnAction, createDebugActionCell(&logStartButton, &logOpenButton));
     table->setCellWidget(1, kDebugColumnAction, createDebugActionCell(&debugStartButton, &debugOpenButton));
-    root->addWidget(table, 1);
+    root->addWidget(createTaskTableFrame(table, dlg), 1);
 
     auto updateUi = [this,
                      table,

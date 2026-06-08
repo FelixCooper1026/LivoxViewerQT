@@ -1,8 +1,10 @@
 #include "LivoxViewerWindow.h"
 #include "LivoxCore/LidarDiagnostics.h"
 #include <QApplication>
+#include <QGuiApplication>
 #include <QSplitter>
 #include <QScrollArea>
+#include <QScreen>
 #include <QColorDialog>
 #include <QFrame>
 #include <QVariant>
@@ -24,6 +26,17 @@
 #include <QRadioButton>
 
 namespace {
+
+constexpr int kDefaultWindowMinWidth = 1100;
+constexpr int kDefaultWindowMaxWidth = 1680;
+constexpr int kDefaultWindowMinHeight = 720;
+constexpr int kDefaultWindowMaxHeight = 1000;
+constexpr int kDevicesDockMinWidth = 220;
+constexpr int kDevicesDockMaxWidth = 320;
+constexpr int kParamsDockMinWidth = 320;
+constexpr int kParamsDockMaxWidth = 460;
+constexpr int kLogDockMinHeight = 150;
+constexpr int kLogDockMaxHeight = 260;
 
 void clearLayoutItems(QLayout* layout)
 {
@@ -65,6 +78,25 @@ protected:
     }
 };
 
+int preferredExtent(int available, int minimum, int maximum)
+{
+    const int upper = qMin(available, maximum);
+    const int lower = qMin(minimum, upper);
+    return qMin(upper, qMax(available * 4 / 5, lower));
+}
+
+QSize defaultMainWindowSize()
+{
+    const QSize availableSize = QGuiApplication::primaryScreen()->availableGeometry().size();
+    return QSize(preferredExtent(availableSize.width(), kDefaultWindowMinWidth, kDefaultWindowMaxWidth),
+                 preferredExtent(availableSize.height(), kDefaultWindowMinHeight, kDefaultWindowMaxHeight));
+}
+
+int preferredDockWidth(int windowWidth, int percent, int minimum, int maximum)
+{
+    return qMin(maximum, qMax(minimum, windowWidth * percent / 100));
+}
+
 } // namespace
 
 void LivoxViewerWindow::initializeUserInterface()
@@ -97,6 +129,7 @@ void LivoxViewerWindow::initializeUserInterface()
     centralLayout->addWidget(playbackState.bar);
     centralLayout->addWidget(pointCloudView, 1);
     setCentralWidget(centralContainer);
+    resize(defaultMainWindowSize());
 
     // 初始化深度投影控件状态（仅在球坐标时可用）
     if (projectionDepthCheck) {
@@ -120,10 +153,18 @@ void LivoxViewerWindow::initializeUserInterface()
     createFileInfoPanel();
     createLogPanel();
 
+    lidarDevicesDock->setMinimumWidth(kDevicesDockMinWidth);
+    imuDock->setMinimumWidth(kDevicesDockMinWidth);
+    lvx2FileDock->setMinimumWidth(kDevicesDockMinWidth);
+    paramsDock->setMinimumWidth(kParamsDockMinWidth);
+    attrDock->setMinimumWidth(kParamsDockMinWidth);
+
     // 初始布局尺寸（近似 CloudCompare）：左侧窄、右侧中、底部适中
-    resizeDocks({lidarDevicesDock}, {240}, Qt::Horizontal);
-    resizeDocks({paramsDock}, {360}, Qt::Horizontal);
-    resizeDocks({logDock}, {240}, Qt::Vertical);
+    const int devicesDockWidth = preferredDockWidth(width(), 16, kDevicesDockMinWidth, kDevicesDockMaxWidth);
+    const int paramsDockWidth = preferredDockWidth(width(), 24, kParamsDockMinWidth, kParamsDockMaxWidth);
+    const int logDockHeight = qMin(kLogDockMaxHeight, qMax(kLogDockMinHeight, height() / 4));
+    resizeDocks({lidarDevicesDock, paramsDock}, {devicesDockWidth, paramsDockWidth}, Qt::Horizontal);
+    resizeDocks({logDock}, {logDockHeight}, Qt::Vertical);
 
     createMenusAndActions();
 }

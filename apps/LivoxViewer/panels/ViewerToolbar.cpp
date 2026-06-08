@@ -1,12 +1,10 @@
 #include "LivoxViewerWindow.h"
 
-#include "Export/PointCloudExport.h"
 #include "widgets/SwitchCheckBox.h"
 #include "plugins/StlModel/StlModelLoader.h"
 
 #include <QActionGroup>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QIcon>
 #include <QLayout>
@@ -14,7 +12,6 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
-#include <QStandardPaths>
 #include <QToolButton>
 #include <QWidgetAction>
 
@@ -92,14 +89,107 @@ public:
     }
 
 private:
+    int compactPriority(QLayoutItem* item) const
+    {
+        QWidget* widget = item->widget();
+        return widget ? widget->property("toolbarCompactPriority").toInt() : 0;
+    }
+
+    int itemFullWidth(QLayoutItem* item, int lineWidth) const
+    {
+        const int minWidth = itemMinWidth(item, lineWidth);
+        return std::max(std::min(item->sizeHint().width(), lineWidth), minWidth);
+    }
+
+    int itemMinWidth(QLayoutItem* item, int lineWidth) const
+    {
+        return std::min(item->minimumSize().width(), lineWidth);
+    }
+
+    int totalWidth(const QVector<int>& widths) const
+    {
+        int total = 0;
+        for (int width : widths) {
+            total += width;
+        }
+        if (widths.size() > 1) {
+            total += m_hSpacing * (widths.size() - 1);
+        }
+        return total;
+    }
+
+    QVector<int> rowWidths(const QVector<QLayoutItem*>& rowItems, int lineWidth) const
+    {
+        QVector<int> widths;
+        QVector<int> minimums;
+        QVector<int> compactIndexes;
+        widths.reserve(rowItems.size());
+        minimums.reserve(rowItems.size());
+
+        for (int i = 0; i < rowItems.size(); ++i) {
+            QLayoutItem* item = rowItems.at(i);
+            const int fullWidth = itemFullWidth(item, lineWidth);
+            const int minWidth = itemMinWidth(item, lineWidth);
+            widths.append(fullWidth);
+            minimums.append(minWidth);
+            if (compactPriority(item) > 0 && minWidth < fullWidth) {
+                compactIndexes.append(i);
+            }
+        }
+
+        int usedWidth = totalWidth(widths);
+        if (usedWidth <= lineWidth) {
+            return widths;
+        }
+
+        std::sort(compactIndexes.begin(), compactIndexes.end(), [this, &rowItems](int lhs, int rhs) {
+            const int lhsPriority = compactPriority(rowItems.at(lhs));
+            const int rhsPriority = compactPriority(rowItems.at(rhs));
+            if (lhsPriority == rhsPriority) {
+                return lhs > rhs;
+            }
+            return lhsPriority < rhsPriority;
+        });
+
+        for (int index : compactIndexes) {
+            usedWidth -= widths.at(index) - minimums.at(index);
+            widths[index] = minimums.at(index);
+            if (usedWidth <= lineWidth) {
+                break;
+            }
+        }
+
+        return widths;
+    }
+
+    int layoutRow(const QVector<QLayoutItem*>& rowItems, const QRect& effectiveRect, int y, int lineWidth, bool testOnly) const
+    {
+        if (rowItems.isEmpty()) {
+            return 0;
+        }
+
+        const QVector<int> widths = rowWidths(rowItems, lineWidth);
+        int x = effectiveRect.x();
+        int rowHeight = 0;
+        for (int i = 0; i < rowItems.size(); ++i) {
+            QLayoutItem* item = rowItems.at(i);
+            const QSize itemSize(widths.at(i), item->sizeHint().height());
+            if (!testOnly) {
+                item->setGeometry(QRect(QPoint(x, y), itemSize));
+            }
+            x += itemSize.width() + m_hSpacing;
+            rowHeight = std::max(rowHeight, itemSize.height());
+        }
+        return rowHeight;
+    }
+
     int doLayout(const QRect& rect, bool testOnly) const
     {
         QMargins margins = contentsMargins();
         QRect effectiveRect = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom());
-        int x = effectiveRect.x();
         int y = effectiveRect.y();
-        int lineHeight = 0;
         const int lineWidth = std::max(1, effectiveRect.width());
+        QVector<QLayoutItem*> rowItems;
 
         for (QLayoutItem* item : m_items) {
             QWidget* widget = item->widget();
@@ -107,28 +197,19 @@ private:
                 continue;
             }
 
-            QSize hint = item->sizeHint();
-            const int minWidth = std::min(item->minimumSize().width(), lineWidth);
-            int itemWidth = std::min(hint.width(), lineWidth);
-            itemWidth = std::max(itemWidth, minWidth);
-            const QSize itemSize(itemWidth, hint.height());
-            const int nextX = x + itemSize.width() + m_hSpacing;
-
-            if (nextX - m_hSpacing > effectiveRect.right() && lineHeight > 0) {
-                x = effectiveRect.x();
-                y += lineHeight + m_vSpacing;
-                lineHeight = 0;
+            QVector<QLayoutItem*> candidate = rowItems;
+            candidate.append(item);
+            const QVector<int> candidateWidths = rowWidths(candidate, lineWidth);
+            if (!rowItems.isEmpty() && totalWidth(candidateWidths) > lineWidth) {
+                y += layoutRow(rowItems, effectiveRect, y, lineWidth, testOnly) + m_vSpacing;
+                rowItems.clear();
             }
 
-            if (!testOnly) {
-                item->setGeometry(QRect(QPoint(x, y), itemSize));
-            }
-
-            x += itemSize.width() + m_hSpacing;
-            lineHeight = std::max(lineHeight, itemSize.height());
+            rowItems.append(item);
         }
 
-        return y + lineHeight - rect.y() + margins.bottom();
+        y += layoutRow(rowItems, effectiveRect, y, lineWidth, testOnly);
+        return y - rect.y() + margins.bottom();
     }
 
     QVector<QLayoutItem*> m_items;
@@ -155,6 +236,16 @@ public:
         m_controlsLayout->setContentsMargins(0, 0, 0, 0);
         m_controlsLayout->setSpacing(6);
         m_controlsLayout->setAlignment(Qt::AlignVCenter);
+        m_moreMenu = new QMenu(this);
+        m_moreButton = new QToolButton(m_controls);
+        m_moreButton->setArrowType(Qt::DownArrow);
+        m_moreButton->setToolTip("更多");
+        m_moreButton->setPopupMode(QToolButton::InstantPopup);
+        m_moreButton->setMenu(m_moreMenu);
+        m_moreButton->setAutoRaise(true);
+        m_moreButton->setStyleSheet("QToolButton::menu-indicator { image: none; }");
+        m_moreButton->setVisible(false);
+        m_controlsLayout->addWidget(m_moreButton);
         root->addWidget(m_controls, 1);
 
         QWidget* titleRow = new QWidget(this);
@@ -171,15 +262,6 @@ public:
         titleRow->setFixedHeight(m_title->sizeHint().height() + 5);
         titleLayout->addWidget(m_title);
 
-        m_moreMenu = new QMenu(this);
-        m_moreButton = new QToolButton(titleRow);
-        m_moreButton->setText("...");
-        m_moreButton->setToolTip("更多");
-        m_moreButton->setPopupMode(QToolButton::InstantPopup);
-        m_moreButton->setMenu(m_moreMenu);
-        m_moreButton->setAutoRaise(true);
-        m_moreButton->setVisible(false);
-        titleLayout->addWidget(m_moreButton);
         titleLayout->addStretch();
         root->addWidget(titleRow, 0, Qt::AlignBottom);
 
@@ -206,26 +288,32 @@ public:
         update();
     }
 
+    void setCompactPriority(int priority)
+    {
+        m_compactPriority = priority;
+        setProperty("toolbarCompactPriority", priority);
+    }
+
     void addPrimaryWidget(QWidget* widget)
     {
         m_primaryWidgets.append(widget);
-        m_controlsLayout->addWidget(widget);
+        m_controlsLayout->insertWidget(m_controlsLayout->count() - 1, widget);
     }
 
     void addSecondaryWidget(QWidget* widget)
     {
         m_secondaryWidgets.append(widget);
-        m_controlsLayout->addWidget(widget);
+        m_controlsLayout->insertWidget(m_controlsLayout->count() - 1, widget);
     }
 
     QSize sizeHint() const override
     {
-        return QSize(estimatedWidth(true, true), height());
+        return QSize(estimatedWidth(-1, true, false), height());
     }
 
     QSize minimumSizeHint() const override
     {
-        return QSize(estimatedWidth(true, false), height());
+        return QSize(estimatedWidth(m_compactPriority > 0 ? 1 : -1, false, m_compactPriority > 0), height());
     }
 
 protected:
@@ -236,7 +324,7 @@ protected:
     }
 
 private:
-    int estimatedWidth(bool includePrimary, bool includeSecondary) const
+    int estimatedWidth(int primaryCount, bool includeSecondary, bool includeMore) const
     {
         const QMargins margins = layout()->contentsMargins();
         int controlsWidth = 0;
@@ -250,9 +338,11 @@ private:
             ++visibleControlCount;
         };
 
-        if (includePrimary) {
-            for (QWidget* widget : m_primaryWidgets) {
-                addWidgetWidth(widget);
+        if (primaryCount != 0) {
+            const int primarySize = static_cast<int>(m_primaryWidgets.size());
+            const int count = primaryCount < 0 ? primarySize : std::min(primaryCount, primarySize);
+            for (int i = 0; i < count; ++i) {
+                addWidgetWidth(m_primaryWidgets.at(i));
             }
         }
         if (includeSecondary) {
@@ -260,15 +350,16 @@ private:
                 addWidgetWidth(widget);
             }
         }
+        if (includeMore && !m_moreMenu->actions().isEmpty()) {
+            controlsWidth += m_moreButton->sizeHint().width();
+            ++visibleControlCount;
+        }
 
         if (visibleControlCount > 1) {
             controlsWidth += 6 * (visibleControlCount - 1);
         }
 
-        int titleWidth = m_title->sizeHint().width();
-        if (!m_moreMenu->actions().isEmpty()) {
-            titleWidth += m_moreButton->sizeHint().width() + 3;
-        }
+        const int titleWidth = m_title->sizeHint().width();
         return margins.left() + margins.right() + std::max(controlsWidth, titleWidth);
     }
 
@@ -279,11 +370,13 @@ private:
             return;
         }
 
-        const int fullWidth = estimatedWidth(true, true);
+        const int fullWidth = estimatedWidth(-1, true, false);
         const bool compact = widthNow < fullWidth;
+        const bool compactGroup = compact && m_compactPriority > 0;
 
-        for (QWidget* widget : m_primaryWidgets) {
-            widget->setVisible(!widget->property("toolbarOptionalHidden").toBool());
+        for (int i = 0; i < m_primaryWidgets.size(); ++i) {
+            QWidget* widget = m_primaryWidgets.at(i);
+            widget->setVisible((!compactGroup || i == 0) && !widget->property("toolbarOptionalHidden").toBool());
         }
         for (QWidget* widget : m_secondaryWidgets) {
             widget->setVisible(!compact && !widget->property("toolbarOptionalHidden").toBool());
@@ -299,6 +392,7 @@ private:
     QMenu* m_moreMenu = nullptr;
     QVector<QWidget*> m_primaryWidgets;
     QVector<QWidget*> m_secondaryWidgets;
+    int m_compactPriority = 0;
 };
 
 QToolButton* createIconButton(QAction* action, QWidget* parent, const QSize& iconSize)
@@ -387,70 +481,6 @@ void addWidgetAction(QMenu* menu, const QString& label, QWidget* widget)
     QWidgetAction* action = new QWidgetAction(menu);
     action->setDefaultWidget(row);
     menu->addAction(action);
-}
-
-QString extensionForSelectedFilter(const QString& selectedFilter)
-{
-    if (selectedFilter.contains("LAS")) {
-        return QStringLiteral("las");
-    }
-    if (selectedFilter.contains("CSV")) {
-        return QStringLiteral("csv");
-    }
-    if (selectedFilter.contains("TXT")) {
-        return QStringLiteral("txt");
-    }
-    return QStringLiteral("pcd");
-}
-
-bool saveCrossSectionPoints(QWidget* parent, const QVector<PointCloudPoint>& points, QString& savedPath)
-{
-    QSettings settings("Livox", "LivoxViewerQT");
-    QString lastDir = settings.value("save/lastCrossSectionDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-    if (lastDir.isEmpty()) {
-        lastDir = QDir::homePath();
-    }
-
-    QString selectedFilter = QStringLiteral("PCD (*.pcd)");
-    QString filePath = QFileDialog::getSaveFileName(parent,
-                                                    QStringLiteral("导出当前切片"),
-                                                    lastDir,
-                                                    QStringLiteral("PCD (*.pcd);;LAS (*.las);;CSV (*.csv);;TXT (*.txt)"),
-                                                    &selectedFilter);
-    if (filePath.isEmpty()) {
-        return false;
-    }
-
-    QFileInfo fileInfo(filePath);
-    QString suffix = fileInfo.suffix().toLower();
-    if (suffix.isEmpty()) {
-        suffix = extensionForSelectedFilter(selectedFilter);
-        filePath += QStringLiteral(".") + suffix;
-        fileInfo.setFile(filePath);
-    }
-
-    bool ok = false;
-    if (suffix == QStringLiteral("pcd")) {
-        ok = PointCloudExport::saveAsPCD(filePath, points);
-    } else if (suffix == QStringLiteral("las")) {
-        ok = PointCloudExport::saveAsLAS(filePath, points);
-    } else if (suffix == QStringLiteral("csv")) {
-        ok = PointCloudExport::saveAsCSV(filePath, points);
-    } else if (suffix == QStringLiteral("txt")) {
-        ok = PointCloudExport::saveAsTXT(filePath, points);
-    } else {
-        QMessageBox::warning(parent, QStringLiteral("导出当前切片"), QStringLiteral("不支持的导出格式"));
-        return false;
-    }
-
-    if (!ok) {
-        QMessageBox::warning(parent, QStringLiteral("导出当前切片"), QStringLiteral("切片导出失败"));
-        return false;
-    }
-
-    settings.setValue("save/lastCrossSectionDir", fileInfo.absolutePath());
-    savedPath = filePath;
-    return true;
 }
 
 QString stlModelKey(QString modelName)
@@ -720,6 +750,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     transformGroup->setVisible(false);
 
     ToolbarGroup* toolsGroup = new ToolbarGroup("点云工具", viewerToolbar);
+    toolsGroup->setCompactPriority(2);
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
     measureAction->setCheckable(true);
     measureAction->setToolTip("点云测距");
@@ -899,28 +930,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
     });
 
-    QAction* exportCrossSectionAction = new QAction("导出当前切片...", this);
-    connect(exportCrossSectionAction, &QAction::triggered, this, [this]() {
-        if (!pointCloudView || !pointCloudView->isCrossSectionModeEnabled()) {
-            QMessageBox::warning(this, "导出当前切片", "请先进入Cross Section模式");
-            return;
-        }
-        const QVector<PointCloudPoint> points = pointCloudView->currentCrossSectionPoints();
-        if (points.isEmpty()) {
-            QMessageBox::warning(this, "导出当前切片", "当前切片为空");
-            return;
-        }
-        QString savedPath;
-        if (saveCrossSectionPoints(this, points, savedPath)) {
-            logMessage(QString("当前切片已导出: %1").arg(QDir::toNativeSeparators(savedPath)));
-        }
-    });
-
     toolsGroup->addPrimaryWidget(createIconButton(crossSectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->addPrimaryWidget(crossSectionControlsSwitch);
     toolsGroup->moreMenu()->addAction(crossSectionAction);
     toolsGroup->moreMenu()->addAction(crossSectionControlsAction);
-    toolsGroup->moreMenu()->addAction(exportCrossSectionAction);
     toolbarLayout->addWidget(toolsGroup);
 
     ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);
@@ -950,6 +963,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(projectionGroup);
 
     ToolbarGroup* viewGroup = new ToolbarGroup("视角控制", viewerToolbar);
+    viewGroup->setCompactPriority(1);
     auto applyViewPreset = [this](int index) {
         if (!pointCloudView) {
             return;

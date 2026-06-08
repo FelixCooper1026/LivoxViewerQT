@@ -10,14 +10,10 @@ void LivoxViewerWindow::createLogPanel()
     QVBoxLayout* logLayout = new QVBoxLayout(logDockContent);
     logText = new QTextEdit(logDockContent);
     logText->setMinimumHeight(50);
-    QPushButton* clearLogButton = new QPushButton("清除日志", logDockContent);
     logLayout->addWidget(logText);
-    logLayout->addWidget(clearLogButton);
     logDockContent->setLayout(logLayout);
     logDock->setWidget(logDockContent);
     logDock->setMinimumHeight(50);
 
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
-
-    connect(clearLogButton, &QPushButton::clicked, [this]() { logText->clear(); });
 }
