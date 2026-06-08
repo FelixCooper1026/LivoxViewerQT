@@ -8,13 +8,6 @@ void LivoxViewerWindow::createStatusBarAndTimers()
     statusLabelBar = new QLabel("就绪", statusBar);
     statusLabelBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     statusBar->addPermanentWidget(statusLabelBar, 1);
-    // 在状态栏添加采集进度条
-    captureState.progress = new QProgressBar(statusBar);
-    captureState.progress->setRange(0,100);
-    captureState.progress->setValue(0);
-    captureState.progress->setFixedWidth(260);
-    captureState.progress->setTextVisible(true);
-    statusBar->addPermanentWidget(captureState.progress, 0);
 
     // 标签页切换
     connect(paramTabWidget, &QTabWidget::currentChanged, this, &LivoxViewerWindow::onTabChanged);

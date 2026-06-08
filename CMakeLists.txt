@@ -153,7 +153,6 @@ set(SOURCES
     apps/LivoxViewer/panels/ImuPanel.cpp
     apps/LivoxViewer/panels/LogPanel.cpp
     apps/LivoxViewer/actions/MainMenuActions.cpp
-    apps/LivoxViewer/actions/CaptureActions.cpp
     apps/LivoxViewer/actions/DeviceActions.cpp
     apps/LivoxViewer/actions/HelpActions.cpp
     apps/LivoxViewer/actions/PlaybackActions.cpp
@@ -162,6 +161,7 @@ set(SOURCES
     apps/LivoxViewer/dialogs/FormatConvertDialog.cpp
     apps/LivoxViewer/dialogs/FirmwareUpgradeDialog.cpp
     apps/LivoxViewer/dialogs/PointCloudFilterDialog.cpp
+    apps/LivoxViewer/dialogs/DataCaptureDialogs.cpp
     apps/LivoxViewer/actions/PlaybackControllerActions.cpp
     apps/LivoxViewer/actions/PcapPlaybackActions.cpp
     apps/LivoxViewer/actions/Lvx2ConvertActions.cpp

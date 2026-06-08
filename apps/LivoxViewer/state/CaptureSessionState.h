@@ -8,37 +8,45 @@
 #include <QVector>
 #include <cstdint>
 
-class QProgressBar;
-class QPushButton;
-class QSpinBox;
 class QTimer;
 
-enum CaptureType {
-    CaptureNone,
-    CaptureLog,
-    CaptureDebug,
-    CaptureLVX2,
-    CaptureIMU
+enum class CaptureTaskStatus {
+    Idle,
+    Running,
+    Done
+};
+
+enum class PointCloudCaptureFormat {
+    None,
+    LVX2,
+    PCD,
+    LAS
+};
+
+struct CaptureTaskState
+{
+    CaptureTaskStatus status = CaptureTaskStatus::Idle;
+    int secondsRemaining = 0;
+    int totalSeconds = 0;
+    QString outputDir;
+    QString outputPath;
+    QString message;
 };
 
 struct CaptureSessionState
 {
-    QSpinBox* durationSpin = nullptr;
-    QPushButton* logButton = nullptr;
-    QPushButton* debugButton = nullptr;
-    QProgressBar* progress = nullptr;
     QTimer* timer = nullptr;
-    int secondsRemaining = 0;
-    int totalSeconds = 0;
-    CaptureType current = CaptureNone;
+    CaptureTaskState pointCloudTask;
+    CaptureTaskState imuTask;
+    CaptureTaskState logTask;
+    CaptureTaskState debugTask;
+    PointCloudCaptureFormat pointCloudFormat = PointCloudCaptureFormat::None;
 
     QString pcdSaveDir;
-    int pcdFramesRemaining = 0;
     bool pcdSaveActive = false;
     uint64_t pcdLastSavedTimestamp = 0;
 
     QString lasSaveDir;
-    int lasFramesRemaining = 0;
     bool lasSaveActive = false;
     uint64_t lasLastSavedTimestamp = 0;
 
@@ -52,9 +60,10 @@ struct CaptureSessionState
 
     QFile imuCsvFile;
     bool imuSaveActive = false;
-    int imuSecondsRemaining = 0;
-    int imuTotalSeconds = 0;
     QMutex imuCsvMutex;
+
+    uint32_t logHandle = 0;
+    uint32_t debugHandle = 0;
 };
 
 #endif // LIVOXVIEWER_CAPTURESESSIONSTATE_H

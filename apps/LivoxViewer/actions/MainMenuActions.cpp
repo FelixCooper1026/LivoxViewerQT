@@ -26,7 +26,6 @@ void LivoxViewerWindow::createMenusAndActions()
     helpMenu = menuBar->addMenu("帮助");
 
     createFileActions();
-    createCaptureActions(toolsMenu);
     createDeviceActions();
     createHelpActions();
     // 视图菜单：显示/隐藏 dock

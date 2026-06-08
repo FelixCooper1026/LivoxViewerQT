@@ -1005,6 +1005,29 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     viewGroup->moreMenu()->addSeparator();
     viewGroup->moreMenu()->addAction(resetViewAction);
     toolbarLayout->addWidget(viewGroup);
+
+    ToolbarGroup* captureGroup = new ToolbarGroup("数据采集", viewerToolbar);
+    captureGroup->setLeadingSeparatorVisible(true);
+
+    QAction* pointCloudCaptureAction = new QAction(QIcon(":/icons/capture_camera.svg"), "点云录制", this);
+    pointCloudCaptureAction->setToolTip("点云录制");
+    connect(pointCloudCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showPointCloudCaptureDialog);
+    captureGroup->addPrimaryWidget(createIconButton(pointCloudCaptureAction, captureGroup, toolbarIconSize));
+    captureGroup->moreMenu()->addAction(pointCloudCaptureAction);
+
+    QAction* imuCaptureAction = new QAction(QIcon(":/icons/capture_imu.svg"), "IMU数据采集", this);
+    imuCaptureAction->setToolTip("IMU数据采集");
+    connect(imuCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showImuCaptureDialog);
+    captureGroup->addPrimaryWidget(createIconButton(imuCaptureAction, captureGroup, toolbarIconSize));
+    captureGroup->moreMenu()->addAction(imuCaptureAction);
+
+    QAction* debugCaptureAction = new QAction(QIcon(":/icons/capture_debug.svg"), "Debug数据采集", this);
+    debugCaptureAction->setToolTip("Debug数据采集");
+    connect(debugCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showDebugCaptureDialog);
+    captureGroup->addPrimaryWidget(createIconButton(debugCaptureAction, captureGroup, toolbarIconSize));
+    captureGroup->moreMenu()->addAction(debugCaptureAction);
+
+    toolbarLayout->addWidget(captureGroup);
     toolbarLayout->addWidget(transformGroup);
 
     return viewerToolbar;

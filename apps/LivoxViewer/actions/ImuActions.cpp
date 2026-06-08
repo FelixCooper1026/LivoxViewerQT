@@ -471,110 +471,7 @@ void LivoxViewerWindow::onActionShowImuCharts()
 
 void LivoxViewerWindow::onActionCaptureImuTriggered()
 {
-    LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
-        QMessageBox::warning(this, "保存IMU数据", "设备未连接");
-        return;
-    }
-    if (captureState.current != CaptureNone) {
-        QMessageBox::warning(this, "保存IMU数据", "当前已有采集任务在进行中");
-        return;
-    }
-    QWidget* ctrl = parameterState.controls.value(kKeyImuDataEn, nullptr);
-    QComboBox* imuCombo = qobject_cast<QComboBox*>(ctrl);
-    if (!imuCombo || imuCombo->currentIndex() != 1) {
-        QMessageBox::warning(this, "保存IMU数据", "IMU数据发送未开启！");
-        return;
-    }
-
-    QSettings settings("Livox", "LivoxViewerQT");
-    QString lastDir = settings.value("save/lastIMUDir", QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-    if (lastDir.isEmpty()) lastDir = QDir::homePath();
-
-    QDialog dlg(this);
-    dlg.setWindowTitle("保存IMU数据");
-    QVBoxLayout* v = new QVBoxLayout(&dlg);
-
-    QWidget* row1 = new QWidget(&dlg);
-    QHBoxLayout* h1 = new QHBoxLayout(row1);
-    h1->setContentsMargins(0,0,0,0);
-    QLabel* lblPath = new QLabel("请选择保存路径:", row1);
-    QLineEdit* editPath = new QLineEdit(row1);
-    editPath->setText(lastDir);
-    QPushButton* btnBrowse = new QPushButton("选择", row1);
-    h1->addWidget(lblPath);
-    h1->addSpacing(8);
-    h1->addWidget(editPath, 1);
-    h1->addSpacing(8);
-    h1->addWidget(btnBrowse);
-    v->addWidget(row1);
-
-    QWidget* row2 = new QWidget(&dlg);
-    QHBoxLayout* h2 = new QHBoxLayout(row2);
-    h2->setContentsMargins(0,0,0,0);
-    QLabel* lblSec = new QLabel("保存时长(s):", row2);
-    QSpinBox* spinSec = new QSpinBox(row2);
-    spinSec->setRange(10, 86400);
-    spinSec->setSingleStep(10);
-    spinSec->setValue(30);
-    h2->addWidget(lblSec);
-    h2->addSpacing(8);
-    h2->addWidget(spinSec);
-    h2->addStretch();
-    v->addWidget(row2);
-
-    QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    v->addWidget(box);
-
-    connect(btnBrowse, &QPushButton::clicked, &dlg, [editPath, lastDir, this]() {
-        QString startDir = editPath->text().isEmpty() ? lastDir : editPath->text();
-        QString dir = QFileDialog::getExistingDirectory(this, "选择保存目录", startDir);
-        if (!dir.isEmpty()) editPath->setText(dir);
-    });
-
-    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-
-    if (dlg.exec() != QDialog::Accepted) return;
-
-    QString baseDir = editPath->text().trimmed();
-    if (baseDir.isEmpty()) {
-        QMessageBox::warning(this, "保存IMU数据", "请选择保存路径");
-        return;
-    }
-
-    settings.setValue("save/lastIMUDir", baseDir);
-
-    QString sn = currentDevice.sn.isEmpty() ? QString("Unknown") : currentDevice.sn;
-    QString targetDir = QDir(baseDir).filePath(QString("IMU_%1").arg(sn));
-    QDir().mkpath(targetDir);
-    QString startTime = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
-    QString filePath = QDir(targetDir).filePath(QString("%1_%2.csv").arg(sn, startTime));
-
-    captureState.imuCsvFile.setFileName(filePath);
-    if (!captureState.imuCsvFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        QMessageBox::warning(this, "保存IMU数据", "无法创建CSV文件");
-        return;
-    }
-    {
-        QMutexLocker lk(&captureState.imuCsvMutex);
-        QTextStream ts(&captureState.imuCsvFile);
-        ts << "timestamp_ns,gx,gy,gz,ax,ay,az\n";
-    }
-
-    if (captureState.progress) {
-        captureState.progress->setRange(0, 100);
-        captureState.progress->setValue(0);
-        captureState.progress->setFormat("IMU采集中 %p% (%v s)");
-    }
-
-    captureState.secondsRemaining = spinSec->value();
-    captureState.totalSeconds = captureState.secondsRemaining;
-    captureState.current = CaptureIMU;
-    captureState.imuSaveActive = true;
-    statusLabelBar->setText("正在保存IMU数据...");
-    logMessage(QString("IMU保存路径: %1").arg(QDir::toNativeSeparators(filePath)));
-    captureState.timer->start(1000);
+    showImuCaptureDialog();
 }
 
 void LivoxViewerWindow::appendImuCsvRow(quint64 timestamp_ns, float gx, float gy, float gz, float ax, float ay, float az)
@@ -586,3 +483,4 @@ void LivoxViewerWindow::appendImuCsvRow(quint64 timestamp_ns, float gx, float gy
     ts.setRealNumberPrecision(6);
     ts << timestamp_ns << ',' << gx << ',' << gy << ',' << gz << ',' << ax << ',' << ay << ',' << az << '\n';
 }
+
