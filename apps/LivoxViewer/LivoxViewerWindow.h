@@ -20,6 +20,7 @@
 #include <QDateTime>
 #include <QMutexLocker>
 #include <QMetaObject>
+#include <QPointer>
 #include <QOpenGLWidget>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLBuffer>
@@ -177,7 +178,7 @@ private:
     bool savePointCloudAsCSV(const QString& filePath, const QVector<PointCloudPoint>& points);
     bool savePointCloudAsTXT(const QString& filePath, const QVector<PointCloudPoint>& points);
     void handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs);
-    bool startPointCloudCapture(PointCloudCaptureFormat format, const QString& baseDir, int durationSec, QString& errorMessage);
+    bool startPointCloudCapture(PointCloudCaptureFormat format, const QString& baseDir, int captureAmount, QString& errorMessage);
     bool startImuCapture(const QString& baseDir, int durationSec, QString& errorMessage);
     bool startLogCapture(int durationSec, QString& errorMessage);
     bool startDebugPointCloudCapture(int durationSec, QString& errorMessage);
@@ -296,6 +297,9 @@ private:
     QTableView* attrTable = nullptr;
     // 采集控制
     CaptureSessionState captureState;
+    QPointer<QDialog> pointCloudCaptureDialog;
+    QPointer<QDialog> imuCaptureDialog;
+    QPointer<QDialog> debugCaptureDialog;
     // 多设备升级进度跟踪
     QMap<uint32_t, int> upgradeProgressMap;
     int upgradeTotalDevices = 0;  // 总设备数，用于进度显示

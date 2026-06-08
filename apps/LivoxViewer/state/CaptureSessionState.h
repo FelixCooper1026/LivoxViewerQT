@@ -13,7 +13,8 @@ class QTimer;
 enum class CaptureTaskStatus {
     Idle,
     Running,
-    Done
+    Done,
+    Failed
 };
 
 enum class PointCloudCaptureFormat {
@@ -30,6 +31,7 @@ struct CaptureTaskState
     int totalSeconds = 0;
     int savedFiles = 0;
     int expectedFiles = 0;
+    int integrationMs = 0;
     QString outputDir;
     QString outputPath;
     QString message;

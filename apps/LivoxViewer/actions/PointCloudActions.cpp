@@ -13,6 +13,11 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
                                                         playbackState.mode,
                                                         previousFrameIntervalMs);
     frameIntervalMs = static_cast<uint64_t>(ms);
+    if (captureState.pointCloudTask.status == CaptureTaskStatus::Running &&
+        (captureState.pcdSaveActive || captureState.lasSaveActive)) {
+        captureState.pointCloudTask.integrationMs = ms;
+        captureState.pointCloudSaveIntervalNs = frameIntervalMs * 1000000ULL;
+    }
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
     if (playbackState.active) {
         playbackState.slidingWindowStart = -1;

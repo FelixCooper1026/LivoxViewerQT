@@ -132,6 +132,7 @@ QTableWidget* createTaskTable(QWidget* parent, const QStringList& headers)
         table->horizontalHeaderItem(column)->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     }
     table->verticalHeader()->setVisible(false);
+    table->verticalHeader()->setDefaultSectionSize(38);
     table->setSelectionMode(QAbstractItemView::NoSelection);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setAlternatingRowColors(true);
@@ -148,24 +149,36 @@ QTableWidget* createTaskTable(QWidget* parent, const QStringList& headers)
     return table;
 }
 
-QWidget* createProgressCell(QProgressBar** progressOut, QLabel** labelOut)
+QWidget* createProgressCell(QProgressBar** progressOut, QLabel** labelOut, QLabel** iconOut)
 {
     QWidget* cell = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(cell);
     layout->setContentsMargins(0, 4, 0, 4);
     layout->setSpacing(4);
 
-    QLabel* label = new QLabel(QStringLiteral("待开始"), cell);
+    QWidget* statusRow = new QWidget(cell);
+    QHBoxLayout* statusLayout = new QHBoxLayout(statusRow);
+    statusLayout->setContentsMargins(0, 0, 0, 0);
+    statusLayout->setSpacing(6);
+
+    QLabel* icon = new QLabel(statusRow);
+    icon->setFixedSize(16, 16);
+    icon->setVisible(false);
+    QLabel* label = new QLabel(QStringLiteral("待开始"), statusRow);
     QProgressBar* progress = new QProgressBar(cell);
     progress->setRange(0, 100);
     progress->setValue(0);
     progress->setTextVisible(false);
     progress->setFixedHeight(8);
 
-    layout->addWidget(label);
+    statusLayout->addWidget(icon);
+    statusLayout->addWidget(label);
+    statusLayout->addStretch();
+    layout->addWidget(statusRow);
     layout->addWidget(progress);
     *progressOut = progress;
     *labelOut = label;
+    *iconOut = icon;
     return cell;
 }
 
@@ -234,6 +247,15 @@ int taskProgressPercent(const CaptureTaskState& task)
 
 QString remainingText(const CaptureTaskState& task)
 {
+    if (task.expectedFiles > 0) {
+        if (task.status == CaptureTaskStatus::Running) {
+            return QStringLiteral("%1 帧").arg(std::max(0, task.expectedFiles - task.savedFiles));
+        }
+        if (task.status == CaptureTaskStatus::Done) {
+            return QStringLiteral("0 帧");
+        }
+        return QStringLiteral("-");
+    }
     if (task.status == CaptureTaskStatus::Running) {
         return QStringLiteral("%1 s").arg(std::max(0, task.secondsRemaining));
     }
@@ -262,13 +284,33 @@ QString progressLabelText(const CaptureTaskState& task)
         }
         return QStringLiteral("已完成");
     }
+    if (task.status == CaptureTaskStatus::Failed) {
+        if (task.expectedFiles > 0) {
+            return QStringLiteral("失败 (%1/%2)")
+                .arg(task.savedFiles)
+                .arg(task.expectedFiles);
+        }
+        return QStringLiteral("失败");
+    }
     return QStringLiteral("待开始");
 }
 
-void updateProgress(QProgressBar* progress, QLabel* label, const CaptureTaskState& task)
+void updateProgress(QProgressBar* progress, QLabel* label, QLabel* icon, const CaptureTaskState& task)
 {
     progress->setValue(taskProgressPercent(task));
     label->setText(progressLabelText(task));
+    if (task.status == CaptureTaskStatus::Done) {
+        icon->setPixmap(QIcon(QStringLiteral(":/icons/status_done.svg")).pixmap(QSize(16, 16)));
+        icon->setVisible(true);
+        label->setStyleSheet(QStringLiteral("color: #2ecc71;"));
+    } else if (task.status == CaptureTaskStatus::Failed) {
+        icon->setPixmap(QIcon(QStringLiteral(":/icons/status_failed.svg")).pixmap(QSize(16, 16)));
+        icon->setVisible(true);
+        label->setStyleSheet(QStringLiteral("color: #dc5050;"));
+    } else {
+        icon->setVisible(false);
+        label->setStyleSheet(QString());
+    }
 }
 
 void openOutputDir(const QString& dir)
@@ -289,11 +331,47 @@ QString pointCloudFormatText(PointCloudCaptureFormat format)
     return QStringLiteral("-");
 }
 
+bool isPointCloudFileFormat(PointCloudCaptureFormat format)
+{
+    return format == PointCloudCaptureFormat::PCD || format == PointCloudCaptureFormat::LAS;
+}
+
+void configurePointCloudAmountControl(QLabel* label, QSpinBox* spin, PointCloudCaptureFormat format)
+{
+    const int mode = isPointCloudFileFormat(format) ? 1 : 0;
+    if (spin->property("pointCloudAmountModeSet").toBool() &&
+        spin->property("pointCloudAmountMode").toInt() == mode) {
+        return;
+    }
+
+    if (mode == 1) {
+        label->setText(QStringLiteral("保存帧数"));
+        spin->setRange(1, 1000000);
+        spin->setSingleStep(1);
+        spin->setSuffix(QStringLiteral(" 帧"));
+    } else {
+        label->setText(QStringLiteral("采集时长"));
+        spin->setRange(1, 86400);
+        spin->setSingleStep(1);
+        spin->setSuffix(QStringLiteral(" s"));
+    }
+    spin->setProperty("pointCloudAmountMode", mode);
+    spin->setProperty("pointCloudAmountModeSet", true);
+}
+
 } // namespace
 
 void LivoxViewerWindow::showPointCloudCaptureDialog()
 {
+    if (pointCloudCaptureDialog) {
+        pointCloudCaptureDialog->show();
+        pointCloudCaptureDialog->raise();
+        pointCloudCaptureDialog->activateWindow();
+        return;
+    }
+
     QDialog* dlg = new QDialog(this);
+    pointCloudCaptureDialog = dlg;
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("点云数据采集"));
     dlg->setWindowModality(Qt::NonModal);
@@ -368,7 +446,8 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     table->setMinimumHeight(220);
     QProgressBar* progress = nullptr;
     QLabel* progressLabel = nullptr;
-    table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel));
+    QLabel* progressIcon = nullptr;
+    table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel, &progressIcon));
     QToolButton* openButton = nullptr;
     table->setCellWidget(0, kTaskColumnAction, createSingleOpenActionCell(&openButton));
     mainLayout->addWidget(table, 1);
@@ -395,6 +474,13 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     durationLayout->addWidget(durationSpin);
     durationLayout->addStretch();
     fieldsLayout->addWidget(durationRow);
+
+    QLabel* integrationLabel = new QLabel(fields);
+    QLabel* relationshipLabel = new QLabel(fields);
+    relationshipLabel->setWordWrap(true);
+    relationshipLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    fieldsLayout->addWidget(integrationLabel);
+    fieldsLayout->addWidget(relationshipLabel);
 
     QWidget* pathRow = new QWidget(fields);
     QHBoxLayout* pathLayout = new QHBoxLayout(pathRow);
@@ -431,9 +517,13 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
                      table,
                      progress,
                      progressLabel,
+                     progressIcon,
                      openButton,
                      startButton,
+                     durationLabel,
                      durationSpin,
+                     integrationLabel,
+                     relationshipLabel,
                      pathEdit,
                      browseButton,
                      lvx2Button,
@@ -442,12 +532,24 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
                      currentFormat,
                      selectedTaskShown,
                      rowOutputDir]() {
+        const PointCloudCaptureFormat format = currentFormat();
+        const bool fileFormat = isPointCloudFileFormat(format);
         const bool showingTask = selectedTaskShown();
         const CaptureTaskState displayTask = showingTask ? captureState.pointCloudTask : CaptureTaskState{};
-        setTextItem(table, 0, kTaskColumnType, pointCloudFormatText(currentFormat()));
+        configurePointCloudAmountControl(durationLabel, durationSpin, format);
+        table->horizontalHeaderItem(kTaskColumnRemaining)->setText(fileFormat ? QStringLiteral("剩余帧数") : QStringLiteral("剩余时间"));
+        setTextItem(table, 0, kTaskColumnType, pointCloudFormatText(format));
         setTextItem(table, 0, kTaskColumnPath, QDir::toNativeSeparators(rowOutputDir()));
-        updateProgress(progress, progressLabel, displayTask);
+        updateProgress(progress, progressLabel, progressIcon, displayTask);
         setTextItem(table, 0, kTaskColumnRemaining, remainingText(displayTask));
+        const int integrationMs = showingTask && displayTask.integrationMs > 0
+            ? displayTask.integrationMs
+            : static_cast<int>(frameIntervalMs);
+        integrationLabel->setVisible(fileFormat);
+        relationshipLabel->setVisible(fileFormat);
+        integrationLabel->setText(QStringLiteral("当前积分时间：%1 ms（来自工具栏“显示控制”）").arg(integrationMs));
+        relationshipLabel->setText(QStringLiteral("每保存 1 帧会按当前积分时间合并点云并生成 1 个 %1 文件；积分时间决定每个文件的点云累积窗口和保存间隔，保存帧数决定最终文件数量。")
+            .arg(pointCloudFormatText(format)));
         const bool running = taskRunning(captureState.pointCloudTask);
         openButton->setEnabled(showingTask && !captureState.pointCloudTask.outputDir.isEmpty());
         startButton->setEnabled(!running && !taskRunning(captureState.imuTask));
@@ -498,7 +600,15 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
 
 void LivoxViewerWindow::showImuCaptureDialog()
 {
+    if (imuCaptureDialog) {
+        imuCaptureDialog->show();
+        imuCaptureDialog->raise();
+        imuCaptureDialog->activateWindow();
+        return;
+    }
+
     QDialog* dlg = new QDialog(this);
+    imuCaptureDialog = dlg;
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("IMU数据采集"));
     dlg->setWindowModality(Qt::NonModal);
@@ -532,7 +642,8 @@ void LivoxViewerWindow::showImuCaptureDialog()
     setTextItem(table, 0, kTaskColumnType, QStringLiteral("CSV"));
     QProgressBar* progress = nullptr;
     QLabel* progressLabel = nullptr;
-    table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel));
+    QLabel* progressIcon = nullptr;
+    table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel, &progressIcon));
     QToolButton* openButton = nullptr;
     table->setCellWidget(0, kTaskColumnAction, createSingleOpenActionCell(&openButton));
     root->addWidget(table, 1);
@@ -578,13 +689,13 @@ void LivoxViewerWindow::showImuCaptureDialog()
     footerLayout->addWidget(startButton, 0, Qt::AlignBottom);
     root->addWidget(footer);
 
-    auto updateUi = [this, table, progress, progressLabel, openButton, startButton, durationSpin, pathEdit, browseButton]() {
+    auto updateUi = [this, table, progress, progressLabel, progressIcon, openButton, startButton, durationSpin, pathEdit, browseButton]() {
         const bool running = taskRunning(captureState.imuTask);
         const QString outputDir = captureState.imuTask.outputDir.isEmpty()
             ? pathEdit->text().trimmed()
             : captureState.imuTask.outputDir;
         setTextItem(table, 0, kTaskColumnPath, QDir::toNativeSeparators(outputDir));
-        updateProgress(progress, progressLabel, captureState.imuTask);
+        updateProgress(progress, progressLabel, progressIcon, captureState.imuTask);
         setTextItem(table, 0, kTaskColumnRemaining, remainingText(captureState.imuTask));
         openButton->setEnabled(!captureState.imuTask.outputDir.isEmpty());
         startButton->setEnabled(!running && !taskRunning(captureState.pointCloudTask));
@@ -628,7 +739,15 @@ void LivoxViewerWindow::showImuCaptureDialog()
 
 void LivoxViewerWindow::showDebugCaptureDialog()
 {
+    if (debugCaptureDialog) {
+        debugCaptureDialog->show();
+        debugCaptureDialog->raise();
+        debugCaptureDialog->activateWindow();
+        return;
+    }
+
     QDialog* dlg = new QDialog(this);
+    debugCaptureDialog = dlg;
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("Debug数据采集"));
     dlg->setWindowModality(Qt::NonModal);
@@ -688,10 +807,12 @@ void LivoxViewerWindow::showDebugCaptureDialog()
 
     QProgressBar* logProgress = nullptr;
     QLabel* logProgressLabel = nullptr;
+    QLabel* logProgressIcon = nullptr;
     QProgressBar* debugProgress = nullptr;
     QLabel* debugProgressLabel = nullptr;
-    table->setCellWidget(0, kDebugColumnStatus, createProgressCell(&logProgress, &logProgressLabel));
-    table->setCellWidget(1, kDebugColumnStatus, createProgressCell(&debugProgress, &debugProgressLabel));
+    QLabel* debugProgressIcon = nullptr;
+    table->setCellWidget(0, kDebugColumnStatus, createProgressCell(&logProgress, &logProgressLabel, &logProgressIcon));
+    table->setCellWidget(1, kDebugColumnStatus, createProgressCell(&debugProgress, &debugProgressLabel, &debugProgressIcon));
 
     QPushButton* logStartButton = nullptr;
     QToolButton* logOpenButton = nullptr;
@@ -705,16 +826,18 @@ void LivoxViewerWindow::showDebugCaptureDialog()
                      table,
                      logProgress,
                      logProgressLabel,
+                     logProgressIcon,
                      debugProgress,
                      debugProgressLabel,
+                     debugProgressIcon,
                      logDurationSpin,
                      debugDurationSpin,
                      logStartButton,
                      debugStartButton,
                      logOpenButton,
                      debugOpenButton]() {
-        updateProgress(logProgress, logProgressLabel, captureState.logTask);
-        updateProgress(debugProgress, debugProgressLabel, captureState.debugTask);
+        updateProgress(logProgress, logProgressLabel, logProgressIcon, captureState.logTask);
+        updateProgress(debugProgress, debugProgressLabel, debugProgressIcon, captureState.debugTask);
         setTextItem(table, 0, kDebugColumnRemaining, remainingText(captureState.logTask));
         setTextItem(table, 1, kDebugColumnRemaining, remainingText(captureState.debugTask));
         logDurationSpin->setEnabled(!taskRunning(captureState.logTask));
