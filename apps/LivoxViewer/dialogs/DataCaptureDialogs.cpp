@@ -662,7 +662,7 @@ void LivoxViewerWindow::showImuCaptureDialog()
     durationLayout->setContentsMargins(0, 0, 0, 0);
     QLabel* durationLabel = new QLabel(QStringLiteral("采集时长"), durationRow);
     QSpinBox* durationSpin = new QSpinBox(durationRow);
-    durationSpin->setRange(1, 86400);
+    durationSpin->setRange(10, 86400);
     durationSpin->setValue(30);
     durationSpin->setSingleStep(10);
     durationSpin->setSuffix(QStringLiteral(" s"));
@@ -794,12 +794,13 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     setTextItem(table, 1, kDebugColumnPath, QDir::toNativeSeparators(debugPointCloudOutputDir()));
 
     QSpinBox* logDurationSpin = new QSpinBox(table);
-    logDurationSpin->setRange(1, 86400);
+    logDurationSpin->setRange(10, 86400);
     logDurationSpin->setSingleStep(10);
     logDurationSpin->setValue(300);
     logDurationSpin->setSuffix(QStringLiteral(" s"));
     QSpinBox* debugDurationSpin = new QSpinBox(table);
-    debugDurationSpin->setRange(1, 3600);
+    debugDurationSpin->setRange(10, 3600);
+    debugDurationSpin->setSingleStep(1);
     debugDurationSpin->setValue(10);
     debugDurationSpin->setSuffix(QStringLiteral(" s"));
     table->setCellWidget(0, kDebugColumnDuration, logDurationSpin);
