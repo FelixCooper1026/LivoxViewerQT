@@ -222,6 +222,9 @@ int taskProgressPercent(const CaptureTaskState& task)
     if (task.status == CaptureTaskStatus::Done) {
         return 100;
     }
+    if (task.expectedFiles > 0) {
+        return std::clamp(task.savedFiles * 100 / task.expectedFiles, 0, 100);
+    }
     if (task.status != CaptureTaskStatus::Running || task.totalSeconds <= 0) {
         return 0;
     }
@@ -243,9 +246,20 @@ QString remainingText(const CaptureTaskState& task)
 QString progressLabelText(const CaptureTaskState& task)
 {
     if (task.status == CaptureTaskStatus::Running) {
+        if (task.expectedFiles > 0) {
+            return QStringLiteral("%1% (%2/%3)")
+                .arg(taskProgressPercent(task))
+                .arg(task.savedFiles)
+                .arg(task.expectedFiles);
+        }
         return QStringLiteral("%1%").arg(taskProgressPercent(task));
     }
     if (task.status == CaptureTaskStatus::Done) {
+        if (task.expectedFiles > 0) {
+            return QStringLiteral("已完成 (%1/%2)")
+                .arg(task.savedFiles)
+                .arg(task.expectedFiles);
+        }
         return QStringLiteral("已完成");
     }
     return QStringLiteral("待开始");
@@ -336,9 +350,9 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     mainLayout->setContentsMargins(18, 16, 18, 14);
     mainLayout->setSpacing(12);
 
-    QLabel* statusLabel = new QLabel(QStringLiteral("请选择采集格式、时长和保存路径"), mainPanel);
-    statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    mainLayout->addWidget(statusLabel);
+    QLabel* dialogStatusLabel = new QLabel(QStringLiteral("请选择采集格式、时长和保存路径"), mainPanel);
+    dialogStatusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    mainLayout->addWidget(dialogStatusLabel);
 
     QTableWidget* table = createTaskTable(mainPanel, {QStringLiteral("格式"), QStringLiteral("保存位置"), QStringLiteral("状态"), QStringLiteral("剩余时间"), QStringLiteral("操作")});
     table->setRowCount(1);
@@ -457,21 +471,21 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     QObject::connect(openButton, &QToolButton::clicked, dlg, [this]() {
         openOutputDir(captureState.pointCloudTask.outputDir);
     });
-    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, statusLabel, pathEdit, durationSpin, currentFormat, updateUi]() {
+    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, pathEdit, durationSpin, currentFormat, updateUi]() {
         const QString baseDir = pathEdit->text().trimmed();
         if (baseDir.isEmpty()) {
-            statusLabel->setText(QStringLiteral("请选择保存路径"));
+            dialogStatusLabel->setText(QStringLiteral("请选择保存路径"));
             return;
         }
         QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
         settings.setValue(QStringLiteral("save/lastPointCloudCaptureDir"), baseDir);
         QString errorMessage;
         if (!startPointCloudCapture(currentFormat(), baseDir, durationSpin->value(), errorMessage)) {
-            statusLabel->setText(errorMessage);
+            dialogStatusLabel->setText(errorMessage);
             QMessageBox::warning(dlg, QStringLiteral("点云数据采集"), errorMessage);
             return;
         }
-        statusLabel->setText(QStringLiteral("采集任务已启动"));
+        dialogStatusLabel->setText(QStringLiteral("采集任务已启动"));
         updateUi();
     });
 
@@ -499,9 +513,9 @@ void LivoxViewerWindow::showImuCaptureDialog()
     root->setContentsMargins(18, 16, 18, 14);
     root->setSpacing(12);
 
-    QLabel* statusLabel = new QLabel(QStringLiteral("设置采集时长和保存路径"), dlg);
-    statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    root->addWidget(statusLabel);
+    QLabel* dialogStatusLabel = new QLabel(QStringLiteral("设置采集时长和保存路径"), dlg);
+    dialogStatusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    root->addWidget(dialogStatusLabel);
 
     QTableWidget* table = createTaskTable(dlg, {QStringLiteral("格式"), QStringLiteral("保存位置"), QStringLiteral("状态"), QStringLiteral("剩余时间"), QStringLiteral("操作")});
     table->setRowCount(1);
@@ -587,21 +601,21 @@ void LivoxViewerWindow::showImuCaptureDialog()
     QObject::connect(openButton, &QToolButton::clicked, dlg, [this]() {
         openOutputDir(captureState.imuTask.outputDir);
     });
-    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, statusLabel, pathEdit, durationSpin, updateUi]() {
+    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, pathEdit, durationSpin, updateUi]() {
         const QString baseDir = pathEdit->text().trimmed();
         if (baseDir.isEmpty()) {
-            statusLabel->setText(QStringLiteral("请选择保存路径"));
+            dialogStatusLabel->setText(QStringLiteral("请选择保存路径"));
             return;
         }
         QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
         settings.setValue(QStringLiteral("save/lastIMUDir"), baseDir);
         QString errorMessage;
         if (!startImuCapture(baseDir, durationSpin->value(), errorMessage)) {
-            statusLabel->setText(errorMessage);
+            dialogStatusLabel->setText(errorMessage);
             QMessageBox::warning(dlg, QStringLiteral("IMU数据采集"), errorMessage);
             return;
         }
-        statusLabel->setText(QStringLiteral("采集任务已启动"));
+        dialogStatusLabel->setText(QStringLiteral("采集任务已启动"));
         updateUi();
     });
 
@@ -629,9 +643,9 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     root->setContentsMargins(18, 16, 18, 14);
     root->setSpacing(12);
 
-    QLabel* statusLabel = new QLabel(QStringLiteral("LOG和Debug点云可同时采集"), dlg);
-    statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    root->addWidget(statusLabel);
+    QLabel* dialogStatusLabel = new QLabel(QStringLiteral("LOG和Debug点云可同时采集"), dlg);
+    dialogStatusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    root->addWidget(dialogStatusLabel);
 
     QTableWidget* table = createTaskTable(dlg, {
         QStringLiteral("类型"),
@@ -711,24 +725,24 @@ void LivoxViewerWindow::showDebugCaptureDialog()
         debugOpenButton->setEnabled(!debugPointCloudOutputDir().isEmpty());
     };
 
-    QObject::connect(logStartButton, &QPushButton::clicked, dlg, [this, dlg, statusLabel, logDurationSpin, updateUi]() {
+    QObject::connect(logStartButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, logDurationSpin, updateUi]() {
         QString errorMessage;
         if (!startLogCapture(logDurationSpin->value(), errorMessage)) {
-            statusLabel->setText(errorMessage);
+            dialogStatusLabel->setText(errorMessage);
             QMessageBox::warning(dlg, QStringLiteral("Debug数据采集"), errorMessage);
             return;
         }
-        statusLabel->setText(QStringLiteral("LOG数据采集已启动"));
+        dialogStatusLabel->setText(QStringLiteral("LOG数据采集已启动"));
         updateUi();
     });
-    QObject::connect(debugStartButton, &QPushButton::clicked, dlg, [this, dlg, statusLabel, debugDurationSpin, updateUi]() {
+    QObject::connect(debugStartButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, debugDurationSpin, updateUi]() {
         QString errorMessage;
         if (!startDebugPointCloudCapture(debugDurationSpin->value(), errorMessage)) {
-            statusLabel->setText(errorMessage);
+            dialogStatusLabel->setText(errorMessage);
             QMessageBox::warning(dlg, QStringLiteral("Debug数据采集"), errorMessage);
             return;
         }
-        statusLabel->setText(QStringLiteral("Debug点云采集已启动"));
+        dialogStatusLabel->setText(QStringLiteral("Debug点云采集已启动"));
         updateUi();
     });
     QObject::connect(logOpenButton, &QToolButton::clicked, dlg, [this]() {

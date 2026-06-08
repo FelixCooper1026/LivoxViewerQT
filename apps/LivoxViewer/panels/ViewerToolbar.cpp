@@ -1007,7 +1007,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(viewGroup);
 
     ToolbarGroup* captureGroup = new ToolbarGroup("数据采集", viewerToolbar);
-    captureGroup->setLeadingSeparatorVisible(true);
 
     QAction* pointCloudCaptureAction = new QAction(QIcon(":/icons/capture_camera.svg"), "点云录制", this);
     pointCloudCaptureAction->setToolTip("点云录制");

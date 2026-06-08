@@ -67,6 +67,8 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
 
 void LivoxViewerWindow::onRenderTick()
 {
+    const bool pointCloudFileCaptureActive = captureState.pcdSaveActive || captureState.lasSaveActive;
+
     if (playbackState.active) {
         {
             QMutexLocker locker(&frameMutex);
@@ -79,7 +81,7 @@ void LivoxViewerWindow::onRenderTick()
         return;
     }
 
-    if (!pointCloudVisualizationEnabled) {
+    if (!pointCloudVisualizationEnabled && !pointCloudFileCaptureActive) {
         {
             QMutexLocker locker(&frameMutex);
             for (auto it = pendingFrames.begin(); it != pendingFrames.end(); ++it) {
@@ -92,7 +94,8 @@ void LivoxViewerWindow::onRenderTick()
         return;
     }
 
-    if (pointCloudView && pointCloudView->isMeasurementModeEnabled()) {
+    const bool measurementViewActive = pointCloudView && pointCloudView->isMeasurementModeEnabled();
+    if (measurementViewActive && !pointCloudFileCaptureActive) {
         {
             QMutexLocker locker(&frameMutex);
             for (auto it = pendingFrames.begin(); it != pendingFrames.end(); ++it) {
@@ -158,7 +161,9 @@ void LivoxViewerWindow::onRenderTick()
     if (hasAnyPoint) {
         applyPointCloudPipeline(merged);
         handlePointCloudRecording(merged, now_ns);
-        presentPointCloudFrame(merged);
+        if (pointCloudVisualizationEnabled && !measurementViewActive) {
+            presentPointCloudFrame(merged);
+        }
     }
 
     if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {

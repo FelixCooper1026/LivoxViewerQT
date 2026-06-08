@@ -28,6 +28,8 @@ struct CaptureTaskState
     CaptureTaskStatus status = CaptureTaskStatus::Idle;
     int secondsRemaining = 0;
     int totalSeconds = 0;
+    int savedFiles = 0;
+    int expectedFiles = 0;
     QString outputDir;
     QString outputPath;
     QString message;
@@ -49,6 +51,9 @@ struct CaptureSessionState
     QString lasSaveDir;
     bool lasSaveActive = false;
     uint64_t lasLastSavedTimestamp = 0;
+
+    uint64_t pointCloudSaveIntervalNs = 0;
+    uint64_t pointCloudNextSaveTimestamp = 0;
 
     QString lvx2SaveDir;
     bool lvx2SaveActive = false;

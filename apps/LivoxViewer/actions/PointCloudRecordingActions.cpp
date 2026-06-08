@@ -45,6 +45,8 @@ void startTask(CaptureTaskState& task, int durationSec, const QString& outputDir
     task.status = CaptureTaskStatus::Running;
     task.secondsRemaining = normalizedDuration(durationSec);
     task.totalSeconds = task.secondsRemaining;
+    task.savedFiles = 0;
+    task.expectedFiles = 0;
     task.outputDir = outputDir;
     task.outputPath = outputPath;
     task.message = message;
@@ -55,6 +57,30 @@ void finishTask(CaptureTaskState& task, const QString& message)
     task.status = CaptureTaskStatus::Done;
     task.secondsRemaining = 0;
     task.message = message;
+}
+
+bool shouldSavePointCloudFile(CaptureSessionState& captureState, uint64_t timestampNs)
+{
+    if (captureState.pointCloudTask.expectedFiles > 0 &&
+        captureState.pointCloudTask.savedFiles >= captureState.pointCloudTask.expectedFiles) {
+        return false;
+    }
+    if (captureState.pointCloudNextSaveTimestamp == 0) {
+        captureState.pointCloudNextSaveTimestamp = timestampNs;
+        return true;
+    }
+    if (timestampNs < captureState.pointCloudNextSaveTimestamp) {
+        return false;
+    }
+    return true;
+}
+
+void advancePointCloudSaveTimestamp(CaptureSessionState& captureState, uint64_t timestampNs)
+{
+    captureState.pointCloudNextSaveTimestamp += captureState.pointCloudSaveIntervalNs;
+    while (captureState.pointCloudNextSaveTimestamp <= timestampNs) {
+        captureState.pointCloudNextSaveTimestamp += captureState.pointCloudSaveIntervalNs;
+    }
 }
 
 void LoggerStartCallback(livox_status status, uint32_t handle, LivoxLidarLoggerResponse* response, void* client_data)
@@ -98,11 +124,20 @@ bool LivoxViewerWindow::savePointCloudAsPCD(const QString& filePath, const QVect
 
 void LivoxViewerWindow::handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs)
 {
+    if (!captureState.pcdSaveActive && !captureState.lasSaveActive) {
+        return;
+    }
+    if (!shouldSavePointCloudFile(captureState, timestampNs)) {
+        return;
+    }
+
+    bool saved = false;
     if (captureState.pcdSaveActive && captureState.pcdLastSavedTimestamp != timestampNs) {
         const QString fileName = QString::number(timestampNs) + QStringLiteral(".pcd");
         const QString filePath = QDir(captureState.pcdSaveDir).filePath(fileName);
         if (savePointCloudAsPCD(filePath, merged.points)) {
             logMessage(QString("PCD保存: %1").arg(QDir::toNativeSeparators(filePath)));
+            saved = true;
         } else {
             logMessage(QString("PCD保存失败: %1").arg(QDir::toNativeSeparators(filePath)));
         }
@@ -114,10 +149,20 @@ void LivoxViewerWindow::handlePointCloudRecording(const PointCloudFrame& merged,
         const QString filePath = QDir(captureState.lasSaveDir).filePath(fileName);
         if (savePointCloudAsLAS(filePath, merged.points)) {
             logMessage(QString("LAS保存: %1").arg(QDir::toNativeSeparators(filePath)));
+            saved = true;
         } else {
             logMessage(QString("LAS保存失败: %1").arg(QDir::toNativeSeparators(filePath)));
         }
         captureState.lasLastSavedTimestamp = timestampNs;
+    }
+
+    advancePointCloudSaveTimestamp(captureState, timestampNs);
+    if (saved) {
+        ++captureState.pointCloudTask.savedFiles;
+    }
+    if (captureState.pointCloudTask.expectedFiles > 0 &&
+        captureState.pointCloudTask.savedFiles >= captureState.pointCloudTask.expectedFiles) {
+        stopPointCloudCapture();
     }
 }
 
@@ -211,12 +256,6 @@ bool LivoxViewerWindow::startPointCloudCapture(PointCloudCaptureFormat format,
         errorMessage = QStringLiteral("已有点云或IMU采集任务正在运行");
         return false;
     }
-    QWidget* ctrl = parameterState.controls.value(kKeyImuDataEn, nullptr);
-    QComboBox* imuCombo = qobject_cast<QComboBox*>(ctrl);
-    if (!imuCombo || imuCombo->currentIndex() != 1) {
-        errorMessage = QStringLiteral("IMU数据发送未开启");
-        return false;
-    }
 
     const QString sn = currentDevice.sn.isEmpty() ? QStringLiteral("Unknown") : currentDevice.sn;
     const QString targetDir = QDir(baseDir).filePath(pointCloudOutputDirName(format, sn));
@@ -246,6 +285,15 @@ bool LivoxViewerWindow::startPointCloudCapture(PointCloudCaptureFormat format,
               targetDir,
               outputPath,
               QStringLiteral("%1采集中").arg(pointCloudFormatName(format)));
+    if (format == PointCloudCaptureFormat::PCD || format == PointCloudCaptureFormat::LAS) {
+        const int frameMs = static_cast<int>(frameIntervalMs);
+        captureState.pointCloudTask.expectedFiles = (durationSec * 1000 + frameMs - 1) / frameMs;
+        captureState.pointCloudSaveIntervalNs = frameIntervalMs * 1000000ULL;
+        captureState.pointCloudNextSaveTimestamp = 0;
+        QMutexLocker locker(&frameMutex);
+        pendingFrames.clear();
+        lastSeenTimestamp.clear();
+    }
     captureState.timer->start(1000);
     statusLabelBar->setText(QStringLiteral("正在采集点云数据..."));
     logMessage(QString("%1采集开始: %2")
@@ -262,6 +310,12 @@ bool LivoxViewerWindow::startImuCapture(const QString& baseDir, int durationSec,
     }
     if (taskRunning(captureState.pointCloudTask) || taskRunning(captureState.imuTask)) {
         errorMessage = QStringLiteral("已有点云或IMU采集任务正在运行");
+        return false;
+    }
+    QWidget* ctrl = parameterState.controls.value(kKeyImuDataEn, nullptr);
+    QComboBox* imuCombo = qobject_cast<QComboBox*>(ctrl);
+    if (!imuCombo || imuCombo->currentIndex() != 1) {
+        errorMessage = QStringLiteral("IMU数据发送未开启");
         return false;
     }
 
@@ -348,6 +402,8 @@ bool LivoxViewerWindow::startDebugPointCloudCapture(int durationSec, QString& er
 
 void LivoxViewerWindow::stopPointCloudCapture()
 {
+    const int savedFiles = captureState.pointCloudTask.savedFiles;
+    const int expectedFiles = captureState.pointCloudTask.expectedFiles;
     if (captureState.pointCloudFormat == PointCloudCaptureFormat::LVX2) {
         stopLvx2Recording(true);
     } else if (captureState.pointCloudFormat == PointCloudCaptureFormat::PCD) {
@@ -355,11 +411,16 @@ void LivoxViewerWindow::stopPointCloudCapture()
     } else if (captureState.pointCloudFormat == PointCloudCaptureFormat::LAS) {
         captureState.lasSaveActive = false;
     }
+    captureState.pointCloudSaveIntervalNs = 0;
+    captureState.pointCloudNextSaveTimestamp = 0;
 
     const QString formatName = pointCloudFormatName(captureState.pointCloudFormat);
-    finishTask(captureState.pointCloudTask, QStringLiteral("%1采集完成").arg(formatName));
+    const QString message = expectedFiles > 0
+        ? QStringLiteral("%1采集完成，保存 %2/%3 个文件").arg(formatName).arg(savedFiles).arg(expectedFiles)
+        : QStringLiteral("%1采集完成").arg(formatName);
+    finishTask(captureState.pointCloudTask, message);
     statusLabelBar->setText(QStringLiteral("点云数据采集完成"));
-    logMessage(QStringLiteral("%1采集完成").arg(formatName));
+    logMessage(message);
 }
 
 void LivoxViewerWindow::stopImuCapture()
