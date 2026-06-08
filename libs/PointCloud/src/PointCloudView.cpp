@@ -43,10 +43,10 @@ private:
 
 constexpr float kModelMillimetersToMeters = 0.001f;
 
-StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex)
+StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
 {
     return {
-        -vertex.x * kModelMillimetersToMeters,
+        (sourceXReversed ? vertex.x : -vertex.x) * kModelMillimetersToMeters,
         vertex.z * kModelMillimetersToMeters,
         vertex.y * kModelMillimetersToMeters,
         vertex.r,
@@ -55,12 +55,12 @@ StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex)
     };
 }
 
-QVector<StlModel::Vertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices)
+QVector<StlModel::Vertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices, bool sourceXReversed)
 {
     QVector<StlModel::Vertex> transformed;
     transformed.reserve(vertices.size());
     for (const StlModel::Vertex& vertex : vertices) {
-        transformed.push_back(transformDeviceModelVertex(vertex));
+        transformed.push_back(transformDeviceModelVertex(vertex, sourceXReversed));
     }
     return transformed;
 }
@@ -1452,9 +1452,9 @@ void PointCloudView::setCrossSectionControlsVisible(bool visible)
     update();
 }
 
-void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh)
+void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh, bool sourceXReversed)
 {
-    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles);
+    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles, sourceXReversed);
     m_stlModelVisible = true;
     uploadStlModelVertices();
     update();

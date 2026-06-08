@@ -85,7 +85,7 @@ public:
     void resetCrossSectionBoxToCurrentCloud();
     void setCrossSectionControlsVisible(bool visible);
     bool crossSectionControlsVisible() const { return m_crossSectionState.controlsVisible; }
-    void setStlModelMesh(const StlModel::Mesh& mesh);
+    void setStlModelMesh(const StlModel::Mesh& mesh, bool sourceXReversed = false);
     void setStlModelVisible(bool visible);
     bool isStlModelVisible() const { return m_stlModelVisible; }
     bool hasStlModel() const { return !m_stlModelVertices.isEmpty(); }

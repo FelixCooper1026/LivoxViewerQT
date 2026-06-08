@@ -601,7 +601,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 return;
             }
 
-            pointCloudView->setStlModelMesh(mesh);
+            const bool sourceXReversed = modelKey == QStringLiteral("Avia2");
+            pointCloudView->setStlModelMesh(mesh, sourceXReversed);
             loadedStlModelKey = modelKey;
             statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));
             logMessage(QString("GLB模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
