@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -53,7 +54,7 @@ void LivoxViewerWindow::showTimeSyncDialog()
         imuState.serialPortCombo = new QComboBox(serialRow);
         imuState.serialPortCombo->setMinimumWidth(0);
         QPushButton* refreshSerialButton = new QPushButton(serialRow);
-        refreshSerialButton->setIcon(QIcon(":/icons/refresh.svg"));
+        ThemeIconUtils::setThemedSvgIcon(refreshSerialButton, QStringLiteral(":/icons/refresh.svg"));
         refreshSerialButton->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
         refreshSerialButton->setFixedWidth(fontMetrics().height() + 18);
         refreshSerialButton->setToolTip("刷新串口列表");

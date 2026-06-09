@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 #include "widgets/SwitchCheckBox.h"
 
 #include <QAbstractButton>
@@ -293,7 +294,7 @@ QPushButton* createPreferenceNavButton(const QString& text, const QString& iconP
     button->setCheckable(true);
     button->setMinimumHeight(44);
     button->setCursor(Qt::PointingHandCursor);
-    button->setIcon(QIcon(iconPath));
+    ThemeIconUtils::setThemedSvgIcon(button, iconPath);
     button->setIconSize(QSize(22, 22));
     setPreferenceFont(button, 10, QFont::Medium);
     button->setStyleSheet(
@@ -319,7 +320,7 @@ QToolButton* createThemeModeButton(const QString& text, const QString& iconPath,
     QToolButton* button = new QToolButton(parent);
     button->setCheckable(true);
     button->setCursor(Qt::PointingHandCursor);
-    button->setIcon(QIcon(iconPath));
+    ThemeIconUtils::setThemedSvgIcon(button, iconPath);
     button->setIconSize(QSize(24, 24));
     button->setText(text);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
@@ -481,6 +482,7 @@ void LivoxViewerWindow::applyUiTheme()
     }
 
     app->setPalette(palette);
+    ThemeIconUtils::refreshObject(this);
     refreshApplicationStyles();
 }
 

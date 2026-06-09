@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 #include "Lvx2/Lvx2Reader.h"
 #include "Pcap/PcapPlaybackController.h"
@@ -116,7 +117,8 @@ static void updatePlaybackDeviceCardState(bool visible,
                                           QLabel* snLabel,
                                           QLabel* ipLabel)
 {
-    visibleButton->setIcon(QIcon(visible ? QStringLiteral(":/icons/eye.svg") : QStringLiteral(":/icons/eye_off.svg")));
+    ThemeIconUtils::setThemedSvgIcon(visibleButton,
+        visible ? QStringLiteral(":/icons/eye.svg") : QStringLiteral(":/icons/eye_off.svg"));
     visibleButton->setToolTip(visible ? QStringLiteral("隐藏设备") : QStringLiteral("显示设备"));
     const QString textStyle = visible ? QString() : QStringLiteral("color: palette(mid);");
     for (QLabel* label : {modelLabel, snLabel, ipLabel}) {

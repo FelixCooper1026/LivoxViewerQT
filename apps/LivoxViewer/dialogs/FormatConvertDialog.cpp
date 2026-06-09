@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -153,7 +154,7 @@ QPushButton* createNavButton(const QString& text, QWidget* parent)
 QToolButton* createIconButton(const QString& iconPath, const QString& tooltip, QWidget* parent)
 {
     QToolButton* button = new QToolButton(parent);
-    button->setIcon(QIcon(iconPath));
+    ThemeIconUtils::setThemedSvgIcon(button, iconPath);
     button->setIconSize(QSize(22, 22));
     button->setToolTip(tooltip);
     button->setAccessibleName(tooltip);
@@ -167,7 +168,7 @@ QToolButton* createToolbarButton(const QString& iconPath, const QString& text, Q
 {
     QToolButton* button = new QToolButton(parent);
     const QString displayText = QStringLiteral("  ") + text;
-    button->setIcon(QIcon(iconPath));
+    ThemeIconUtils::setThemedSvgIcon(button, iconPath);
     button->setIconSize(QSize(20, 20));
     button->setText(displayText);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);

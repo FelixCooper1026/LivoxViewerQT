@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 #include <QIcon>
 #include <QSignalBlocker>
@@ -167,9 +168,10 @@ void LivoxViewerWindow::syncPointCloudVisualizationAction()
     actionPointCloudVisualization->setToolTip(pointCloudVisualizationEnabled
         ? "冻结实时点云显示，不控制离线播放"
         : "恢复实时点云显示，不控制离线播放");
-    actionPointCloudVisualization->setIcon(QIcon(pointCloudVisualizationEnabled
-        ? ":/icons/point_cloud_live.svg"
-        : ":/icons/point_cloud_frozen.svg"));
+    ThemeIconUtils::setThemedSvgIcon(actionPointCloudVisualization,
+        pointCloudVisualizationEnabled
+            ? QStringLiteral(":/icons/point_cloud_live.svg")
+            : QStringLiteral(":/icons/point_cloud_frozen.svg"));
     actionPointCloudVisualization->setEnabled(!measurementModeActive);
     QSignalBlocker blocker(actionPointCloudVisualization);
     actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);

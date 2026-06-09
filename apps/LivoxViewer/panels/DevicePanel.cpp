@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 #include <QIcon>
 #include <QSize>
 #include <QSizePolicy>
@@ -30,7 +31,7 @@ void LivoxViewerWindow::createDevicePanel()
     networkInterfaceCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     networkInterfaceCombo->setToolTip("选择用于雷达通信的网络接口");
     QPushButton* btnRefreshNetwork = new QPushButton(networkRow);
-    btnRefreshNetwork->setIcon(QIcon(":/icons/refresh.svg"));
+    ThemeIconUtils::setThemedSvgIcon(btnRefreshNetwork, QStringLiteral(":/icons/refresh.svg"));
     btnRefreshNetwork->setIconSize(QSize(fontMetrics().height() + 4, fontMetrics().height() + 4));
     btnRefreshNetwork->setFixedWidth(fontMetrics().height() + 18);
     btnRefreshNetwork->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);

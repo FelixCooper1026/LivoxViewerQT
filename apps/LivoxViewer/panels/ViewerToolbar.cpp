@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 
+#include "ThemeIconUtils.h"
 #include "widgets/SwitchCheckBox.h"
 #include "plugins/StlModel/StlModelLoader.h"
 
@@ -425,7 +426,7 @@ QWidget* createIconLabeledWidget(const QString& iconPath, const QString& toolTip
     layout->setSpacing(4);
 
     QLabel* icon = new QLabel(row);
-    icon->setPixmap(QIcon(iconPath).pixmap(iconSize));
+    ThemeIconUtils::setThemedSvgPixmap(icon, iconPath, iconSize);
     icon->setFixedSize(iconSize);
     icon->setToolTip(toolTip);
     icon->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -537,6 +538,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar);
     displayGroup->setLeadingSeparatorVisible(true);
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
+    ThemeIconUtils::setThemedSvgIcon(gridAction, QStringLiteral(":/icons/grid.svg"));
     gridAction->setCheckable(true);
     gridAction->setChecked(true);
     gridAction->setToolTip("显示/隐藏世界坐标网格");
@@ -548,6 +550,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->addPrimaryWidget(createIconButton(gridAction, displayGroup, toolbarIconSize));
 
     actionPointCloudVisualization = new QAction(QIcon(":/icons/point_cloud_live.svg"), "冻结实时点云", this);
+    ThemeIconUtils::setThemedSvgIcon(actionPointCloudVisualization, QStringLiteral(":/icons/point_cloud_live.svg"));
     actionPointCloudVisualization->setCheckable(true);
     actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);
     connect(actionPointCloudVisualization, &QAction::triggered, this, [this](bool checked) {
@@ -557,17 +560,19 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->addPrimaryWidget(createIconButton(actionPointCloudVisualization, displayGroup, toolbarIconSize));
 
     QAction* stlModelAction = new QAction(QIcon(":/icons/3d_model_off.svg"), "GLB模型", this);
+    ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
     stlModelAction->setCheckable(true);
     stlModelAction->setToolTip("显示设备GLB模型");
     connect(stlModelAction, &QAction::toggled, this, [stlModelAction](bool checked) {
-        stlModelAction->setIcon(QIcon(checked ? ":/icons/3d_model_on.svg" : ":/icons/3d_model_off.svg"));
+        ThemeIconUtils::setThemedSvgIcon(stlModelAction,
+            checked ? QStringLiteral(":/icons/3d_model_on.svg") : QStringLiteral(":/icons/3d_model_off.svg"));
     });
     QString loadedStlModelKey;
     connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction, loadedStlModelKey](bool checked) mutable {
         if (!pointCloudView) {
             QSignalBlocker blocker(stlModelAction);
             stlModelAction->setChecked(false);
-            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
             return;
         }
 
@@ -607,7 +612,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             QMessageBox::warning(this, "显示GLB模型", QString("没有匹配的设备模型: %1").arg(modelName));
             QSignalBlocker blocker(stlModelAction);
             stlModelAction->setChecked(false);
-            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
             return;
         }
 
@@ -616,7 +621,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             QMessageBox::warning(this, "显示GLB模型", QString("未找到GLB模型文件: %1").arg(QDir::toNativeSeparators(filePath)));
             QSignalBlocker blocker(stlModelAction);
             stlModelAction->setChecked(false);
-            stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
             return;
         }
 
@@ -627,7 +632,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 QMessageBox::warning(this, "显示GLB模型", errorMessage);
                 QSignalBlocker blocker(stlModelAction);
                 stlModelAction->setChecked(false);
-                stlModelAction->setIcon(QIcon(":/icons/3d_model_off.svg"));
+                ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
                 return;
             }
 
@@ -752,6 +757,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ToolbarGroup* toolsGroup = new ToolbarGroup("点云工具", viewerToolbar);
     toolsGroup->setCompactPriority(2);
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
+    ThemeIconUtils::setThemedSvgIcon(measureAction, QStringLiteral(":/icons/measure.svg"));
     measureAction->setCheckable(true);
     measureAction->setToolTip("点云测距");
     connect(measureAction, &QAction::triggered, this, [this, measureAction]() {
@@ -780,6 +786,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->moreMenu()->addAction(measureAction);
 
     QAction* selectionAction = new QAction(QIcon(":/icons/select_box.svg"), "点云框选", this);
+    ThemeIconUtils::setThemedSvgIcon(selectionAction, QStringLiteral(":/icons/select_box.svg"));
     selectionAction->setCheckable(true);
     selectionAction->setToolTip("点云框选");
     connect(selectionAction, &QAction::triggered, this, [this, selectionAction]() {
@@ -818,6 +825,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->moreMenu()->addAction(selectionAction);
 
     QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
+    ThemeIconUtils::setThemedSvgIcon(crossSectionAction, QStringLiteral(":/icons/cross_section.svg"));
     crossSectionAction->setCheckable(true);
     crossSectionAction->setToolTip("Cross Section");
     QAction* crossSectionControlsAction = new QAction("显示交互控件", this);
@@ -941,6 +949,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     projectionModeGroup->setExclusive(true);
 
     QAction* perspectiveProjectionAction = new QAction(QIcon(":/icons/projection_perspective.svg"), "透视投影", this);
+    ThemeIconUtils::setThemedSvgIcon(perspectiveProjectionAction, QStringLiteral(":/icons/projection_perspective.svg"));
     perspectiveProjectionAction->setCheckable(true);
     perspectiveProjectionAction->setChecked(true);
     perspectiveProjectionAction->setToolTip("透视投影");
@@ -951,6 +960,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     projectionGroup->addPrimaryWidget(createIconButton(perspectiveProjectionAction, projectionGroup, toolbarIconSize));
 
     QAction* orthographicProjectionAction = new QAction(QIcon(":/icons/projection_orthographic.svg"), "正交投影", this);
+    ThemeIconUtils::setThemedSvgIcon(orthographicProjectionAction, QStringLiteral(":/icons/projection_orthographic.svg"));
     orthographicProjectionAction->setCheckable(true);
     orthographicProjectionAction->setToolTip("正交投影");
     projectionModeGroup->addAction(orthographicProjectionAction);
@@ -1000,6 +1010,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     };
     for (int i = 0; i < viewNames.size(); ++i) {
         QAction* action = new QAction(QIcon(viewIcons.at(i)), viewNames.at(i), this);
+        ThemeIconUtils::setThemedSvgIcon(action, viewIcons.at(i));
         action->setToolTip(viewNames.at(i));
         connect(action, &QAction::triggered, this, [applyViewPreset, i]() {
             applyViewPreset(i);
@@ -1009,6 +1020,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     }
 
     QAction* resetViewAction = new QAction(QIcon(":/icons/reset_view.svg"), "重置视图", this);
+    ThemeIconUtils::setThemedSvgIcon(resetViewAction, QStringLiteral(":/icons/reset_view.svg"));
     resetViewAction->setToolTip("重置视图");
     connect(resetViewAction, &QAction::triggered, this, [this]() {
         if (pointCloudView) {
@@ -1023,18 +1035,21 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ToolbarGroup* captureGroup = new ToolbarGroup("数据采集", viewerToolbar);
 
     QAction* pointCloudCaptureAction = new QAction(QIcon(":/icons/capture_camera.svg"), "点云录制", this);
+    ThemeIconUtils::setThemedSvgIcon(pointCloudCaptureAction, QStringLiteral(":/icons/capture_camera.svg"));
     pointCloudCaptureAction->setToolTip("点云录制");
     connect(pointCloudCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showPointCloudCaptureDialog);
     captureGroup->addPrimaryWidget(createIconButton(pointCloudCaptureAction, captureGroup, toolbarIconSize));
     captureGroup->moreMenu()->addAction(pointCloudCaptureAction);
 
     QAction* imuCaptureAction = new QAction(QIcon(":/icons/capture_imu.svg"), "IMU数据采集", this);
+    ThemeIconUtils::setThemedSvgIcon(imuCaptureAction, QStringLiteral(":/icons/capture_imu.svg"));
     imuCaptureAction->setToolTip("IMU数据采集");
     connect(imuCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showImuCaptureDialog);
     captureGroup->addPrimaryWidget(createIconButton(imuCaptureAction, captureGroup, toolbarIconSize));
     captureGroup->moreMenu()->addAction(imuCaptureAction);
 
     QAction* debugCaptureAction = new QAction(QIcon(":/icons/capture_debug.svg"), "Debug数据采集", this);
+    ThemeIconUtils::setThemedSvgIcon(debugCaptureAction, QStringLiteral(":/icons/capture_debug.svg"));
     debugCaptureAction->setToolTip("Debug数据采集");
     connect(debugCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showDebugCaptureDialog);
     captureGroup->addPrimaryWidget(createIconButton(debugCaptureAction, captureGroup, toolbarIconSize));

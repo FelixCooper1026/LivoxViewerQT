@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 #include <QIcon>
 #include <QStyle>
@@ -55,7 +56,7 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.label->setWordWrap(false);
         playbackState.label->installEventFilter(this);
         playbackState.closeButton = new QPushButton(playbackState.bar);
-        playbackState.closeButton->setIcon(QIcon(":/icons/close_file.svg"));
+        ThemeIconUtils::setThemedSvgIcon(playbackState.closeButton, QStringLiteral(":/icons/close_file.svg"));
         playbackState.closeButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
         playbackState.closeButton->setFixedSize(QSize(playbackIconSize + 10, playbackIconSize + 10));
         playbackState.closeButton->setToolTip("关闭文件");
