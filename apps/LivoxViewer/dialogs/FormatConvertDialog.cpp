@@ -44,6 +44,7 @@ constexpr int kStateRole = Qt::UserRole + 1;
 constexpr int kOptionRowHeight = 36;
 constexpr int kOptionLabelSpacing = 6;
 constexpr int kOptionRadioSpacing = 14;
+constexpr int kTableFramePadding = 1;
 
 enum class JobState {
     Pending = 0,
@@ -429,6 +430,26 @@ void setControlsEnabled(const QList<QWidget*>& controls, bool enabled)
     }
 }
 
+QFrame* createConvertTableFrame(QTableWidget* table, QWidget* parent)
+{
+    QFrame* frame = new QFrame(parent);
+    frame->setObjectName(QStringLiteral("ConvertTaskTableFrame"));
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    frame->setStyleSheet(
+        "#ConvertTaskTableFrame {"
+        "  background: palette(base);"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "}"
+    );
+
+    QVBoxLayout* layout = new QVBoxLayout(frame);
+    layout->setContentsMargins(kTableFramePadding, kTableFramePadding, kTableFramePadding, kTableFramePadding);
+    layout->setSpacing(0);
+    layout->addWidget(table);
+    return frame;
+}
+
 } // namespace
 
 void LivoxViewerWindow::showFormatConvertDialog()
@@ -519,6 +540,8 @@ void LivoxViewerWindow::showFormatConvertDialog()
     table->setAlternatingRowColors(true);
     table->setShowGrid(false);
     table->setFocusPolicy(Qt::NoFocus);
+    table->setFrameShape(QFrame::NoFrame);
+    table->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     table->horizontalHeader()->setStretchLastSection(false);
     table->horizontalHeader()->setSectionsClickable(false);
     table->horizontalHeader()->setHighlightSections(false);
@@ -533,11 +556,12 @@ void LivoxViewerWindow::showFormatConvertDialog()
     table->setColumnWidth(kColumnAction, 140);
     table->setMinimumHeight(310);
     table->setStyleSheet(
-        "QTableWidget { gridline-color: transparent; }"
+        "QTableWidget { border: none; gridline-color: transparent; background: palette(base); }"
+        "QTableWidget::viewport { background: palette(base); }"
         "QTableWidget::item { border: none; padding-left: 8px; padding-right: 30px; }"
         "QHeaderView::section { border: none; padding: 6px 30px 6px 8px; }"
     );
-    mainLayout->addWidget(table, 1);
+    mainLayout->addWidget(createConvertTableFrame(table, mainPanel), 1);
 
     QWidget* footer = new QWidget(mainPanel);
     QHBoxLayout* footerLayout = new QHBoxLayout(footer);

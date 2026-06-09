@@ -18,6 +18,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QPalette>
+#include <QProcess>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRadioButton>
@@ -109,6 +110,19 @@ bool defaultAutoConfigHostIp()
 }
 
 #ifdef Q_OS_LINUX
+QString linuxCommandOutput(const QString& program, const QStringList& arguments)
+{
+    QProcess process;
+    process.start(program, arguments, QIODevice::ReadOnly);
+    if (!process.waitForStarted(300) || !process.waitForFinished(500)) {
+        return {};
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        return {};
+    }
+    return QString::fromLocal8Bit(process.readAllStandardOutput()).trimmed().toLower();
+}
+
 int linuxSystemDarkThemeState()
 {
     const QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
@@ -124,6 +138,39 @@ int linuxSystemDarkThemeState()
             return 1;
         }
         if (value.contains("light")) {
+            return 0;
+        }
+    }
+
+    const QString gnomeColorScheme = linuxCommandOutput(
+        QStringLiteral("gsettings"),
+        {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("color-scheme")});
+    if (gnomeColorScheme.contains(QStringLiteral("prefer-dark"))) {
+        return 1;
+    }
+    if (gnomeColorScheme.contains(QStringLiteral("prefer-light"))) {
+        return 0;
+    }
+
+    const QString gnomeGtkTheme = linuxCommandOutput(
+        QStringLiteral("gsettings"),
+        {QStringLiteral("get"), QStringLiteral("org.gnome.desktop.interface"), QStringLiteral("gtk-theme")});
+    if (gnomeGtkTheme.contains(QStringLiteral("dark"))) {
+        return 1;
+    }
+    if (gnomeGtkTheme.contains(QStringLiteral("light"))) {
+        return 0;
+    }
+
+    const QStringList kdeConfigCommands = {QStringLiteral("kreadconfig6"), QStringLiteral("kreadconfig5")};
+    for (const QString& command : kdeConfigCommands) {
+        const QString kdeColorScheme = linuxCommandOutput(
+            command,
+            {QStringLiteral("--group"), QStringLiteral("General"), QStringLiteral("--key"), QStringLiteral("ColorScheme")});
+        if (kdeColorScheme.contains(QStringLiteral("dark"))) {
+            return 1;
+        }
+        if (kdeColorScheme.contains(QStringLiteral("light"))) {
             return 0;
         }
     }
