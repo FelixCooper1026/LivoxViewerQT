@@ -471,7 +471,7 @@ void LivoxViewerWindow::createParameterPanel()
     statusLayout->setFormAlignment(Qt::AlignTop);
     for (uint16_t key : statusKeysVec) {
         QLabel* nameLabel = new QLabel();
-        QLabel* valueLabel = new QLabel("未查询");
+        QLabel* valueLabel = new QLabel("无信息");
             valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             valueLabel->setWordWrap(true);
             valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
