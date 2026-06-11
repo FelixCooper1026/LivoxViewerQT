@@ -73,6 +73,11 @@ void refreshWidgetStyle(QWidget* widget)
         return;
     }
 
+    if (widget->property("parameterOptionButton").toBool()) {
+        const bool darkTheme = QApplication::palette().color(QPalette::Window).lightness() < 128;
+        widget->setProperty("parameterOptionButtonTheme", darkTheme ? QStringLiteral("dark") : QStringLiteral("light"));
+    }
+
     if (!widget->styleSheet().isEmpty()) {
         const QString styleSheet = widget->styleSheet();
         widget->setStyleSheet(QString());
@@ -99,6 +104,102 @@ void refreshApplicationStyles()
     for (QWidget* widget : topLevelWidgets) {
         refreshWidgetStyle(widget);
     }
+}
+
+QString darkThemeControlStyleSheet()
+{
+    const QString comboArrowIcon = QStringLiteral(":/icons/combo_arrow_dark_theme.svg");
+    const QString borderColor = QStringLiteral("#8a8a8d");
+    const QString hoverBorderColor = QStringLiteral("#c8c8c8");
+    const QString focusBorderColor = QStringLiteral("#f0f0f0");
+
+    return QStringLiteral(
+        "QComboBox, QLineEdit, QAbstractSpinBox {"
+        "  min-height: 22px;"
+        "  border: 1px solid %1;"
+        "  border-radius: 4px;"
+        "  background: palette(base);"
+        "  color: palette(text);"
+        "  selection-background-color: palette(highlight);"
+        "  selection-color: palette(highlighted-text);"
+        "}"
+        "QComboBox {"
+        "  padding: 3px 24px 3px 7px;"
+        "}"
+        "QLineEdit, QAbstractSpinBox {"
+        "  padding: 3px 7px;"
+        "}"
+        "QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover {"
+        "  border-color: %2;"
+        "}"
+        "QComboBox:focus, QLineEdit:focus, QAbstractSpinBox:focus {"
+        "  border-color: %3;"
+        "}"
+        "QComboBox:disabled, QLineEdit:disabled, QAbstractSpinBox:disabled {"
+        "  background: palette(alternate-base);"
+        "  color: palette(mid);"
+        "  border-color: %1;"
+        "}"
+        "QComboBox::drop-down {"
+        "  subcontrol-origin: padding;"
+        "  subcontrol-position: top right;"
+        "  width: 22px;"
+        "  border-left: 1px solid %1;"
+        "  border-top-right-radius: 4px;"
+        "  border-bottom-right-radius: 4px;"
+        "  background: palette(button);"
+        "}"
+        "QComboBox::drop-down:hover {"
+        "  background: palette(alternate-base);"
+        "}"
+        "QComboBox::down-arrow {"
+        "  image: url(%4);"
+        "  width: 10px;"
+        "  height: 10px;"
+        "}"
+        "QComboBox QAbstractItemView {"
+        "  border: 1px solid %1;"
+        "  background: palette(base);"
+        "  color: palette(text);"
+        "  selection-background-color: palette(highlight);"
+        "  selection-color: palette(highlighted-text);"
+        "  outline: 0;"
+        "}"
+        "QCheckBox {"
+        "  color: palette(window-text);"
+        "  spacing: 6px;"
+        "}"
+        "QCheckBox:disabled {"
+        "  color: palette(mid);"
+        "}"
+        "QCheckBox::indicator {"
+        "  width: 15px;"
+        "  height: 15px;"
+        "  border: 1px solid %1;"
+        "  border-radius: 3px;"
+        "  background: palette(base);"
+        "}"
+        "QCheckBox::indicator:hover {"
+        "  border-color: %2;"
+        "}"
+        "QCheckBox::indicator:focus {"
+        "  border-color: %3;"
+        "}"
+        "QCheckBox::indicator:checked {"
+        "  image: url(:/icons/checkmark_control.svg);"
+        "  background: palette(highlight);"
+        "  border-color: palette(highlight);"
+        "}"
+        "QCheckBox::indicator:unchecked:disabled {"
+        "  background: palette(alternate-base);"
+        "  border-color: %1;"
+        "}"
+        "QCheckBox::indicator:checked:disabled {"
+        "  image: url(:/icons/checkmark_control.svg);"
+        "  background: palette(mid);"
+        "  border-color: palette(mid);"
+        "}"
+    ).arg(borderColor, hoverBorderColor, focusBorderColor, comboArrowIcon);
 }
 
 bool defaultAutoConfigHostIp()
@@ -449,7 +550,8 @@ void LivoxViewerWindow::applyUiTheme()
     app->setStyle(QStyleFactory::create("Fusion"));
     QPalette palette;
 
-    if (shouldUseDarkTheme()) {
+    const bool darkTheme = shouldUseDarkTheme();
+    if (darkTheme) {
         palette.setColor(QPalette::Window, QColor(45, 45, 48));
         palette.setColor(QPalette::WindowText, QColor(240, 240, 240));
         palette.setColor(QPalette::Base, QColor(30, 30, 30));
@@ -463,7 +565,7 @@ void LivoxViewerWindow::applyUiTheme()
         palette.setColor(QPalette::Highlight, QColor(42, 130, 218));
         palette.setColor(QPalette::HighlightedText, Qt::white);
         palette.setColor(QPalette::Link, QColor(90, 160, 230));
-        palette.setColor(QPalette::Mid, QColor(85, 85, 88));
+        palette.setColor(QPalette::Mid, QColor(138, 138, 141));
     } else {
         palette.setColor(QPalette::Window, QColor(255, 255, 255));
         palette.setColor(QPalette::WindowText, QColor(20, 20, 20));
@@ -482,6 +584,7 @@ void LivoxViewerWindow::applyUiTheme()
     }
 
     app->setPalette(palette);
+    app->setStyleSheet(darkTheme ? darkThemeControlStyleSheet() : QString());
     ThemeIconUtils::refreshObject(this);
     refreshApplicationStyles();
 }

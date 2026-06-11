@@ -24,6 +24,7 @@
 #include <QDesktopServices>
 #include <QStandardPaths>
 #include <QRadioButton>
+#include <QPalette>
 
 namespace {
 
@@ -66,6 +67,18 @@ QString realtimeDeviceCardSignature(const LidarDeviceInfo& device, bool active)
              device.work_state,
              device.diagnostic_summary)
         .arg(device.diagnostic_severity);
+}
+
+QString hmsDisplayColor(int severity)
+{
+    const bool darkTheme = QApplication::palette().color(QPalette::Window).lightness() < 128;
+    switch (severity) {
+    case 1: return darkTheme ? QStringLiteral("#6cb6ff") : QStringLiteral("#2d7dd2");
+    case 2: return darkTheme ? QStringLiteral("#f0b44c") : QStringLiteral("#b86e00");
+    case 3: return darkTheme ? QStringLiteral("#ff6b6b") : QStringLiteral("#c93434");
+    case 4: return darkTheme ? QStringLiteral("#ff4d6d") : QStringLiteral("#8b0000");
+    default: return QApplication::palette().color(QPalette::WindowText).name();
+    }
 }
 
 class RealtimeDeviceCard : public QFrame
@@ -356,7 +369,7 @@ QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& devi
     QLabel* ipLabel = new QLabel(QStringLiteral("IP: %1").arg(device.lidar_ip), card);
     QLabel* diagnosticLabel = new QLabel(diagnosticText, card);
     diagnosticLabel->setStyleSheet(QString("color: %1; font-weight: %2;")
-                                       .arg(LivoxCore::hmsSeverityColor(device.diagnostic_severity))
+                                       .arg(hmsDisplayColor(device.diagnostic_severity))
                                        .arg(device.diagnostic_severity >= 3 ? "600" : "400"));
     for (QLabel* label : {snLabel, ipLabel, diagnosticLabel}) {
         label->setToolTip(tip);

@@ -3,8 +3,10 @@
 #include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
 #include <QAbstractSpinBox>
+#include <QApplication>
 #include <QButtonGroup>
 #include <QHeaderView>
+#include <QPalette>
 #include <QSizePolicy>
 #include <QTableView>
 #include <QToolButton>
@@ -16,6 +18,13 @@ struct ParameterOption
     QString text;
     int id;
 };
+
+QString parameterOptionButtonTheme()
+{
+    return QApplication::palette().color(QPalette::Window).lightness() < 128
+        ? QStringLiteral("dark")
+        : QStringLiteral("light");
+}
 
 QWidget* createParameterOptionButtons(const QVector<ParameterOption>& options, int currentIndex, QWidget* parent)
 {
@@ -42,38 +51,56 @@ QWidget* createParameterOptionButtons(const QVector<ParameterOption>& options, i
         button->setMinimumHeight(30);
         button->setMinimumWidth(button->fontMetrics().horizontalAdvance(options.at(i).text) + 22);
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        button->setProperty("parameterOptionButton", true);
+        button->setProperty("parameterOptionButtonTheme", parameterOptionButtonTheme());
         button->setStyleSheet(
             "QToolButton {"
-            "  border: 1px solid palette(mid);"
+            "  border: 1px solid transparent;"
             "  border-radius: 15px;"
             "  padding: 4px 10px;"
-            "  background: palette(button);"
+            "  background: transparent;"
             "  color: palette(button-text);"
             "}"
             "QToolButton:hover {"
-            "  background: palette(button);"
-            "  border-color: palette(dark);"
+            "  background: transparent;"
+            "  border-color: palette(mid);"
             "  color: palette(button-text);"
             "}"
             "QToolButton:pressed {"
-            "  background: #2f2f2f;"
-            "  border-color: #2f2f2f;"
-            "  color: #ffffff;"
+            "  background: palette(alternate-base);"
+            "  border-color: transparent;"
+            "  color: palette(window-text);"
             "}"
-            "QToolButton:checked {"
-            "  background: #4a4a4a;"
-            "  border-color: #4a4a4a;"
-            "  color: #ffffff;"
+            "QToolButton[parameterOptionButtonTheme=\"dark\"]:checked {"
+            "  background: palette(window-text);"
+            "  border-color: transparent;"
+            "  color: palette(window);"
             "}"
-            "QToolButton:checked:hover {"
-            "  background: #4a4a4a;"
-            "  border-color: #555555;"
-            "  color: #ffffff;"
+            "QToolButton[parameterOptionButtonTheme=\"dark\"]:checked:hover {"
+            "  background: palette(window-text);"
+            "  border-color: palette(mid);"
+            "  color: palette(window);"
             "}"
-            "QToolButton:checked:pressed {"
-            "  background: #2f2f2f;"
-            "  border-color: #2f2f2f;"
-            "  color: #ffffff;"
+            "QToolButton[parameterOptionButtonTheme=\"dark\"]:checked:pressed {"
+            "  background: palette(mid);"
+            "  border-color: transparent;"
+            "  color: palette(window-text);"
+            "}"
+            "QToolButton[parameterOptionButtonTheme=\"light\"]:checked {"
+            "  background: #d8d8d8;"
+            "  border-color: transparent;"
+            "  color: #202020;"
+            "  font-weight: 600;"
+            "}"
+            "QToolButton[parameterOptionButtonTheme=\"light\"]:checked:hover {"
+            "  background: #d0d0d0;"
+            "  border-color: #606060;"
+            "  color: #202020;"
+            "}"
+            "QToolButton[parameterOptionButtonTheme=\"light\"]:checked:pressed {"
+            "  background: #c6c6c6;"
+            "  border-color: transparent;"
+            "  color: #202020;"
             "}"
         );
 
