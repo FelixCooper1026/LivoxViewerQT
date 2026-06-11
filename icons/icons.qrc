@@ -26,6 +26,8 @@
     <file>settings_theme_light.svg</file>
     <file>settings_theme_dark.svg</file>
     <file>settings_theme_system.svg</file>
+    <file>combo_arrow_dark_theme.svg</file>
+    <file>checkmark_control.svg</file>
     <file>point_cloud_live.svg</file>
     <file>point_cloud_frozen.svg</file>
     <file>eye.svg</file>

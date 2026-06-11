@@ -9,6 +9,7 @@
 #include <QLayout>
 #include <QLayoutItem>
 #include <QApplication>
+#include <QPalette>
 #include <algorithm>
 #include <cstring>
 
@@ -28,6 +29,8 @@ QString lidarTypeName(uint8_t devType)
     }
 }
 
+QString hmsDisplayColor(int severity);
+
 QString hmsRichText(const QString& text, const QVector<LivoxCore::HmsCodeInfo>& codes)
 {
     const QStringList lines = text.split('\n');
@@ -35,11 +38,23 @@ QString hmsRichText(const QString& text, const QVector<LivoxCore::HmsCodeInfo>& 
     for (int i = 0; i < lines.size(); ++i) {
         const int severity = i < codes.size() ? LivoxCore::hmsSeverity(codes.at(i).level) : 0;
         richLines.append(QString("<span style=\"color:%1; font-weight:%2;\">%3</span>")
-                         .arg(LivoxCore::hmsSeverityColor(severity))
+                         .arg(hmsDisplayColor(severity))
                          .arg(severity >= 3 ? "600" : "400")
                          .arg(lines.at(i).toHtmlEscaped()));
     }
     return richLines.join("<br/>");
+}
+
+QString hmsDisplayColor(int severity)
+{
+    const bool darkTheme = QApplication::palette().color(QPalette::Window).lightness() < 128;
+    switch (severity) {
+    case 1: return darkTheme ? QStringLiteral("#6cb6ff") : QStringLiteral("#2d7dd2");
+    case 2: return darkTheme ? QStringLiteral("#f0b44c") : QStringLiteral("#b86e00");
+    case 3: return darkTheme ? QStringLiteral("#ff6b6b") : QStringLiteral("#c93434");
+    case 4: return darkTheme ? QStringLiteral("#ff4d6d") : QStringLiteral("#8b0000");
+    default: return QApplication::palette().color(QPalette::WindowText).name();
+    }
 }
 }
 
