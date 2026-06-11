@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include "Export/PointCloudExport.h"
+#include "widgets/ParameterOptionButtons.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -339,8 +340,7 @@ bool LivoxViewerWindow::startImuCapture(const QString& baseDir, int durationSec,
         return false;
     }
     QWidget* ctrl = parameterState.controls.value(kKeyImuDataEn, nullptr);
-    QComboBox* imuCombo = qobject_cast<QComboBox*>(ctrl);
-    if (!imuCombo || imuCombo->currentIndex() != 1) {
+    if (!ParameterOptionButtons::isOptionControl(ctrl) || ParameterOptionButtons::currentIndex(ctrl) != 1) {
         errorMessage = QStringLiteral("IMU数据发送未开启");
         return false;
     }
@@ -497,6 +497,12 @@ void LivoxViewerWindow::onCaptureTick()
             stopImuCapture();
         }
     }
+    if (taskRunning(captureState.parameterTask)) {
+        --captureState.parameterTask.secondsRemaining;
+        if (captureState.parameterTask.secondsRemaining <= 0) {
+            stopParameterCapture();
+        }
+    }
     if (taskRunning(captureState.logTask)) {
         --captureState.logTask.secondsRemaining;
         if (captureState.logTask.secondsRemaining <= 0) {
@@ -513,6 +519,7 @@ void LivoxViewerWindow::onCaptureTick()
     const bool anyRunning =
         taskRunning(captureState.pointCloudTask) ||
         taskRunning(captureState.imuTask) ||
+        taskRunning(captureState.parameterTask) ||
         taskRunning(captureState.logTask) ||
         taskRunning(captureState.debugTask);
 

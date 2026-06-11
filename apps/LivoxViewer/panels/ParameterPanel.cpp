@@ -1,9 +1,146 @@
 #include "LivoxViewerWindow.h"
 #include "AppConfig/NetworkInterfaceService.h"
+#include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
+#include <QButtonGroup>
 #include <QHeaderView>
 #include <QSizePolicy>
+#include <QStringList>
 #include <QTableView>
+#include <QToolButton>
+
+namespace {
+
+QWidget* createParameterOptionButtons(const QStringList& options, int currentIndex, QWidget* parent)
+{
+    QWidget* container = new QWidget(parent);
+    container->setProperty(ParameterOptionButtons::kControlProperty, true);
+    container->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QGridLayout* layout = new QGridLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setHorizontalSpacing(4);
+    layout->setVerticalSpacing(4);
+
+    QButtonGroup* group = new QButtonGroup(container);
+    group->setObjectName(ParameterOptionButtons::groupObjectName());
+    group->setExclusive(true);
+
+    const int columnCount = options.size() > 2 ? 2 : options.size();
+    for (int i = 0; i < options.size(); ++i) {
+        QToolButton* button = new QToolButton(container);
+        button->setText(options.at(i));
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setMinimumHeight(30);
+        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(options.at(i)) + 22);
+        button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+        button->setStyleSheet(
+            "QToolButton {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 15px;"
+            "  padding: 4px 10px;"
+            "  background: palette(button);"
+            "  color: palette(button-text);"
+            "}"
+            "QToolButton:hover {"
+            "  background: palette(button);"
+            "  border-color: palette(dark);"
+            "  color: palette(button-text);"
+            "}"
+            "QToolButton:pressed {"
+            "  background: #2f2f2f;"
+            "  border-color: #2f2f2f;"
+            "  color: #ffffff;"
+            "}"
+            "QToolButton:checked {"
+            "  background: #4a4a4a;"
+            "  border-color: #4a4a4a;"
+            "  color: #ffffff;"
+            "}"
+            "QToolButton:checked:hover {"
+            "  background: #4a4a4a;"
+            "  border-color: #555555;"
+            "  color: #ffffff;"
+            "}"
+            "QToolButton:checked:pressed {"
+            "  background: #2f2f2f;"
+            "  border-color: #2f2f2f;"
+            "  color: #ffffff;"
+            "}"
+        );
+
+        group->addButton(button, i);
+        layout->addWidget(button, i / columnCount, i % columnCount);
+    }
+
+    for (int column = 0; column < columnCount; ++column) {
+        layout->setColumnStretch(column, 0);
+    }
+    ParameterOptionButtons::setCurrentIndex(container, currentIndex);
+    return container;
+}
+
+QFrame* createBasicConfigSection(const QString& title, QWidget* control, QWidget* parent)
+{
+    QFrame* section = new QFrame(parent);
+    section->setObjectName("BasicConfigSection");
+    section->setFrameShape(QFrame::StyledPanel);
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    section->setStyleSheet("QFrame#BasicConfigSection { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+    QHBoxLayout* layout = new QHBoxLayout(section);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setSpacing(8);
+
+    QLabel* titleLabel = new QLabel(title, section);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    titleLabel->setMinimumWidth(titleLabel->fontMetrics().horizontalAdvance("异常时间过滤") + 6);
+    titleLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    layout->addWidget(titleLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(control, 1, Qt::AlignVCenter);
+    return section;
+}
+
+QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidget* parent)
+{
+    QFrame* section = new QFrame(parent);
+    section->setObjectName("StatusInfoSection");
+    section->setFrameShape(QFrame::StyledPanel);
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    section->setStyleSheet("QFrame#StatusInfoSection { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+    QHBoxLayout* layout = new QHBoxLayout(section);
+    layout->setContentsMargins(8, 3, 8, 3);
+    layout->setSpacing(8);
+
+    QLabel* titleLabel = new QLabel(title, section);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    titleLabel->setMinimumWidth(titleLabel->fontMetrics().horizontalAdvance("异常时间过滤") + 6);
+    titleLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+
+    valueLabel->setParent(section);
+    valueLabel->setWordWrap(true);
+    valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    valueLabel->setTextFormat(Qt::PlainText);
+    valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    valueLabel->setMinimumWidth(0);
+    valueLabel->setMinimumHeight(22);
+    valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    valueLabel->setStyleSheet("QLabel { background: transparent; color: palette(window-text); padding: 2px 0; border: none; }");
+
+    layout->addWidget(titleLabel, 0, Qt::AlignVCenter);
+    layout->addWidget(valueLabel, 1, Qt::AlignVCenter);
+    return section;
+}
+
+} // namespace
 
 void LivoxViewerWindow::createParameterPanel()
 {
@@ -60,84 +197,34 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* basicTab = new QWidget();
     basicTab->setMinimumWidth(0);
     basicTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    QFormLayout* basicLayout = new QFormLayout(basicTab);
-    basicLayout->setSpacing(8);
-    basicLayout->setContentsMargins(10, 10, 10, 10);
-    basicLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    basicLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    basicLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    QVBoxLayout* basicLayout = new QVBoxLayout(basicTab);
+    basicLayout->setSpacing(6);
+    basicLayout->setContentsMargins(8, 8, 8, 8);
 
-    QComboBox* workModeCombo = new QComboBox();
-    workModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    workModeCombo->addItems({"采样模式", "待机模式"});
-    workModeCombo->setCurrentIndex(0);
-    basicLayout->addRow("工作模式:", workModeCombo);
-    parameterState.controls[kKeyWorkMode] = workModeCombo;
-    connect(workModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyWorkMode); });
+    auto addBasicOptionRow = [this, basicLayout, basicTab](const QString& title,
+                                                           uint16_t key,
+                                                           const QStringList& options,
+                                                           int currentIndex) {
+        QWidget* optionButtons = createParameterOptionButtons(options, currentIndex, basicTab);
+        basicLayout->addWidget(createBasicConfigSection(title, optionButtons, basicTab));
+        parameterState.controls[key] = optionButtons;
+        connect(ParameterOptionButtons::buttonGroup(optionButtons), &QButtonGroup::idToggled, this, [this, key](int, bool checked) {
+            if (checked) {
+                onParamConfigChanged(key);
+            }
+        });
+    };
 
-    QComboBox* patternModeCombo = new QComboBox();
-    patternModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    patternModeCombo->addItems({"非重复扫描", "重复扫描", "低帧率重复扫描"});
-    patternModeCombo->setCurrentIndex(0);
-    basicLayout->addRow("扫描模式:", patternModeCombo);
-    parameterState.controls[kKeyPatternMode] = patternModeCombo;
-    connect(patternModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyPatternMode); });
-
-    QComboBox* pclDataTypeCombo = new QComboBox();
-    pclDataTypeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    pclDataTypeCombo->addItems({"高精度笛卡尔坐标", "低精度笛卡尔坐标", "球坐标"});
-    pclDataTypeCombo->setCurrentIndex(0);
-    basicLayout->addRow("点云格式:", pclDataTypeCombo);
-    parameterState.controls[kKeyPclDataType] = pclDataTypeCombo;
-    connect(pclDataTypeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyPclDataType); });
-
-    QComboBox* detectModeCombo = new QComboBox();
-    detectModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    detectModeCombo->addItems({"正常模式", "敏感模式"});
-    detectModeCombo->setCurrentIndex(0);
-    basicLayout->addRow("探测模式:", detectModeCombo);
-    parameterState.controls[kKeyDetectMode] = detectModeCombo;
-    connect(detectModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyDetectMode); });
-
-    QComboBox* imuDataCombo = new QComboBox();
-    imuDataCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    imuDataCombo->addItems({"关闭", "开启"});
-    imuDataCombo->setCurrentIndex(0);
-    basicLayout->addRow("IMU数据发送:", imuDataCombo);
-    parameterState.controls[kKeyImuDataEn] = imuDataCombo;
-    connect(imuDataCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeyImuDataEn); });
-
-    QComboBox* motorSpeedCombo = new QComboBox();
-    motorSpeedCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    motorSpeedCombo->addItems({"正常转速","低转速"});
-    motorSpeedCombo->setCurrentIndex(0);
-    basicLayout->addRow("电机转速:", motorSpeedCombo);
-    parameterState.controls[kKeySetEscMode] = motorSpeedCombo;
-    connect(motorSpeedCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEscMode); });
-
-    QComboBox* syncFilterModeCombo = new QComboBox();
-    syncFilterModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    syncFilterModeCombo->addItems({"关闭", "开启"});
-    syncFilterModeCombo->setCurrentIndex(0);
-    basicLayout->addRow("异常时间过滤:", syncFilterModeCombo);
-    parameterState.controls[kKeySetPpsSyncMode] = syncFilterModeCombo;
-    connect(syncFilterModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetPpsSyncMode); });
-
-    QComboBox* fovModeCombo = new QComboBox();
-    fovModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    fovModeCombo->addItems({"Focus FOV", "Normal FOV"});
-    fovModeCombo->setCurrentIndex(1);
-    basicLayout->addRow("FOV模式:", fovModeCombo);
-    parameterState.controls[kKeySetFovMode] = fovModeCombo;
-    connect(fovModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetFovMode); });
-
-    QComboBox* echoModeCombo = new QComboBox();
-    echoModeCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    echoModeCombo->addItems({"最强回波", "第一回波"});
-    echoModeCombo->setCurrentIndex(0);
-    basicLayout->addRow("回波模式:", echoModeCombo);
-    parameterState.controls[kKeySetEchoMode] = echoModeCombo;
-    connect(echoModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this]() { onParamConfigChanged(kKeySetEchoMode); });
+    addBasicOptionRow("工作模式", kKeyWorkMode, {"采样模式", "待机模式"}, 0);
+    addBasicOptionRow("扫描模式", kKeyPatternMode, {"非重复扫描", "重复扫描", "低帧率重复扫描"}, 0);
+    addBasicOptionRow("点云格式", kKeyPclDataType, {"高精度直角", "低精度直角", "球坐标"}, 0);
+    addBasicOptionRow("探测模式", kKeyDetectMode, {"正常模式", "敏感模式"}, 0);
+    addBasicOptionRow("IMU数据发送", kKeyImuDataEn, {"关闭", "开启"}, 0);
+    addBasicOptionRow("电机转速", kKeySetEscMode, {"正常转速", "低转速"}, 0);
+    addBasicOptionRow("异常时间过滤", kKeySetPpsSyncMode, {"关闭", "开启"}, 0);
+    addBasicOptionRow("FOV模式", kKeySetFovMode, {"Focus", "Normal"}, 1);
+    addBasicOptionRow("回波模式", kKeySetEchoMode, {"最强回波", "第一回波"}, 0);
+    basicLayout->addStretch();
 
     paramTabWidget->addTab(basicTab, "基本配置");
 
@@ -462,56 +549,34 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* statusTab = new QWidget();
     statusTab->setMinimumWidth(0);
     statusTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    QFormLayout* statusLayout = new QFormLayout(statusTab);
-    statusLayout->setSpacing(8);
-    statusLayout->setContentsMargins(10, 10, 10, 10);
-    statusLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    statusLayout->setRowWrapPolicy(QFormLayout::WrapLongRows);
-    statusLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    statusLayout->setFormAlignment(Qt::AlignTop);
+    QVBoxLayout* statusLayout = new QVBoxLayout(statusTab);
+    statusLayout->setSpacing(4);
+    statusLayout->setContentsMargins(8, 8, 8, 8);
     for (uint16_t key : statusKeysVec) {
-        QLabel* nameLabel = new QLabel();
         QLabel* valueLabel = new QLabel("无信息");
-            valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            valueLabel->setWordWrap(true);
-            valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-            valueLabel->setTextFormat(Qt::PlainText);
-            valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-            valueLabel->setMinimumWidth(0);
-            valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-            valueLabel->setStyleSheet("QLabel { background-color: palette(base); padding: 2px; border: 1px solid palette(mid); }");
-        nameLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        nameLabel->setMinimumWidth(100);
+        QString statusTitle;
         switch (key) {
-            case kKeySn: nameLabel->setText("序列号:"); break;
-            case kKeyProductInfo: nameLabel->setText("产品信息:"); break;
-            case kKeyVersionApp: nameLabel->setText("固件版本:"); break;
-            case kKeyVersionLoader: nameLabel->setText("LOADER版本:"); break;
-            case kKeyVersionHardware: nameLabel->setText("硬件版本:"); break;
-            case kKeyMac: nameLabel->setText("MAC地址:"); break;
-            case kKeyCurWorkState: nameLabel->setText("当前工作状态:"); break;
-            case kKeyCoreTemp: nameLabel->setText("核心温度:"); break;
-            case kKeyPowerUpCnt: nameLabel->setText("上电次数:"); break;
-            case kKeyLocalTimeNow: nameLabel->setText("本地时间:"); break;
-            case kKeyLastSyncTime: nameLabel->setText("最后同步时间:"); break;
-            case kKeyTimeOffset: nameLabel->setText("时间偏移:"); break;
-            case kKeyTimeSyncType: nameLabel->setText("时间同步类型:"); break;
-            case kKeyLidarDiagStatus: nameLabel->setText("雷达诊断状态:"); break;
-            case kKeyFwType: nameLabel->setText("固件类型:"); break;
-            case kKeyHmsCode: nameLabel->setText("HMS诊断码:"); break;
+            case kKeySn: statusTitle = "序列号"; break;
+            case kKeyProductInfo: statusTitle = "产品信息"; break;
+            case kKeyVersionApp: statusTitle = "固件版本"; break;
+            case kKeyVersionLoader: statusTitle = "LOADER版本"; break;
+            case kKeyVersionHardware: statusTitle = "硬件版本"; break;
+            case kKeyMac: statusTitle = "MAC地址"; break;
+            case kKeyCurWorkState: statusTitle = "当前工作状态"; break;
+            case kKeyCoreTemp: statusTitle = "核心温度"; break;
+            case kKeyPowerUpCnt: statusTitle = "上电次数"; break;
+            case kKeyLocalTimeNow: statusTitle = "本地时间"; break;
+            case kKeyLastSyncTime: statusTitle = "最后同步时间"; break;
+            case kKeyTimeOffset: statusTitle = "时间偏移"; break;
+            case kKeyTimeSyncType: statusTitle = "时间同步类型"; break;
+            case kKeyLidarDiagStatus: statusTitle = "雷达诊断状态"; break;
+            case kKeyFwType: statusTitle = "固件类型"; break;
+            case kKeyHmsCode: statusTitle = "HMS诊断码"; break;
         }
-        statusLayout->addRow(nameLabel, valueLabel);
+        statusLayout->addWidget(createStatusInfoSection(statusTitle, valueLabel, statusTab));
         parameterState.labels[key] = valueLabel;
     }
-
-    // 添加记录参数按钮
-    parameterState.recordButton = new QPushButton("记录参数至CSV文件", statusTab);
-    parameterState.recordButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    parameterState.recordButton->setStyleSheet("QPushButton { padding: 5px; }");
-    statusLayout->addRow(parameterState.recordButton); // 这会创建一个占据整行的按钮
-
-    // 连接按钮信号
-    connect(parameterState.recordButton, &QPushButton::clicked, this, &LivoxViewerWindow::onRecordParamsClicked);
+    statusLayout->addStretch();
 
     paramTabWidget->insertTab(0, statusTab, "状态信息");
     paramTabWidget->setCurrentIndex(0);

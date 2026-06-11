@@ -776,6 +776,144 @@ void LivoxViewerWindow::showImuCaptureDialog()
     dlg->show();
 }
 
+void LivoxViewerWindow::showParameterCaptureDialog()
+{
+    if (parameterCaptureDialog) {
+        parameterCaptureDialog->show();
+        parameterCaptureDialog->raise();
+        parameterCaptureDialog->activateWindow();
+        return;
+    }
+
+    QDialog* dlg = new QDialog(this);
+    parameterCaptureDialog = dlg;
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle(QStringLiteral("设备参数信息采集"));
+    dlg->setWindowModality(Qt::NonModal);
+    dlg->setWindowFlags(dlg->windowFlags()
+        | Qt::Window
+        | Qt::WindowMinimizeButtonHint
+        | Qt::WindowMaximizeButtonHint
+        | Qt::WindowCloseButtonHint);
+    dlg->resize(900, 460);
+
+    QVBoxLayout* root = new QVBoxLayout(dlg);
+    root->setContentsMargins(18, 16, 18, 14);
+    root->setSpacing(12);
+
+    QLabel* dialogStatusLabel = new QLabel(QStringLiteral("设置采集时长和保存路径"), dlg);
+    dialogStatusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    root->addWidget(dialogStatusLabel);
+
+    QTableWidget* table = createTaskTable(dlg, {QStringLiteral("格式"), QStringLiteral("保存位置"), QStringLiteral("状态"), QStringLiteral("剩余时间"), QStringLiteral("操作")});
+    table->setRowCount(1);
+    table->horizontalHeader()->setSectionResizeMode(kTaskColumnType, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(kTaskColumnPath, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(kTaskColumnStatus, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(kTaskColumnRemaining, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(kTaskColumnAction, QHeaderView::Fixed);
+    table->setColumnWidth(kTaskColumnType, 100);
+    table->setColumnWidth(kTaskColumnStatus, 220);
+    table->setColumnWidth(kTaskColumnRemaining, 110);
+    table->setColumnWidth(kTaskColumnAction, 120);
+    setTextItem(table, 0, kTaskColumnType, QStringLiteral("CSV"));
+    QProgressBar* progress = nullptr;
+    QLabel* progressLabel = nullptr;
+    QLabel* progressIcon = nullptr;
+    table->setCellWidget(0, kTaskColumnStatus, createProgressCell(&progress, &progressLabel, &progressIcon));
+    QToolButton* openButton = nullptr;
+    table->setCellWidget(0, kTaskColumnAction, createSingleOpenActionCell(&openButton));
+    root->addWidget(createTaskTableFrame(table, dlg), 1);
+
+    QWidget* footer = new QWidget(dlg);
+    QHBoxLayout* footerLayout = new QHBoxLayout(footer);
+    footerLayout->setContentsMargins(0, 0, 0, 0);
+    footerLayout->setSpacing(14);
+    QWidget* fields = new QWidget(footer);
+    QVBoxLayout* fieldsLayout = new QVBoxLayout(fields);
+    fieldsLayout->setContentsMargins(0, 0, 0, 0);
+    fieldsLayout->setSpacing(8);
+
+    QWidget* durationRow = new QWidget(fields);
+    QHBoxLayout* durationLayout = new QHBoxLayout(durationRow);
+    durationLayout->setContentsMargins(0, 0, 0, 0);
+    QLabel* durationLabel = new QLabel(QStringLiteral("采集时长"), durationRow);
+    QSpinBox* durationSpin = new QSpinBox(durationRow);
+    durationSpin->setRange(10, 86400);
+    durationSpin->setValue(30);
+    durationSpin->setSingleStep(10);
+    durationSpin->setSuffix(QStringLiteral(" s"));
+    durationLayout->addWidget(durationLabel);
+    durationLayout->addWidget(durationSpin);
+    durationLayout->addStretch();
+    fieldsLayout->addWidget(durationRow);
+
+    QWidget* pathRow = new QWidget(fields);
+    QHBoxLayout* pathLayout = new QHBoxLayout(pathRow);
+    pathLayout->setContentsMargins(0, 0, 0, 0);
+    QLabel* pathLabel = new QLabel(QStringLiteral("保存路径"), pathRow);
+    QLineEdit* pathEdit = new QLineEdit(pathRow);
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    pathEdit->setText(settings.value(QStringLiteral("save/lastParameterDir"), defaultDocumentsDir()).toString());
+    QToolButton* browseButton = createBrowseButton(pathRow);
+    pathLayout->addWidget(pathLabel);
+    pathLayout->addWidget(pathEdit, 1);
+    pathLayout->addWidget(browseButton);
+    fieldsLayout->addWidget(pathRow);
+
+    QPushButton* startButton = createStartButton(QStringLiteral("开始采集"), footer);
+    footerLayout->addWidget(fields, 1);
+    footerLayout->addWidget(startButton, 0, Qt::AlignBottom);
+    root->addWidget(footer);
+
+    auto updateUi = [this, table, progress, progressLabel, progressIcon, openButton, startButton, durationSpin, pathEdit, browseButton]() {
+        const bool running = taskRunning(captureState.parameterTask);
+        const QString outputDir = captureState.parameterTask.outputDir.isEmpty()
+            ? pathEdit->text().trimmed()
+            : captureState.parameterTask.outputDir;
+        setTextItem(table, 0, kTaskColumnPath, QDir::toNativeSeparators(outputDir));
+        updateProgress(progress, progressLabel, progressIcon, captureState.parameterTask);
+        setTextItem(table, 0, kTaskColumnRemaining, remainingText(captureState.parameterTask));
+        openButton->setEnabled(!captureState.parameterTask.outputDir.isEmpty());
+        startButton->setEnabled(!running);
+        durationSpin->setEnabled(!running);
+        pathEdit->setEnabled(!running);
+        browseButton->setEnabled(!running);
+    };
+    QObject::connect(browseButton, &QToolButton::clicked, dlg, [dlg, pathEdit]() {
+        const QString dir = selectFolder(dlg, pathEdit->text().trimmed(), QStringLiteral("选择保存目录"));
+        if (!dir.isEmpty()) {
+            pathEdit->setText(dir);
+        }
+    });
+    QObject::connect(openButton, &QToolButton::clicked, dlg, [this]() {
+        openOutputDir(captureState.parameterTask.outputDir);
+    });
+    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, pathEdit, durationSpin, updateUi]() {
+        const QString baseDir = pathEdit->text().trimmed();
+        if (baseDir.isEmpty()) {
+            dialogStatusLabel->setText(QStringLiteral("请选择保存路径"));
+            return;
+        }
+        QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+        settings.setValue(QStringLiteral("save/lastParameterDir"), baseDir);
+        QString errorMessage;
+        if (!startParameterCapture(baseDir, durationSpin->value(), errorMessage)) {
+            dialogStatusLabel->setText(errorMessage);
+            QMessageBox::warning(dlg, QStringLiteral("设备参数信息采集"), errorMessage);
+            return;
+        }
+        dialogStatusLabel->setText(QStringLiteral("采集任务已启动"));
+        updateUi();
+    });
+
+    QTimer* refreshTimer = new QTimer(dlg);
+    QObject::connect(refreshTimer, &QTimer::timeout, dlg, updateUi);
+    refreshTimer->start(250);
+    updateUi();
+    dlg->show();
+}
+
 void LivoxViewerWindow::showDebugCaptureDialog()
 {
     if (debugCaptureDialog) {

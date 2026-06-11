@@ -42,6 +42,7 @@ struct CaptureSessionState
     QTimer* timer = nullptr;
     CaptureTaskState pointCloudTask;
     CaptureTaskState imuTask;
+    CaptureTaskState parameterTask;
     CaptureTaskState logTask;
     CaptureTaskState debugTask;
     PointCloudCaptureFormat pointCloudFormat = PointCloudCaptureFormat::None;

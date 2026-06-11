@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include "ThemeIconUtils.h"
+#include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
 #include "plugins/StlModel/StlModelLoader.h"
 
@@ -1048,6 +1049,13 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     captureGroup->addPrimaryWidget(createIconButton(imuCaptureAction, captureGroup, toolbarIconSize));
     captureGroup->moreMenu()->addAction(imuCaptureAction);
 
+    QAction* parameterCaptureAction = new QAction(QIcon(":/icons/capture_params.svg"), "设备参数信息采集", this);
+    ThemeIconUtils::setThemedSvgIcon(parameterCaptureAction, QStringLiteral(":/icons/capture_params.svg"));
+    parameterCaptureAction->setToolTip("设备参数信息采集");
+    connect(parameterCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showParameterCaptureDialog);
+    captureGroup->addPrimaryWidget(createIconButton(parameterCaptureAction, captureGroup, toolbarIconSize));
+    captureGroup->moreMenu()->addAction(parameterCaptureAction);
+
     QAction* debugCaptureAction = new QAction(QIcon(":/icons/capture_debug.svg"), "Debug数据采集", this);
     ThemeIconUtils::setThemedSvgIcon(debugCaptureAction, QStringLiteral(":/icons/capture_debug.svg"));
     debugCaptureAction->setToolTip("Debug数据采集");
@@ -1065,8 +1073,8 @@ void LivoxViewerWindow::updateProjectionControlsVisibility()
 {
     bool isSpherical = false;
     if (QWidget* control = parameterState.controls.value(kKeyPclDataType, nullptr)) {
-        if (QComboBox* combo = qobject_cast<QComboBox*>(control)) {
-            isSpherical = (combo->currentIndex() == 2);
+        if (ParameterOptionButtons::isOptionControl(control)) {
+            isSpherical = (ParameterOptionButtons::currentIndex(control) == 2);
         }
     }
 

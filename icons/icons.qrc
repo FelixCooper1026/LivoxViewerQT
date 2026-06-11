@@ -33,6 +33,7 @@
     <file>3d_model_off.svg</file>
     <file>capture_camera.svg</file>
     <file>capture_imu.svg</file>
+    <file>capture_params.svg</file>
     <file>capture_debug.svg</file>
     <file>convert_add_file.svg</file>
     <file>convert_add_folder.svg</file>

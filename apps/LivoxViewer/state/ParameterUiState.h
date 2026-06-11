@@ -9,7 +9,6 @@
 #include <cstdint>
 
 class QLabel;
-class QPushButton;
 class QWidget;
 
 struct ParameterUiState
@@ -22,7 +21,6 @@ struct ParameterUiState
     QSet<uint16_t> statusKeys;
     QSet<uint16_t> updatedConfigKeys;
 
-    QPushButton* recordButton = nullptr;
     QFile recordFile;
     bool isRecording = false;
     QString recordFilePath;

@@ -1,11 +1,12 @@
 #include "LivoxViewerWindow.h"
 #include "LivoxCore/LidarParameterService.h"
 #include "LivoxCore/LidarSdkService.h"
+#include "widgets/ParameterOptionButtons.h"
 #include <QRegularExpression>
-#include <QFileDialog>
-#include <QMessageBox>
+#include <QDir>
 #include <QTextStream>
 #include <QDateTime>
+#include <algorithm>
 #include <cstring>
 
 void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
@@ -32,8 +33,9 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
     bool success = false;
     
     try {
-        if (QComboBox* combo = qobject_cast<QComboBox*>(control)) {
-            int index = combo->currentIndex();
+        if (ParameterOptionButtons::isOptionControl(control)) {
+            int index = ParameterOptionButtons::currentIndex(control);
+            const QString currentText = ParameterOptionButtons::currentText(control);
             
             switch (key) {
                 case kKeyPclDataType: {
@@ -41,7 +43,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     LivoxLidarPointDataType dataType = static_cast<LivoxLidarPointDataType>(index + 1); // 0->1, 1->2, 2->3
                     livox_status status = SetLivoxLidarPclDataType(currentDevice.handle, dataType, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     updateProjectionControlsVisibility();
                     break;
                 }
@@ -50,7 +52,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     LivoxLidarScanPattern pattern = static_cast<LivoxLidarScanPattern>(index);
                     livox_status status = SetLivoxLidarScanPattern(currentDevice.handle, pattern, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
                 case kKeyDetectMode: {
@@ -79,7 +81,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     if (index >= 0 && index <= 1) {
                         livox_status status = SetLivoxLidarDetectMode(currentDevice.handle, mode, onAsyncControlResponse, this);
                         success = (status == kLivoxLidarStatusSuccess);
-                        newValue = combo->currentText();
+                        newValue = currentText;
                         if (!success) {
                             logMessage(QString("探测模式设置失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
                         }
@@ -98,7 +100,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     livox_status status = SetLivoxLidarWorkMode(currentDevice.handle, workMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
                 case kKeySetEscMode: {
@@ -112,7 +114,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     livox_status status = SetLivoxLidarEscMode(currentDevice.handle, motorSpeed, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
                 case kKeySetPpsSyncMode: {
@@ -126,7 +128,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     livox_status status = SetLivoxLidarPpsSyncMode(currentDevice.handle, syncFilterMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                     
                 }
@@ -139,7 +141,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     livox_status status = SetLivoxLidarFovMode(currentDevice.handle, fovMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
                 case kKeySetEchoMode: {
@@ -151,7 +153,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     }
                     livox_status status = SetLivoxLidarEchoMode(currentDevice.handle, echoMode, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
                 case kKeyImuDataEn: {
@@ -167,7 +169,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                             logMessage(QString("禁用IMU数据失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));                        }
                     }
                     success = (status == kLivoxLidarStatusSuccess);
-                    newValue = combo->currentText();
+                    newValue = currentText;
                     break;
                 }
 
@@ -523,146 +525,127 @@ QString LivoxViewerWindow::formatLidarParameterValue(uint16_t key, uint8_t* valu
     return LidarParameterService::formatValue(key, value, length);
 }
 
-void LivoxViewerWindow::onRecordParamsClicked()
+bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durationSec, QString& errorMessage)
 {
-    if (!parameterState.isRecording) {
-        // 生成默认文件名：记录时间_设备序列号_设备参数.csv
-        QString defaultFileName;
-        
-        // 获取当前时间，格式为 yyyyMMdd_hhmmss
-        QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss");
-        
-        // 获取设备序列号，如果没有当前设备则使用"Unknown"
-        QString deviceSn = "Unknown";
-        LidarDeviceInfo currentDevice;
-        if (tryGetCurrentDevice(currentDevice) && !currentDevice.sn.isEmpty()) {
-            deviceSn = currentDevice.sn;
-        }
-        
-        // 生成默认文件名
-        defaultFileName = QString("%1_%2_设备参数").arg(timestamp).arg(deviceSn);
-        
-        // 开始记录
-        QString fileName = QFileDialog::getSaveFileName(
-            this, 
-            "选择CSV文件保存路径",
-            QDir::homePath() + "/" + defaultFileName + ".csv",  // 使用生成的默认文件名
-            "CSV文件 (*.csv)"
-        );
-        
-        if (fileName.isEmpty()) {
-            return;
-        }
-        
-        // 确保文件扩展名
-        if (!fileName.endsWith(".csv", Qt::CaseInsensitive)) {
-            fileName += ".csv";
-        }
-        
-        parameterState.recordFile.setFileName(fileName);
-        if (!parameterState.recordFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QMessageBox::warning(this, "错误", "无法创建文件: " + fileName);
-            return;
-        }
-
-        // 写入UTF-8 BOM头，确保Excel等软件正确识别编码
-        QByteArray bom;
-        bom.append(0xEF);
-        bom.append(0xBB);
-        bom.append(0xBF);
-        parameterState.recordFile.write(bom);
-        
-        // 初始化参数键映射（包含所有要记录的参数）
-        parameterState.recordedKeys.clear();
-        parameterState.recordedOrder.clear(); // 清空顺序列表
-        
-        // 状态参数
-        QVector<uint16_t> allKeys = {
-            kKeySn, kKeyProductInfo, kKeyVersionApp, kKeyVersionLoader, kKeyVersionHardware, kKeyMac,
-            kKeyCurWorkState, kKeyCoreTemp, kKeyPowerUpCnt, kKeyLocalTimeNow, kKeyLastSyncTime,
-            kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode,
-            kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
-            kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
-            kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp
-        };
-
-        // 保存顺序
-        parameterState.recordedOrder = allKeys;
-        
-        // 为每个参数键设置显示名称
-        for (uint16_t key : allKeys) {
-            switch (key) {
-                case kKeySn: parameterState.recordedKeys[key] = "序列号"; break;
-                case kKeyProductInfo: parameterState.recordedKeys[key] = "产品信息"; break;
-                case kKeyVersionApp: parameterState.recordedKeys[key] = "固件版本"; break;
-                case kKeyVersionLoader: parameterState.recordedKeys[key] = "LOADER版本"; break;
-                case kKeyVersionHardware: parameterState.recordedKeys[key] = "硬件版本"; break;
-                case kKeyMac: parameterState.recordedKeys[key] = "MAC地址"; break;
-                case kKeyCurWorkState: parameterState.recordedKeys[key] = "当前工作状态"; break;
-                case kKeyCoreTemp: parameterState.recordedKeys[key] = "核心温度"; break;
-                case kKeyPowerUpCnt: parameterState.recordedKeys[key] = "上电次数"; break;
-                case kKeyLocalTimeNow: parameterState.recordedKeys[key] = "本地时间"; break;
-                case kKeyLastSyncTime: parameterState.recordedKeys[key] = "最后同步时间"; break;
-                case kKeyTimeOffset: parameterState.recordedKeys[key] = "时间偏移"; break;
-                case kKeyTimeSyncType: parameterState.recordedKeys[key] = "时间同步类型"; break;
-                case kKeyLidarDiagStatus: parameterState.recordedKeys[key] = "雷达诊断状态"; break;
-                case kKeyFwType: parameterState.recordedKeys[key] = "固件类型"; break;
-                case kKeyHmsCode: parameterState.recordedKeys[key] = "HMS诊断码"; break;
-                case kKeyPclDataType: parameterState.recordedKeys[key] = "点云格式"; break;
-                case kKeyPatternMode: parameterState.recordedKeys[key] = "扫描模式"; break;
-                case kKeyDetectMode: parameterState.recordedKeys[key] = "探测模式"; break;
-                case kKeyWorkMode: parameterState.recordedKeys[key] = "工作模式"; break;
-                case kKeyImuDataEn: parameterState.recordedKeys[key] = "IMU数据发送"; break;
-                case kKeyLidarIpCfg: parameterState.recordedKeys[key] = "雷达IP配置"; break;
-                case kKeyStateInfoHostIpCfg: parameterState.recordedKeys[key] = "状态信息目的IP"; break;
-                case kKeyLidarPointDataHostIpCfg: parameterState.recordedKeys[key] = "点云数据目的IP"; break;
-                case kKeyLidarImuHostIpCfg: parameterState.recordedKeys[key] = "IMU数据目的IP"; break;
-                case kKeyFovCfg0: parameterState.recordedKeys[key] = "FOV0配置"; break;
-                case kKeyFovCfg1: parameterState.recordedKeys[key] = "FOV1配置"; break;
-                case kKeyFovCfgEn: parameterState.recordedKeys[key] = "FOV使能状态"; break;
-                case kKeyInstallAttitude: parameterState.recordedKeys[key] = "安装姿态"; break;
-                case kKeySetEscMode: parameterState.recordedKeys[key] = "电机转速"; break;
-                case kKeySetPpsSyncMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
-                case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
-                case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
-                case kKeySetNTPServerIp: parameterState.recordedKeys[key] = "NTP服务器IP"; break;
-                default: parameterState.recordedKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
-            }
-        }
-        
-        // 写入CSV表头
-        QTextStream stream(&parameterState.recordFile);
-        stream << "时间戳";
-        for (uint16_t key : parameterState.recordedOrder) {
-            stream << "," << parameterState.recordedKeys[key];
-        }
-        stream << "\n";
-
-        parameterState.recordFile.flush();
-        parameterState.recordFilePath = fileName;
-        parameterState.isRecording = true;
-        parameterState.recordButton->setText("停止参数记录");
-
-        logMessage(QString("设备参数记录已开始"));
-        
-    } else {
-        // 停止记录
-        stopRecordParams();
+    LidarDeviceInfo currentDevice;
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+        errorMessage = QStringLiteral("设备未连接");
+        return false;
     }
+    if (parameterState.isRecording) {
+        errorMessage = QStringLiteral("设备参数信息采集正在运行");
+        return false;
+    }
+
+    const QString deviceSn = currentDevice.sn.isEmpty() ? QStringLiteral("Unknown") : currentDevice.sn;
+    const QString targetDir = QDir(baseDir).filePath(QStringLiteral("DeviceParameters_%1").arg(deviceSn));
+    QDir().mkpath(targetDir);
+    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_hhmmss"));
+    const QString fileName = QDir(targetDir).filePath(QStringLiteral("%1_%2_设备参数.csv").arg(timestamp, deviceSn));
+
+    parameterState.recordFile.setFileName(fileName);
+    if (!parameterState.recordFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+        errorMessage = QStringLiteral("无法创建设备参数CSV文件");
+        return false;
+    }
+
+    QByteArray bom;
+    bom.append(0xEF);
+    bom.append(0xBB);
+    bom.append(0xBF);
+    parameterState.recordFile.write(bom);
+
+    parameterState.recordedKeys.clear();
+    parameterState.recordedOrder.clear();
+
+    QVector<uint16_t> allKeys = {
+        kKeySn, kKeyProductInfo, kKeyVersionApp, kKeyVersionLoader, kKeyVersionHardware, kKeyMac,
+        kKeyCurWorkState, kKeyCoreTemp, kKeyPowerUpCnt, kKeyLocalTimeNow, kKeyLastSyncTime,
+        kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode,
+        kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
+        kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
+        kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp
+    };
+
+    parameterState.recordedOrder = allKeys;
+
+    for (uint16_t key : allKeys) {
+        switch (key) {
+            case kKeySn: parameterState.recordedKeys[key] = "序列号"; break;
+            case kKeyProductInfo: parameterState.recordedKeys[key] = "产品信息"; break;
+            case kKeyVersionApp: parameterState.recordedKeys[key] = "固件版本"; break;
+            case kKeyVersionLoader: parameterState.recordedKeys[key] = "LOADER版本"; break;
+            case kKeyVersionHardware: parameterState.recordedKeys[key] = "硬件版本"; break;
+            case kKeyMac: parameterState.recordedKeys[key] = "MAC地址"; break;
+            case kKeyCurWorkState: parameterState.recordedKeys[key] = "当前工作状态"; break;
+            case kKeyCoreTemp: parameterState.recordedKeys[key] = "核心温度"; break;
+            case kKeyPowerUpCnt: parameterState.recordedKeys[key] = "上电次数"; break;
+            case kKeyLocalTimeNow: parameterState.recordedKeys[key] = "本地时间"; break;
+            case kKeyLastSyncTime: parameterState.recordedKeys[key] = "最后同步时间"; break;
+            case kKeyTimeOffset: parameterState.recordedKeys[key] = "时间偏移"; break;
+            case kKeyTimeSyncType: parameterState.recordedKeys[key] = "时间同步类型"; break;
+            case kKeyLidarDiagStatus: parameterState.recordedKeys[key] = "雷达诊断状态"; break;
+            case kKeyFwType: parameterState.recordedKeys[key] = "固件类型"; break;
+            case kKeyHmsCode: parameterState.recordedKeys[key] = "HMS诊断码"; break;
+            case kKeyPclDataType: parameterState.recordedKeys[key] = "点云格式"; break;
+            case kKeyPatternMode: parameterState.recordedKeys[key] = "扫描模式"; break;
+            case kKeyDetectMode: parameterState.recordedKeys[key] = "探测模式"; break;
+            case kKeyWorkMode: parameterState.recordedKeys[key] = "工作模式"; break;
+            case kKeyImuDataEn: parameterState.recordedKeys[key] = "IMU数据发送"; break;
+            case kKeyLidarIpCfg: parameterState.recordedKeys[key] = "雷达IP配置"; break;
+            case kKeyStateInfoHostIpCfg: parameterState.recordedKeys[key] = "状态信息目的IP"; break;
+            case kKeyLidarPointDataHostIpCfg: parameterState.recordedKeys[key] = "点云数据目的IP"; break;
+            case kKeyLidarImuHostIpCfg: parameterState.recordedKeys[key] = "IMU数据目的IP"; break;
+            case kKeyFovCfg0: parameterState.recordedKeys[key] = "FOV0配置"; break;
+            case kKeyFovCfg1: parameterState.recordedKeys[key] = "FOV1配置"; break;
+            case kKeyFovCfgEn: parameterState.recordedKeys[key] = "FOV使能状态"; break;
+            case kKeyInstallAttitude: parameterState.recordedKeys[key] = "安装姿态"; break;
+            case kKeySetEscMode: parameterState.recordedKeys[key] = "电机转速"; break;
+            case kKeySetPpsSyncMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
+            case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
+            case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
+            case kKeySetNTPServerIp: parameterState.recordedKeys[key] = "NTP服务器IP"; break;
+            default: parameterState.recordedKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
+        }
+    }
+
+    QTextStream stream(&parameterState.recordFile);
+    stream << "时间戳";
+    for (uint16_t key : parameterState.recordedOrder) {
+        stream << "," << parameterState.recordedKeys[key];
+    }
+    stream << "\n";
+
+    parameterState.recordFile.flush();
+    parameterState.recordFilePath = fileName;
+    parameterState.isRecording = true;
+
+    captureState.parameterTask.status = CaptureTaskStatus::Running;
+    captureState.parameterTask.secondsRemaining = std::max(1, durationSec);
+    captureState.parameterTask.totalSeconds = captureState.parameterTask.secondsRemaining;
+    captureState.parameterTask.savedFiles = 0;
+    captureState.parameterTask.expectedFiles = 0;
+    captureState.parameterTask.integrationMs = 0;
+    captureState.parameterTask.outputDir = targetDir;
+    captureState.parameterTask.outputPath = fileName;
+    captureState.parameterTask.message = QStringLiteral("设备参数信息采集中");
+    captureState.timer->start(1000);
+    statusLabelBar->setText(QStringLiteral("正在采集设备参数信息..."));
+    logMessage(QString("设备参数信息采集开始: %1").arg(QDir::toNativeSeparators(fileName)));
+    return true;
 }
 
-
-void LivoxViewerWindow::stopRecordParams()
-{   
+void LivoxViewerWindow::stopParameterCapture()
+{
     if (parameterState.recordFile.isOpen()) {
+        parameterState.recordFile.flush();
         parameterState.recordFile.close();
     }
     
     parameterState.isRecording = false;
-    parameterState.recordButton->setText("记录参数至CSV文件");
-    
-    QMessageBox::information(this, "记录完成", 
-        QString("设备状态参数已保存至\n%1").arg(parameterState.recordFilePath));
-    
-    logMessage(QString("设备参数记录已停止，文件保存至: %1").arg(parameterState.recordFilePath));
+    captureState.parameterTask.status = CaptureTaskStatus::Done;
+    captureState.parameterTask.secondsRemaining = 0;
+    captureState.parameterTask.message = QStringLiteral("设备参数信息采集完成");
+    statusLabelBar->setText(QStringLiteral("设备参数信息采集完成"));
+    logMessage(QString("设备参数信息采集完成: %1").arg(QDir::toNativeSeparators(parameterState.recordFilePath)));
 }

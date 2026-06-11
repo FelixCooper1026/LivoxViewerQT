@@ -2,6 +2,7 @@
 #include "LivoxCore/LidarDiagnostics.h"
 #include "LivoxCore/LidarPacketUtils.h"
 #include "LivoxCore/LidarSdkService.h"
+#include "widgets/ParameterOptionButtons.h"
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTime>
@@ -597,53 +598,52 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                         // 只处理非状态参数的可配置参数，且只在设备连接时更新一次
                         if (!window->parameterState.updatedConfigKeys.contains(key)) {
                                 QWidget* control = window->parameterState.controls[key];
-                                if (QComboBox* combo = qobject_cast<QComboBox*>(control)) {
-                                    // 只更新简单的下拉框控件（基本配置）
-                                    // 暂时断开信号连接，避免触发配置调用
-                                    combo->blockSignals(true);
+                                if (ParameterOptionButtons::isOptionControl(control)) {
+                                    ParameterOptionButtons::setSignalsBlocked(control, true);
+                                    auto setOptionIndex = [control](int index) {
+                                        ParameterOptionButtons::setCurrentIndex(control, index);
+                                    };
                                     
-                                    // 根据值设置下拉框
                                     if (key == kKeyPclDataType) {
-                                        if (valueStr.contains("高精度")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("低精度")) combo->setCurrentIndex(1);
-                                        else if (valueStr.contains("球坐标")) combo->setCurrentIndex(2);
+                                        if (valueStr.contains("高精度")) setOptionIndex(0);
+                                        else if (valueStr.contains("低精度")) setOptionIndex(1);
+                                        else if (valueStr.contains("球坐标")) setOptionIndex(2);
                                         window->updateProjectionControlsVisibility();
                                     } else if (key == kKeyPatternMode) {
-                                            if (valueStr == "非重复扫描") combo->setCurrentIndex(0);
-                                            else if (valueStr == "重复扫描") combo->setCurrentIndex(1);
-                                            else if (valueStr == "低帧率重复扫描") combo->setCurrentIndex(2);
+                                            if (valueStr == "非重复扫描") setOptionIndex(0);
+                                            else if (valueStr == "重复扫描") setOptionIndex(1);
+                                            else if (valueStr == "低帧率重复扫描") setOptionIndex(2);
                                     } else if (key == kKeyDetectMode) {
-                                        if (valueStr.contains("正常")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("敏感")) combo->setCurrentIndex(1);
+                                        if (valueStr.contains("正常")) setOptionIndex(0);
+                                        else if (valueStr.contains("敏感")) setOptionIndex(1);
                                     } else if (key == kKeyWorkMode) {
-                                        if (valueStr.contains("采样")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("待机")) combo->setCurrentIndex(1);
-                                        else if (valueStr.contains("睡眠")) combo->setCurrentIndex(2);
-                                        else if (valueStr.contains("错误")) combo->setCurrentIndex(3);
-                                        else if (valueStr.contains("自检")) combo->setCurrentIndex(4);
-                                        else if (valueStr.contains("电机启动")) combo->setCurrentIndex(5);
-                                        else if (valueStr.contains("停止")) combo->setCurrentIndex(6);
-                                        else if (valueStr.contains("升级")) combo->setCurrentIndex(7);
-                                        else if (valueStr.contains("就绪")) combo->setCurrentIndex(8);
+                                        if (valueStr.contains("采样")) setOptionIndex(0);
+                                        else if (valueStr.contains("待机")) setOptionIndex(1);
+                                        else if (valueStr.contains("睡眠")) setOptionIndex(2);
+                                        else if (valueStr.contains("错误")) setOptionIndex(3);
+                                        else if (valueStr.contains("自检")) setOptionIndex(4);
+                                        else if (valueStr.contains("电机启动")) setOptionIndex(5);
+                                        else if (valueStr.contains("停止")) setOptionIndex(6);
+                                        else if (valueStr.contains("升级")) setOptionIndex(7);
+                                        else if (valueStr.contains("就绪")) setOptionIndex(8);
                                     } else if (key == kKeyImuDataEn) {
-                                        if (valueStr.contains("启用") || valueStr.contains("开启")) combo->setCurrentIndex(1);
-                                        else combo->setCurrentIndex(0);
+                                        if (valueStr.contains("启用") || valueStr.contains("开启")) setOptionIndex(1);
+                                        else setOptionIndex(0);
                                     } else if (key == kKeySetEscMode) {
-                                        if (valueStr.contains("正常转速")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("低转速")) combo->setCurrentIndex(1);
+                                        if (valueStr.contains("正常转速")) setOptionIndex(0);
+                                        else if (valueStr.contains("低转速")) setOptionIndex(1);
                                     }else if (key == kKeySetPpsSyncMode){
-                                        if (valueStr.contains("关闭异常时间过滤")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("开启异常时间过滤")) combo->setCurrentIndex(1);
+                                        if (valueStr.contains("关闭异常时间过滤")) setOptionIndex(0);
+                                        else if (valueStr.contains("开启异常时间过滤")) setOptionIndex(1);
                                     }else if (key == kKeySetFovMode) {
-                                        if (valueStr.contains("Focus FOV")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("Normal FOV")) combo->setCurrentIndex(1);
+                                        if (valueStr.contains("Focus FOV")) setOptionIndex(0);
+                                        else if (valueStr.contains("Normal FOV")) setOptionIndex(1);
                                     } else if (key == kKeySetEchoMode) {
-                                        if (valueStr.contains("最强回波")) combo->setCurrentIndex(0);
-                                        else if (valueStr.contains("第一回波")) combo->setCurrentIndex(1);
+                                        if (valueStr.contains("最强回波")) setOptionIndex(0);
+                                        else if (valueStr.contains("第一回波")) setOptionIndex(1);
                                     }
 
-                                    // 恢复信号连接
-                                    combo->blockSignals(false);
+                                    ParameterOptionButtons::setSignalsBlocked(control, false);
                                 } else if (QCheckBox* checkBox = qobject_cast<QCheckBox*>(control)) {
                                     // 只更新复选框控件（FOV使能）
                                     // 暂时断开信号连接

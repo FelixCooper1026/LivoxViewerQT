@@ -132,6 +132,7 @@ private:
     void showTimeSyncDialog();
     void showPointCloudCaptureDialog();
     void showImuCaptureDialog();
+    void showParameterCaptureDialog();
     void showDebugCaptureDialog();
     void createDeviceActions();
     void createHelpActions();
@@ -180,10 +181,12 @@ private:
     void handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs);
     bool startPointCloudCapture(PointCloudCaptureFormat format, const QString& baseDir, int captureAmount, QString& errorMessage);
     bool startImuCapture(const QString& baseDir, int durationSec, QString& errorMessage);
+    bool startParameterCapture(const QString& baseDir, int durationSec, QString& errorMessage);
     bool startLogCapture(int durationSec, QString& errorMessage);
     bool startDebugPointCloudCapture(int durationSec, QString& errorMessage);
     void stopPointCloudCapture();
     void stopImuCapture();
+    void stopParameterCapture();
     void stopLogCapture();
     void stopDebugPointCloudCapture();
     QString debugLogOutputDir() const;
@@ -299,6 +302,7 @@ private:
     CaptureSessionState captureState;
     QPointer<QDialog> pointCloudCaptureDialog;
     QPointer<QDialog> imuCaptureDialog;
+    QPointer<QDialog> parameterCaptureDialog;
     QPointer<QDialog> debugCaptureDialog;
     // 多设备升级进度跟踪
     QMap<uint32_t, int> upgradeProgressMap;
@@ -482,8 +486,6 @@ private slots:
     void onSerialEnableToggled(bool enabled);
     void onMeasurementUpdated();
     void onActionShowImuCharts();
-    void onRecordParamsClicked();
-    void stopRecordParams(); // 辅助函数
     void onLvx2PlaybackTick();
     void onLvx2PlaybackSliderMoved(int value);
     void onLvx2PlaybackFileDropped(const QString& filePath);
