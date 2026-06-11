@@ -55,6 +55,19 @@ void clearLayoutItems(QLayout* layout)
     }
 }
 
+QString realtimeDeviceCardSignature(const LidarDeviceInfo& device, bool active)
+{
+    return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+        .arg(device.handle)
+        .arg(active ? 1 : 0)
+        .arg(device.product_info,
+             device.sn,
+             device.lidar_ip,
+             device.work_state,
+             device.diagnostic_summary)
+        .arg(device.diagnostic_severity);
+}
+
 class RealtimeDeviceCard : public QFrame
 {
 public:
@@ -219,6 +232,17 @@ void LivoxViewerWindow::rebuildRealtimeDeviceCards()
             devices.append(device);
         }
     }
+
+    QStringList signature;
+    signature.reserve(devices.size());
+    for (const LidarDeviceInfo& device : devices) {
+        const bool active = hasCurrentLidarHandle && currentLidarHandle == device.handle;
+        signature.append(realtimeDeviceCardSignature(device, active));
+    }
+    if (realtimeDeviceListWidget->property("realtimeDeviceCardSignature").toStringList() == signature) {
+        return;
+    }
+    realtimeDeviceListWidget->setProperty("realtimeDeviceCardSignature", signature);
 
     QVBoxLayout* deviceListLayout = qobject_cast<QVBoxLayout*>(realtimeDeviceListWidget->layout());
     clearLayoutItems(deviceListLayout);

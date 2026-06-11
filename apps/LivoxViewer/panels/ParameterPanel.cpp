@@ -2,16 +2,22 @@
 #include "AppConfig/NetworkInterfaceService.h"
 #include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
+#include <QAbstractSpinBox>
 #include <QButtonGroup>
 #include <QHeaderView>
 #include <QSizePolicy>
-#include <QStringList>
 #include <QTableView>
 #include <QToolButton>
 
 namespace {
 
-QWidget* createParameterOptionButtons(const QStringList& options, int currentIndex, QWidget* parent)
+struct ParameterOption
+{
+    QString text;
+    int id;
+};
+
+QWidget* createParameterOptionButtons(const QVector<ParameterOption>& options, int currentIndex, QWidget* parent)
 {
     QWidget* container = new QWidget(parent);
     container->setProperty(ParameterOptionButtons::kControlProperty, true);
@@ -29,12 +35,12 @@ QWidget* createParameterOptionButtons(const QStringList& options, int currentInd
     const int columnCount = options.size() > 2 ? 2 : options.size();
     for (int i = 0; i < options.size(); ++i) {
         QToolButton* button = new QToolButton(container);
-        button->setText(options.at(i));
+        button->setText(options.at(i).text);
         button->setToolButtonStyle(Qt::ToolButtonTextOnly);
         button->setCheckable(true);
         button->setCursor(Qt::PointingHandCursor);
         button->setMinimumHeight(30);
-        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(options.at(i)) + 22);
+        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(options.at(i).text) + 22);
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         button->setStyleSheet(
             "QToolButton {"
@@ -71,7 +77,7 @@ QWidget* createParameterOptionButtons(const QStringList& options, int currentInd
             "}"
         );
 
-        group->addButton(button, i);
+        group->addButton(button, options.at(i).id);
         layout->addWidget(button, i / columnCount, i % columnCount);
     }
 
@@ -140,6 +146,30 @@ QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidge
     return section;
 }
 
+QFrame* createConfigPanelSection(const QString& title, QWidget* content, QWidget* parent)
+{
+    QFrame* section = new QFrame(parent);
+    section->setObjectName("ConfigPanelSection");
+    section->setFrameShape(QFrame::StyledPanel);
+    section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    section->setStyleSheet("QFrame#ConfigPanelSection { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+    QVBoxLayout* layout = new QVBoxLayout(section);
+    layout->setContentsMargins(8, 6, 8, 8);
+    layout->setSpacing(6);
+
+    QLabel* titleLabel = new QLabel(title, section);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    layout->addWidget(titleLabel);
+
+    content->setParent(section);
+    content->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    layout->addWidget(content);
+    return section;
+}
+
 } // namespace
 
 void LivoxViewerWindow::createParameterPanel()
@@ -203,7 +233,7 @@ void LivoxViewerWindow::createParameterPanel()
 
     auto addBasicOptionRow = [this, basicLayout, basicTab](const QString& title,
                                                            uint16_t key,
-                                                           const QStringList& options,
+                                                           const QVector<ParameterOption>& options,
                                                            int currentIndex) {
         QWidget* optionButtons = createParameterOptionButtons(options, currentIndex, basicTab);
         basicLayout->addWidget(createBasicConfigSection(title, optionButtons, basicTab));
@@ -215,15 +245,15 @@ void LivoxViewerWindow::createParameterPanel()
         });
     };
 
-    addBasicOptionRow("工作模式", kKeyWorkMode, {"采样模式", "待机模式"}, 0);
-    addBasicOptionRow("扫描模式", kKeyPatternMode, {"非重复扫描", "重复扫描", "低帧率重复扫描"}, 0);
-    addBasicOptionRow("点云格式", kKeyPclDataType, {"高精度直角", "低精度直角", "球坐标"}, 0);
-    addBasicOptionRow("探测模式", kKeyDetectMode, {"正常模式", "敏感模式"}, 0);
-    addBasicOptionRow("IMU数据发送", kKeyImuDataEn, {"关闭", "开启"}, 0);
-    addBasicOptionRow("电机转速", kKeySetEscMode, {"正常转速", "低转速"}, 0);
-    addBasicOptionRow("异常时间过滤", kKeySetPpsSyncMode, {"关闭", "开启"}, 0);
-    addBasicOptionRow("FOV模式", kKeySetFovMode, {"Focus", "Normal"}, 1);
-    addBasicOptionRow("回波模式", kKeySetEchoMode, {"最强回波", "第一回波"}, 0);
+    addBasicOptionRow("工作模式", kKeyWorkMode, {{"采样模式", 0}, {"待机模式", 1}}, 0);
+    addBasicOptionRow("扫描模式", kKeyPatternMode, {{"非重复扫描", 0}, {"重复扫描", 1}, {"低帧率重复扫描", 2}}, 0);
+    addBasicOptionRow("点云格式", kKeyPclDataType, {{"高精度直角", 0}, {"低精度直角", 1}, {"球坐标", 2}}, 0);
+    addBasicOptionRow("探测模式", kKeyDetectMode, {{"正常模式", 0}, {"敏感模式", 1}}, 0);
+    addBasicOptionRow("IMU数据发送", kKeyImuDataEn, {{"开启", 1}, {"关闭", 0}}, 0);
+    addBasicOptionRow("电机转速", kKeySetEscMode, {{"正常转速", 0}, {"低转速", 1}}, 0);
+    addBasicOptionRow("异常时间过滤", kKeySetPpsSyncMode, {{"开启", 1}, {"关闭", 0}}, 0);
+    addBasicOptionRow("FOV模式", kKeySetFovMode, {{"Normal", 1}, {"Focus", 0}}, 1);
+    addBasicOptionRow("回波模式", kKeySetEchoMode, {{"最强回波", 0}, {"第一回波", 1}}, 0);
     basicLayout->addStretch();
 
     paramTabWidget->addTab(basicTab, "基本配置");
@@ -233,8 +263,8 @@ void LivoxViewerWindow::createParameterPanel()
     networkTab->setMinimumWidth(0);
     networkTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     QVBoxLayout* networkLayout = new QVBoxLayout(networkTab);
-    networkLayout->setSpacing(10);
-    networkLayout->setContentsMargins(10, 10, 10, 10);
+    networkLayout->setSpacing(6);
+    networkLayout->setContentsMargins(8, 8, 8, 8);
 
     auto configureIpEdit = [](QLineEdit* edit) {
         edit->setMinimumWidth(0);
@@ -247,12 +277,12 @@ void LivoxViewerWindow::createParameterPanel()
         button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     };
 
-    QGroupBox* lidarIpContainer = new QGroupBox("雷达设备网络", networkTab);
+    QWidget* lidarIpContainer = new QWidget(networkTab);
     lidarIpContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     QGridLayout* lidarGrid = new QGridLayout(lidarIpContainer);
-    lidarGrid->setContentsMargins(10, 14, 10, 10);
-    lidarGrid->setHorizontalSpacing(8);
-    lidarGrid->setVerticalSpacing(7);
+    lidarGrid->setContentsMargins(0, 0, 0, 0);
+    lidarGrid->setHorizontalSpacing(6);
+    lidarGrid->setVerticalSpacing(5);
     lidarGrid->setColumnStretch(1, 1);
 
     QLineEdit* lidarIpEdit = new QLineEdit(lidarIpContainer);
@@ -274,34 +304,23 @@ void LivoxViewerWindow::createParameterPanel()
     lidarGrid->addWidget(new QLabel("网关", lidarIpContainer), 2, 0);
     lidarGrid->addWidget(lidarGatewayEdit, 2, 1);
     lidarGrid->addWidget(lidarIpButton, 3, 1, Qt::AlignRight);
-    networkLayout->addWidget(lidarIpContainer);
+    networkLayout->addWidget(createConfigPanelSection("雷达设备网络", lidarIpContainer, networkTab));
     parameterState.controls[kKeyLidarIpCfg] = lidarIpContainer;
     connect(lidarIpButton, &QPushButton::clicked, [this, lidarIpEdit, lidarMaskEdit, lidarGatewayEdit]() { applyIpConfig(kKeyLidarIpCfg, lidarIpEdit->text(), lidarMaskEdit->text(), lidarGatewayEdit->text()); });
 
-    QGroupBox* targetGroup = new QGroupBox(networkTab);
+    QWidget* targetGroup = new QWidget(networkTab);
     targetGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     QGridLayout* targetLayout = new QGridLayout(targetGroup);
-    targetLayout->setContentsMargins(10, 10, 10, 10);
+    targetLayout->setContentsMargins(0, 0, 0, 0);
     targetLayout->setHorizontalSpacing(6);
-    targetLayout->setVerticalSpacing(6);
+    targetLayout->setVerticalSpacing(5);
     targetLayout->setColumnStretch(0, 1);
 
     QVector<QLineEdit*> targetIpEdits;
-    QWidget* targetHeader = new QWidget(targetGroup);
-    QHBoxLayout* targetHeaderLayout = new QHBoxLayout(targetHeader);
-    targetHeaderLayout->setContentsMargins(0, 0, 0, 0);
-    targetHeaderLayout->setSpacing(8);
-    QLabel* targetTitle = new QLabel("数据发送目标", targetHeader);
-    QFont targetTitleFont = targetTitle->font();
-    targetTitleFont.setBold(true);
-    targetTitle->setFont(targetTitleFont);
-    QPushButton* syncTargetIpButton = new QPushButton("同步目标 IP", targetHeader);
+    QPushButton* syncTargetIpButton = new QPushButton("同步目标 IP", targetGroup);
     syncTargetIpButton->setToolTip("将点云数据、IMU数据和推送信息的目标 IP 同步为当前选择网卡的主机 IP");
     syncTargetIpButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    targetHeaderLayout->addWidget(targetTitle);
-    targetHeaderLayout->addStretch();
-    targetHeaderLayout->addWidget(syncTargetIpButton);
-    targetLayout->addWidget(targetHeader, 0, 0, 1, 4);
+    targetLayout->addWidget(syncTargetIpButton, 0, 0, 1, 4, Qt::AlignRight);
 
     int targetRowIndex = 1;
     auto createTargetRow = [&](const QString& title, uint16_t key, int defaultPort, const QString& tooltip) {
@@ -314,6 +333,7 @@ void LivoxViewerWindow::createParameterPanel()
         ipEdit->setObjectName(QString("targetIpEdit_%1").arg(key));
         ipEdit->setToolTip(tooltip);
         configureIpEdit(ipEdit);
+        ipEdit->setMinimumWidth(fontMetrics().horizontalAdvance("255.255.255.255") + 8);
         targetIpEdits.append(ipEdit);
         QSpinBox* portEdit = new QSpinBox(targetGroup);
         portEdit->setObjectName(QString("targetPortSpin_%1").arg(key));
@@ -364,14 +384,14 @@ void LivoxViewerWindow::createParameterPanel()
         statusLabelBar->setText(QString("目标 IP 已同步为 %1").arg(hostIp));
         logMessage(QString("数据发送目标 IP 已同步为当前主机 IP: %1").arg(hostIp));
     });
-    networkLayout->addWidget(targetGroup);
+    networkLayout->addWidget(createConfigPanelSection("数据发送目标", targetGroup, networkTab));
 
-    QGroupBox* ntpGroup = new QGroupBox("NTP 服务器", networkTab);
+    QWidget* ntpGroup = new QWidget(networkTab);
     ntpGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     QGridLayout* ntpLayout = new QGridLayout(ntpGroup);
-    ntpLayout->setContentsMargins(10, 14, 10, 10);
-    ntpLayout->setHorizontalSpacing(8);
-    ntpLayout->setVerticalSpacing(7);
+    ntpLayout->setContentsMargins(0, 0, 0, 0);
+    ntpLayout->setHorizontalSpacing(6);
+    ntpLayout->setVerticalSpacing(5);
     ntpLayout->setColumnStretch(1, 1);
 
     QLineEdit* ntpIpEdit = new QLineEdit(ntpGroup);
@@ -384,7 +404,7 @@ void LivoxViewerWindow::createParameterPanel()
     ntpLayout->addWidget(new QLabel("服务器 IP", ntpGroup), 0, 0);
     ntpLayout->addWidget(ntpIpEdit, 0, 1);
     ntpLayout->addWidget(ntpApplyButton, 0, 2);
-    networkLayout->addWidget(ntpGroup);
+    networkLayout->addWidget(createConfigPanelSection("NTP 服务器", ntpGroup, networkTab));
     parameterState.controls[kKeySetNTPServerIp] = ntpGroup;
     connect(ntpApplyButton, &QPushButton::clicked, [this, ntpIpEdit]() { applyNtpServerIpConfig(ntpIpEdit->text()); });
 
@@ -453,15 +473,15 @@ void LivoxViewerWindow::createParameterPanel()
         grid->setContentsMargins(0, 0, 0, 0);
         grid->setHorizontalSpacing(8);
         grid->setVerticalSpacing(6);
-        grid->addWidget(new QLabel("Yaw:", controls), 0, 0);
+        grid->addWidget(new QLabel("水平", controls), 0, 0);
         grid->addWidget(yawStart, 0, 1);
         grid->addWidget(new QLabel("~", controls), 0, 2, Qt::AlignCenter);
         grid->addWidget(yawStop, 0, 3);
-        grid->addWidget(new QLabel("Pitch:", controls), 1, 0);
+        grid->addWidget(new QLabel("垂直", controls), 1, 0);
         grid->addWidget(pitchStart, 1, 1);
         grid->addWidget(new QLabel("~", controls), 1, 2, Qt::AlignCenter);
         grid->addWidget(pitchStop, 1, 3);
-        grid->addWidget(applyButton, 0, 4, 2, 1, Qt::AlignVCenter);
+        grid->addWidget(applyButton, 2, 0, 1, 4, Qt::AlignRight);
         grid->setColumnStretch(1, 1);
         grid->setColumnStretch(3, 1);
         sectionLayout->addWidget(controls);
@@ -498,20 +518,6 @@ void LivoxViewerWindow::createParameterPanel()
     parameterState.controls[kKeyFovCfg1] = fov1Container;
     connect(fov1Button, &QPushButton::clicked, [this, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit]() { applyFovConfig(kKeyFovCfg1, fov1YawStartEdit->value(), fov1YawStopEdit->value(), fov1PitchStartEdit->value(), fov1PitchStopEdit->value()); });
 
-    fovLayout->addStretch();
-    paramTabWidget->addTab(fovTab, "FOV配置");
-
-    // 外参配置页
-    QWidget* attitudeTab = new QWidget();
-    attitudeTab->setMinimumWidth(0);
-    attitudeTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    QFormLayout* attitudeLayout = new QFormLayout(attitudeTab);
-    attitudeLayout->setSpacing(8);
-    attitudeLayout->setContentsMargins(10, 10, 10, 10);
-    attitudeLayout->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-    attitudeLayout->setRowWrapPolicy(QFormLayout::WrapAllRows);
-    attitudeLayout->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    attitudeLayout->setFormAlignment(Qt::AlignTop);
     QDoubleSpinBox* rollEdit = new QDoubleSpinBox();
     QDoubleSpinBox* pitchEdit = new QDoubleSpinBox();
     QDoubleSpinBox* yawEdit = new QDoubleSpinBox();
@@ -525,25 +531,46 @@ void LivoxViewerWindow::createParameterPanel()
     xEdit->setRange(-10000, 10000);
     yEdit->setRange(-10000, 10000);
     zEdit->setRange(-10000, 10000);
-    // 安装姿态：每项占一行
-    attitudeLayout->addRow("Roll:", rollEdit);
-    attitudeLayout->addRow("Pitch:", pitchEdit);
-    attitudeLayout->addRow("Yaw:", yawEdit);
-    attitudeLayout->addRow("X:", xEdit);
-    attitudeLayout->addRow("Y:", yEdit);
-    attitudeLayout->addRow("Z:", zEdit);
-    {
-        QWidget* applyRow = new QWidget();
-        QHBoxLayout* applyLayout = new QHBoxLayout(applyRow);
-        applyLayout->setContentsMargins(0,0,0,0);
-        applyLayout->addStretch();
-        applyLayout->addWidget(attitudeButton);
-        attitudeLayout->addRow(QString(), applyRow);
-    }
-    parameterState.controls[kKeyInstallAttitude] = attitudeTab;
+
+    auto configureAttitudeSpin = [](QAbstractSpinBox* spin) {
+        spin->setMinimumWidth(76);
+        spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    };
+    configureAttitudeSpin(rollEdit);
+    configureAttitudeSpin(pitchEdit);
+    configureAttitudeSpin(yawEdit);
+    configureAttitudeSpin(xEdit);
+    configureAttitudeSpin(yEdit);
+    configureAttitudeSpin(zEdit);
+
+    QWidget* attitudeContent = new QWidget(fovTab);
+    QGridLayout* attitudeGrid = new QGridLayout(attitudeContent);
+    attitudeGrid->setContentsMargins(0, 0, 0, 0);
+    attitudeGrid->setHorizontalSpacing(8);
+    attitudeGrid->setVerticalSpacing(5);
+    attitudeGrid->addWidget(new QLabel("Roll", attitudeContent), 0, 0);
+    attitudeGrid->addWidget(new QLabel("Pitch", attitudeContent), 0, 1);
+    attitudeGrid->addWidget(new QLabel("Yaw", attitudeContent), 0, 2);
+    attitudeGrid->addWidget(rollEdit, 1, 0);
+    attitudeGrid->addWidget(pitchEdit, 1, 1);
+    attitudeGrid->addWidget(yawEdit, 1, 2);
+    attitudeGrid->addWidget(new QLabel("X", attitudeContent), 2, 0);
+    attitudeGrid->addWidget(new QLabel("Y", attitudeContent), 2, 1);
+    attitudeGrid->addWidget(new QLabel("Z", attitudeContent), 2, 2);
+    attitudeGrid->addWidget(xEdit, 3, 0);
+    attitudeGrid->addWidget(yEdit, 3, 1);
+    attitudeGrid->addWidget(zEdit, 3, 2);
+    attitudeGrid->addWidget(attitudeButton, 4, 0, 1, 3, Qt::AlignRight);
+    attitudeGrid->setColumnStretch(0, 1);
+    attitudeGrid->setColumnStretch(1, 1);
+    attitudeGrid->setColumnStretch(2, 1);
+
+    QFrame* attitudeSection = createConfigPanelSection("安装姿态", attitudeContent, fovTab);
+    fovLayout->addWidget(attitudeSection);
+    fovLayout->addStretch();
+    parameterState.controls[kKeyInstallAttitude] = attitudeSection;
     connect(attitudeButton, &QPushButton::clicked, [this, rollEdit, pitchEdit, yawEdit, xEdit, yEdit, zEdit]() { applyAttitudeConfig(kKeyInstallAttitude, rollEdit->value(), pitchEdit->value(), yawEdit->value(), xEdit->value(), yEdit->value(), zEdit->value()); });
-    paramTabWidget->addTab(attitudeTab, "外参配置");
-    attitudeTab->setLayout(attitudeLayout);
+    paramTabWidget->addTab(fovTab, "其他配置");
 
     // 状态信息页
     QWidget* statusTab = new QWidget();

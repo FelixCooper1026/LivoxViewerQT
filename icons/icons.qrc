@@ -9,6 +9,8 @@
     <file>integration_time.svg</file>
     <file>pixel_size.svg</file>
     <file>paint_bucket.svg</file>
+    <file>projection_spherical.svg</file>
+    <file>projection_planar.svg</file>
     <file>projection_perspective.svg</file>
     <file>projection_orthographic.svg</file>
     <file>view_top.svg</file>

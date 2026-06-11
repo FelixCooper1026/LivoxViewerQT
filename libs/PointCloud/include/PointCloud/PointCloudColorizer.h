@@ -22,7 +22,6 @@ struct Config {
     float distanceColorMax = 100.0f;
     float elevationColorMin = -5.0f;
     float elevationColorMax = 5.0f;
-    float planarProjectionRadius = 10.0f;
 };
 
 PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& config);

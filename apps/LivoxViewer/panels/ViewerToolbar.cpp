@@ -701,10 +701,13 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 
     ToolbarGroup* transformGroup = new ToolbarGroup("点云变换", viewerToolbar);
     projectionControlsGroup = transformGroup;
-    projectionDepthCheck = new QCheckBox("球面投影", transformGroup);
-    projectionDepthCheck->setChecked(projectionDepthEnabled);
-    projectionDepthCheck->setToolTip("启用后按固定距离对深度进行投影，仅在球坐标点云时生效");
-    connect(projectionDepthCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onProjectionDepthToggled);
+    QAction* projectionDepthAction = new QAction(QIcon(":/icons/projection_spherical.svg"), "球面投影", this);
+    ThemeIconUtils::setThemedSvgIcon(projectionDepthAction, QStringLiteral(":/icons/projection_spherical.svg"));
+    projectionDepthAction->setCheckable(true);
+    projectionDepthAction->setChecked(projectionDepthEnabled);
+    projectionDepthAction->setToolTip("启用后按固定距离对深度进行投影，仅在球坐标点云时生效");
+    connect(projectionDepthAction, &QAction::toggled, this, &LivoxViewerWindow::onProjectionDepthToggled);
+    projectionDepthCheck = createIconButton(projectionDepthAction, transformGroup, toolbarIconSize);
     transformGroup->addPrimaryWidget(projectionDepthCheck);
 
     projectionDepthSpin = new QDoubleSpinBox(transformGroup);
@@ -718,10 +721,13 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QWidget* depthRow = createLabeledWidget("深度:", projectionDepthSpin, transformGroup);
     transformGroup->addSecondaryWidget(depthRow);
 
-    planarProjectionCheck = new QCheckBox("平面投影", transformGroup);
-    planarProjectionCheck->setChecked(planarProjectionEnabled);
-    planarProjectionCheck->setToolTip("启用平面投影模式，将半球面展开为平面图");
-    connect(planarProjectionCheck, &QCheckBox::toggled, this, &LivoxViewerWindow::onPlanarProjectionToggled);
+    QAction* planarProjectionAction = new QAction(QIcon(":/icons/projection_planar.svg"), "平面投影", this);
+    ThemeIconUtils::setThemedSvgIcon(planarProjectionAction, QStringLiteral(":/icons/projection_planar.svg"));
+    planarProjectionAction->setCheckable(true);
+    planarProjectionAction->setChecked(planarProjectionEnabled);
+    planarProjectionAction->setToolTip("启用平面投影模式，将半球面展开为平面图");
+    connect(planarProjectionAction, &QAction::toggled, this, &LivoxViewerWindow::onPlanarProjectionToggled);
+    planarProjectionCheck = createIconButton(planarProjectionAction, transformGroup, toolbarIconSize);
     transformGroup->addPrimaryWidget(planarProjectionCheck);
 
     planarRadiusSpin = new QDoubleSpinBox(transformGroup);
@@ -735,23 +741,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QWidget* radiusRow = createLabeledWidget("半径:", planarRadiusSpin, transformGroup);
     transformGroup->addSecondaryWidget(radiusRow);
 
-    QAction* projectionDepthAction = transformGroup->moreMenu()->addAction("球面投影");
-    projectionDepthAction->setCheckable(true);
-    projectionDepthAction->setChecked(projectionDepthEnabled);
-    connect(projectionDepthAction, &QAction::toggled, projectionDepthCheck, &QCheckBox::setChecked);
-    connect(projectionDepthCheck, &QCheckBox::toggled, projectionDepthAction, [projectionDepthAction](bool checked) {
-        QSignalBlocker blocker(projectionDepthAction);
-        projectionDepthAction->setChecked(checked);
-    });
+    transformGroup->moreMenu()->addAction(projectionDepthAction);
     addWidgetAction(transformGroup->moreMenu(), "投影深度", cloneDoubleSpinBox(projectionDepthSpin, transformGroup->moreMenu()));
-    QAction* planarProjectionAction = transformGroup->moreMenu()->addAction("平面投影");
-    planarProjectionAction->setCheckable(true);
-    planarProjectionAction->setChecked(planarProjectionEnabled);
-    connect(planarProjectionAction, &QAction::toggled, planarProjectionCheck, &QCheckBox::setChecked);
-    connect(planarProjectionCheck, &QCheckBox::toggled, planarProjectionAction, [planarProjectionAction](bool checked) {
-        QSignalBlocker blocker(planarProjectionAction);
-        planarProjectionAction->setChecked(checked);
-    });
+    transformGroup->moreMenu()->addAction(planarProjectionAction);
     addWidgetAction(transformGroup->moreMenu(), "投影半径", cloneDoubleSpinBox(planarRadiusSpin, transformGroup->moreMenu()));
     transformGroup->setVisible(false);
 

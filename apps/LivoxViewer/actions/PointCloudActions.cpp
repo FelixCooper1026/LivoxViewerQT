@@ -55,9 +55,6 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
 void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;
-    if (colorModeCombo) {
-        colorModeCombo->setEnabled(!planarProjectionEnabled);
-    }
     updatePointCloudLegend();
     if (playbackState.active && playbackState.frame >= 0) {
         showLvx2PlaybackFrame(playbackState.frame);
@@ -66,7 +63,7 @@ void LivoxViewerWindow::onColorModeClicked(int index)
 
 int LivoxViewerWindow::effectiveColorMode() const
 {
-    return planarProjectionEnabled ? ColorByPlanarProjection : colorMode;
+    return colorMode;
 }
 
 void LivoxViewerWindow::updatePointCloudLegend()
@@ -91,8 +88,6 @@ void LivoxViewerWindow::updatePointCloudLegend()
             lineNumbers.append(i);
         }
         pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, true, lineColors, lineNumbers);
-    } else if (mode == ColorByPlanarProjection) {
-        pointCloudView->setLegend(ColorByPlanarProjection, 0.0f, 1.0f, true);
     }
 }
 
@@ -104,6 +99,9 @@ void LivoxViewerWindow::onProjectionDepthChanged(double meters)
 
 void LivoxViewerWindow::onProjectionDepthToggled(bool enabled)
 {
+    if (enabled && planarProjectionCheck && planarProjectionCheck->defaultAction()) {
+        planarProjectionCheck->defaultAction()->setChecked(false);
+    }
     projectionDepthEnabled = enabled;
     if (projectionDepthSpin) {
         projectionDepthSpin->setEnabled(enabled);
@@ -113,6 +111,9 @@ void LivoxViewerWindow::onProjectionDepthToggled(bool enabled)
 
 void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
 {
+    if (enabled && projectionDepthCheck && projectionDepthCheck->defaultAction()) {
+        projectionDepthCheck->defaultAction()->setChecked(false);
+    }
     planarProjectionEnabled = enabled;
     if (enabled) {
         logMessage("平面投影模式已启用");
@@ -130,9 +131,6 @@ void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
     }
     if (planarRadiusSpin) {
         planarRadiusSpin->setEnabled(enabled);
-    }
-    if (colorModeCombo) {
-        colorModeCombo->setEnabled(!planarProjectionEnabled);
     }
     updatePointCloudLegend();
 }

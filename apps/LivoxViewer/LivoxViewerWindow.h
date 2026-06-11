@@ -46,6 +46,7 @@
 #include <QQuaternion>
 #include <QDockWidget>
 #include <QToolBar>
+#include <QToolButton>
 #include <QSettings>
 #include <QColor>
 #include <QFrame>
@@ -198,8 +199,7 @@ private:
         ColorByDistance = 1,
         ColorByElevation = 2,
         ColorSolid = 3,
-        ColorByLine = 4,
-        ColorByPlanarProjection = 5  // 新增：平面投影模式
+        ColorByLine = 4
     };
 
     enum ThemeMode {
@@ -291,8 +291,8 @@ private:
     QComboBox* colorModeCombo = nullptr;
     QWidget* projectionControlsGroup = nullptr;
     QDoubleSpinBox* projectionDepthSpin = nullptr;
-    QCheckBox* projectionDepthCheck = nullptr;
-    QCheckBox* planarProjectionCheck = nullptr;
+    QToolButton* projectionDepthCheck = nullptr;
+    QToolButton* planarProjectionCheck = nullptr;
     QDoubleSpinBox* planarRadiusSpin = nullptr;
     QTableView* selectionTable = nullptr;
     // 点属性弹窗
