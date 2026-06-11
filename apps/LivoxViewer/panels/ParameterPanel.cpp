@@ -94,7 +94,7 @@ QWidget* createParameterOptionButtons(const QVector<ParameterOption>& options, i
             "}"
             "QToolButton[parameterOptionButtonTheme=\"light\"]:checked:hover {"
             "  background: #d0d0d0;"
-            "  border-color: #606060;"
+            "  border-color: palette(mid);"
             "  color: #202020;"
             "}"
             "QToolButton[parameterOptionButtonTheme=\"light\"]:checked:pressed {"
