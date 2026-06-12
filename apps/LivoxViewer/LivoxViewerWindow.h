@@ -117,6 +117,9 @@ public:
         Error
     };
 
+    QVector<LidarDeviceInfo> connectedLidarDevicesSnapshot();
+    QVector<ImuVisualizationSample> imuVisualizationSamplesSnapshot(uint32_t handle);
+
 private:
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);
@@ -401,7 +404,6 @@ private:
     void scheduleDiscoveryRetry(int delayMs);
     void stopAndDeleteTimer(QTimer*& timer);
     void resetDiscoverySessionState();
-    QVector<LidarDeviceInfo> connectedLidarDevicesSnapshot();
     void rebuildRealtimeDeviceCards();
     QWidget* createRealtimeDeviceCard(const LidarDeviceInfo& device);
     bool createAndBindDiscoverySocket(const NetworkInterfaceService::NetworkInterfaceInfo& iface);

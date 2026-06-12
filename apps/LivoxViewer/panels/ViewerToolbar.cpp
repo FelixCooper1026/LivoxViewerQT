@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 
 #include "ThemeIconUtils.h"
+#include "utils/DeviceModelResource.h"
 #include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
 #include "plugins/StlModel/StlModelLoader.h"
@@ -485,37 +486,6 @@ void addWidgetAction(QMenu* menu, const QString& label, QWidget* widget)
     menu->addAction(action);
 }
 
-QString stlModelKey(QString modelName)
-{
-    modelName = modelName.trimmed();
-    const QString lower = modelName.toLower();
-    if (lower.contains(QStringLiteral("mid360s"))) {
-        return QStringLiteral("Mid360s");
-    }
-    if (lower.contains(QStringLiteral("mid360l"))) {
-        return QStringLiteral("Mid360l");
-    }
-    if (lower.contains(QStringLiteral("mid360"))) {
-        return QStringLiteral("Mid360");
-    }
-    if (lower.contains(QStringLiteral("avia2"))) {
-        return QStringLiteral("Avia2");
-    }
-    if (lower.contains(QStringLiteral("hap"))) {
-        return QStringLiteral("HAP");
-    }
-    if (lower == QStringLiteral("pa") || lower.contains(QStringLiteral("livox pa"))) {
-        return QStringLiteral("PA");
-    }
-    return {};
-}
-
-QString stlModelPathForKey(const QString& modelKey)
-{
-    return QDir(QStringLiteral(LIVOX_VIEWER_SOURCE_DIR))
-        .filePath(QStringLiteral("plugins/StlModel/models/%1.glb").arg(modelKey));
-}
-
 } // namespace
 
 QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
@@ -608,7 +578,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             }
         }
 
-        const QString modelKey = stlModelKey(modelName);
+        const QString modelKey = DeviceModelResource::modelKeyForName(modelName);
         if (modelKey.isEmpty()) {
             QMessageBox::warning(this, "显示GLB模型", QString("没有匹配的设备模型: %1").arg(modelName));
             QSignalBlocker blocker(stlModelAction);
@@ -617,7 +587,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             return;
         }
 
-        const QString filePath = stlModelPathForKey(modelKey);
+        const QString filePath = DeviceModelResource::modelPathForKey(modelKey);
         if (!QFileInfo::exists(filePath)) {
             QMessageBox::warning(this, "显示GLB模型", QString("未找到GLB模型文件: %1").arg(QDir::toNativeSeparators(filePath)));
             QSignalBlocker blocker(stlModelAction);
@@ -637,7 +607,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 return;
             }
 
-            const bool sourceXReversed = modelKey == QStringLiteral("Avia2");
+            const bool sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
             pointCloudView->setStlModelMesh(mesh, sourceXReversed);
             loadedStlModelKey = modelKey;
             statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));

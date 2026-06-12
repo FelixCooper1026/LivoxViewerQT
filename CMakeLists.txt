@@ -163,6 +163,10 @@ set(SOURCES
     apps/LivoxViewer/dialogs/PointCloudFilterDialog.cpp
     apps/LivoxViewer/dialogs/DataCaptureDialogs.cpp
     apps/LivoxViewer/dialogs/ConfigGeneratorDialog.cpp
+    apps/LivoxViewer/dialogs/ImuVisualizationDialog.cpp
+    apps/LivoxViewer/widgets/ImuOrientationView.cpp
+    apps/LivoxViewer/imu/ImuAttitudeEstimator.cpp
+    apps/LivoxViewer/utils/DeviceModelResource.cpp
     apps/LivoxViewer/actions/PlaybackControllerActions.cpp
     apps/LivoxViewer/actions/PcapPlaybackActions.cpp
     apps/LivoxViewer/actions/Lvx2ConvertActions.cpp
@@ -211,6 +215,10 @@ set(SOURCES
      apps/LivoxViewer/state/PointCloudFilterState.h
      apps/LivoxViewer/widgets/ParameterOptionButtons.h
      apps/LivoxViewer/widgets/SwitchCheckBox.h
+     apps/LivoxViewer/widgets/ImuOrientationView.h
+     apps/LivoxViewer/dialogs/ImuVisualizationDialog.h
+     apps/LivoxViewer/imu/ImuAttitudeEstimator.h
+     apps/LivoxViewer/utils/DeviceModelResource.h
      libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
     libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
     libs/LivoxCore/include/LivoxCore/LidarDiagnostics.h

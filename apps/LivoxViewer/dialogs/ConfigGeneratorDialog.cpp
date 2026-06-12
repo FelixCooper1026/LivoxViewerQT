@@ -238,7 +238,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     logPathLayout->setSpacing(10);
     QLabel* lblPath = createConfigGeneratorFieldLabel("日志路径", logPathRow);
     QLineEdit* editPath = new QLineEdit(logPathRow);
-    editPath->setText("./logs");
+    editPath->setText("./");
     QPushButton* browseButton = new QPushButton("浏览...", logPathRow);
     browseButton->setObjectName("ConfigGeneratorSecondaryButton");
     logPathLayout->addWidget(lblPath);
@@ -602,7 +602,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     }
 
     const QString logPath = editPath->text().trimmed().isEmpty()
-        ? QStringLiteral("./logs")
+        ? QStringLiteral("./")
         : editPath->text().trimmed();
     QJsonObject root;
     root.insert("lidar_log_enable", cbLogEnable->isChecked());

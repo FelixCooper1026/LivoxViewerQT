@@ -100,7 +100,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
     connect(playbackState.closeButton, &QPushButton::clicked, [this]() {
         closeLvx2Playback(true);
     });
-    actionShowImuCharts = toolsMenu->addAction("IMU数据绘图");
+    actionShowImuCharts = toolsMenu->addAction("IMU数据可视化");
     connect(actionShowImuCharts, &QAction::triggered, this, &LivoxViewerWindow::onActionShowImuCharts);
 
     // 点云滤波

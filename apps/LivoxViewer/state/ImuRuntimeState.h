@@ -1,15 +1,16 @@
 #ifndef LIVOXVIEWER_IMURUNTIMESTATE_H
 #define LIVOXVIEWER_IMURUNTIMESTATE_H
 
+#include "imu/ImuAttitudeEstimator.h"
+
+#include <QMap>
 #include <QMutex>
+#include <QPointer>
+#include <QQuaternion>
 #include <QVector>
 #include <atomic>
+#include <cstdint>
 #include <thread>
-
-#include <QtCharts/QChart>
-#include <QtCharts/QChartView>
-#include <QtCharts/QLineSeries>
-#include <QtCharts/QValueAxis>
 
 class QCheckBox;
 class QComboBox;
@@ -18,7 +19,7 @@ class QLabel;
 class QProgressBar;
 class QPushButton;
 class QTimer;
-class QWidget;
+class ImuVisualizationDialog;
 
 struct ImuSampleState
 {
@@ -31,7 +32,7 @@ struct ImuSampleState
     bool have = false;
 };
 
-struct ImuChartSample
+struct ImuVisualizationSample
 {
     double timestampSec = 0.0;
     double gx = 0.0;
@@ -40,6 +41,17 @@ struct ImuChartSample
     double ax = 0.0;
     double ay = 0.0;
     double az = 0.0;
+    double rollDeg = 0.0;
+    double pitchDeg = 0.0;
+    double yawDeg = 0.0;
+    QQuaternion orientation;
+};
+
+struct ImuVisualizationDeviceState
+{
+    double timeOriginSec = -1.0;
+    ImuAttitudeEstimator estimator;
+    QVector<ImuVisualizationSample> samples;
 };
 
 struct ImuRuntimeState
@@ -62,37 +74,13 @@ struct ImuRuntimeState
     QLabel* accValY = nullptr;
     QLabel* accValZ = nullptr;
 
-    QChartView* gyroChartView = nullptr;
-    QChart* gyroChart = nullptr;
-    QLineSeries* gyroSeriesX = nullptr;
-    QLineSeries* gyroSeriesY = nullptr;
-    QLineSeries* gyroSeriesZ = nullptr;
-    QValueAxis* gyroAxisX = nullptr;
-    QValueAxis* gyroAxisY = nullptr;
-
-    QChartView* accChartView = nullptr;
-    QChart* accChart = nullptr;
-    QLineSeries* accSeriesX = nullptr;
-    QLineSeries* accSeriesY = nullptr;
-    QLineSeries* accSeriesZ = nullptr;
-    QValueAxis* accAxisX = nullptr;
-    QValueAxis* accAxisY = nullptr;
-
-    QWidget* chartWindow = nullptr;
-    QTimer* chartRefreshTimer = nullptr;
-    QPushButton* chartPauseButton = nullptr;
-    QPushButton* chartClearButton = nullptr;
-    QPushButton* chartResetButton = nullptr;
-    QLabel* chartHoverLabel = nullptr;
-    bool chartPaused = false;
-
     std::atomic_bool displayRunning{false};
     std::thread displayThread;
     QMutex sampleMutex;
     ImuSampleState latestSample;
-    QMutex chartSamplesMutex;
-    QVector<ImuChartSample> chartSamples;
-    double chartTimeOriginSec = -1.0;
+    QPointer<ImuVisualizationDialog> visualizationDialog;
+    QMutex visualizationMutex;
+    QMap<uint32_t, ImuVisualizationDeviceState> visualizationDevices;
 
     QComboBox* serialPortCombo = nullptr;
     QCheckBox* serialEnableCheck = nullptr;

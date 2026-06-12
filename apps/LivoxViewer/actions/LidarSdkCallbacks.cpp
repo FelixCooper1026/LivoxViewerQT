@@ -365,63 +365,64 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                 delete[] reinterpret_cast<uint8_t*>(packet_copy);
                 return;
             }
-            // 仅处理当前选中设备的IMU数据
-            if (!window->hasCurrentLidarHandle || window->currentLidarHandle != handle) {
-                delete[] reinterpret_cast<uint8_t*>(packet_copy);
-                return;
-            }
-            // 限制处理的数据量
-            uint32_t max_points = std::min<uint32_t>(packet_copy->dot_num, 3);
+            // 可视化缓存按设备分组记录所有 IMU 数据，旧 dock/CSV 行为仍限定当前设备。
             
             // 解析IMU数据
             if (packet_copy->data_type == kLivoxLidarImuData && packet_copy->dot_num > 0) {
                 LivoxLidarImuRawPoint* p_imu_data = (LivoxLidarImuRawPoint*)packet_copy->data;
                 const quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                 const double timestampSec = static_cast<double>(ts) * 1.0e-9;
+                const bool isCurrentDevice = window->hasCurrentLidarHandle && window->currentLidarHandle == handle;
                 // 仅存储最新IMU样本，避免阻塞UI
-                LivoxLidarImuRawPoint last = p_imu_data[packet_copy->dot_num - 1];
-                {
-                    QMutexLocker lk(&window->imuState.sampleMutex);
-                    window->imuState.latestSample.gx = last.gyro_x;
-                    window->imuState.latestSample.gy = last.gyro_y;
-                    window->imuState.latestSample.gz = last.gyro_z;
-                    window->imuState.latestSample.ax = last.acc_x;
-                    window->imuState.latestSample.ay = last.acc_y;
-                    window->imuState.latestSample.az = last.acc_z;
-                    window->imuState.latestSample.have = true;
+                if (isCurrentDevice) {
+                    LivoxLidarImuRawPoint last = p_imu_data[packet_copy->dot_num - 1];
+                    {
+                        QMutexLocker lk(&window->imuState.sampleMutex);
+                        window->imuState.latestSample.gx = last.gyro_x;
+                        window->imuState.latestSample.gy = last.gyro_y;
+                        window->imuState.latestSample.gz = last.gyro_z;
+                        window->imuState.latestSample.ax = last.acc_x;
+                        window->imuState.latestSample.ay = last.acc_y;
+                        window->imuState.latestSample.az = last.acc_z;
+                        window->imuState.latestSample.have = true;
+                    }
                 }
                 {
-                    QMutexLocker lk(&window->imuState.chartSamplesMutex);
-                    if (window->imuState.chartTimeOriginSec < 0.0) {
-                        window->imuState.chartTimeOriginSec = timestampSec;
+                    QMutexLocker lk(&window->imuState.visualizationMutex);
+                    ImuVisualizationDeviceState& deviceState = window->imuState.visualizationDevices[handle];
+                    if (deviceState.timeOriginSec < 0.0) {
+                        deviceState.timeOriginSec = timestampSec;
                     }
-                    const double relativeSec = timestampSec - window->imuState.chartTimeOriginSec;
+                    const double relativeSec = timestampSec - deviceState.timeOriginSec;
                     for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
                         const LivoxLidarImuRawPoint& s = p_imu_data[i];
-                        window->imuState.chartSamples.append(ImuChartSample{
+                        const ImuAttitudeEstimator::Result attitude = deviceState.estimator.update(
+                            timestampSec,
+                            s.gyro_x, s.gyro_y, s.gyro_z,
+                            s.acc_x, s.acc_y, s.acc_z);
+                        deviceState.samples.append(ImuVisualizationSample{
                             relativeSec,
                             s.gyro_x, s.gyro_y, s.gyro_z,
-                            s.acc_x, s.acc_y, s.acc_z
+                            s.acc_x, s.acc_y, s.acc_z,
+                            attitude.rollDeg, attitude.pitchDeg, attitude.yawDeg,
+                            attitude.orientation
                         });
                     }
                     int removeCount = 0;
-                    while (removeCount < window->imuState.chartSamples.size() &&
-                           relativeSec - window->imuState.chartSamples[removeCount].timestampSec > kImuChartRetentionSec) {
+                    while (removeCount < deviceState.samples.size() &&
+                           relativeSec - deviceState.samples[removeCount].timestampSec > kImuChartRetentionSec) {
                         ++removeCount;
                     }
                     if (removeCount > 0) {
-                        window->imuState.chartSamples.remove(0, removeCount);
+                        deviceState.samples.remove(0, removeCount);
                     }
                 }
                 // 若正在保存IMU数据，将包内样本写入CSV
-                if (window->captureState.imuSaveActive) {
+                if (isCurrentDevice && window->captureState.imuSaveActive) {
                     for (uint32_t i = 0; i < packet_copy->dot_num; ++i) {
                         const LivoxLidarImuRawPoint& s = p_imu_data[i];
                         window->appendImuCsvRow(ts, s.gyro_x, s.gyro_y, s.gyro_z, s.acc_x, s.acc_y, s.acc_z);
                     }
-                }
-                if (packet_copy->dot_num > max_points) {
-                    // logMessage(QString("设备%1 还有 %2 个IMU点未显示...").arg(handle).arg(packet_copy->dot_num - max_points));
                 }
                 
 
