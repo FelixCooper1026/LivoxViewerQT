@@ -162,6 +162,7 @@ set(SOURCES
     apps/LivoxViewer/dialogs/FirmwareUpgradeDialog.cpp
     apps/LivoxViewer/dialogs/PointCloudFilterDialog.cpp
     apps/LivoxViewer/dialogs/DataCaptureDialogs.cpp
+    apps/LivoxViewer/dialogs/ConfigGeneratorDialog.cpp
     apps/LivoxViewer/actions/PlaybackControllerActions.cpp
     apps/LivoxViewer/actions/PcapPlaybackActions.cpp
     apps/LivoxViewer/actions/Lvx2ConvertActions.cpp
