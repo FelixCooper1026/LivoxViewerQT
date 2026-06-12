@@ -43,6 +43,7 @@ namespace {
 constexpr int kDockStateVersion = 2;
 constexpr int kPreferenceControlColumnWidth = 115;
 constexpr int kPreferenceSpinBoxWidth = 100;
+constexpr int kPreferenceFontPointIncrease = 1;
 
 void setPreferenceFont(QWidget* widget, int pointSize, QFont::Weight weight)
 {
@@ -50,9 +51,15 @@ void setPreferenceFont(QWidget* widget, int pointSize, QFont::Weight weight)
 #ifdef Q_OS_WIN
     font.setFamily(QStringLiteral("Microsoft YaHei UI"));
 #endif
-    font.setPointSize(pointSize);
+    font.setPointSize(pointSize + kPreferenceFontPointIncrease);
     font.setWeight(weight);
-    font.setStyleStrategy(QFont::PreferAntialias);
+    widget->setFont(font);
+}
+
+void increasePreferenceBaseFont(QWidget* widget)
+{
+    QFont font = widget->font();
+    font.setPointSize(font.pointSize() + kPreferenceFontPointIncrease);
     widget->setFont(font);
 }
 
@@ -339,7 +346,7 @@ QFrame* createPreferenceSection(QWidget* parent)
 void addPreferenceSectionTitle(QVBoxLayout* pageLayout, const QString& title)
 {
     QLabel* label = new QLabel(title, pageLayout->parentWidget());
-    setPreferenceFont(label, 10, QFont::DemiBold);
+    setPreferenceFont(label, 10, QFont::Medium);
     pageLayout->addWidget(label);
 }
 
@@ -365,7 +372,7 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
     textLayout->setSpacing(4);
 
     QLabel* titleLabel = new QLabel(title, row);
-    setPreferenceFont(titleLabel, 9, QFont::DemiBold);
+    setPreferenceFont(titleLabel, 9, QFont::Medium);
     textLayout->addWidget(titleLabel);
     if (!description.isEmpty()) {
         textLayout->addWidget(createPreferenceDescription(description, row));
@@ -672,6 +679,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QDialog dlg(this);
     dlg.setWindowTitle("首选项");
     dlg.resize(760, 520);
+    increasePreferenceBaseFont(&dlg);
     const int originalThemeMode = themeMode;
 
     PointCloudView::GridConfig config = pointCloudView->gridConfig();
@@ -723,7 +731,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         pageLayout->setSpacing(12);
 
         QLabel* titleLabel = new QLabel(title, page);
-        setPreferenceFont(titleLabel, 13, QFont::Bold);
+        setPreferenceFont(titleLabel, 13, QFont::DemiBold);
         pageLayout->addWidget(titleLabel);
         pageLayout->addWidget(createPreferenceDescription(description, page));
         scrollArea->setWidget(page);
