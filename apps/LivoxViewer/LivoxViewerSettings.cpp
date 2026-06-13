@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
+#include "dialogs/ImuVisualizationDialog.h"
 #include "widgets/SwitchCheckBox.h"
 
 #include <QAbstractButton>
@@ -44,6 +45,7 @@ constexpr int kDockStateVersion = 2;
 constexpr int kPreferenceControlColumnWidth = 115;
 constexpr int kPreferenceSpinBoxWidth = 100;
 constexpr int kPreferenceFontPointIncrease = 1;
+constexpr int kPreferenceNavIconTextSpacingChars = 2;
 
 void setPreferenceFont(QWidget* widget, int pointSize, QFont::Weight weight)
 {
@@ -398,7 +400,7 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
 
 QPushButton* createPreferenceNavButton(const QString& text, const QString& iconPath, QWidget* parent)
 {
-    QPushButton* button = new QPushButton(text, parent);
+    QPushButton* button = new QPushButton(QString(kPreferenceNavIconTextSpacingChars, QLatin1Char(' ')) + text, parent);
     button->setCheckable(true);
     button->setMinimumHeight(44);
     button->setCursor(Qt::PointingHandCursor);
@@ -594,6 +596,9 @@ void LivoxViewerWindow::applyUiTheme()
     app->setStyleSheet(darkTheme ? darkThemeControlStyleSheet() : QString());
     ThemeIconUtils::refreshObject(this);
     refreshApplicationStyles();
+    if (imuState.visualizationDialog) {
+        imuState.visualizationDialog->refreshTheme();
+    }
 }
 
 void LivoxViewerWindow::loadViewPreferences()

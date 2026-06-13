@@ -5,6 +5,7 @@
 
 #include <QDialog>
 #include <QMap>
+#include <QPoint>
 
 #include <QtCharts/QChart>
 #include <QtCharts/QChartView>
@@ -14,6 +15,8 @@
 #include <cstdint>
 
 class ImuOrientationView;
+class QGraphicsEllipseItem;
+class QGraphicsLineItem;
 class QLabel;
 class QEvent;
 class LivoxViewerWindow;
@@ -26,23 +29,39 @@ class ImuVisualizationDialog : public QDialog
 {
 public:
     explicit ImuVisualizationDialog(LivoxViewerWindow* owner);
+    void refreshTheme();
 
 protected:
     void changeEvent(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     struct ChartPanel {
         QWidget* panel = nullptr;
+        QWidget* emptyOverlay = nullptr;
+        QLabel* emptyIcon = nullptr;
         QLabel* emptyLabel = nullptr;
         QChart* chart = nullptr;
         QChartView* view = nullptr;
         QLineSeries* seriesX = nullptr;
         QLineSeries* seriesY = nullptr;
         QLineSeries* seriesZ = nullptr;
+        QGraphicsLineItem* hoverLine = nullptr;
+        QGraphicsEllipseItem* hoverPointX = nullptr;
+        QGraphicsEllipseItem* hoverPointY = nullptr;
+        QGraphicsEllipseItem* hoverPointZ = nullptr;
+        QLabel* hoverLabel = nullptr;
         QValueAxis* axisX = nullptr;
         QValueAxis* axisY = nullptr;
+        QVector<ImuVisualizationSample> hoverSamples;
+        double ImuVisualizationSample::*hoverXField = nullptr;
+        double ImuVisualizationSample::*hoverYField = nullptr;
+        double ImuVisualizationSample::*hoverZField = nullptr;
+        QString hoverUnit;
+        QPoint hoverMousePos;
         double defaultMin = 0.0;
         double defaultMax = 1.0;
+        bool hoverActive = false;
     };
 
     QWidget* createToolbar();
@@ -61,8 +80,11 @@ private:
                      double ImuVisualizationSample::*xField,
                      double ImuVisualizationSample::*yField,
                      double ImuVisualizationSample::*zField);
-    void refreshTheme();
     void refreshChartTheme(ChartPanel& panel);
+    ChartPanel* chartPanelForViewport(QObject* watched);
+    void updateChartHover(ChartPanel& panel, const QPoint& mousePos);
+    void hideChartHover(ChartPanel& panel);
+    void positionChartEmptyOverlay(ChartPanel& panel);
 
     LivoxViewerWindow* m_owner = nullptr;
     QListWidget* m_deviceList = nullptr;
@@ -78,7 +100,6 @@ private:
     uint32_t m_currentHandle = 0;
     bool m_haveCurrentHandle = false;
     bool m_paused = false;
-    bool m_refreshingTheme = false;
 };
 
 #endif // LIVOXVIEWER_DIALOGS_IMUVISUALIZATIONDIALOG_H

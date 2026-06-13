@@ -8,11 +8,15 @@
 #include <QAbstractItemView>
 #include <QEvent>
 #include <QFrame>
+#include <QGraphicsEllipseItem>
+#include <QGraphicsLineItem>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMouseEvent>
 #include <QPalette>
 #include <QPainter>
 #include <QPen>
@@ -26,6 +30,7 @@
 #include <QtCharts/QLegend>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace {
@@ -56,6 +61,24 @@ void configureSeries(QLineSeries* series, const QString& name, const QColor& col
     series->setUseOpenGL(false);
 }
 
+void configureHoverPoint(QGraphicsEllipseItem* item, const QColor& color)
+{
+    item->setBrush(color);
+    item->setPen(QPen(Qt::white, 1.4));
+    item->setZValue(31.0);
+    item->hide();
+}
+
+QString unitFromAxisTitle(const QString& title)
+{
+    const int left = title.indexOf(QLatin1Char('('));
+    const int right = title.indexOf(QLatin1Char(')'), left + 1);
+    if (left >= 0 && right > left) {
+        return title.mid(left + 1, right - left - 1);
+    }
+    return QString();
+}
+
 void configureAxis(QValueAxis* axis, const QString& title, double minValue, double maxValue)
 {
     axis->setTitleText(title);
@@ -78,6 +101,14 @@ QList<QPointF> makePoints(const QVector<ImuVisualizationSample>& samples,
         }
     }
     return points;
+}
+
+QRect plotAreaInView(QChartView* view, QChart* chart)
+{
+    const QRectF plotArea = chart->plotArea();
+    const QPoint topLeft = view->mapFromScene(chart->mapToScene(plotArea.topLeft()));
+    const QPoint bottomRight = view->mapFromScene(chart->mapToScene(plotArea.bottomRight()));
+    return QRect(topLeft, bottomRight).normalized();
 }
 
 } // namespace
@@ -166,6 +197,25 @@ void ImuVisualizationDialog::changeEvent(QEvent* event)
     }
 }
 
+bool ImuVisualizationDialog::eventFilter(QObject* watched, QEvent* event)
+{
+    if (ChartPanel* panel = chartPanelForViewport(watched)) {
+        if (event->type() == QEvent::MouseMove) {
+            const QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            panel->hoverActive = true;
+            panel->hoverMousePos = mouseEvent->pos();
+            updateChartHover(*panel, panel->hoverMousePos);
+        } else if (event->type() == QEvent::Resize) {
+            positionChartEmptyOverlay(*panel);
+            hideChartHover(*panel);
+        } else if (event->type() == QEvent::Leave) {
+            hideChartHover(*panel);
+        }
+        return false;
+    }
+    return QDialog::eventFilter(watched, event);
+}
+
 QWidget* ImuVisualizationDialog::createToolbar()
 {
     QFrame* toolbar = new QFrame(this);
@@ -213,11 +263,8 @@ ImuVisualizationDialog::ChartPanel ImuVisualizationDialog::createChartPanel(cons
     titleLayout->setSpacing(8);
     QLabel* titleLabel = new QLabel(title, titleRow);
     titleLabel->setObjectName(QStringLiteral("ImuPanelTitle"));
-    panel.emptyLabel = new QLabel(QStringLiteral("等待 IMU 数据"), titleRow);
-    panel.emptyLabel->setObjectName(QStringLiteral("ImuPanelHint"));
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
-    titleLayout->addWidget(panel.emptyLabel);
     layout->addWidget(titleRow);
 
     panel.chart = new QChart();
@@ -246,9 +293,54 @@ ImuVisualizationDialog::ChartPanel ImuVisualizationDialog::createChartPanel(cons
 
     panel.view = new QChartView(panel.chart, frame);
     panel.view->setRenderHint(QPainter::Antialiasing);
+    panel.view->setMouseTracking(true);
+    panel.view->viewport()->setMouseTracking(true);
+    panel.view->viewport()->installEventFilter(this);
     layout->addWidget(panel.view, 1);
 
+    panel.hoverUnit = unitFromAxisTitle(yTitle);
+    panel.hoverLine = new QGraphicsLineItem(panel.chart);
+    panel.hoverLine->setZValue(30.0);
+    panel.hoverLine->hide();
+    panel.hoverPointX = new QGraphicsEllipseItem(panel.chart);
+    panel.hoverPointY = new QGraphicsEllipseItem(panel.chart);
+    panel.hoverPointZ = new QGraphicsEllipseItem(panel.chart);
+    configureHoverPoint(panel.hoverPointX, kAxisXColor);
+    configureHoverPoint(panel.hoverPointY, kAxisYColor);
+    configureHoverPoint(panel.hoverPointZ, kAxisZColor);
+
+    panel.hoverLabel = new QLabel(panel.view->viewport());
+    panel.hoverLabel->setObjectName(QStringLiteral("ImuChartHoverLabel"));
+    panel.hoverLabel->setTextFormat(Qt::RichText);
+    panel.hoverLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    panel.hoverLabel->hide();
+
+    panel.emptyOverlay = new QWidget(panel.view->viewport());
+    panel.emptyOverlay->setObjectName(QStringLiteral("ImuChartEmptyOverlay"));
+    panel.emptyOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+    QVBoxLayout* emptyLayout = new QVBoxLayout(panel.emptyOverlay);
+    emptyLayout->setContentsMargins(0, 0, 0, 0);
+    emptyLayout->setSpacing(6);
+    panel.emptyIcon = new QLabel(panel.emptyOverlay);
+    panel.emptyIcon->setAlignment(Qt::AlignCenter);
+    panel.emptyIcon->setPixmap(QIcon(QStringLiteral(":/icons/status_pending.svg")).pixmap(QSize(32, 32)));
+    panel.emptyLabel = new QLabel(QStringLiteral("等待 IMU 数据"), panel.emptyOverlay);
+    panel.emptyLabel->setObjectName(QStringLiteral("ImuPanelHint"));
+    panel.emptyLabel->setAlignment(Qt::AlignCenter);
+    emptyLayout->addWidget(panel.emptyIcon, 0, Qt::AlignHCenter);
+    emptyLayout->addWidget(panel.emptyLabel, 0, Qt::AlignHCenter);
+    panel.emptyOverlay->adjustSize();
+    panel.emptyOverlay->hide();
+
     panel.panel = frame;
+    QTimer::singleShot(0, this, [this, chart = panel.chart]() {
+        for (ChartPanel* candidate : {&m_accChart, &m_gyroChart, &m_attitudeChart}) {
+            if (candidate->chart == chart) {
+                positionChartEmptyOverlay(*candidate);
+                break;
+            }
+        }
+    });
     return panel;
 }
 
@@ -299,6 +391,7 @@ QWidget* ImuVisualizationDialog::createDeviceCard(const ImuVisualizationDeviceDe
 void ImuVisualizationDialog::refreshDeviceList()
 {
     const QVector<ImuVisualizationDeviceDescriptor> devices = m_owner->imuVisualizationDevicesSnapshot();
+    const bool hadCurrentHandle = m_haveCurrentHandle;
     bool rebuild = devices.size() != m_devicesByHandle.size();
     for (const ImuVisualizationDeviceDescriptor& device : devices) {
         const auto it = m_devicesByHandle.constFind(device.handle);
@@ -326,6 +419,9 @@ void ImuVisualizationDialog::refreshDeviceList()
     } else if (devices.isEmpty()) {
         m_haveCurrentHandle = false;
         m_currentHandle = 0;
+        if (hadCurrentHandle && m_orientationView) {
+            m_orientationView->clearScene();
+        }
     }
 
     if (rebuild) {
@@ -379,6 +475,159 @@ void ImuVisualizationDialog::updateOrientationModel()
     m_orientationView->setDeviceModelName(device.modelDisplay);
 }
 
+ImuVisualizationDialog::ChartPanel* ImuVisualizationDialog::chartPanelForViewport(QObject* watched)
+{
+    for (ChartPanel* panel : {&m_accChart, &m_gyroChart, &m_attitudeChart}) {
+        if (panel->view && panel->view->viewport() == watched) {
+            return panel;
+        }
+    }
+    return nullptr;
+}
+
+void ImuVisualizationDialog::hideChartHover(ChartPanel& panel)
+{
+    panel.hoverActive = false;
+    if (panel.hoverLine) {
+        panel.hoverLine->hide();
+    }
+    for (QGraphicsEllipseItem* item : {panel.hoverPointX, panel.hoverPointY, panel.hoverPointZ}) {
+        if (item) {
+            item->hide();
+        }
+    }
+    if (panel.hoverLabel) {
+        panel.hoverLabel->hide();
+    }
+}
+
+void ImuVisualizationDialog::positionChartEmptyOverlay(ChartPanel& panel)
+{
+    if (!panel.emptyOverlay || !panel.view || !panel.chart) {
+        return;
+    }
+
+    panel.emptyOverlay->adjustSize();
+    QRect targetRect = plotAreaInView(panel.view, panel.chart);
+    if (targetRect.width() <= 0 || targetRect.height() <= 0) {
+        targetRect = panel.view->viewport()->rect();
+    }
+    const int x = targetRect.left() + (targetRect.width() - panel.emptyOverlay->width()) / 2;
+    const int y = targetRect.top() + (targetRect.height() - panel.emptyOverlay->height()) / 2;
+    panel.emptyOverlay->move(std::max(targetRect.left(), x), std::max(targetRect.top(), y));
+}
+
+void ImuVisualizationDialog::updateChartHover(ChartPanel& panel, const QPoint& mousePos)
+{
+    if (panel.hoverSamples.isEmpty() ||
+        !panel.view ||
+        !panel.chart ||
+        !panel.axisX ||
+        !panel.axisY ||
+        !panel.hoverXField ||
+        !panel.hoverYField ||
+        !panel.hoverZField) {
+        hideChartHover(panel);
+        return;
+    }
+
+    const QRect plotRect = plotAreaInView(panel.view, panel.chart);
+    if (!plotRect.contains(mousePos)) {
+        hideChartHover(panel);
+        return;
+    }
+
+    const QPointF chartPos = panel.chart->mapFromScene(panel.view->mapToScene(mousePos));
+    const double hoverTime = panel.chart->mapToValue(chartPos, panel.seriesX).x();
+    const double axisMin = panel.axisX->min();
+    const double axisMax = panel.axisX->max();
+    const auto visibleBegin = std::lower_bound(
+        panel.hoverSamples.constBegin(),
+        panel.hoverSamples.constEnd(),
+        axisMin,
+        [](const ImuVisualizationSample& sample, double timestampSec) {
+            return sample.timestampSec < timestampSec;
+        });
+    const auto visibleEnd = std::upper_bound(
+        visibleBegin,
+        panel.hoverSamples.constEnd(),
+        axisMax,
+        [](double timestampSec, const ImuVisualizationSample& sample) {
+            return timestampSec < sample.timestampSec;
+        });
+    if (visibleBegin == visibleEnd) {
+        hideChartHover(panel);
+        return;
+    }
+
+    auto it = std::lower_bound(
+        visibleBegin,
+        visibleEnd,
+        hoverTime,
+        [](const ImuVisualizationSample& sample, double timestampSec) {
+            return sample.timestampSec < timestampSec;
+        });
+    if (it == visibleEnd) {
+        --it;
+    } else if (it != visibleBegin) {
+        auto prev = it;
+        --prev;
+        if (std::abs(prev->timestampSec - hoverTime) <= std::abs(it->timestampSec - hoverTime)) {
+            it = prev;
+        }
+    }
+
+    const ImuVisualizationSample& sample = *it;
+    const double timeSec = sample.timestampSec;
+    const double xValue = sample.*panel.hoverXField;
+    const double yValue = sample.*panel.hoverYField;
+    const double zValue = sample.*panel.hoverZField;
+
+    const QRectF plotArea = panel.chart->plotArea();
+    const QPointF xPosition = panel.chart->mapToPosition(QPointF(timeSec, xValue), panel.seriesX);
+    panel.hoverLine->setLine(QLineF(QPointF(xPosition.x(), plotArea.top()), QPointF(xPosition.x(), plotArea.bottom())));
+    panel.hoverLine->show();
+
+    auto showHoverPoint = [](QGraphicsEllipseItem* item, const QPointF& position) {
+        constexpr double kRadius = 4.5;
+        item->setRect(position.x() - kRadius, position.y() - kRadius, kRadius * 2.0, kRadius * 2.0);
+        item->show();
+    };
+    showHoverPoint(panel.hoverPointX, panel.chart->mapToPosition(QPointF(timeSec, xValue), panel.seriesX));
+    showHoverPoint(panel.hoverPointY, panel.chart->mapToPosition(QPointF(timeSec, yValue), panel.seriesY));
+    showHoverPoint(panel.hoverPointZ, panel.chart->mapToPosition(QPointF(timeSec, zValue), panel.seriesZ));
+
+    const QString unitSuffix = panel.hoverUnit.isEmpty() ? QString() : QStringLiteral(" %1").arg(panel.hoverUnit);
+    auto valueLine = [&unitSuffix](const QColor& color, const QString& name, double value) {
+        return QStringLiteral("<span style=\"color:%1;\">●</span> %2：%3%4")
+            .arg(colorName(color),
+                 name.toHtmlEscaped(),
+                 QString::number(value, 'f', 3),
+                 unitSuffix.toHtmlEscaped());
+    };
+    panel.hoverLabel->setText(QStringLiteral("时间：%1 s<br/>%2<br/>%3<br/>%4")
+                                  .arg(QString::number(timeSec, 'f', 3),
+                                       valueLine(kAxisXColor, panel.seriesX->name(), xValue),
+                                       valueLine(kAxisYColor, panel.seriesY->name(), yValue),
+                                       valueLine(kAxisZColor, panel.seriesZ->name(), zValue)));
+    panel.hoverLabel->adjustSize();
+
+    constexpr int kOffset = 14;
+    int labelX = mousePos.x() + kOffset;
+    if (labelX + panel.hoverLabel->width() > plotRect.right()) {
+        labelX = mousePos.x() - panel.hoverLabel->width() - kOffset;
+    }
+    int labelY = mousePos.y() - panel.hoverLabel->height() - kOffset;
+    if (labelY < plotRect.top()) {
+        labelY = mousePos.y() + kOffset;
+    }
+    labelX = std::clamp(labelX, plotRect.left(), std::max(plotRect.left(), plotRect.right() - panel.hoverLabel->width()));
+    labelY = std::clamp(labelY, plotRect.top(), std::max(plotRect.top(), plotRect.bottom() - panel.hoverLabel->height()));
+    panel.hoverLabel->move(labelX, labelY);
+    panel.hoverLabel->show();
+    panel.hoverLabel->raise();
+}
+
 void ImuVisualizationDialog::refreshData()
 {
     if (!m_haveCurrentHandle) {
@@ -421,12 +670,18 @@ void ImuVisualizationDialog::setPaused(bool paused)
 
 void ImuVisualizationDialog::clearChart(ChartPanel& panel)
 {
+    panel.hoverSamples.clear();
+    hideChartHover(panel);
     panel.seriesX->clear();
     panel.seriesY->clear();
     panel.seriesZ->clear();
     panel.axisX->setRange(0.0, kVisibleWindowSec);
     panel.axisY->setRange(panel.defaultMin, panel.defaultMax);
-    panel.emptyLabel->setVisible(true);
+    if (panel.emptyOverlay) {
+        positionChartEmptyOverlay(panel);
+        panel.emptyOverlay->show();
+        panel.emptyOverlay->raise();
+    }
 }
 
 void ImuVisualizationDialog::updateChart(ChartPanel& panel,
@@ -435,6 +690,10 @@ void ImuVisualizationDialog::updateChart(ChartPanel& panel,
                                          double ImuVisualizationSample::*yField,
                                          double ImuVisualizationSample::*zField)
 {
+    panel.hoverSamples = samples;
+    panel.hoverXField = xField;
+    panel.hoverYField = yField;
+    panel.hoverZField = zField;
     if (samples.isEmpty()) {
         clearChart(panel);
         return;
@@ -467,17 +726,18 @@ void ImuVisualizationDialog::updateChart(ChartPanel& panel,
         }
     }
 
-    panel.emptyLabel->setVisible(false);
+    if (panel.emptyOverlay) {
+        panel.emptyOverlay->hide();
+    }
+    if (panel.hoverActive) {
+        updateChartHover(panel, panel.hoverMousePos);
+    }
 }
 
 void ImuVisualizationDialog::refreshTheme()
 {
-    if (m_refreshingTheme) {
-        return;
-    }
-    m_refreshingTheme = true;
-
-    const QPalette pal = palette();
+    const QPalette pal = QApplication::palette();
+    setPalette(pal);
     const bool dark = isDarkPalette(pal);
     const QColor window = pal.color(QPalette::Window);
     const QColor base = pal.color(QPalette::Base);
@@ -490,9 +750,11 @@ void ImuVisualizationDialog::refreshTheme()
     const QString styleSheet = QStringLiteral(
         "QDialog#ImuVisualizationDialog { background: %1; color: %2; }"
         "QFrame#ImuToolbar, QFrame#ImuVisualizationPanel { background: %3; border: 1px solid %4; border-radius: 6px; }"
+        "QWidget#ImuChartEmptyOverlay { background: transparent; }"
         "QLabel#ImuPanelTitle, QLabel#ImuDeviceModel { color: %2; font-weight: 600; }"
         "QLabel#ImuPanelHint { color: %5; }"
         "QLabel#ImuDeviceSourceTag { color: %2; }"
+        "QLabel#ImuChartHoverLabel { color: %2; background: %3; border: 1px solid %4; border-radius: 4px; padding: 6px 8px; }"
         "QListWidget#ImuDeviceList { background: transparent; border: none; outline: 0; }"
         "QListWidget#ImuDeviceList::item { border: none; padding: 0; background: transparent; }"
         "QWidget#ImuDeviceCard { background: %3; border: 1px solid %4; border-radius: 6px; }"
@@ -508,6 +770,7 @@ void ImuVisualizationDialog::refreshTheme()
     if (this->styleSheet() != styleSheet) {
         setStyleSheet(styleSheet);
     }
+    updateDeviceCardSelection();
 
     refreshChartTheme(m_accChart);
     refreshChartTheme(m_gyroChart);
@@ -515,8 +778,6 @@ void ImuVisualizationDialog::refreshTheme()
     if (m_orientationView) {
         m_orientationView->refreshTheme();
     }
-
-    m_refreshingTheme = false;
 }
 
 void ImuVisualizationDialog::refreshChartTheme(ChartPanel& panel)
@@ -540,6 +801,17 @@ void ImuVisualizationDialog::refreshChartTheme(ChartPanel& panel)
     QPen axisPen(axis);
     QPen gridPen(grid);
     gridPen.setWidthF(0.8);
+    QPen hoverPen(axis);
+    hoverPen.setWidthF(1.0);
+    hoverPen.setStyle(Qt::DashLine);
+    if (panel.hoverLine) {
+        panel.hoverLine->setPen(hoverPen);
+    }
+    for (QGraphicsEllipseItem* item : {panel.hoverPointX, panel.hoverPointY, panel.hoverPointZ}) {
+        if (item) {
+            item->setPen(QPen(base, 1.4));
+        }
+    }
     for (QValueAxis* valueAxis : {panel.axisX, panel.axisY}) {
         valueAxis->setLabelsColor(text);
         valueAxis->setTitleBrush(text);

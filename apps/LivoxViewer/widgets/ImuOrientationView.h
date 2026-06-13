@@ -35,6 +35,7 @@ public:
     void setDeviceModelName(const QString& modelName);
     void setOrientation(const QQuaternion& orientation);
     void setHasData(bool hasData);
+    void clearScene();
     void refreshTheme();
 
 protected:
@@ -61,6 +62,7 @@ private:
     QQuaternion m_orientation;
     QColor m_backgroundColor;
     QColor m_textColor;
+    QColor m_hintColor;
     int m_axisLineVertexCount = 0;
     bool m_modelLoaded = false;
     bool m_hasData = false;

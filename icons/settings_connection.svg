@@ -1,6 +1,5 @@
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <path d="M5 12a7 7 0 0 1 14 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M8 12a4 4 0 0 1 8 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M11.2 15.2a1.2 1.2 0 1 0 1.6 0 1.2 1.2 0 0 0-1.6 0Z" fill="currentColor"/>
-  <path d="M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" height="24" width="24">
+  <g id="hotspot-fill">
+    <path id="Union" fill="#000000" d="M12.5 9c0.5523 0 1 0.44772 1 1 0 0.5523 -0.4477 1 -1 1 -2.2091 0 -4 1.7909 -4 4s1.7909 4 4 4h4c2.2091 0 4 -1.7909 4 -4 0 -1.2336 -0.5574 -2.336 -1.4375 -3.0713 -0.4238 -0.354 -0.4809 -0.9853 -0.127 -1.4092 0.3541 -0.4238 0.9854 -0.48 1.4092 -0.1259C21.6603 11.4926 22.5 13.1487 22.5 15c0 3.3137 -2.6863 6 -6 6h-4c-3.31371 0 -6 -2.6863 -6 -6s2.68629 -6 6 -6m-1 -6c3.3137 0 6 2.68629 6 6 0 3.3137 -2.6863 6 -6 6 -0.5523 0 -1 -0.4477 -1 -1s0.4477 -1 1 -1c2.2091 0 4 -1.7909 4 -4 0 -2.20914 -1.7909 -4 -4 -4h-4c-2.20914 0 -4 1.79086 -4 4 0 1.2336 0.55736 2.336 1.4375 3.0713 0.42385 0.354 0.48095 0.9853 0.12695 1.4092 -0.35405 0.4238 -0.98531 0.48 -1.40918 0.1259C2.33967 12.5074 1.5 10.8513 1.5 9c0 -3.31371 2.68629 -6 6 -6z" stroke-width="1"></path>
+  </g>
 </svg>

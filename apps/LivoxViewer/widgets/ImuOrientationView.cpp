@@ -3,10 +3,13 @@
 #include "utils/DeviceModelResource.h"
 
 #include <QFileInfo>
+#include <QFontMetrics>
+#include <QIcon>
 #include <QMatrix3x3>
 #include <QOpenGLContext>
 #include <QPainter>
 #include <QPalette>
+#include <QPixmap>
 #include <QVector3D>
 
 #include <algorithm>
@@ -231,11 +234,21 @@ void ImuOrientationView::setHasData(bool hasData)
     update();
 }
 
+void ImuOrientationView::clearScene()
+{
+    m_hasData = false;
+    m_orientation = QQuaternion();
+    m_modelKey.clear();
+    m_statusText.clear();
+    clearModel();
+}
+
 void ImuOrientationView::refreshTheme()
 {
     const QPalette pal = palette();
     m_backgroundColor = pal.color(QPalette::Base);
     m_textColor = pal.color(QPalette::WindowText);
+    m_hintColor = pal.color(QPalette::Mid);
     update();
 }
 
@@ -255,7 +268,7 @@ void ImuOrientationView::paintGL()
     glClearColor(m_backgroundColor.redF(), m_backgroundColor.greenF(), m_backgroundColor.blueF(), 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (m_program) {
+    if (m_hasData && m_program) {
         m_program->bind();
 
         QMatrix4x4 projection;
@@ -302,9 +315,26 @@ void ImuOrientationView::paintGL()
         m_program->release();
     }
 
-    const QString overlayText = !m_hasData
-        ? QStringLiteral("等待 IMU 数据")
-        : (m_modelLoaded ? QString() : m_statusText);
+    if (!m_hasData) {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        painter.setPen(m_hintColor);
+        const QSize iconSize(32, 32);
+        const QPixmap pendingIcon = QIcon(QStringLiteral(":/icons/status_pending.svg")).pixmap(iconSize);
+        const QString pendingText = QStringLiteral("等待 IMU 数据");
+        const QFontMetrics fm(painter.font());
+        constexpr int spacing = 6;
+        const int textHeight = fm.boundingRect(pendingText).height();
+        const int contentHeight = iconSize.height() + spacing + textHeight;
+        const int top = rect().center().y() - contentHeight / 2;
+        const int iconLeft = rect().center().x() - iconSize.width() / 2;
+        painter.drawPixmap(QRect(iconLeft, top, iconSize.width(), iconSize.height()), pendingIcon);
+        const QRect textRect(12, top + iconSize.height() + spacing, width() - 24, textHeight);
+        painter.drawText(textRect, Qt::AlignCenter, pendingText);
+        return;
+    }
+
+    const QString overlayText = m_modelLoaded ? QString() : m_statusText;
     if (!overlayText.isEmpty()) {
         QPainter painter(this);
         painter.setRenderHint(QPainter::TextAntialiasing, true);

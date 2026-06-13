@@ -213,7 +213,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     logTopLayout->setContentsMargins(0, 0, 0, 0);
     logTopLayout->setSpacing(10);
 
-    QLabel* lblLogEnable = createConfigGeneratorFieldLabel("启用 SDK 日志", logTopRow);
+    QLabel* lblLogEnable = createConfigGeneratorFieldLabel("雷达 LOG 数据保存功能", logTopRow);
     QCheckBox* cbLogEnable = new SwitchCheckBox(logTopRow);
     cbLogEnable->setChecked(true);
     logTopLayout->addWidget(lblLogEnable);
@@ -236,7 +236,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     QHBoxLayout* logPathLayout = new QHBoxLayout(logPathRow);
     logPathLayout->setContentsMargins(0, 0, 0, 0);
     logPathLayout->setSpacing(10);
-    QLabel* lblPath = createConfigGeneratorFieldLabel("日志路径", logPathRow);
+    QLabel* lblPath = createConfigGeneratorFieldLabel("LOG 数据保存路径", logPathRow);
     QLineEdit* editPath = new QLineEdit(logPathRow);
     editPath->setText("./");
     QPushButton* browseButton = new QPushButton("浏览...", logPathRow);
@@ -249,7 +249,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 
     QObject::connect(browseButton, &QPushButton::clicked, &dlg, [&]() {
         const QString startDir = editPath->text().trimmed().isEmpty() ? QDir::currentPath() : editPath->text().trimmed();
-        const QString selectedDir = QFileDialog::getExistingDirectory(&dlg, "选择日志路径", startDir);
+        const QString selectedDir = QFileDialog::getExistingDirectory(&dlg, "选择 LOG 数据保存路径", startDir);
         if (!selectedDir.isEmpty()) {
             editPath->setText(QDir::toNativeSeparators(selectedDir));
         }
