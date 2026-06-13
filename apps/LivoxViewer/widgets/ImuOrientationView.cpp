@@ -262,7 +262,7 @@ void ImuOrientationView::paintGL()
         projection.perspective(38.0f, float(std::max(1, width())) / float(std::max(1, height())), 0.01f, 100.0f);
 
         QMatrix4x4 view;
-        view.lookAt(QVector3D(2.8f, -3.6f, 2.2f),
+        view.lookAt(QVector3D(2.15f, -2.75f, 1.7f),
                     QVector3D(0.0f, 0.0f, 0.0f),
                     QVector3D(0.0f, 0.0f, 1.0f));
 

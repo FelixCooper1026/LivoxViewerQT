@@ -7,6 +7,7 @@
 #include <QMutex>
 #include <QPointer>
 #include <QQuaternion>
+#include <QString>
 #include <QVector>
 #include <atomic>
 #include <cstdint>
@@ -52,6 +53,20 @@ struct ImuVisualizationDeviceState
     double timeOriginSec = -1.0;
     ImuAttitudeEstimator estimator;
     QVector<ImuVisualizationSample> samples;
+};
+
+enum class ImuVisualizationSource {
+    Realtime,
+    Offline
+};
+
+struct ImuVisualizationDeviceDescriptor
+{
+    uint32_t handle = 0;
+    QString modelDisplay;
+    QString serialNumber;
+    QString ipAddress;
+    ImuVisualizationSource source = ImuVisualizationSource::Realtime;
 };
 
 struct ImuRuntimeState

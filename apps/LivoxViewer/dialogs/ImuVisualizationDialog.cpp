@@ -87,6 +87,7 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner)
     , m_owner(owner)
 {
     setObjectName(QStringLiteral("ImuVisualizationDialog"));
+    setWindowFlags(windowFlags() | Qt::WindowMinMaxButtonsHint);
     setWindowTitle(QStringLiteral("IMU数据可视化"));
     setMinimumSize(980, 640);
 
@@ -124,9 +125,12 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner)
     QGridLayout* grid = new QGridLayout(visualizationArea);
     grid->setContentsMargins(0, 0, 0, 0);
     grid->setSpacing(8);
-    m_accChart = createChartPanel(QStringLiteral("加速度实时原始数据"), QStringLiteral("Acc (g)"), -4.0, 4.0);
-    m_gyroChart = createChartPanel(QStringLiteral("角速度实时原始数据"), QStringLiteral("Gyro (rad/s)"), -50.0, 50.0);
-    m_attitudeChart = createChartPanel(QStringLiteral("姿态角曲线"), QStringLiteral("Angle (deg)"), -180.0, 180.0);
+    m_accChart = createChartPanel(QStringLiteral("加速度数据"), QStringLiteral("Acc (g)"), -4.0, 4.0);
+    m_gyroChart = createChartPanel(QStringLiteral("角速度数据"), QStringLiteral("Gyro (rad/s)"), -50.0, 50.0);
+    m_attitudeChart = createChartPanel(QStringLiteral("姿态角（软件解算）"), QStringLiteral("Angle (deg)"), -180.0, 180.0);
+    m_attitudeChart.seriesX->setName(QStringLiteral("Roll"));
+    m_attitudeChart.seriesY->setName(QStringLiteral("Pitch"));
+    m_attitudeChart.seriesZ->setName(QStringLiteral("Yaw"));
     grid->addWidget(m_accChart.panel, 0, 0);
     grid->addWidget(m_gyroChart.panel, 0, 1);
     grid->addWidget(m_attitudeChart.panel, 1, 0);
@@ -256,7 +260,7 @@ QWidget* ImuVisualizationDialog::createOrientationPanel()
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    QLabel* titleLabel = new QLabel(QStringLiteral("3D 模型姿态视图"), frame);
+    QLabel* titleLabel = new QLabel(QStringLiteral("3D 模型姿态"), frame);
     titleLabel->setObjectName(QStringLiteral("ImuPanelTitle"));
     layout->addWidget(titleLabel);
 
@@ -265,7 +269,7 @@ QWidget* ImuVisualizationDialog::createOrientationPanel()
     return frame;
 }
 
-QWidget* ImuVisualizationDialog::createDeviceCard(const LidarDeviceInfo& device)
+QWidget* ImuVisualizationDialog::createDeviceCard(const ImuVisualizationDeviceDescriptor& device)
 {
     QWidget* card = new QWidget(m_deviceList);
     card->setObjectName(QStringLiteral("ImuDeviceCard"));
@@ -275,31 +279,41 @@ QWidget* ImuVisualizationDialog::createDeviceCard(const LidarDeviceInfo& device)
     layout->setContentsMargins(10, 8, 10, 8);
     layout->setSpacing(3);
 
-    QLabel* modelLabel = new QLabel(device.product_info.isEmpty() ? QStringLiteral("未知型号") : device.product_info, card);
+    QLabel* modelLabel = new QLabel(device.modelDisplay.isEmpty() ? QStringLiteral("未知型号") : device.modelDisplay, card);
     modelLabel->setObjectName(QStringLiteral("ImuDeviceModel"));
-    QLabel* snLabel = new QLabel(device.sn.isEmpty() ? QStringLiteral("SN: --") : QStringLiteral("SN: %1").arg(device.sn), card);
+    QLabel* sourceLabel = new QLabel(
+        device.source == ImuVisualizationSource::Realtime ? QStringLiteral("实时数据流") : QStringLiteral("离线数据流"),
+        card);
+    sourceLabel->setObjectName(QStringLiteral("ImuDeviceSourceTag"));
+    QLabel* snLabel = new QLabel(device.serialNumber.isEmpty() ? QStringLiteral("SN: --") : QStringLiteral("SN: %1").arg(device.serialNumber), card);
     snLabel->setObjectName(QStringLiteral("ImuDeviceSn"));
+    QLabel* ipLabel = new QLabel(device.ipAddress.isEmpty() ? QStringLiteral("IP: --") : QStringLiteral("IP: %1").arg(device.ipAddress), card);
+    ipLabel->setObjectName(QStringLiteral("ImuDeviceIp"));
     layout->addWidget(modelLabel);
+    layout->addWidget(sourceLabel);
     layout->addWidget(snLabel);
+    layout->addWidget(ipLabel);
     return card;
 }
 
 void ImuVisualizationDialog::refreshDeviceList()
 {
-    const QVector<LidarDeviceInfo> devices = m_owner->connectedLidarDevicesSnapshot();
+    const QVector<ImuVisualizationDeviceDescriptor> devices = m_owner->imuVisualizationDevicesSnapshot();
     bool rebuild = devices.size() != m_devicesByHandle.size();
-    for (const LidarDeviceInfo& device : devices) {
+    for (const ImuVisualizationDeviceDescriptor& device : devices) {
         const auto it = m_devicesByHandle.constFind(device.handle);
         if (it == m_devicesByHandle.constEnd() ||
-            it->product_info != device.product_info ||
-            it->sn != device.sn) {
+            it->modelDisplay != device.modelDisplay ||
+            it->serialNumber != device.serialNumber ||
+            it->ipAddress != device.ipAddress ||
+            it->source != device.source) {
             rebuild = true;
             break;
         }
     }
 
     bool currentStillExists = false;
-    for (const LidarDeviceInfo& device : devices) {
+    for (const ImuVisualizationDeviceDescriptor& device : devices) {
         if (m_haveCurrentHandle && device.handle == m_currentHandle) {
             currentStillExists = true;
             break;
@@ -320,11 +334,11 @@ void ImuVisualizationDialog::refreshDeviceList()
         m_devicesByHandle.clear();
         int selectedRow = -1;
         for (int i = 0; i < devices.size(); ++i) {
-            const LidarDeviceInfo& device = devices.at(i);
+            const ImuVisualizationDeviceDescriptor& device = devices.at(i);
             m_devicesByHandle.insert(device.handle, device);
             QListWidgetItem* item = new QListWidgetItem();
             item->setData(Qt::UserRole, QVariant::fromValue(static_cast<quint32>(device.handle)));
-            item->setSizeHint(QSize(196, 64));
+            item->setSizeHint(QSize(196, 92));
             m_deviceList->addItem(item);
             m_deviceList->setItemWidget(item, createDeviceCard(device));
             if (m_haveCurrentHandle && device.handle == m_currentHandle) {
@@ -361,8 +375,8 @@ void ImuVisualizationDialog::updateOrientationModel()
     if (!m_orientationView || !m_haveCurrentHandle || !m_devicesByHandle.contains(m_currentHandle)) {
         return;
     }
-    const LidarDeviceInfo device = m_devicesByHandle.value(m_currentHandle);
-    m_orientationView->setDeviceModelName(device.product_info);
+    const ImuVisualizationDeviceDescriptor device = m_devicesByHandle.value(m_currentHandle);
+    m_orientationView->setDeviceModelName(device.modelDisplay);
 }
 
 void ImuVisualizationDialog::refreshData()
@@ -477,7 +491,8 @@ void ImuVisualizationDialog::refreshTheme()
         "QDialog#ImuVisualizationDialog { background: %1; color: %2; }"
         "QFrame#ImuToolbar, QFrame#ImuVisualizationPanel { background: %3; border: 1px solid %4; border-radius: 6px; }"
         "QLabel#ImuPanelTitle, QLabel#ImuDeviceModel { color: %2; font-weight: 600; }"
-        "QLabel#ImuPanelHint, QLabel#ImuDeviceSn { color: %5; }"
+        "QLabel#ImuPanelHint { color: %5; }"
+        "QLabel#ImuDeviceSourceTag { color: %2; }"
         "QListWidget#ImuDeviceList { background: transparent; border: none; outline: 0; }"
         "QListWidget#ImuDeviceList::item { border: none; padding: 0; background: transparent; }"
         "QWidget#ImuDeviceCard { background: %3; border: 1px solid %4; border-radius: 6px; }"

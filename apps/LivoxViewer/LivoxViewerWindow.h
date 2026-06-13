@@ -118,6 +118,7 @@ public:
     };
 
     QVector<LidarDeviceInfo> connectedLidarDevicesSnapshot();
+    QVector<ImuVisualizationDeviceDescriptor> imuVisualizationDevicesSnapshot();
     QVector<ImuVisualizationSample> imuVisualizationSamplesSnapshot(uint32_t handle);
 
 private:
@@ -172,6 +173,8 @@ private:
     int playbackFrameIndexForRawEndIndex(int rawEndIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
+    void appendPlaybackImuSamples(const QVector<Playback::ImuSample>& samples, bool resetSamples);
+    void clearPlaybackImuSamples();
     int lvx2PlaybackIntervalMs() const;
     using Lvx2ConvertMode = Lvx2Convert::Mode;
     using Lvx2ConvertFormat = Lvx2Convert::Format;

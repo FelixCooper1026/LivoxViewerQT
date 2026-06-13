@@ -56,6 +56,8 @@ struct PlaybackControllerState
     QVector<PointCloudPoint> slidingWindowPoints;
     QVector<int> slidingWindowSegmentPointCounts;
     uint64_t slidingWindowTimestamp = 0;
+    QMap<uint32_t, uint32_t> imuHandleByLidarId;
+    uint32_t nextPlaybackImuHandle = 0x80000001u;
 
     void resetSlidingWindow()
     {
@@ -64,6 +66,23 @@ struct PlaybackControllerState
         slidingWindowPoints.clear();
         slidingWindowSegmentPointCounts.clear();
         slidingWindowTimestamp = 0;
+    }
+
+    void resetPlaybackImuHandles()
+    {
+        imuHandleByLidarId.clear();
+        nextPlaybackImuHandle = 0x80000001u;
+    }
+
+    uint32_t playbackImuHandleForLidarId(uint32_t lidarId)
+    {
+        auto it = imuHandleByLidarId.find(lidarId);
+        if (it != imuHandleByLidarId.end()) {
+            return it.value();
+        }
+        const uint32_t handle = nextPlaybackImuHandle++;
+        imuHandleByLidarId.insert(lidarId, handle);
+        return handle;
     }
 };
 

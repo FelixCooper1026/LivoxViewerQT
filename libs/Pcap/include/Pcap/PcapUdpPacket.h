@@ -12,6 +12,7 @@ namespace PcapUdp {
 
 constexpr uint16_t kLivoxPointCloudPort = 56300;
 constexpr uint16_t kLivoxPushDataPort = 56200;
+constexpr uint16_t kLivoxIMUPort = 56400;
 
 struct PacketInfo {
     bool valid = false;

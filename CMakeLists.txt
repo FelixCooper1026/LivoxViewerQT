@@ -193,6 +193,7 @@ set(SOURCES
     plugins/StlModel/StlModelLoader.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
+    libs/Pcap/src/ImuParser.cpp
     libs/Pcap/src/PcapParser.cpp
     libs/Pcap/src/PcapReader.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
@@ -244,6 +245,7 @@ set(SOURCES
     libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
     libs/Lvx2/include/Lvx2/Lvx2Converter.h
     libs/Lvx2/include/Lvx2/Lvx2PointParser.h
+    libs/Pcap/include/Pcap/ImuParser.h
     libs/Pcap/include/Pcap/PcapParser.h
     libs/Pcap/include/Pcap/PcapReader.h
     libs/Pcap/include/Pcap/PcapUdpPacket.h

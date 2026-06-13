@@ -20,6 +20,7 @@
 namespace {
 
 constexpr uint64_t kPlaybackDisplayFrameMs = 100;
+constexpr uint64_t kPcapRawFrameDurationNs = 50000000ULL;
 constexpr int kRawFramesPerDisplayFrame = 2;
 constexpr const char* kPlaybackLabelFullTextProperty = "playbackFullText";
 
@@ -130,11 +131,16 @@ static void updatePlaybackDeviceCardState(bool visible,
 
 void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source)
 {
+    clearPlaybackImuSamples();
+    playbackState.resetPlaybackImuHandles();
     playbackState.source = source;
     playbackState.devices = playbackState.source ? playbackState.source->devices() : QVector<PlaybackDeviceInfo>();
     playbackState.deviceVisible.clear();
     for (const PlaybackDeviceInfo& device : playbackState.devices) {
         playbackState.deviceVisible.insert(device.lidarId, true);
+        if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
+            playbackState.playbackImuHandleForLidarId(device.lidarId);
+        }
     }
     rebuildLvx2DeviceTab();
 
@@ -225,6 +231,8 @@ void LivoxViewerWindow::closeLvx2Playback(bool clearView)
 {
     setLvx2PlaybackPlaying(false);
 
+    clearPlaybackImuSamples();
+    playbackState.resetPlaybackImuHandles();
     playbackState.loadToken++;
     playbackState.source.reset();
     playbackState.active = false;
@@ -294,6 +302,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     }
 
     playbackFrameIndex = std::clamp(playbackFrameIndex, 0, playbackState.frameCount - 1);
+    const int previousPlaybackFrame = playbackState.frame;
     const int sourceFrameCount = playbackState.source->frameCount();
     const int rawFrameCount = rawFramesPerPlaybackFrame(frameIntervalMs);
     int rawStartIndex = 0;
@@ -376,6 +385,20 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     }
     if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {
         updateSelectionTableAndLog();
+    }
+
+    if (playbackState.source->kind() == Playback::SourceKind::Pcap) {
+        const PointCloudFrame startFrame = readRawFrame(rawStartIndex);
+        const PointCloudFrame endFrame = readRawFrame(rawEndIndex - 1);
+        const bool rebuildImuHistory = previousPlaybackFrame < 0 || playbackFrameIndex != previousPlaybackFrame + 1;
+        const uint64_t imuStartTimestamp =
+            rebuildImuHistory ? 0ULL
+                              : (playbackState.mode == Lvx2PlaybackMode::SlidingWindow
+                                     ? endFrame.timestamp
+                                     : startFrame.timestamp);
+        const QVector<Playback::ImuSample> imuSamples =
+            playbackState.source->readImuSamples(imuStartTimestamp, endFrame.timestamp + kPcapRawFrameDurationNs);
+        appendPlaybackImuSamples(imuSamples, rebuildImuHistory);
     }
 
     playbackState.frame = playbackFrameIndex;

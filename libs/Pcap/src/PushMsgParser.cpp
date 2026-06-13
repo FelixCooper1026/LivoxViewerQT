@@ -192,7 +192,7 @@ void mergePushPacket(const QString& srcIp,
 }
 
 QVector<PushDeviceRecord> finalizeDevices(const QMap<QString, PushDeviceRecord>& pushDevicesByIp,
-                                          const QMap<QString, uint32_t>& pointCloudSourceIps)
+                                          const QMap<QString, uint32_t>& dataSourceIps)
 {
     QVector<PushDeviceRecord> devices;
     QMap<uint32_t, bool> seenIds;
@@ -212,11 +212,7 @@ QVector<PushDeviceRecord> finalizeDevices(const QMap<QString, PushDeviceRecord>&
         devices.push_back(record);
     }
 
-    if (!pushDevicesByIp.isEmpty()) {
-        return devices;
-    }
-
-    for (auto it = pointCloudSourceIps.constBegin(); it != pointCloudSourceIps.constEnd(); ++it) {
+    for (auto it = dataSourceIps.constBegin(); it != dataSourceIps.constEnd(); ++it) {
         const uint32_t lidarId = it.value() != 0 ? it.value() : ipToLidarId(it.key());
         if (lidarId == 0 || seenIds.contains(lidarId)) {
             continue;

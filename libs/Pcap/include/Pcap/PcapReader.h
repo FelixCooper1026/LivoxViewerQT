@@ -16,11 +16,13 @@ public:
     bool readFrame(int frameIndex,
                    const QMap<uint32_t, bool>& deviceVisibility,
                    PointCloudFrame& frame) override;
+    QVector<Playback::ImuSample> readImuSamples(uint64_t startTimestampNs, uint64_t endTimestampNs) const override;
 
 private:
     QString filePath_;
     QString errorMessage_;
     QVector<PointCloudFrame> frames_;
+    QVector<Playback::ImuSample> imuSamples_;
     QVector<Playback::DeviceInfo> devices_;
     QMap<uint32_t, Playback::Extrinsic> extrinsics_;
 };

@@ -1,7 +1,6 @@
 #ifndef LIVOXVIEWER_DIALOGS_IMUVISUALIZATIONDIALOG_H
 #define LIVOXVIEWER_DIALOGS_IMUVISUALIZATIONDIALOG_H
 
-#include "LivoxCore/LidarDeviceInfo.h"
 #include "state/ImuRuntimeState.h"
 
 #include <QDialog>
@@ -49,7 +48,7 @@ private:
     QWidget* createToolbar();
     ChartPanel createChartPanel(const QString& title, const QString& yTitle, double defaultMin, double defaultMax);
     QWidget* createOrientationPanel();
-    QWidget* createDeviceCard(const LidarDeviceInfo& device);
+    QWidget* createDeviceCard(const ImuVisualizationDeviceDescriptor& device);
     void refreshDeviceList();
     void updateDeviceCardSelection();
     void updateOrientationModel();
@@ -75,7 +74,7 @@ private:
     ChartPanel m_gyroChart;
     ChartPanel m_attitudeChart;
     ImuOrientationView* m_orientationView = nullptr;
-    QMap<uint32_t, LidarDeviceInfo> m_devicesByHandle;
+    QMap<uint32_t, ImuVisualizationDeviceDescriptor> m_devicesByHandle;
     uint32_t m_currentHandle = 0;
     bool m_haveCurrentHandle = false;
     bool m_paused = false;

@@ -35,6 +35,17 @@ struct DeviceInfo {
     QString modelDisplay;
 };
 
+struct ImuSample {
+    uint32_t lidarId = 0;
+    uint64_t timestampNs = 0;
+    float gyroX = 0.0f;
+    float gyroY = 0.0f;
+    float gyroZ = 0.0f;
+    float accX = 0.0f;
+    float accY = 0.0f;
+    float accZ = 0.0f;
+};
+
 class Source {
 public:
     virtual ~Source() = default;
@@ -48,6 +59,12 @@ public:
     virtual bool readFrame(int frameIndex,
                            const QMap<uint32_t, bool>& deviceVisibility,
                            PointCloudFrame& frame) = 0;
+    virtual QVector<ImuSample> readImuSamples(uint64_t startTimestampNs, uint64_t endTimestampNs) const
+    {
+        Q_UNUSED(startTimestampNs);
+        Q_UNUSED(endTimestampNs);
+        return {};
+    }
     virtual void invalidateCache() {}
 };
 

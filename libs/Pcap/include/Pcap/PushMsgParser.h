@@ -31,7 +31,7 @@ QString lidarIdToIpString(uint32_t lidarId);
 void mergePushPacket(const QString& srcIp, const uint8_t* payload, size_t payloadLen, QMap<QString, PushDeviceRecord>& devicesByIp);
 
 QVector<PushDeviceRecord> finalizeDevices(const QMap<QString, PushDeviceRecord>& pushDevicesByIp,
-                                          const QMap<QString, uint32_t>& pointCloudSourceIps);
+                                          const QMap<QString, uint32_t>& dataSourceIps);
 
 } // namespace PushMsgParser
 

@@ -1,6 +1,7 @@
 #include "Pcap/PcapParser.h"
 
 #include "LivoxCore/LidarModelUtils.h"
+#include "Pcap/ImuParser.h"
 #include "Pcap/PcapUdpPacket.h"
 #include "Pcap/PointParser.h"
 #include "Pcap/PushMsgParser.h"
@@ -13,7 +14,7 @@ namespace {
 
 struct PcapMetadata {
     QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
-    QMap<QString, uint32_t> pointCloudSourceIps;
+    QMap<QString, uint32_t> dataSourceIps;
     uint64_t totalPacketsScanned = 0;
     int datalinkType = 0;
 };
@@ -48,6 +49,7 @@ void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
 
         const bool isPushPort = udpInfo.srcPort == PcapUdp::kLivoxPushDataPort;
         const bool isPointCloudPort = udpInfo.srcPort == PcapUdp::kLivoxPointCloudPort;
+        const bool isImuPort = udpInfo.srcPort == PcapUdp::kLivoxIMUPort;
 
         if (isPushPort && udpInfo.payload != nullptr && udpInfo.payloadLen > 0) {
             PushMsgParser::mergePushPacket(udpInfo.srcIp,
@@ -57,17 +59,20 @@ void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
             continue;
         }
 
-        if (!isPointCloudPort || udpInfo.payload == nullptr || udpInfo.payloadLen < 36) {
+        if ((!isPointCloudPort && !isImuPort) || udpInfo.payload == nullptr) {
             continue;
         }
 
-        if (!PointParser::isLivoxPointCloudPayload(udpInfo.payload, udpInfo.payloadLen)) {
+        const bool isValidDataPayload =
+            isPointCloudPort ? PointParser::isLivoxPointCloudPayload(udpInfo.payload, udpInfo.payloadLen)
+                             : ImuParser::isLivoxImuPayload(udpInfo.payload, udpInfo.payloadLen);
+        if (!isValidDataPayload) {
             continue;
         }
 
         if (!udpInfo.srcIp.isEmpty()) {
             const uint32_t lidarId = PushMsgParser::ipToLidarId(udpInfo.srcIp);
-            metadata.pointCloudSourceIps.insert(udpInfo.srcIp, lidarId);
+            metadata.dataSourceIps.insert(udpInfo.srcIp, lidarId);
         }
     }
 }
@@ -81,9 +86,10 @@ QMap<uint32_t, int> lineCountsByLidarId(const QVector<PushMsgParser::PushDeviceR
     return lineCounts;
 }
 
-void parsePointCloudFrames(pcap_t* handle,
-                           const QMap<uint32_t, int>& lineCounts,
-                           QVector<PointCloudFrame>& frames)
+void parseDataFramesAndImuSamples(pcap_t* handle,
+                                  const QMap<uint32_t, int>& lineCounts,
+                                  QVector<PointCloudFrame>& frames,
+                                  QVector<ImuParser::Sample>& imuSamples)
 {
     PointParser::FrameBuilder frameBuilder;
 
@@ -102,7 +108,17 @@ void parsePointCloudFrames(pcap_t* handle,
         }
 
         const bool isPointCloudPort = udpInfo.srcPort == PcapUdp::kLivoxPointCloudPort;
-        if (!isPointCloudPort || udpInfo.payload == nullptr || udpInfo.payloadLen < 36) {
+        const bool isImuPort = udpInfo.srcPort == PcapUdp::kLivoxIMUPort;
+        if ((!isPointCloudPort && !isImuPort) || udpInfo.payload == nullptr) {
+            continue;
+        }
+
+        const uint64_t packetTime = PointParser::pcapTimestampNs(header);
+        const uint32_t lidarId =
+            udpInfo.srcIp.isEmpty() ? 0u : PushMsgParser::ipToLidarId(udpInfo.srcIp);
+
+        if (isImuPort) {
+            ImuParser::appendImuPayload(udpInfo.payload, udpInfo.payloadLen, lidarId, packetTime, imuSamples);
             continue;
         }
 
@@ -110,7 +126,6 @@ void parsePointCloudFrames(pcap_t* handle,
             continue;
         }
 
-        const uint64_t packetTime = PointParser::pcapTimestampNs(header);
         if (frameBuilder.frameStartTime == 0) {
             frameBuilder.reset(packetTime);
         } else if (packetTime - frameBuilder.frameStartTime >= PointParser::FrameBuilder::kFrameDurationNs) {
@@ -118,8 +133,6 @@ void parsePointCloudFrames(pcap_t* handle,
             frameBuilder.reset(packetTime);
         }
 
-        const uint32_t lidarId =
-            udpInfo.srcIp.isEmpty() ? 0u : PushMsgParser::ipToLidarId(udpInfo.srcIp);
         PointParser::appendPointCloudPayload(udpInfo.payload,
                                              udpInfo.payloadLen,
                                              lidarId,
@@ -151,7 +164,7 @@ ParseResult parseFileToFrames(const QString& filePath)
 
     result.datalinkType = metadata.datalinkType;
     result.totalPacketsScanned = metadata.totalPacketsScanned;
-    result.devices = PushMsgParser::finalizeDevices(metadata.pushDevicesByIp, metadata.pointCloudSourceIps);
+    result.devices = PushMsgParser::finalizeDevices(metadata.pushDevicesByIp, metadata.dataSourceIps);
 
     char frameErrbuf[PCAP_ERRBUF_SIZE] = {};
     pcap_t* frameHandle = openOfflinePcap(filePath, frameErrbuf);
@@ -160,7 +173,7 @@ ParseResult parseFileToFrames(const QString& filePath)
         return result;
     }
 
-    parsePointCloudFrames(frameHandle, lineCountsByLidarId(result.devices), result.frames);
+    parseDataFramesAndImuSamples(frameHandle, lineCountsByLidarId(result.devices), result.frames, result.imuSamples);
     pcap_close(frameHandle);
 
     if (result.frames.isEmpty()) {

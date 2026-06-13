@@ -4,6 +4,8 @@
 #include "Pcap/PcapParser.h"
 #include "Pcap/PushMsgParser.h"
 
+#include <algorithm>
+
 namespace Pcap {
 
 bool PcapReader::load(const QString& filePath)
@@ -11,6 +13,7 @@ bool PcapReader::load(const QString& filePath)
     filePath_ = filePath;
     errorMessage_.clear();
     frames_.clear();
+    imuSamples_.clear();
     devices_.clear();
     extrinsics_.clear();
 
@@ -21,6 +24,19 @@ bool PcapReader::load(const QString& filePath)
     }
 
     frames_ = parseResult.frames;
+    imuSamples_.reserve(parseResult.imuSamples.size());
+    for (const ImuParser::Sample& sample : parseResult.imuSamples) {
+        Playback::ImuSample playbackSample;
+        playbackSample.lidarId = sample.lidarId;
+        playbackSample.timestampNs = sample.timestampNs;
+        playbackSample.gyroX = sample.gyroX;
+        playbackSample.gyroY = sample.gyroY;
+        playbackSample.gyroZ = sample.gyroZ;
+        playbackSample.accX = sample.accX;
+        playbackSample.accY = sample.accY;
+        playbackSample.accZ = sample.accZ;
+        imuSamples_.push_back(playbackSample);
+    }
     for (const PushMsgParser::PushDeviceRecord& device : parseResult.devices) {
         Playback::DeviceInfo uiInfo;
         uiInfo.lidarId = device.lidarId;
@@ -105,6 +121,21 @@ bool PcapReader::readFrame(int frameIndex,
 
     frame.points = raw.points;
     return true;
+}
+
+QVector<Playback::ImuSample> PcapReader::readImuSamples(uint64_t startTimestampNs, uint64_t endTimestampNs) const
+{
+    QVector<Playback::ImuSample> samples;
+    const auto begin = std::lower_bound(imuSamples_.constBegin(),
+                                        imuSamples_.constEnd(),
+                                        startTimestampNs,
+                                        [](const Playback::ImuSample& sample, uint64_t timestampNs) {
+                                            return sample.timestampNs < timestampNs;
+                                        });
+    for (auto it = begin; it != imuSamples_.constEnd() && it->timestampNs < endTimestampNs; ++it) {
+        samples.push_back(*it);
+    }
+    return samples;
 }
 
 } // namespace Pcap

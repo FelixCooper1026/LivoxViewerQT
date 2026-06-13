@@ -1,16 +1,20 @@
 #include "LivoxViewerWindow.h"
 #include "dialogs/ImuVisualizationDialog.h"
+#include "Pcap/PushMsgParser.h"
 
 #include <QLabel>
 #include <QMetaObject>
 #include <QMutexLocker>
 #include <QPushButton>
+#include <QSet>
 #include <QTextStream>
 
 #include <chrono>
 #include <thread>
 
 namespace {
+
+constexpr double kImuChartRetentionSec = 60.0;
 
 void setImuValueLabels(ImuRuntimeState& imuState, const double values[3][2])
 {
@@ -99,6 +103,101 @@ QVector<ImuVisualizationSample> LivoxViewerWindow::imuVisualizationSamplesSnapsh
     QMutexLocker lk(&imuState.visualizationMutex);
     auto it = imuState.visualizationDevices.constFind(handle);
     return it == imuState.visualizationDevices.constEnd() ? QVector<ImuVisualizationSample>() : it.value().samples;
+}
+
+QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDevicesSnapshot()
+{
+    QVector<ImuVisualizationDeviceDescriptor> descriptors;
+
+    const QVector<LidarDeviceInfo> realtimeDevices = connectedLidarDevicesSnapshot();
+    for (const LidarDeviceInfo& device : realtimeDevices) {
+        ImuVisualizationDeviceDescriptor descriptor;
+        descriptor.handle = device.handle;
+        descriptor.modelDisplay = device.product_info;
+        descriptor.serialNumber = device.sn;
+        descriptor.ipAddress = device.lidar_ip;
+        descriptor.source = ImuVisualizationSource::Realtime;
+        descriptors.push_back(descriptor);
+    }
+
+    if (playbackState.active && playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
+        QSet<uint32_t> listedLidarIds;
+        for (const PlaybackDeviceInfo& device : playbackState.devices) {
+            ImuVisualizationDeviceDescriptor descriptor;
+            descriptor.handle = playbackState.imuHandleByLidarId.value(device.lidarId);
+            descriptor.modelDisplay = device.modelDisplay.isEmpty() ? lvx2DeviceTypeToModel(device.deviceType) : device.modelDisplay;
+            descriptor.serialNumber = device.lidarSn;
+            descriptor.ipAddress = PushMsgParser::lidarIdToIpString(device.lidarId);
+            descriptor.source = ImuVisualizationSource::Offline;
+            descriptors.push_back(descriptor);
+            listedLidarIds.insert(device.lidarId);
+        }
+
+        for (auto it = playbackState.imuHandleByLidarId.constBegin(); it != playbackState.imuHandleByLidarId.constEnd(); ++it) {
+            if (listedLidarIds.contains(it.key())) {
+                continue;
+            }
+            ImuVisualizationDeviceDescriptor descriptor;
+            descriptor.handle = it.value();
+            descriptor.modelDisplay = QStringLiteral("未知型号");
+            descriptor.ipAddress = PushMsgParser::lidarIdToIpString(it.key());
+            descriptor.source = ImuVisualizationSource::Offline;
+            descriptors.push_back(descriptor);
+        }
+    }
+
+    return descriptors;
+}
+
+void LivoxViewerWindow::clearPlaybackImuSamples()
+{
+    QMutexLocker lk(&imuState.visualizationMutex);
+    for (uint32_t handle : playbackState.imuHandleByLidarId) {
+        imuState.visualizationDevices.remove(handle);
+    }
+}
+
+void LivoxViewerWindow::appendPlaybackImuSamples(const QVector<Playback::ImuSample>& samples, bool resetSamples)
+{
+    if (resetSamples) {
+        clearPlaybackImuSamples();
+    }
+
+    QMutexLocker lk(&imuState.visualizationMutex);
+    QMap<uint32_t, double> latestRelativeSecByHandle;
+    for (const Playback::ImuSample& sample : samples) {
+        const uint32_t handle = playbackState.playbackImuHandleForLidarId(sample.lidarId);
+        ImuVisualizationDeviceState& deviceState = imuState.visualizationDevices[handle];
+        const double timestampSec = static_cast<double>(sample.timestampNs) * 1.0e-9;
+        if (deviceState.timeOriginSec < 0.0) {
+            deviceState.timeOriginSec = timestampSec;
+        }
+        const double relativeSec = timestampSec - deviceState.timeOriginSec;
+        const ImuAttitudeEstimator::Result attitude = deviceState.estimator.update(
+            timestampSec,
+            sample.gyroX, sample.gyroY, sample.gyroZ,
+            sample.accX, sample.accY, sample.accZ);
+        deviceState.samples.append(ImuVisualizationSample{
+            relativeSec,
+            sample.gyroX, sample.gyroY, sample.gyroZ,
+            sample.accX, sample.accY, sample.accZ,
+            attitude.rollDeg, attitude.pitchDeg, attitude.yawDeg,
+            attitude.orientation
+        });
+        latestRelativeSecByHandle.insert(handle, relativeSec);
+    }
+
+    for (auto it = latestRelativeSecByHandle.constBegin(); it != latestRelativeSecByHandle.constEnd(); ++it) {
+        ImuVisualizationDeviceState& deviceState = imuState.visualizationDevices[it.key()];
+        int removeCount = 0;
+        while (removeCount < deviceState.samples.size() &&
+               it.value() - deviceState.samples[removeCount].timestampSec > kImuChartRetentionSec) {
+            ++removeCount;
+        }
+        if (removeCount > 0) {
+            deviceState.samples.remove(0, removeCount);
+        }
+    }
 }
 
 void LivoxViewerWindow::onActionCaptureImuTriggered()
