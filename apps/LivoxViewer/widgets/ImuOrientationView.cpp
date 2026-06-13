@@ -269,6 +269,11 @@ void ImuOrientationView::paintGL()
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (m_hasData && m_program) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS);
+        glDisable(GL_BLEND);
+
         m_program->bind();
 
         QMatrix4x4 projection;
