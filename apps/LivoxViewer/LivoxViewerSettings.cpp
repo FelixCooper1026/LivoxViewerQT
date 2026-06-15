@@ -935,6 +935,12 @@ void LivoxViewerWindow::showPreferencesDialog()
             [elevationMinSpin](double value) { elevationMinSpin->setMaximum(value - 0.01); });
 
     QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, settingsContent);
+    if (QPushButton* okButton = box->button(QDialogButtonBox::Ok)) {
+        okButton->setText(QStringLiteral("确定"));
+    }
+    if (QPushButton* cancelButton = box->button(QDialogButtonBox::Cancel)) {
+        cancelButton->setText(QStringLiteral("取消"));
+    }
     connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
     connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
 

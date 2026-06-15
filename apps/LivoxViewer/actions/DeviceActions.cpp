@@ -1,6 +1,20 @@
 #include "LivoxViewerWindow.h"
 #include "LivoxCore/LidarSdkService.h"
 
+namespace {
+
+bool confirmDeviceOperation(QWidget* parent, const QString& title, const QString& text)
+{
+    QMessageBox box(QMessageBox::Warning, title, text, QMessageBox::NoButton, parent);
+    QPushButton* okButton = box.addButton(QStringLiteral("确定"), QMessageBox::AcceptRole);
+    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(okButton);
+    box.exec();
+    return box.clickedButton() == okButton;
+}
+
+} // namespace
+
 void LivoxViewerWindow::createDeviceActions()
 {
     // 固件升级
@@ -21,7 +35,7 @@ void LivoxViewerWindow::createDeviceActions()
             QMessageBox::warning(this, "重启雷达", "没有可用的已连接设备");
             return;
         }
-        if (QMessageBox::warning(this, "重启雷达", "雷达将会重启，请确认操作", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) {
+        if (confirmDeviceOperation(this, "重启雷达", "雷达将会重启，请确认操作")) {
             livox_status st = LivoxLidarRequestReboot(currentDevice.handle, nullptr, this);
             if (st == kLivoxLidarStatusSuccess) logMessage("已发送重启命令，请等待雷达重启...");
             else logMessage(QString("发送重启命令失败: %1").arg(st));
@@ -35,7 +49,7 @@ void LivoxViewerWindow::createDeviceActions()
             QMessageBox::warning(this, "恢复出厂设置", "没有可用的已连接设备");
             return;
         }
-        if (QMessageBox::warning(this, "恢复出厂设置", "雷达将会恢复出厂设置，雷达IP将恢复为192.168.1.3，请确认操作", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) {
+        if (confirmDeviceOperation(this, "恢复出厂设置", "雷达将会恢复出厂设置，雷达IP将恢复为192.168.1.3，请确认操作")) {
             livox_status st = LivoxLidarRequestReset(currentDevice.handle, nullptr, this);
             if (st == kLivoxLidarStatusSuccess) {
                 shutting_down = true;

@@ -1,8 +1,41 @@
 #include "LivoxViewerWindow.h"
+#include "LivoxCore/LidarSdkService.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDialogButtonBox>
+#include <QFrame>
+#include <QGridLayout>
 #include <QListWidget>
 #include <QUrl>
+
+namespace {
+
+QLabel* createAboutMutedLabel(const QString& text, QWidget* parent)
+{
+    QLabel* label = new QLabel(text, parent);
+    label->setWordWrap(true);
+    label->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    return label;
+}
+
+QLabel* createAboutValueLabel(const QString& text, QWidget* parent)
+{
+    QLabel* label = new QLabel(text, parent);
+    label->setWordWrap(true);
+    label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    return label;
+}
+
+void addAboutInfoRow(QGridLayout* layout, int row, const QString& name, const QString& value, QWidget* parent)
+{
+    QLabel* nameLabel = createAboutMutedLabel(name, parent);
+    QLabel* valueLabel = createAboutValueLabel(value, parent);
+    layout->addWidget(nameLabel, row, 0, Qt::AlignTop);
+    layout->addWidget(valueLabel, row, 1);
+}
+
+} // namespace
+
 void LivoxViewerWindow::createHelpActions()
 {
     // 1. Livox 官网
@@ -24,30 +57,86 @@ void LivoxViewerWindow::createHelpActions()
     // 退出
     // 关于
     connect(aboutAction, &QAction::triggered, [this]() {
-        QMessageBox msgBox(this);
-        msgBox.setWindowTitle("关于 LivoxViewerQT");
-        msgBox.setTextFormat(Qt::RichText);  // 支持富文本
-        msgBox.setText(QString(
-            "<h3>LivoxViewerQT - Livox 激光雷达可视化配置软件</h3>"
-            "<p><b>版本:</b> %1</p>"
-            "<p><b>编译日期:</b> " __DATE__ " </p>"
-            "<p><b>作者:</b> FelixCooper1026</p>"
-            "<p><b>功能特性:</b></p>"
-            "<ul>"
-            "<li>Livox 激光雷达设备连接与管理</li>"
-            "<li>实时点云数据可视化</li>"
-            "<li>设备参数配置与状态监控</li>"
-            "<li>点云数据采集与保存</li>"
-            "<li>IMU 数据显示与记录</li>"
-            "<li>设备LOG数据采集与保存</li>"
-            "<li>设备固件升级</li>"
-            "<li>点云数据格式转换</li>"
-            "<li>离线点云文件回放</li>"
-            "</ul>"
-            "<p><b>项目地址:</b> <a href=\"https://github.com/FelixCooper1026/LivoxViewerQT\">https://github.com/FelixCooper1026/LivoxViewerQT</a></p>"
-            "<p>基于 Qt " QT_VERSION_STR " 和 Livox SDK2 开发</p>"
-        ).arg(QCoreApplication::applicationVersion()));
-        msgBox.exec();
+        QDialog dlg(this);
+        dlg.setWindowTitle("关于 LivoxViewerQT");
+        dlg.resize(720, 480);
+
+        QVBoxLayout* rootLayout = new QVBoxLayout(&dlg);
+        rootLayout->setContentsMargins(18, 18, 18, 16);
+        rootLayout->setSpacing(12);
+
+        QFrame* infoFrame = new QFrame(&dlg);
+        infoFrame->setObjectName(QStringLiteral("AboutInfoFrame"));
+        infoFrame->setFrameShape(QFrame::StyledPanel);
+        infoFrame->setStyleSheet(
+            "QFrame#AboutInfoFrame {"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 8px;"
+            "  background: palette(base);"
+            "}"
+        );
+        QVBoxLayout* frameLayout = new QVBoxLayout(infoFrame);
+        frameLayout->setContentsMargins(18, 16, 18, 16);
+        frameLayout->setSpacing(14);
+
+        QHBoxLayout* headerLayout = new QHBoxLayout();
+        headerLayout->setSpacing(14);
+        QLabel* iconLabel = new QLabel(infoFrame);
+        iconLabel->setPixmap(QIcon(QStringLiteral(":/icons/app_icon.png")).pixmap(QSize(56, 56)));
+        iconLabel->setFixedSize(62, 62);
+        iconLabel->setAlignment(Qt::AlignCenter);
+        headerLayout->addWidget(iconLabel, 0, Qt::AlignTop);
+
+        QVBoxLayout* titleLayout = new QVBoxLayout();
+        titleLayout->setSpacing(4);
+        QLabel* titleLabel = new QLabel(QStringLiteral("LivoxViewerQT"), infoFrame);
+        QFont titleFont = titleLabel->font();
+        titleFont.setPointSize(titleFont.pointSize() + 7);
+        titleFont.setBold(true);
+        titleLabel->setFont(titleFont);
+        QLabel* descriptionLabel = createAboutMutedLabel(
+            QStringLiteral("集 Livox 设备接入、点云查看、参数调试、数据采集、离线回放与设备维护于一体的桌面工具。"),
+            infoFrame);
+        titleLayout->addWidget(titleLabel);
+        titleLayout->addWidget(descriptionLabel);
+        headerLayout->addLayout(titleLayout, 1);
+        frameLayout->addLayout(headerLayout);
+
+        QFrame* separator = new QFrame(infoFrame);
+        separator->setFrameShape(QFrame::HLine);
+        separator->setFrameShadow(QFrame::Plain);
+        separator->setStyleSheet(QStringLiteral("color: palette(mid);"));
+        frameLayout->addWidget(separator);
+
+        QGridLayout* infoLayout = new QGridLayout();
+        infoLayout->setContentsMargins(0, 0, 0, 0);
+        infoLayout->setHorizontalSpacing(18);
+        infoLayout->setVerticalSpacing(8);
+        infoLayout->setColumnStretch(1, 1);
+        addAboutInfoRow(infoLayout, 0, QStringLiteral("应用版本"), QCoreApplication::applicationVersion(), infoFrame);
+        addAboutInfoRow(infoLayout, 1, QStringLiteral("编译时间"), QStringLiteral(__DATE__) + QStringLiteral(" ") + QStringLiteral(__TIME__), infoFrame);
+        addAboutInfoRow(infoLayout, 2, QStringLiteral("Qt 版本"), QStringLiteral(QT_VERSION_STR), infoFrame);
+        addAboutInfoRow(infoLayout, 3, QStringLiteral("Livox SDK"), LidarSdkService::versionString(), infoFrame);
+        addAboutInfoRow(infoLayout, 4, QStringLiteral("作者"), QStringLiteral("FelixCooper1026"), infoFrame);
+        addAboutInfoRow(infoLayout, 5, QStringLiteral("主要能力"),
+            QStringLiteral("设备接入：发现设备、选择网卡、配置主机 IP\n"
+                           "点云查看：实时渲染、着色、投影、视角控制\n"
+                           "点云分析：测距、框选、点属性、Cross Section\n"
+                           "参数调试：基础、网络、FOV、外参与状态参数\n"
+                           "数据采集：点云录制、PCD/LAS 导出、IMU/LOG/Debug 采集\n"
+                           "离线工具：LVX2/PCAP 回放、LVX2 格式转换、固件维护与 HMS 诊断"),
+            infoFrame);
+        frameLayout->addLayout(infoLayout);
+        rootLayout->addWidget(infoFrame);
+
+        QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
+        if (QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close)) {
+            closeButton->setText(QStringLiteral("关闭"));
+        }
+        connect(buttonBox, &QDialogButtonBox::rejected, &dlg, &QDialog::accept);
+        rootLayout->addWidget(buttonBox);
+
+        dlg.exec();
     });
 
     // Livox 官网

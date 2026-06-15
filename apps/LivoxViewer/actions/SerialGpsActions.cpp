@@ -66,6 +66,9 @@ void LivoxViewerWindow::showTimeSyncDialog()
         rootLayout->addWidget(serialGroup);
 
         QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, imuState.timeSyncDialog);
+        if (QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close)) {
+            closeButton->setText(QStringLiteral("关闭"));
+        }
         connect(buttonBox, &QDialogButtonBox::rejected, imuState.timeSyncDialog, &QDialog::hide);
         rootLayout->addWidget(buttonBox);
 
