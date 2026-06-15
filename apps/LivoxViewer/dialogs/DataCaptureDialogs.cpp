@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "dialogs/DialogWindowUtils.h"
 #include "ThemeIconUtils.h"
 
 #include <QAbstractItemView>
@@ -416,11 +417,7 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("点云数据采集"));
     dlg->setWindowModality(Qt::NonModal);
-    dlg->setWindowFlags(dlg->windowFlags()
-        | Qt::Window
-        | Qt::WindowMinimizeButtonHint
-        | Qt::WindowMaximizeButtonHint
-        | Qt::WindowCloseButtonHint);
+    DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(1040, 560);
 
     QHBoxLayout* root = new QHBoxLayout(dlg);
@@ -652,11 +649,7 @@ void LivoxViewerWindow::showImuCaptureDialog()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("IMU数据采集"));
     dlg->setWindowModality(Qt::NonModal);
-    dlg->setWindowFlags(dlg->windowFlags()
-        | Qt::Window
-        | Qt::WindowMinimizeButtonHint
-        | Qt::WindowMaximizeButtonHint
-        | Qt::WindowCloseButtonHint);
+    DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(900, 460);
 
     QVBoxLayout* root = new QVBoxLayout(dlg);
@@ -790,11 +783,7 @@ void LivoxViewerWindow::showParameterCaptureDialog()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("设备参数信息采集"));
     dlg->setWindowModality(Qt::NonModal);
-    dlg->setWindowFlags(dlg->windowFlags()
-        | Qt::Window
-        | Qt::WindowMinimizeButtonHint
-        | Qt::WindowMaximizeButtonHint
-        | Qt::WindowCloseButtonHint);
+    DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(900, 460);
 
     QVBoxLayout* root = new QVBoxLayout(dlg);
@@ -928,11 +917,7 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->setWindowTitle(QStringLiteral("Debug数据采集"));
     dlg->setWindowModality(Qt::NonModal);
-    dlg->setWindowFlags(dlg->windowFlags()
-        | Qt::Window
-        | Qt::WindowMinimizeButtonHint
-        | Qt::WindowMaximizeButtonHint
-        | Qt::WindowCloseButtonHint);
+    DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(1080, 460);
 
     QVBoxLayout* root = new QVBoxLayout(dlg);

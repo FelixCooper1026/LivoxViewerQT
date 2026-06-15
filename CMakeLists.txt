@@ -217,6 +217,7 @@ set(SOURCES
      apps/LivoxViewer/widgets/ParameterOptionButtons.h
      apps/LivoxViewer/widgets/SwitchCheckBox.h
      apps/LivoxViewer/widgets/ImuOrientationView.h
+     apps/LivoxViewer/dialogs/DialogWindowUtils.h
      apps/LivoxViewer/dialogs/ImuVisualizationDialog.h
      apps/LivoxViewer/imu/ImuAttitudeEstimator.h
      apps/LivoxViewer/utils/DeviceModelResource.h

@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "dialogs/DialogWindowUtils.h"
 #include "ThemeIconUtils.h"
 
 #include <QAbstractItemModel>
@@ -459,11 +460,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     ConvertDialogState* state = new ConvertDialogState(dlg);
     dlg->setWindowTitle("LVX2 格式转换");
     dlg->setWindowModality(Qt::NonModal);
-    dlg->setWindowFlags(dlg->windowFlags()
-        | Qt::Window
-        | Qt::WindowMinimizeButtonHint
-        | Qt::WindowMaximizeButtonHint
-        | Qt::WindowCloseButtonHint);
+    DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(1140, 680);
 
     QHBoxLayout* root = new QHBoxLayout(dlg);

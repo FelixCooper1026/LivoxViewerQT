@@ -1,5 +1,6 @@
 #include "dialogs/ImuVisualizationDialog.h"
 
+#include "dialogs/DialogWindowUtils.h"
 #include "LivoxViewerWindow.h"
 #include "widgets/ImuOrientationView.h"
 #include "widgets/SwitchCheckBox.h"
@@ -178,7 +179,7 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner)
     , m_owner(owner)
 {
     setObjectName(QStringLiteral("ImuVisualizationDialog"));
-    setWindowFlags(windowFlags() | Qt::WindowMinMaxButtonsHint);
+    DialogWindowUtils::enableTopLevelWindowControls(this);
     setWindowTitle(QStringLiteral("IMU数据可视化"));
     setMinimumSize(980, 640);
 
