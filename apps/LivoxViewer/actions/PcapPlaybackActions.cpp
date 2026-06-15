@@ -37,9 +37,7 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
             if (!ok) {
                 playbackState.path.clear();
                 updateLvx2PlaybackUi();
-                if (statusLabelBar) {
-                    statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
-                }
+                updateStatus();
                 QMessageBox::warning(this, "播放Pcap文件", errorMessage);
                 return;
             }

@@ -7,6 +7,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QMutexLocker>
+#include <QStringList>
 #include <QTextStream>
 #include <QTimer>
 
@@ -34,6 +35,13 @@ QString pointCloudOutputDirName(PointCloudCaptureFormat format, const QString& s
 bool taskRunning(const CaptureTaskState& task)
 {
     return task.status == CaptureTaskStatus::Running;
+}
+
+void appendRunningTaskMessage(QStringList& messages, const CaptureTaskState& task)
+{
+    if (taskRunning(task)) {
+        messages.append(task.message);
+    }
 }
 
 int normalizedDuration(int durationSec)
@@ -378,7 +386,7 @@ bool LivoxViewerWindow::startLogCapture(int durationSec, QString& errorMessage)
         return false;
     }
     if (taskRunning(captureState.logTask)) {
-        errorMessage = QStringLiteral("LOG数据采集正在运行");
+        errorMessage = QStringLiteral("LOG采集正在运行");
         return false;
     }
 
@@ -394,7 +402,7 @@ bool LivoxViewerWindow::startLogCapture(int durationSec, QString& errorMessage)
     captureState.logHandle = currentDevice.handle;
     startTask(captureState.logTask, durationSec, outputDir, QString(), QStringLiteral("LOG采集中"));
     captureState.timer->start(1000);
-    statusLabelBar->setText(QStringLiteral("正在采集Debug数据..."));
+    statusLabelBar->setText(captureState.logTask.message);
     logMessage(QString("LOG采集开始: %1").arg(QDir::toNativeSeparators(outputDir)));
     return true;
 }
@@ -421,7 +429,7 @@ bool LivoxViewerWindow::startDebugPointCloudCapture(int durationSec, QString& er
     captureState.debugHandle = currentDevice.handle;
     startTask(captureState.debugTask, durationSec, outputDir, QString(), QStringLiteral("Debug点云采集中"));
     captureState.timer->start(1000);
-    statusLabelBar->setText(QStringLiteral("正在采集Debug数据..."));
+    statusLabelBar->setText(QStringLiteral("正在采集Debug点云..."));
     logMessage(QString("Debug点云采集开始: %1").arg(QDir::toNativeSeparators(outputDir)));
     return true;
 }
@@ -469,8 +477,8 @@ void LivoxViewerWindow::stopLogCapture()
     LivoxLidarStopLogger(captureState.logHandle, kLivoxLidarRealTimeLog, LoggerStopCallback, this);
     captureState.logHandle = 0;
     finishTask(captureState.logTask, QStringLiteral("LOG采集完成"));
-    statusLabelBar->setText(QStringLiteral("LOG数据采集完成"));
-    logMessage(QStringLiteral("LOG数据采集完成"));
+    statusLabelBar->setText(captureState.logTask.message);
+    logMessage(QStringLiteral("LOG采集完成"));
 }
 
 void LivoxViewerWindow::stopDebugPointCloudCapture()
@@ -524,7 +532,13 @@ void LivoxViewerWindow::onCaptureTick()
         taskRunning(captureState.debugTask);
 
     if (anyRunning) {
-        statusLabelBar->setText(QStringLiteral("数据采集中..."));
+        QStringList messages;
+        appendRunningTaskMessage(messages, captureState.pointCloudTask);
+        appendRunningTaskMessage(messages, captureState.imuTask);
+        appendRunningTaskMessage(messages, captureState.parameterTask);
+        appendRunningTaskMessage(messages, captureState.logTask);
+        appendRunningTaskMessage(messages, captureState.debugTask);
+        statusLabelBar->setText(messages.join(QStringLiteral(" / ")));
     } else {
         captureState.timer->stop();
     }

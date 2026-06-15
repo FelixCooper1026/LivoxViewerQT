@@ -1032,7 +1032,7 @@ void LivoxViewerWindow::showDebugCaptureDialog()
             QMessageBox::warning(dlg, QStringLiteral("Debug数据采集"), errorMessage);
             return;
         }
-        dialogStatusLabel->setText(QStringLiteral("LOG数据采集已启动"));
+        dialogStatusLabel->setText(QStringLiteral("LOG采集已启动"));
         updateUi();
     });
     QObject::connect(debugStartButton, &QPushButton::clicked, dlg, [this, dlg, dialogStatusLabel, debugDurationSpin, updateUi]() {

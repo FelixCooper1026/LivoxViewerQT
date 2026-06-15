@@ -65,6 +65,7 @@ void LivoxViewerWindow::activateConnectedDevice(const LidarDeviceInfo& device)
     }
     setCurrentDeviceHandle(device.handle);
     updateLidarDeviceList();
+    updateStatus();
 }
 
 void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_t dev_type)
@@ -138,6 +139,7 @@ void LivoxViewerWindow::registerPointCloudDeviceIfNeeded(uint32_t handle, uint8_
         logMessage(QString("发现设备: %1 (%2) - IP: %3").arg(device.sn).arg(device.product_info).arg(device.lidar_ip));
     } else {
         updateLidarDeviceList();
+        updateStatus();
     }
 }
 
@@ -198,6 +200,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 window->setCurrentDeviceHandle(device.handle);
             }
             window->updateLidarDeviceList();
+            window->updateStatus();
 
             const bool isCurrentDevice = window->hasCurrentLidarHandle && window->currentLidarHandle == device.handle;
             if (isCurrentDevice) {
@@ -249,6 +252,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 window->setCurrentDeviceHandle(nextHandle);
             }
             window->updateLidarDeviceList();
+            window->updateStatus();
         }, Qt::QueuedConnection);
     }
 }

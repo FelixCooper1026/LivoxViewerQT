@@ -18,6 +18,7 @@ void LivoxViewerWindow::createDeviceActions()
         LidarDeviceInfo currentDevice;
         if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
             logMessage("设备未连接，无法重启");
+            QMessageBox::warning(this, "重启雷达", "没有可用的已连接设备");
             return;
         }
         if (QMessageBox::warning(this, "重启雷达", "雷达将会重启，请确认操作", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) {
@@ -31,6 +32,7 @@ void LivoxViewerWindow::createDeviceActions()
         LidarDeviceInfo currentDevice;
         if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
             logMessage("设备未连接，无法恢复出厂设置");
+            QMessageBox::warning(this, "恢复出厂设置", "没有可用的已连接设备");
             return;
         }
         if (QMessageBox::warning(this, "恢复出厂设置", "雷达将会恢复出厂设置，雷达IP将恢复为192.168.1.3，请确认操作", QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes) {

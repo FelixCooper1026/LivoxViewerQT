@@ -77,6 +77,7 @@ void LivoxViewerWindow::setRealtimeState(RealtimeConnectionState state)
     }
     logMessage(QString("[Realtime] State: %1 -> %2").arg(stateName(realtimeState), stateName(state)));
     realtimeState = state;
+    updateStatus();
 }
 
 void LivoxViewerWindow::stopAndDeleteTimer(QTimer*& timer)
@@ -705,9 +706,6 @@ void LivoxViewerWindow::initializeLivoxSdk()
 
     sdk_started = true;
     pointCloudCallbackEnabled = true;
-    if (statusLabelBar) {
-        statusLabelBar->setText("已连接 - 采样中");
-    }
     setRealtimeState(RealtimeConnectionState::Running);
 }
 

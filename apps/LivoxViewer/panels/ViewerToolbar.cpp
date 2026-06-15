@@ -741,7 +741,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             logMessage("进入测距模式，已暂停点云播放");
         } else {
             onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
-            statusLabelBar->setText("已连接 - 采样中");
+            updateStatus();
             logMessage("退出测距模式，恢复点云播放");
         }
     });
@@ -771,7 +771,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 attrDock->hide();
             }
             selectionRealtimeEnabled = false;
-            statusLabelBar->setText("已连接 - 采样中");
+            updateStatus();
         } else {
             if (attrDock) {
                 attrDock->show();
@@ -870,7 +870,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             measureAction->setEnabled(true);
             selectionAction->setEnabled(true);
             updateLvx2PlaybackUi();
-            statusLabelBar->setText(sdk_started ? "已连接 - 采样中" : "就绪");
+            updateStatus();
             logMessage("退出Cross Section，已恢复点云显示");
             crossSectionControlsAction->setEnabled(false);
             crossSectionControlsSwitch->setEnabled(false);
