@@ -137,6 +137,24 @@ PointCloudView* LivoxViewerWindow::currentPointCloudView() const
     return pointCloudViewForTab(activeVisualizationTabId);
 }
 
+QVector<PointCloudView*> LivoxViewerWindow::pointCloudViews() const
+{
+    QVector<PointCloudView*> views;
+    for (PointCloudView* view : pointCloudViewsByTab) {
+        if (view && !views.contains(view)) {
+            views.append(view);
+        }
+    }
+    return views;
+}
+
+void LivoxViewerWindow::forEachPointCloudView(const std::function<void(PointCloudView*)>& callback) const
+{
+    for (PointCloudView* view : pointCloudViews()) {
+        callback(view);
+    }
+}
+
 PlaybackControllerState* LivoxViewerWindow::imuPlaybackState()
 {
     return playbackStateForTab(imuSourceVisualizationTabId);

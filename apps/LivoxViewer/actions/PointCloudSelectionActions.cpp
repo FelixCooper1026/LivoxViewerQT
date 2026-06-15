@@ -282,19 +282,23 @@ void LivoxViewerWindow::updateSelectionTableAndLog()
         const int totalCount = pts.size();
         const int validCount = totalCount - zeroCount;
 
-        if (totalCount != lastSelectionCount) {
-            lastSelectionCount = totalCount;
-            logMessage(QString("框选点云个数: %1, 零点个数: %2, 总数: %3")
-                       .arg(validCount).arg(zeroCount).arg(totalCount));
+        if (selectionSummaryLabel) {
+            selectionSummaryLabel->setText(QString("框选点云个数: %1\n零点个数: %2\n总数: %3")
+                                           .arg(validCount)
+                                           .arg(zeroCount)
+                                           .arg(totalCount));
         }
+        lastSelectionCount = totalCount;
 
         model->setPoints(std::move(pts));
+        pointCloudView->update();
     } else {
-        if (lastSelectionCount != -1) {
-            lastSelectionCount = -1;
-            logMessage("已清除框选");
+        lastSelectionCount = -1;
+        if (selectionSummaryLabel) {
+            selectionSummaryLabel->setText("未框选点云");
         }
         model->clear();
+        pointCloudView->update();
     }
 }
 

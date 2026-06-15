@@ -49,9 +49,9 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
 void LivoxViewerWindow::onPointSizeChanged(int px)
 {
     pointSizePx = static_cast<float>(px);
-    for (PointCloudView* view : pointCloudViewsByTab) {
-        if (view) view->setPointSize(pointSizePx);
-    }
+    forEachPointCloudView([this](PointCloudView* view) {
+        view->setPointSize(pointSizePx);
+    });
 }
 
 void LivoxViewerWindow::onColorModeClicked(int index)
@@ -70,26 +70,37 @@ int LivoxViewerWindow::effectiveColorMode() const
 
 void LivoxViewerWindow::updatePointCloudLegend()
 {
-    if (!pointCloudView) {
+    const QVector<PointCloudView*> views = pointCloudViews();
+    if (views.isEmpty()) {
         return;
     }
 
     const int mode = effectiveColorMode();
     if (mode == ColorByReflectivity) {
-        pointCloudView->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
+        for (PointCloudView* view : views) {
+            view->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
+        }
     } else if (mode == ColorByDistance) {
-        pointCloudView->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
+        for (PointCloudView* view : views) {
+            view->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
+        }
     } else if (mode == ColorByElevation) {
-        pointCloudView->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+        for (PointCloudView* view : views) {
+            view->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+        }
     } else if (mode == ColorSolid) {
-        pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
+        for (PointCloudView* view : views) {
+            view->setLegend(ColorSolid, 0.0f, 1.0f, false);
+        }
     } else if (mode == ColorByLine) {
         QVector<int> lineNumbers;
         lineNumbers.reserve(lineColors.size());
         for (int i = 0; i < lineColors.size(); ++i) {
             lineNumbers.append(i);
         }
-        pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, true, lineColors, lineNumbers);
+        for (PointCloudView* view : views) {
+            view->setLegend(ColorByLine, 0.0f, 1.0f, true, lineColors, lineNumbers);
+        }
     }
 }
 
@@ -97,6 +108,9 @@ void LivoxViewerWindow::onProjectionDepthChanged(double meters)
 {
     if (meters < 0.0) meters = 0.0;
     projectionDepthMeters = static_cast<float>(meters);
+    if (playbackState.active && playbackState.frame >= 0) {
+        showLvx2PlaybackFrame(playbackState.frame);
+    }
 }
 
 void LivoxViewerWindow::onProjectionDepthToggled(bool enabled)
@@ -107,6 +121,9 @@ void LivoxViewerWindow::onProjectionDepthToggled(bool enabled)
     projectionDepthEnabled = enabled;
     if (projectionDepthSpin) {
         projectionDepthSpin->setEnabled(enabled);
+    }
+    if (playbackState.active && playbackState.frame >= 0) {
+        showLvx2PlaybackFrame(playbackState.frame);
     }
     logMessage(enabled ? "深度投影已启用" : "深度投影已关闭");
 }
@@ -120,19 +137,22 @@ void LivoxViewerWindow::onPlanarProjectionToggled(bool enabled)
     if (enabled) {
         logMessage("平面投影模式已启用");
         statusLabelBar->setText("平面投影模式已启用");
-        if (pointCloudView) {
-            pointCloudView->resetView();
-            pointCloudView->setTopDownView();
-        }
+        forEachPointCloudView([](PointCloudView* view) {
+            view->resetView();
+            view->setTopDownView();
+        });
     } else {
         logMessage("平面投影模式已关闭");
         statusLabelBar->setText("平面投影模式已关闭");
-        if (pointCloudView) {
-            pointCloudView->resetView();
-        }
+        forEachPointCloudView([](PointCloudView* view) {
+            view->resetView();
+        });
     }
     if (planarRadiusSpin) {
         planarRadiusSpin->setEnabled(enabled);
+    }
+    if (playbackState.active && playbackState.frame >= 0) {
+        showLvx2PlaybackFrame(playbackState.frame);
     }
     updatePointCloudLegend();
 }
@@ -143,6 +163,9 @@ void LivoxViewerWindow::onPlanarProjectionRadiusChanged(double radius)
     planarProjectionRadius = static_cast<float>(radius);
     if (planarProjectionEnabled) {
         updatePointCloudLegend();
+        if (playbackState.active && playbackState.frame >= 0) {
+            showLvx2PlaybackFrame(playbackState.frame);
+        }
     }
     logMessage(QString("平面投影半径已设置为 %1 m").arg(radius));
 }

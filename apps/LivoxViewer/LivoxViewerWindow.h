@@ -157,6 +157,8 @@ private:
     void updatePointCloudLegend();
     void updateProjectionControlsVisibility();
     void syncPointCloudVisualizationAction();
+    QVector<PointCloudView*> pointCloudViews() const;
+    void forEachPointCloudView(const std::function<void(PointCloudView*)>& callback) const;
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
@@ -255,6 +257,9 @@ private:
     QAction* actionPlayLvx2 = nullptr;
     QAction* actionPlayPcap = nullptr;
     QAction* actionPointCloudVisualization = nullptr;
+    QAction* pointCloudMeasureAction = nullptr;
+    QAction* pointCloudSelectionAction = nullptr;
+    QAction* pointCloudCrossSectionAction = nullptr;
 
     // Livox SDK related
     bool sdk_initialized;
@@ -308,6 +313,7 @@ private:
     QTableView* selectionTable = nullptr;
     // 点属性弹窗
     QDockWidget* attrDock = nullptr;
+    QLabel* selectionSummaryLabel = nullptr;
     QTableView* attrTable = nullptr;
     // 采集控制
     CaptureSessionState captureState;

@@ -216,6 +216,33 @@ void LivoxViewerWindow::createParameterPanel()
     attrDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     QWidget* attrContent = new QWidget(attrDock);
     QVBoxLayout* attrLayout = new QVBoxLayout(attrContent);
+    attrLayout->setContentsMargins(8, 8, 8, 8);
+    attrLayout->setSpacing(8);
+
+    QFrame* selectionSummaryCard = new QFrame(attrContent);
+    selectionSummaryCard->setObjectName("SelectionSummaryCard");
+    selectionSummaryCard->setFrameShape(QFrame::StyledPanel);
+    selectionSummaryCard->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    selectionSummaryCard->setStyleSheet(
+        "QFrame#SelectionSummaryCard {"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "  background: palette(alternate-base);"
+        "}"
+    );
+    QVBoxLayout* summaryLayout = new QVBoxLayout(selectionSummaryCard);
+    summaryLayout->setContentsMargins(10, 8, 10, 8);
+    summaryLayout->setSpacing(4);
+    QLabel* summaryTitle = new QLabel("框选统计", selectionSummaryCard);
+    QFont summaryTitleFont = summaryTitle->font();
+    summaryTitleFont.setBold(true);
+    summaryTitle->setFont(summaryTitleFont);
+    selectionSummaryLabel = new QLabel("未框选点云", selectionSummaryCard);
+    selectionSummaryLabel->setWordWrap(true);
+    summaryLayout->addWidget(summaryTitle);
+    summaryLayout->addWidget(selectionSummaryLabel);
+    attrLayout->addWidget(selectionSummaryCard);
+
     attrTable = new QTableView(attrContent);
     attrTable->verticalHeader()->setVisible(false);
     attrTable->setEditTriggers(QAbstractItemView::NoEditTriggers);

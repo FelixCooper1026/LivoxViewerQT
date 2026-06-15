@@ -514,9 +514,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     gridAction->setChecked(true);
     gridAction->setToolTip("显示/隐藏世界坐标网格");
     connect(gridAction, &QAction::toggled, this, [this](bool checked) {
-        if (pointCloudView) {
-            pointCloudView->setGridVisible(checked);
-        }
+        forEachPointCloudView([checked](PointCloudView* view) {
+            view->setGridVisible(checked);
+        });
     });
     displayGroup->addPrimaryWidget(createIconButton(gridAction, displayGroup, toolbarIconSize));
 
@@ -548,7 +548,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
 
         if (!checked) {
-            pointCloudView->setStlModelVisible(false);
+            forEachPointCloudView([](PointCloudView* view) {
+                view->setStlModelVisible(false);
+            });
             statusLabelBar->setText("GLB模型已隐藏");
             logMessage("GLB模型已隐藏");
             return;
@@ -608,14 +610,18 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             }
 
             const bool sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
-            pointCloudView->setStlModelMesh(mesh, sourceXReversed);
+            forEachPointCloudView([&mesh, sourceXReversed](PointCloudView* view) {
+                view->setStlModelMesh(mesh, sourceXReversed);
+            });
             loadedStlModelKey = modelKey;
             statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));
             logMessage(QString("GLB模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
             return;
         }
 
-        pointCloudView->setStlModelVisible(true);
+        forEachPointCloudView([](PointCloudView* view) {
+            view->setStlModelVisible(true);
+        });
         statusLabelBar->setText(QString("GLB模型已显示: %1").arg(modelKey));
         logMessage(QString("GLB模型已显示: %1").arg(modelKey));
     });
@@ -721,6 +727,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->setCompactPriority(2);
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
     ThemeIconUtils::setThemedSvgIcon(measureAction, QStringLiteral(":/icons/measure.svg"));
+    pointCloudMeasureAction = measureAction;
     measureAction->setCheckable(true);
     measureAction->setToolTip("点云测距");
     connect(measureAction, &QAction::triggered, this, [this, measureAction]() {
@@ -730,6 +737,20 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             return;
         }
         const bool enable = !pointCloudView->isMeasurementModeEnabled();
+        if (enable) {
+            if (pointCloudView->isSelectionModeEnabled()) {
+                pointCloudView->setSelectionModeEnabled(false);
+                selectionRealtimeEnabled = false;
+                if (pointCloudSelectionAction) {
+                    QSignalBlocker selectionBlocker(pointCloudSelectionAction);
+                    pointCloudSelectionAction->setChecked(false);
+                }
+                updateSelectionTableAndLog();
+            }
+            if (pointCloudView->isCrossSectionModeEnabled() && pointCloudCrossSectionAction) {
+                pointCloudCrossSectionAction->trigger();
+            }
+        }
         pointCloudView->setMeasurementModeEnabled(enable);
         measurementModeActive = enable;
         QSignalBlocker blocker(measureAction);
@@ -750,6 +771,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 
     QAction* selectionAction = new QAction(QIcon(":/icons/select_box.svg"), "点云框选", this);
     ThemeIconUtils::setThemedSvgIcon(selectionAction, QStringLiteral(":/icons/select_box.svg"));
+    pointCloudSelectionAction = selectionAction;
     selectionAction->setCheckable(true);
     selectionAction->setToolTip("点云框选");
     connect(selectionAction, &QAction::triggered, this, [this, selectionAction]() {
@@ -759,13 +781,23 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             return;
         }
         const bool enable = !pointCloudView->isSelectionModeEnabled();
+        if (enable) {
+            if (pointCloudView->isMeasurementModeEnabled()) {
+                pointCloudView->setMeasurementModeEnabled(false);
+                measurementModeActive = false;
+                onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
+                if (pointCloudMeasureAction) {
+                    QSignalBlocker measureBlocker(pointCloudMeasureAction);
+                    pointCloudMeasureAction->setChecked(false);
+                }
+            }
+            if (pointCloudView->isCrossSectionModeEnabled() && pointCloudCrossSectionAction) {
+                pointCloudCrossSectionAction->trigger();
+            }
+        }
         pointCloudView->setSelectionModeEnabled(enable);
         if (!enable) {
             pointCloudView->clearSelectionAabb();
-            if (lastSelectionCount != -1) {
-                lastSelectionCount = -1;
-                logMessage("已清除框选");
-            }
             updateSelectionTableAndLog();
             if (attrDock) {
                 attrDock->hide();
@@ -789,6 +821,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 
     QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
     ThemeIconUtils::setThemedSvgIcon(crossSectionAction, QStringLiteral(":/icons/cross_section.svg"));
+    pointCloudCrossSectionAction = crossSectionAction;
     crossSectionAction->setCheckable(true);
     crossSectionAction->setToolTip("Cross Section");
     QAction* crossSectionControlsAction = new QAction("显示交互控件", this);
@@ -821,6 +854,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             if (pointCloudView->isMeasurementModeEnabled()) {
                 pointCloudView->setMeasurementModeEnabled(false);
                 measurementModeActive = false;
+                onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
                 QSignalBlocker blocker(measureAction);
                 measureAction->setChecked(false);
             }
@@ -829,6 +863,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 selectionRealtimeEnabled = false;
                 QSignalBlocker blocker(selectionAction);
                 selectionAction->setChecked(false);
+                updateSelectionTableAndLog();
             }
 
             measureAction->setEnabled(false);
@@ -896,9 +931,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
     });
     connect(crossSectionControlsAction, &QAction::toggled, this, [this](bool visible) {
-        if (pointCloudView) {
-            pointCloudView->setCrossSectionControlsVisible(visible);
-        }
+        forEachPointCloudView([visible](PointCloudView* view) {
+            view->setCrossSectionControlsVisible(visible);
+        });
     });
 
     toolsGroup->addPrimaryWidget(createIconButton(crossSectionAction, toolsGroup, toolbarIconSize));
@@ -918,7 +953,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     perspectiveProjectionAction->setToolTip("透视投影");
     projectionModeGroup->addAction(perspectiveProjectionAction);
     connect(perspectiveProjectionAction, &QAction::triggered, this, [this]() {
-        pointCloudView->setProjectionMode(PointCloudView::ProjectionMode::Perspective);
+        forEachPointCloudView([](PointCloudView* view) {
+            view->setProjectionMode(PointCloudView::ProjectionMode::Perspective);
+        });
     });
     projectionGroup->addPrimaryWidget(createIconButton(perspectiveProjectionAction, projectionGroup, toolbarIconSize));
 
@@ -928,7 +965,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     orthographicProjectionAction->setToolTip("正交投影");
     projectionModeGroup->addAction(orthographicProjectionAction);
     connect(orthographicProjectionAction, &QAction::triggered, this, [this]() {
-        pointCloudView->setProjectionMode(PointCloudView::ProjectionMode::Orthographic);
+        forEachPointCloudView([](PointCloudView* view) {
+            view->setProjectionMode(PointCloudView::ProjectionMode::Orthographic);
+        });
     });
     projectionGroup->addPrimaryWidget(createIconButton(orthographicProjectionAction, projectionGroup, toolbarIconSize));
     projectionGroup->moreMenu()->addAction(perspectiveProjectionAction);
@@ -938,29 +977,30 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ToolbarGroup* viewGroup = new ToolbarGroup("视角控制", viewerToolbar);
     viewGroup->setCompactPriority(1);
     auto applyViewPreset = [this](int index) {
-        if (!pointCloudView) {
-            return;
-        }
+        PointCloudView::ViewPreset preset = PointCloudView::ViewPreset::Top;
         switch (index) {
         case 0:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Top);
+            preset = PointCloudView::ViewPreset::Top;
             break;
         case 1:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Front);
+            preset = PointCloudView::ViewPreset::Front;
             break;
         case 2:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Left);
+            preset = PointCloudView::ViewPreset::Left;
             break;
         case 3:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Right);
+            preset = PointCloudView::ViewPreset::Right;
             break;
         case 4:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Back);
+            preset = PointCloudView::ViewPreset::Back;
             break;
         default:
-            pointCloudView->setViewPreset(PointCloudView::ViewPreset::Top);
+            preset = PointCloudView::ViewPreset::Top;
             break;
         }
+        forEachPointCloudView([preset](PointCloudView* view) {
+            view->setViewPreset(preset);
+        });
     };
 
     const QStringList viewNames = {"俯视图", "前视图", "左视图", "右视图", "后视图"};
@@ -986,9 +1026,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ThemeIconUtils::setThemedSvgIcon(resetViewAction, QStringLiteral(":/icons/reset_view.svg"));
     resetViewAction->setToolTip("重置视图");
     connect(resetViewAction, &QAction::triggered, this, [this]() {
-        if (pointCloudView) {
-            pointCloudView->resetView();
-        }
+        forEachPointCloudView([](PointCloudView* view) {
+            view->resetView();
+        });
     });
     viewGroup->addSecondaryWidget(createIconButton(resetViewAction, viewGroup, toolbarIconSize));
     viewGroup->moreMenu()->addSeparator();

@@ -1143,6 +1143,7 @@ void PointCloudView::mouseReleaseEvent(QMouseEvent *event)
         if (w) {
             QMetaObject::invokeMethod(w, "onSelectionFinished", Qt::QueuedConnection);
         }
+        update();
     }
     m_mousePressed = false;
     m_activeButton = Qt::NoButton;
