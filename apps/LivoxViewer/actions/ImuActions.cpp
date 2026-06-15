@@ -9,7 +9,9 @@
 #include <QSet>
 #include <QTextStream>
 
+#include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <thread>
 
 namespace {
@@ -98,11 +100,35 @@ void LivoxViewerWindow::onActionShowImuCharts()
     dialog->show();
 }
 
-QVector<ImuVisualizationSample> LivoxViewerWindow::imuVisualizationSamplesSnapshot(uint32_t handle)
+ImuVisualizationSamplesSnapshot LivoxViewerWindow::imuVisualizationSamplesSnapshot(uint32_t handle, double visibleWindowSec)
 {
     QMutexLocker lk(&imuState.visualizationMutex);
     auto it = imuState.visualizationDevices.constFind(handle);
-    return it == imuState.visualizationDevices.constEnd() ? QVector<ImuVisualizationSample>() : it.value().samples;
+    if (it == imuState.visualizationDevices.constEnd()) {
+        return {};
+    }
+
+    ImuVisualizationSamplesSnapshot snapshot;
+    snapshot.revision = it.value().revision;
+    snapshot.hasDevice = true;
+    const QVector<ImuVisualizationSample>& samples = it.value().samples;
+    if (samples.isEmpty()) {
+        return snapshot;
+    }
+
+    const double startSec = std::max(0.0, samples.last().timestampSec - visibleWindowSec);
+    const auto begin = std::lower_bound(
+        samples.constBegin(),
+        samples.constEnd(),
+        startSec,
+        [](const ImuVisualizationSample& sample, double timestampSec) {
+            return sample.timestampSec < timestampSec;
+        });
+    snapshot.samples.reserve(int(std::distance(begin, samples.constEnd())));
+    for (auto sample = begin; sample != samples.constEnd(); ++sample) {
+        snapshot.samples.append(*sample);
+    }
+    return snapshot;
 }
 
 QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDevicesSnapshot()
@@ -165,6 +191,7 @@ void LivoxViewerWindow::appendPlaybackImuSamples(const QVector<Playback::ImuSamp
 
     QMutexLocker lk(&imuState.visualizationMutex);
     QMap<uint32_t, double> latestRelativeSecByHandle;
+    QSet<uint32_t> changedHandles;
     for (const Playback::ImuSample& sample : samples) {
         const uint32_t handle = playbackState.playbackImuHandleForLidarId(sample.lidarId);
         ImuVisualizationDeviceState& deviceState = imuState.visualizationDevices[handle];
@@ -185,6 +212,7 @@ void LivoxViewerWindow::appendPlaybackImuSamples(const QVector<Playback::ImuSamp
             attitude.orientation
         });
         latestRelativeSecByHandle.insert(handle, relativeSec);
+        changedHandles.insert(handle);
     }
 
     for (auto it = latestRelativeSecByHandle.constBegin(); it != latestRelativeSecByHandle.constEnd(); ++it) {
@@ -197,6 +225,9 @@ void LivoxViewerWindow::appendPlaybackImuSamples(const QVector<Playback::ImuSamp
         if (removeCount > 0) {
             deviceState.samples.remove(0, removeCount);
         }
+    }
+    for (uint32_t handle : changedHandles) {
+        imuState.visualizationDevices[handle].revision = ++imuState.visualizationRevision;
     }
 }
 

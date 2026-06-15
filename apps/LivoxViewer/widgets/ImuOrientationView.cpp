@@ -224,12 +224,18 @@ void ImuOrientationView::setDeviceModelName(const QString& modelName)
 
 void ImuOrientationView::setOrientation(const QQuaternion& orientation)
 {
+    if (m_orientation == orientation) {
+        return;
+    }
     m_orientation = orientation;
     update();
 }
 
 void ImuOrientationView::setHasData(bool hasData)
 {
+    if (m_hasData == hasData) {
+        return;
+    }
     m_hasData = hasData;
     update();
 }

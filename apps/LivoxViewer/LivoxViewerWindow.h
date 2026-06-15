@@ -119,7 +119,7 @@ public:
 
     QVector<LidarDeviceInfo> connectedLidarDevicesSnapshot();
     QVector<ImuVisualizationDeviceDescriptor> imuVisualizationDevicesSnapshot();
-    QVector<ImuVisualizationSample> imuVisualizationSamplesSnapshot(uint32_t handle);
+    ImuVisualizationSamplesSnapshot imuVisualizationSamplesSnapshot(uint32_t handle, double visibleWindowSec);
 
 private:
     void initializeUserInterface();

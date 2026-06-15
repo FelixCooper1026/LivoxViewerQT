@@ -15,8 +15,6 @@
 #include <cstdint>
 
 class ImuOrientationView;
-class QGraphicsEllipseItem;
-class QGraphicsLineItem;
 class QLabel;
 class QEvent;
 class LivoxViewerWindow;
@@ -24,6 +22,7 @@ class QListWidget;
 class QPushButton;
 class QTimer;
 class SwitchCheckBox;
+class QWidget;
 
 class ImuVisualizationDialog : public QDialog
 {
@@ -46,10 +45,7 @@ private:
         QLineSeries* seriesX = nullptr;
         QLineSeries* seriesY = nullptr;
         QLineSeries* seriesZ = nullptr;
-        QGraphicsLineItem* hoverLine = nullptr;
-        QGraphicsEllipseItem* hoverPointX = nullptr;
-        QGraphicsEllipseItem* hoverPointY = nullptr;
-        QGraphicsEllipseItem* hoverPointZ = nullptr;
+        QWidget* hoverOverlay = nullptr;
         QLabel* hoverLabel = nullptr;
         QValueAxis* axisX = nullptr;
         QValueAxis* axisY = nullptr;
@@ -71,7 +67,7 @@ private:
     void refreshDeviceList();
     void updateDeviceCardSelection();
     void updateOrientationModel();
-    void refreshData();
+    void refreshData(bool force = false);
     void resetZoom();
     void setPaused(bool paused);
     void clearChart(ChartPanel& panel);
@@ -98,7 +94,12 @@ private:
     ImuOrientationView* m_orientationView = nullptr;
     QMap<uint32_t, ImuVisualizationDeviceDescriptor> m_devicesByHandle;
     uint32_t m_currentHandle = 0;
+    uint32_t m_lastSampleHandle = 0;
+    uint64_t m_lastSampleRevision = 0;
+    int m_deviceRefreshElapsedMs = 0;
     bool m_haveCurrentHandle = false;
+    bool m_haveLastSampleSnapshot = false;
+    bool m_chartsCleared = false;
     bool m_paused = false;
 };
 

@@ -51,8 +51,16 @@ struct ImuVisualizationSample
 struct ImuVisualizationDeviceState
 {
     double timeOriginSec = -1.0;
+    uint64_t revision = 0;
     ImuAttitudeEstimator estimator;
     QVector<ImuVisualizationSample> samples;
+};
+
+struct ImuVisualizationSamplesSnapshot
+{
+    QVector<ImuVisualizationSample> samples;
+    uint64_t revision = 0;
+    bool hasDevice = false;
 };
 
 enum class ImuVisualizationSource {
@@ -96,6 +104,7 @@ struct ImuRuntimeState
     QPointer<ImuVisualizationDialog> visualizationDialog;
     QMutex visualizationMutex;
     QMap<uint32_t, ImuVisualizationDeviceState> visualizationDevices;
+    uint64_t visualizationRevision = 0;
 
     QComboBox* serialPortCombo = nullptr;
     QCheckBox* serialEnableCheck = nullptr;

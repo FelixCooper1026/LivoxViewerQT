@@ -420,6 +420,7 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
                     if (removeCount > 0) {
                         deviceState.samples.remove(0, removeCount);
                     }
+                    deviceState.revision = ++window->imuState.visualizationRevision;
                 }
                 // 若正在保存IMU数据，将包内样本写入CSV
                 if (isCurrentDevice && window->captureState.imuSaveActive) {
