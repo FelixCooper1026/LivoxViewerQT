@@ -48,6 +48,9 @@
     <file>status_done.svg</file>
     <file>status_failed.svg</file>
     <file>status_pending.svg</file>
+    <file>layout_single.svg</file>
+    <file>layout_split_horizontal.svg</file>
+    <file>layout_split_vertical.svg</file>
 
     <file alias="app_icon.png">../resources/app_icon.png</file>
   </qresource>

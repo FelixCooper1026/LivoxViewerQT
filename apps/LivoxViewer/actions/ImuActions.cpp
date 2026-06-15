@@ -146,11 +146,12 @@ QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDev
         descriptors.push_back(descriptor);
     }
 
-    if (playbackState.active && playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
+    const PlaybackControllerState* imuPlayback = imuPlaybackState();
+    if (imuPlayback && imuPlayback->active && imuPlayback->source && imuPlayback->source->kind() == Playback::SourceKind::Pcap) {
         QSet<uint32_t> listedLidarIds;
-        for (const PlaybackDeviceInfo& device : playbackState.devices) {
+        for (const PlaybackDeviceInfo& device : imuPlayback->devices) {
             ImuVisualizationDeviceDescriptor descriptor;
-            descriptor.handle = playbackState.imuHandleByLidarId.value(device.lidarId);
+            descriptor.handle = imuPlayback->imuHandleByLidarId.value(device.lidarId);
             descriptor.modelDisplay = device.modelDisplay.isEmpty() ? lvx2DeviceTypeToModel(device.deviceType) : device.modelDisplay;
             descriptor.serialNumber = device.lidarSn;
             descriptor.ipAddress = PushMsgParser::lidarIdToIpString(device.lidarId);
@@ -159,7 +160,7 @@ QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDev
             listedLidarIds.insert(device.lidarId);
         }
 
-        for (auto it = playbackState.imuHandleByLidarId.constBegin(); it != playbackState.imuHandleByLidarId.constEnd(); ++it) {
+        for (auto it = imuPlayback->imuHandleByLidarId.constBegin(); it != imuPlayback->imuHandleByLidarId.constEnd(); ++it) {
             if (listedLidarIds.contains(it.key())) {
                 continue;
             }
@@ -177,23 +178,35 @@ QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDev
 
 void LivoxViewerWindow::clearPlaybackImuSamples()
 {
+    clearPlaybackImuSamples(playbackState);
+}
+
+void LivoxViewerWindow::clearPlaybackImuSamples(PlaybackControllerState& state)
+{
     QMutexLocker lk(&imuState.visualizationMutex);
-    for (uint32_t handle : playbackState.imuHandleByLidarId) {
+    for (uint32_t handle : state.imuHandleByLidarId) {
         imuState.visualizationDevices.remove(handle);
     }
 }
 
 void LivoxViewerWindow::appendPlaybackImuSamples(const QVector<Playback::ImuSample>& samples, bool resetSamples)
 {
+    appendPlaybackImuSamples(playbackState, samples, resetSamples);
+}
+
+void LivoxViewerWindow::appendPlaybackImuSamples(PlaybackControllerState& state,
+                                                 const QVector<Playback::ImuSample>& samples,
+                                                 bool resetSamples)
+{
     if (resetSamples) {
-        clearPlaybackImuSamples();
+        clearPlaybackImuSamples(state);
     }
 
     QMutexLocker lk(&imuState.visualizationMutex);
     QMap<uint32_t, double> latestRelativeSecByHandle;
     QSet<uint32_t> changedHandles;
     for (const Playback::ImuSample& sample : samples) {
-        const uint32_t handle = playbackState.playbackImuHandleForLidarId(sample.lidarId);
+        const uint32_t handle = playbackImuHandleForLidarId(state, sample.lidarId);
         ImuVisualizationDeviceState& deviceState = imuState.visualizationDevices[handle];
         const double timestampSec = static_cast<double>(sample.timestampNs) * 1.0e-9;
         if (deviceState.timeOriginSec < 0.0) {

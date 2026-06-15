@@ -174,14 +174,19 @@ QRect plotAreaInView(QChartView* view, QChart* chart)
 
 } // namespace
 
-ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner)
+ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner, bool embedded)
     : QDialog(owner)
     , m_owner(owner)
 {
-    setObjectName(QStringLiteral("ImuVisualizationDialog"));
-    DialogWindowUtils::enableTopLevelWindowControls(this);
-    setWindowTitle(QStringLiteral("IMU数据可视化"));
-    setMinimumSize(980, 640);
+    setObjectName(embedded ? QStringLiteral("ImuVisualizationWidget") : QStringLiteral("ImuVisualizationDialog"));
+    if (embedded) {
+        setWindowFlags(Qt::Widget);
+        setMinimumSize(200, 200);
+    } else {
+        DialogWindowUtils::enableTopLevelWindowControls(this);
+        setWindowTitle(QStringLiteral("IMU数据可视化"));
+        setMinimumSize(980, 640);
+    }
 
     QVBoxLayout* root = new QVBoxLayout(this);
     root->setContentsMargins(10, 10, 10, 10);
@@ -837,7 +842,7 @@ void ImuVisualizationDialog::refreshTheme()
     const QColor hoverBorder = dark ? QColor(142, 148, 156) : QColor(118, 126, 136);
 
     const QString styleSheet = QStringLiteral(
-        "QDialog#ImuVisualizationDialog { background: %1; color: %2; }"
+        "QDialog#ImuVisualizationDialog, QDialog#ImuVisualizationWidget { background: %1; color: %2; }"
         "QFrame#ImuToolbar, QFrame#ImuVisualizationPanel { background: %3; border: 1px solid %4; border-radius: 6px; }"
         "QWidget#ImuChartEmptyOverlay { background: transparent; }"
         "QLabel#ImuPanelTitle, QLabel#ImuDeviceModel { color: %2; font-weight: 600; }"

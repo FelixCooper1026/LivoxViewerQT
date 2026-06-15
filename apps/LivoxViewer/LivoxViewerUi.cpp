@@ -127,10 +127,23 @@ void LivoxViewerWindow::initializeUserInterface()
     centralLayout->setContentsMargins(0,0,0,0);
     centralLayout->setSpacing(0);
 
-    pointCloudView = new PointCloudView(centralContainer);
-    pointCloudView->setMinimumSize(200, 200);
-    pointCloudView->setPointSize(pointSizePx);
-    connect(pointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
+    visualizationWorkspace = new VisualizationWorkspace(centralContainer);
+    realtimePointCloudView = new PointCloudView(visualizationWorkspace);
+    realtimePointCloudView->setMinimumSize(200, 200);
+    realtimePointCloudView->setPointSize(pointSizePx);
+    pointCloudView = realtimePointCloudView;
+    connect(realtimePointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
+    realtimeVisualizationTabId = visualizationWorkspace->addTab(
+        VisualizationWorkspace::TabKind::RealtimePointCloud,
+        QStringLiteral("实时点云"),
+        realtimePointCloudView,
+        false);
+    activeVisualizationTabId = realtimeVisualizationTabId;
+    pointCloudViewsByTab.insert(realtimeVisualizationTabId, realtimePointCloudView);
+    connect(visualizationWorkspace, &VisualizationWorkspace::focusedTabChanged,
+            this, &LivoxViewerWindow::onVisualizationFocusedTabChanged);
+    connect(visualizationWorkspace, &VisualizationWorkspace::tabCloseRequested,
+            this, &LivoxViewerWindow::closeVisualizationTab);
 
     // 顶部可视化功能栏（两行）
     QWidget* viewerToolbar = createViewerToolbar(centralContainer);
@@ -139,7 +152,7 @@ void LivoxViewerWindow::initializeUserInterface()
 
     centralLayout->addWidget(viewerToolbar);
     centralLayout->addWidget(playbackState.bar);
-    centralLayout->addWidget(pointCloudView, 1);
+    centralLayout->addWidget(visualizationWorkspace, 1);
     setCentralWidget(centralContainer);
     resize(defaultMainWindowSize());
 
@@ -298,8 +311,8 @@ void LivoxViewerWindow::setActiveRealtimeDevice(uint32_t handle)
         lastSeenTimestamp.clear();
         lastFrameTimestamp.clear();
     }
-    if (pointCloudView) {
-        pointCloudView->clearPointCloud();
+    if (realtimePointCloudView) {
+        realtimePointCloudView->clearPointCloud();
     }
     updateLidarDeviceList();
     if (paramTabWidget) {

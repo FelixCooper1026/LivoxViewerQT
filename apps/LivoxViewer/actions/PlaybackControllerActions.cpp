@@ -1,4 +1,4 @@
-#include "LivoxViewerWindow.h"
+﻿#include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 
 #include "Lvx2/Lvx2Reader.h"
@@ -129,34 +129,40 @@ static void updatePlaybackDeviceCardState(bool visible,
 
 } // namespace
 
-void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source)
+void LivoxViewerWindow::finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source)
 {
-    clearPlaybackImuSamples();
-    playbackState.resetPlaybackImuHandles();
-    playbackState.source = source;
-    playbackState.devices = playbackState.source ? playbackState.source->devices() : QVector<PlaybackDeviceInfo>();
-    playbackState.deviceVisible.clear();
-    for (const PlaybackDeviceInfo& device : playbackState.devices) {
-        playbackState.deviceVisible.insert(device.lidarId, true);
-        if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
-            playbackState.playbackImuHandleForLidarId(device.lidarId);
+    PlaybackControllerState* state = playbackStateForTab(tabId);
+    if (!state) {
+        return;
+    }
+
+    clearPlaybackImuSamples(*state);
+    state->resetPlaybackImuHandles();
+    state->source = source;
+    state->devices = state->source ? state->source->devices() : QVector<PlaybackDeviceInfo>();
+    state->deviceVisible.clear();
+    for (const PlaybackDeviceInfo& device : state->devices) {
+        state->deviceVisible.insert(device.lidarId, true);
+        if (state->source && state->source->kind() == Playback::SourceKind::Pcap) {
+            playbackImuHandleForLidarId(*state, device.lidarId);
         }
     }
-    rebuildLvx2DeviceTab();
 
-    playbackState.slidingWindowStart = -1;
-    playbackState.slidingWindowEnd = -1;
-    playbackState.slidingWindowPoints.clear();
-    playbackState.slidingWindowSegmentPointCounts.clear();
-    playbackState.slidingWindowTimestamp = 0;
-    playbackState.path = playbackState.source ? playbackState.source->path() : QString();
-    playbackState.active = (playbackState.source && playbackState.source->frameCount() > 0);
-    playbackState.frameCount = visiblePlaybackFrameCount(playbackState.source.get(), playbackState.mode, frameIntervalMs);
-    if (playbackState.active && playbackState.frameCount <= 0) {
-        playbackState.frameCount = 1;
+    state->resetSlidingWindow();
+    state->path = state->source ? state->source->path() : QString();
+    state->active = (state->source && state->source->frameCount() > 0);
+    state->loading = false;
+    state->frameCount = visiblePlaybackFrameCount(state->source.get(), state->mode, frameIntervalMs);
+    if (state->active && state->frameCount <= 0) {
+        state->frameCount = 1;
     }
-    playbackState.frame = -1;
+    state->frame = -1;
 
+    if (boundPlaybackTabId != tabId) {
+        return;
+    }
+
+    rebuildLvx2DeviceTab();
     {
         QMutexLocker locker(&frameMutex);
         pendingFrames.clear();
@@ -176,7 +182,7 @@ void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback:
         }
     }
     if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
-        logMessage(QString("已加载Pcap文件: %1 (共 %2 帧)")
+        logMessage(QString("已加载Pcap文件: %1 (共%2帧)")
                        .arg(QDir::toNativeSeparators(playbackState.path))
                        .arg(playbackState.source->frameCount()));
     } else {
@@ -186,7 +192,7 @@ void LivoxViewerWindow::finishPlaybackSourceLoad(const std::shared_ptr<Playback:
 
 bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
 {
-    closeLvx2Playback(false);
+    const int tabId = createOfflinePointCloudTab(filePath);
 
     playbackState.loading = true;
     playbackState.path = filePath;
@@ -198,27 +204,30 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
     if (statusLabelBar) {
         statusLabelBar->setText(QString("正在加载LVX2: %1").arg(QFileInfo(filePath).fileName()));
     }
+    saveBoundPlaybackState();
 
-    std::thread([this, filePath, currentToken]() {
+    std::thread([this, filePath, tabId, currentToken]() {
         auto source = std::make_shared<Lvx2::Lvx2Reader>();
         const bool ok = source->load(filePath);
         const QString errorMessage = source->errorMessage();
 
-        QMetaObject::invokeMethod(this, [this, currentToken, source, ok, errorMessage]() {
-            if (currentToken != playbackState.loadToken) {
+        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage]() {
+            PlaybackControllerState* state = playbackStateForTab(tabId);
+            if (!state || currentToken != state->loadToken) {
                 return;
             }
 
-            playbackState.loading = false;
+            state->loading = false;
             if (!ok) {
-                playbackState.path.clear();
+                state->path.clear();
                 updateLvx2PlaybackUi();
                 updateStatus();
                 QMessageBox::warning(this, "播放LVX2点云", errorMessage);
+                closeVisualizationTab(tabId);
                 return;
             }
 
-            finishPlaybackSourceLoad(source);
+            finishPlaybackSourceLoad(tabId, source);
         }, Qt::QueuedConnection);
     }).detach();
 
@@ -227,6 +236,11 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
 
 void LivoxViewerWindow::closeLvx2Playback(bool clearView)
 {
+    if (boundPlaybackTabId >= 0) {
+        closeVisualizationTab(boundPlaybackTabId);
+        return;
+    }
+
     setLvx2PlaybackPlaying(false);
 
     clearPlaybackImuSamples();
@@ -375,7 +389,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     frame.timestamp = playbackState.slidingWindowTimestamp;
     frame.points = playbackState.slidingWindowPoints;
 
-    applyPointCloudPipeline(frame);
+    applyPointCloudPipeline(frame, pointCloudView);
     if (pointCloudView) {
         pointCloudView->updatePointCloud(std::move(frame));
     }
@@ -394,7 +408,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
                                      : startFrame.timestamp);
         const QVector<Playback::ImuSample> imuSamples =
             playbackState.source->readImuSamples(imuStartTimestamp, endFrame.timestamp + kPcapRawFrameDurationNs);
-        appendPlaybackImuSamples(imuSamples, rebuildImuHistory);
+        appendPlaybackImuSamples(playbackState, imuSamples, rebuildImuHistory);
     }
 
     playbackState.frame = playbackFrameIndex;

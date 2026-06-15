@@ -29,14 +29,16 @@ void LivoxViewerWindow::decodePointCloudPacket(uint32_t handle, uint8_t dev_type
 void LivoxViewerWindow::presentPointCloudFrame(const PointCloudFrame& frame)
 {
     QMetaObject::invokeMethod(this, [this, frame]() mutable {
-        pointCloudView->updatePointCloud(std::move(frame));
-        if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {
+        if (realtimePointCloudView) {
+            realtimePointCloudView->updatePointCloud(std::move(frame));
+        }
+        if (selectionRealtimeEnabled && pointCloudView == realtimePointCloudView && (attrTable || selectionTable)) {
             updateSelectionTableAndLog();
         }
     }, Qt::QueuedConnection);
 }
 
-void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
+void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame, PointCloudView* targetView)
 {
     PointCloudColorizer::Config colorConfig;
     colorConfig.mode = effectiveColorMode();
@@ -48,13 +50,14 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame)
     colorConfig.elevationColorMax = elevationLegendMax;
 
     const PointCloudPipelineLegend legend = PointCloudColorizer::apply(frame.points, colorConfig);
-    if (pointCloudView) {
-        pointCloudView->setLegend(legend.mode,
-                                  legend.minValue,
-                                  legend.maxValue,
-                                  legend.visible,
-                                  legend.lineColors,
-                                  legend.lineNumbers);
+    PointCloudView* legendView = targetView ? targetView : pointCloudView;
+    if (legendView) {
+        legendView->setLegend(legend.mode,
+                              legend.minValue,
+                              legend.maxValue,
+                              legend.visible,
+                              legend.lineColors,
+                              legend.lineNumbers);
     }
 
     PointCloudFilter::Config filterConfig;
@@ -68,18 +71,6 @@ void LivoxViewerWindow::onRenderTick()
 {
     const bool pointCloudFileCaptureActive = captureState.pcdSaveActive || captureState.lasSaveActive;
 
-    if (playbackState.active) {
-        {
-            QMutexLocker locker(&frameMutex);
-            pendingFrames.clear();
-            lastSeenTimestamp.clear();
-        }
-        if (pointCloudView) {
-            pointCloudView->update();
-        }
-        return;
-    }
-
     if (!pointCloudVisualizationEnabled && !pointCloudFileCaptureActive) {
         {
             QMutexLocker locker(&frameMutex);
@@ -87,13 +78,13 @@ void LivoxViewerWindow::onRenderTick()
                 it.value().clear();
             }
         }
-        if (pointCloudView) {
-            pointCloudView->update();
+        if (realtimePointCloudView) {
+            realtimePointCloudView->update();
         }
         return;
     }
 
-    const bool measurementViewActive = pointCloudView && pointCloudView->isMeasurementModeEnabled();
+    const bool measurementViewActive = realtimePointCloudView && realtimePointCloudView->isMeasurementModeEnabled();
     if (measurementViewActive && !pointCloudFileCaptureActive) {
         {
             QMutexLocker locker(&frameMutex);
@@ -101,7 +92,7 @@ void LivoxViewerWindow::onRenderTick()
                 it.value().clear();
             }
         }
-        pointCloudView->update();
+        realtimePointCloudView->update();
         return;
     }
 
@@ -158,14 +149,14 @@ void LivoxViewerWindow::onRenderTick()
     }
 
     if (hasAnyPoint) {
-        applyPointCloudPipeline(merged);
+        applyPointCloudPipeline(merged, realtimePointCloudView);
         handlePointCloudRecording(merged, now_ns);
         if (pointCloudVisualizationEnabled && !measurementViewActive) {
             presentPointCloudFrame(merged);
         }
     }
 
-    if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {
+    if (selectionRealtimeEnabled && pointCloudView == realtimePointCloudView && (attrTable || selectionTable)) {
         updateSelectionTableAndLog();
     }
 }

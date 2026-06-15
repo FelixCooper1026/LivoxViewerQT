@@ -1,4 +1,4 @@
-#include "LivoxViewerWindow.h"
+﻿#include "LivoxViewerWindow.h"
 
 #include "Pcap/PcapReader.h"
 
@@ -10,7 +10,7 @@
 
 bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
 {
-    closeLvx2Playback(false);
+    const int tabId = createOfflinePointCloudTab(filePath);
 
     playbackState.loading = true;
     playbackState.path = filePath;
@@ -22,27 +22,30 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
     if (statusLabelBar) {
         statusLabelBar->setText(QString("正在加载Pcap: %1").arg(QFileInfo(filePath).fileName()));
     }
+    saveBoundPlaybackState();
 
-    std::thread([this, filePath, currentToken]() {
+    std::thread([this, filePath, tabId, currentToken]() {
         auto source = std::make_shared<Pcap::PcapReader>();
         const bool ok = source->load(filePath);
         const QString errorMessage = source->errorMessage();
 
-        QMetaObject::invokeMethod(this, [this, currentToken, source, ok, errorMessage]() {
-            if (currentToken != playbackState.loadToken) {
+        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage]() {
+            PlaybackControllerState* state = playbackStateForTab(tabId);
+            if (!state || currentToken != state->loadToken) {
                 return;
             }
 
-            playbackState.loading = false;
+            state->loading = false;
             if (!ok) {
-                playbackState.path.clear();
+                state->path.clear();
                 updateLvx2PlaybackUi();
                 updateStatus();
                 QMessageBox::warning(this, "播放Pcap文件", errorMessage);
+                closeVisualizationTab(tabId);
                 return;
             }
 
-            finishPlaybackSourceLoad(source);
+            finishPlaybackSourceLoad(tabId, source);
         }, Qt::QueuedConnection);
     }).detach();
 

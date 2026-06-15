@@ -27,7 +27,7 @@ class QWidget;
 class ImuVisualizationDialog : public QDialog
 {
 public:
-    explicit ImuVisualizationDialog(LivoxViewerWindow* owner);
+    explicit ImuVisualizationDialog(LivoxViewerWindow* owner, bool embedded = false);
     void refreshTheme();
 
 protected:

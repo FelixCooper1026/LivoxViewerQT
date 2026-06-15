@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.5.1
+    VERSION 1.5.2
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )
@@ -165,9 +165,11 @@ set(SOURCES
     apps/LivoxViewer/dialogs/ConfigGeneratorDialog.cpp
     apps/LivoxViewer/dialogs/ImuVisualizationDialog.cpp
     apps/LivoxViewer/widgets/ImuOrientationView.cpp
+    apps/LivoxViewer/widgets/VisualizationWorkspace.cpp
     apps/LivoxViewer/imu/ImuAttitudeEstimator.cpp
     apps/LivoxViewer/utils/DeviceModelResource.cpp
     apps/LivoxViewer/actions/PlaybackControllerActions.cpp
+    apps/LivoxViewer/actions/VisualizationWorkspaceActions.cpp
     apps/LivoxViewer/actions/PcapPlaybackActions.cpp
     apps/LivoxViewer/actions/Lvx2ConvertActions.cpp
     apps/LivoxViewer/actions/PointCloudActions.cpp
@@ -217,6 +219,7 @@ set(SOURCES
      apps/LivoxViewer/widgets/ParameterOptionButtons.h
      apps/LivoxViewer/widgets/SwitchCheckBox.h
      apps/LivoxViewer/widgets/ImuOrientationView.h
+     apps/LivoxViewer/widgets/VisualizationWorkspace.h
      apps/LivoxViewer/dialogs/DialogWindowUtils.h
      apps/LivoxViewer/dialogs/ImuVisualizationDialog.h
      apps/LivoxViewer/imu/ImuAttitudeEstimator.h
@@ -392,6 +395,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # MSVC设置
     target_compile_options(LivoxViewerQT PRIVATE
+        /utf-8
         /W4
         $<$<CONFIG:Debug>:/Od /Zi /DDEBUG>
         $<$<CONFIG:Release>:/O2 /DNDEBUG>

@@ -49,7 +49,9 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
 void LivoxViewerWindow::onPointSizeChanged(int px)
 {
     pointSizePx = static_cast<float>(px);
-    if (pointCloudView) pointCloudView->setPointSize(pointSizePx);
+    for (PointCloudView* view : pointCloudViewsByTab) {
+        if (view) view->setPointSize(pointSizePx);
+    }
 }
 
 void LivoxViewerWindow::onColorModeClicked(int index)

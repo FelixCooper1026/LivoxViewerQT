@@ -83,6 +83,7 @@
 #include "state/ParameterUiState.h"
 #include "state/PlaybackControllerState.h"
 #include "state/PointCloudFilterState.h"
+#include "widgets/VisualizationWorkspace.h"
 
 QT_BEGIN_NAMESPACE
 class QChartView;
@@ -160,7 +161,7 @@ private:
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
     void presentPointCloudFrame(const PointCloudFrame& frame);
-    void applyPointCloudPipeline(PointCloudFrame& frame);
+    void applyPointCloudPipeline(PointCloudFrame& frame, PointCloudView* targetView = nullptr);
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
     bool loadLvx2PlaybackFile(const QString& filePath);
     bool loadPcapPlaybackFile(const QString& filePath);
@@ -168,13 +169,15 @@ private:
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();
     void setLvx2PlaybackPlaying(bool playing);
-    void finishPlaybackSourceLoad(const std::shared_ptr<Playback::Source>& source);
+    void finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source);
     int playbackRawEndIndexForFrame(int playbackFrameIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
     int playbackFrameIndexForRawEndIndex(int rawEndIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
     QString lvx2DeviceTypeToModel(uint8_t deviceType) const;
     void rebuildLvx2DeviceTab();
     void appendPlaybackImuSamples(const QVector<Playback::ImuSample>& samples, bool resetSamples);
+    void appendPlaybackImuSamples(PlaybackControllerState& state, const QVector<Playback::ImuSample>& samples, bool resetSamples);
     void clearPlaybackImuSamples();
+    void clearPlaybackImuSamples(PlaybackControllerState& state);
     int lvx2PlaybackIntervalMs() const;
     using Lvx2ConvertMode = Lvx2Convert::Mode;
     using Lvx2ConvertFormat = Lvx2Convert::Format;
@@ -231,6 +234,8 @@ private:
 
     QLabel* statusLabel;
     QTextEdit* logText;
+    VisualizationWorkspace* visualizationWorkspace = nullptr;
+    PointCloudView* realtimePointCloudView = nullptr;
     PointCloudView* pointCloudView;
     QLabel* statusLabelBar;
 
@@ -369,6 +374,33 @@ private:
     void stopLvx2Recording(bool flushPending);
 
     PlaybackControllerState playbackState;
+    QMap<int, PlaybackControllerState> playbackStatesByTab;
+    QMap<int, PointCloudView*> pointCloudViewsByTab;
+    int realtimeVisualizationTabId = -1;
+    int activeVisualizationTabId = -1;
+    int boundPlaybackTabId = -1;
+    int imuSourceVisualizationTabId = -1;
+    int nextOfflinePointCloudTabNumber = 1;
+    QMap<int, int> offlinePointCloudTabNumbersByTab;
+    QSet<int> reusableOfflinePointCloudTabNumbers;
+    uint32_t nextPlaybackImuHandle = 0x80000001u;
+    void onVisualizationFocusedTabChanged(int tabId);
+    void closeVisualizationTab(int tabId);
+    int createOfflinePointCloudTab(const QString& filePath);
+    bool isPointCloudTab(int tabId) const;
+    bool isOfflinePointCloudTab(int tabId) const;
+    PlaybackControllerState* playbackStateForTab(int tabId);
+    const PlaybackControllerState* playbackStateForTab(int tabId) const;
+    PointCloudView* pointCloudViewForTab(int tabId) const;
+    PointCloudView* currentPointCloudView() const;
+    PlaybackControllerState* imuPlaybackState();
+    const PlaybackControllerState* imuPlaybackState() const;
+    void saveBoundPlaybackState();
+    void bindPlaybackStateToTab(int tabId);
+    void clearPlaybackStateMirror();
+    void copyPlaybackSession(PlaybackControllerState& dst, const PlaybackControllerState& src) const;
+    void rebindPlaybackControls();
+    uint32_t playbackImuHandleForLidarId(PlaybackControllerState& state, uint32_t lidarId);
 
     // IMU CSV 采集
     void appendImuCsvRow(quint64 timestamp_ns, float gx, float gy, float gz, float ax, float ay, float az);
