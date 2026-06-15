@@ -1,6 +1,8 @@
 #include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 
+#include "PointCloud/PointCloudColorizer.h"
+
 #include <QIcon>
 #include <QSignalBlocker>
 
@@ -57,10 +59,7 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
 void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;
-    updatePointCloudLegend();
-    if (playbackState.active && playbackState.frame >= 0) {
-        showLvx2PlaybackFrame(playbackState.frame);
-    }
+    recolorPointCloudViews();
 }
 
 int LivoxViewerWindow::effectiveColorMode() const
@@ -102,6 +101,30 @@ void LivoxViewerWindow::updatePointCloudLegend()
             view->setLegend(ColorByLine, 0.0f, 1.0f, true, lineColors, lineNumbers);
         }
     }
+}
+
+void LivoxViewerWindow::recolorPointCloudViews()
+{
+    PointCloudColorizer::Config colorConfig;
+    colorConfig.mode = effectiveColorMode();
+    colorConfig.solidColor = solidColor;
+    colorConfig.lineColors = lineColors;
+    colorConfig.distanceColorMin = distanceLegendMin;
+    colorConfig.distanceColorMax = distanceLegendMax;
+    colorConfig.elevationColorMin = elevationLegendMin;
+    colorConfig.elevationColorMax = elevationLegendMax;
+
+    forEachPointCloudView([&colorConfig](PointCloudView* view) {
+        view->recolorCurrentPointCloud([view, &colorConfig](QVector<PointCloudPoint>& points) {
+            const PointCloudPipelineLegend legend = PointCloudColorizer::apply(points, colorConfig);
+            view->setLegend(legend.mode,
+                            legend.minValue,
+                            legend.maxValue,
+                            legend.visible,
+                            legend.lineColors,
+                            legend.lineNumbers);
+        });
+    });
 }
 
 void LivoxViewerWindow::onProjectionDepthChanged(double meters)
@@ -198,4 +221,29 @@ void LivoxViewerWindow::syncPointCloudVisualizationAction()
     actionPointCloudVisualization->setEnabled(!measurementModeActive);
     QSignalBlocker blocker(actionPointCloudVisualization);
     actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);
+}
+
+void LivoxViewerWindow::syncPointCloudStlModelAction()
+{
+    if (!pointCloudStlModelAction) {
+        return;
+    }
+
+    const bool checked = pointCloudView && pointCloudView->hasStlModel() && pointCloudView->isStlModelVisible();
+    QSignalBlocker blocker(pointCloudStlModelAction);
+    pointCloudStlModelAction->setChecked(checked);
+    ThemeIconUtils::setThemedSvgIcon(pointCloudStlModelAction,
+        checked ? QStringLiteral(":/icons/3d_model_on.svg") : QStringLiteral(":/icons/3d_model_off.svg"));
+}
+
+void LivoxViewerWindow::syncPointCloudToolActions()
+{
+    if (pointCloudMeasureAction) {
+        QSignalBlocker blocker(pointCloudMeasureAction);
+        pointCloudMeasureAction->setChecked(measurementModeActive);
+    }
+    if (pointCloudSelectionAction) {
+        QSignalBlocker blocker(pointCloudSelectionAction);
+        pointCloudSelectionAction->setChecked(selectionRealtimeEnabled);
+    }
 }

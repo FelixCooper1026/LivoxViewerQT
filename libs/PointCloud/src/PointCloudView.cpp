@@ -1295,6 +1295,25 @@ void PointCloudView::updatePointCloud(PointCloudFrame&& frame)
     uploadPointCloudPoints(std::move(frame.points));
 }
 
+void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<PointCloudPoint>&)>& colorize)
+{
+    if (m_crossSectionState.enabled) {
+        colorize(m_crossSectionState.sourcePoints);
+        PointCloudCrossSection::updateClip(m_crossSectionState);
+        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        return;
+    }
+
+    QVector<PointCloudPoint> points;
+    {
+        QMutexLocker locker(&m_pointsMutex);
+        points = m_points;
+    }
+    colorize(points);
+    uploadPointCloudPoints(std::move(points));
+}
+
 void PointCloudView::clearPointCloud()
 {
     uploadPointCloudPoints(QVector<PointCloudPoint>());

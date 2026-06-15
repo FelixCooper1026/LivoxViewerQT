@@ -23,6 +23,8 @@
 #include <QVector3D>
 #include <QWheelEvent>
 
+#include <functional>
+
 class PointCloudView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
 {
     Q_OBJECT
@@ -62,6 +64,7 @@ public:
     GridConfig gridConfig() const { return m_gridConfig; }
     void updatePointCloud(const PointCloudFrame& frame);
     void updatePointCloud(PointCloudFrame&& frame);
+    void recolorCurrentPointCloud(const std::function<void(QVector<PointCloudPoint>&)>& colorize);
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);

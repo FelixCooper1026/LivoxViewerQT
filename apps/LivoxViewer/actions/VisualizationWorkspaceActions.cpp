@@ -181,6 +181,8 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     PointCloudView* view = new PointCloudView(visualizationWorkspace);
     view->setMinimumSize(200, 200);
     view->setPointSize(pointSizePx);
+    view->setMeasurementModeEnabled(measurementModeActive);
+    view->setSelectionModeEnabled(selectionRealtimeEnabled);
     connect(view, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
     connect(view, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
         if (crossSectionModeActive && statusLabelBar) {
@@ -278,6 +280,8 @@ void LivoxViewerWindow::onVisualizationFocusedTabChanged(int tabId)
     }
 
     updatePointCloudLegend();
+    syncPointCloudStlModelAction();
+    syncPointCloudToolActions();
     rebuildLvx2DeviceTab();
     updateLvx2PlaybackUi();
 

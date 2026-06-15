@@ -155,8 +155,11 @@ private:
     bool shouldUseDarkTheme() const;
     int effectiveColorMode() const;
     void updatePointCloudLegend();
+    void recolorPointCloudViews();
     void updateProjectionControlsVisibility();
     void syncPointCloudVisualizationAction();
+    void syncPointCloudStlModelAction();
+    void syncPointCloudToolActions();
     QVector<PointCloudView*> pointCloudViews() const;
     void forEachPointCloudView(const std::function<void(PointCloudView*)>& callback) const;
 
@@ -257,6 +260,7 @@ private:
     QAction* actionPlayLvx2 = nullptr;
     QAction* actionPlayPcap = nullptr;
     QAction* actionPointCloudVisualization = nullptr;
+    QAction* pointCloudStlModelAction = nullptr;
     QAction* pointCloudMeasureAction = nullptr;
     QAction* pointCloudSelectionAction = nullptr;
     QAction* pointCloudCrossSectionAction = nullptr;

@@ -531,6 +531,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->addPrimaryWidget(createIconButton(actionPointCloudVisualization, displayGroup, toolbarIconSize));
 
     QAction* stlModelAction = new QAction(QIcon(":/icons/3d_model_off.svg"), "GLB模型", this);
+    pointCloudStlModelAction = stlModelAction;
     ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
     stlModelAction->setCheckable(true);
     stlModelAction->setToolTip("显示设备GLB模型");
@@ -538,8 +539,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         ThemeIconUtils::setThemedSvgIcon(stlModelAction,
             checked ? QStringLiteral(":/icons/3d_model_on.svg") : QStringLiteral(":/icons/3d_model_off.svg"));
     });
-    QString loadedStlModelKey;
-    connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction, loadedStlModelKey](bool checked) mutable {
+    connect(stlModelAction, &QAction::triggered, this, [this, stlModelAction](bool checked) {
         if (!pointCloudView) {
             QSignalBlocker blocker(stlModelAction);
             stlModelAction->setChecked(false);
@@ -548,9 +548,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         }
 
         if (!checked) {
-            forEachPointCloudView([](PointCloudView* view) {
-                view->setStlModelVisible(false);
-            });
+            pointCloudView->setStlModelVisible(false);
+            syncPointCloudStlModelAction();
             statusLabelBar->setText("GLB模型已隐藏");
             logMessage("GLB模型已隐藏");
             return;
@@ -598,7 +597,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             return;
         }
 
-        if (loadedStlModelKey != modelKey || !pointCloudView->hasStlModel()) {
+        if (pointCloudView->property("stlModelKey").toString() != modelKey || !pointCloudView->hasStlModel()) {
             StlModel::Mesh mesh;
             QString errorMessage;
             if (!StlModel::load(filePath, mesh, errorMessage)) {
@@ -610,18 +609,16 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             }
 
             const bool sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
-            forEachPointCloudView([&mesh, sourceXReversed](PointCloudView* view) {
-                view->setStlModelMesh(mesh, sourceXReversed);
-            });
-            loadedStlModelKey = modelKey;
+            pointCloudView->setStlModelMesh(mesh, sourceXReversed);
+            pointCloudView->setProperty("stlModelKey", modelKey);
+            syncPointCloudStlModelAction();
             statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));
             logMessage(QString("GLB模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
             return;
         }
 
-        forEachPointCloudView([](PointCloudView* view) {
-            view->setStlModelVisible(true);
-        });
+        pointCloudView->setStlModelVisible(true);
+        syncPointCloudStlModelAction();
         statusLabelBar->setText(QString("GLB模型已显示: %1").arg(modelKey));
         logMessage(QString("GLB模型已显示: %1").arg(modelKey));
     });
@@ -730,31 +727,22 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     pointCloudMeasureAction = measureAction;
     measureAction->setCheckable(true);
     measureAction->setToolTip("点云测距");
-    connect(measureAction, &QAction::triggered, this, [this, measureAction]() {
-        if (!pointCloudView) {
-            QSignalBlocker blocker(measureAction);
-            measureAction->setChecked(false);
-            return;
-        }
-        const bool enable = !pointCloudView->isMeasurementModeEnabled();
+    connect(measureAction, &QAction::triggered, this, [this](bool enable) {
         if (enable) {
-            if (pointCloudView->isSelectionModeEnabled()) {
-                pointCloudView->setSelectionModeEnabled(false);
-                selectionRealtimeEnabled = false;
-                if (pointCloudSelectionAction) {
-                    QSignalBlocker selectionBlocker(pointCloudSelectionAction);
-                    pointCloudSelectionAction->setChecked(false);
-                }
-                updateSelectionTableAndLog();
-            }
-            if (pointCloudView->isCrossSectionModeEnabled() && pointCloudCrossSectionAction) {
+            if (crossSectionModeActive && pointCloudCrossSectionAction) {
                 pointCloudCrossSectionAction->trigger();
             }
+            selectionRealtimeEnabled = false;
+            forEachPointCloudView([](PointCloudView* view) {
+                view->setSelectionModeEnabled(false);
+            });
+            updateSelectionTableAndLog();
         }
-        pointCloudView->setMeasurementModeEnabled(enable);
         measurementModeActive = enable;
-        QSignalBlocker blocker(measureAction);
-        measureAction->setChecked(enable);
+        forEachPointCloudView([enable](PointCloudView* view) {
+            view->setMeasurementModeEnabled(enable);
+        });
+        syncPointCloudToolActions();
         if (enable) {
             pointCloudVisualizationBeforeMeasurement = pointCloudVisualizationEnabled;
             onPointCloudVisualizationToggled(false);
@@ -774,47 +762,38 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     pointCloudSelectionAction = selectionAction;
     selectionAction->setCheckable(true);
     selectionAction->setToolTip("点云框选");
-    connect(selectionAction, &QAction::triggered, this, [this, selectionAction]() {
-        if (!pointCloudView) {
-            QSignalBlocker blocker(selectionAction);
-            selectionAction->setChecked(false);
-            return;
-        }
-        const bool enable = !pointCloudView->isSelectionModeEnabled();
+    connect(selectionAction, &QAction::triggered, this, [this](bool enable) {
         if (enable) {
-            if (pointCloudView->isMeasurementModeEnabled()) {
-                pointCloudView->setMeasurementModeEnabled(false);
+            if (measurementModeActive) {
                 measurementModeActive = false;
+                forEachPointCloudView([](PointCloudView* view) {
+                    view->setMeasurementModeEnabled(false);
+                });
                 onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
-                if (pointCloudMeasureAction) {
-                    QSignalBlocker measureBlocker(pointCloudMeasureAction);
-                    pointCloudMeasureAction->setChecked(false);
-                }
             }
-            if (pointCloudView->isCrossSectionModeEnabled() && pointCloudCrossSectionAction) {
+            if (crossSectionModeActive && pointCloudCrossSectionAction) {
                 pointCloudCrossSectionAction->trigger();
             }
         }
-        pointCloudView->setSelectionModeEnabled(enable);
+        selectionRealtimeEnabled = enable;
+        forEachPointCloudView([enable](PointCloudView* view) {
+            view->setSelectionModeEnabled(enable);
+        });
         if (!enable) {
-            pointCloudView->clearSelectionAabb();
             updateSelectionTableAndLog();
             if (attrDock) {
                 attrDock->hide();
             }
-            selectionRealtimeEnabled = false;
             updateStatus();
         } else {
             if (attrDock) {
                 attrDock->show();
                 attrDock->raise();
             }
-            selectionRealtimeEnabled = true;
             updateSelectionTableAndLog();
             statusLabelBar->setText("点云框选模式：按住Ctrl+左键拖动选择区域");
         }
-        QSignalBlocker blocker(selectionAction);
-        selectionAction->setChecked(enable);
+        syncPointCloudToolActions();
     });
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
@@ -842,29 +821,29 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     connect(crossSectionControlsSwitch, &QCheckBox::toggled, crossSectionControlsAction, [crossSectionControlsAction](bool checked) {
         crossSectionControlsAction->setChecked(checked);
     });
-    connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsSwitch, measureAction, selectionAction]() {
+    connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsSwitch, measureAction, selectionAction](bool enable) {
         if (!pointCloudView) {
             QSignalBlocker blocker(crossSectionAction);
             crossSectionAction->setChecked(false);
             return;
         }
 
-        const bool enable = !pointCloudView->isCrossSectionModeEnabled();
         if (enable) {
-            if (pointCloudView->isMeasurementModeEnabled()) {
-                pointCloudView->setMeasurementModeEnabled(false);
+            if (measurementModeActive) {
                 measurementModeActive = false;
+                forEachPointCloudView([](PointCloudView* view) {
+                    view->setMeasurementModeEnabled(false);
+                });
                 onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
-                QSignalBlocker blocker(measureAction);
-                measureAction->setChecked(false);
             }
-            if (pointCloudView->isSelectionModeEnabled()) {
-                pointCloudView->setSelectionModeEnabled(false);
+            if (selectionRealtimeEnabled) {
                 selectionRealtimeEnabled = false;
-                QSignalBlocker blocker(selectionAction);
-                selectionAction->setChecked(false);
+                forEachPointCloudView([](PointCloudView* view) {
+                    view->setSelectionModeEnabled(false);
+                });
                 updateSelectionTableAndLog();
             }
+            syncPointCloudToolActions();
 
             measureAction->setEnabled(false);
             selectionAction->setEnabled(false);
@@ -883,6 +862,12 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 logMessage("Cross Section未启动：当前点云为空");
                 return;
             }
+            forEachPointCloudView([this](PointCloudView* view) {
+                if (view != pointCloudView) {
+                    view->setCrossSectionModeEnabled(true);
+                    view->setCrossSectionControlsVisible(true);
+                }
+            });
             crossSectionControlsAction->setEnabled(true);
             crossSectionControlsSwitch->setEnabled(true);
             crossSectionControlsAction->setVisible(true);
@@ -899,8 +884,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             statusLabelBar->setText("Cross Section: 拖动箭头/面/圆环调整裁剪盒");
             logMessage("进入Cross Section");
         } else {
-            pointCloudView->setCrossSectionModeEnabled(false);
-            pointCloudView->setCrossSectionControlsVisible(true);
+            forEachPointCloudView([](PointCloudView* view) {
+                view->setCrossSectionModeEnabled(false);
+                view->setCrossSectionControlsVisible(true);
+            });
             crossSectionModeActive = false;
             measureAction->setEnabled(true);
             selectionAction->setEnabled(true);
