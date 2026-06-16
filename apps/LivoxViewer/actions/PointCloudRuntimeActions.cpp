@@ -42,6 +42,7 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame, PointClo
 {
     PointCloudColorizer::Config colorConfig;
     colorConfig.mode = effectiveColorMode();
+    colorConfig.reflectivityColorScale = reflectivityColorScale;
     colorConfig.solidColor = solidColor;
     colorConfig.lineColors = lineColors;
     colorConfig.distanceColorMin = distanceLegendMin;
@@ -57,7 +58,10 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame, PointClo
                               legend.maxValue,
                               legend.visible,
                               legend.lineColors,
-                              legend.lineNumbers);
+                              legend.lineNumbers,
+                              colorConfig.mode == ColorByReflectivity
+                                  ? PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale)
+                                  : QVector<QColor>());
     }
 
     PointCloudFilter::Config filterConfig;

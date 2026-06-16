@@ -68,12 +68,14 @@ public:
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);
+    void setBackgroundColors(const QColor& topColor, const QColor& bottomColor);
     void setLegend(int mode,
                    float minVal,
                    float maxVal,
                    bool visible,
                    const QVector<QColor>& lineColors = {},
-                   const QVector<int>& lineNumbers = {});
+                   const QVector<int>& lineNumbers = {},
+                   const QVector<QColor>& gradientColors = {});
     QRect currentSelectionRect() const { return m_selectionRect(); }
     QVector<PointCloudPoint> currentPoints() const { QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex)); return m_points; }
     void setSelectionModeEnabled(bool enabled);
@@ -193,6 +195,9 @@ private:
     float m_legendMax = 1.0f;
     QVector<QColor> m_lineLegendColors;
     QVector<int> m_lineLegendNumbers;
+    QVector<QColor> m_legendGradientColors;
+    QColor m_backgroundTopColor = QColor(26, 26, 26);
+    QColor m_backgroundBottomColor = QColor(26, 26, 26);
 
     bool m_selecting = false;
     QPoint m_selStart;

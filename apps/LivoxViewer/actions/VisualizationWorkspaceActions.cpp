@@ -208,6 +208,7 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     visualizationWorkspace->setTabToolTip(tabId, QDir::toNativeSeparators(filePath));
     pointCloudViewsByTab.insert(tabId, view);
     offlinePointCloudTabNumbersByTab.insert(tabId, tabNumber);
+    applyPointCloudBackground();
 
     PlaybackControllerState state;
     state.path = filePath;

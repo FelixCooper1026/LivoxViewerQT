@@ -175,7 +175,7 @@ void PointCloudView::mouseDoubleClickEvent(QMouseEvent *event)
 void PointCloudView::initializeGL()
 {
     initializeOpenGLFunctions();
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
     glPointSize(2.0f);
@@ -579,7 +579,19 @@ QVector3D PointCloudView::mapToArcball(const QPoint& p) const
 
 void PointCloudView::paintGL()
 {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (m_backgroundTopColor == m_backgroundBottomColor) {
+        glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    } else {
+        QPainter painter(this);
+        QLinearGradient backgroundGradient(rect().topLeft(), rect().bottomLeft());
+        backgroundGradient.setColorAt(0.0, m_backgroundTopColor);
+        backgroundGradient.setColorAt(1.0, m_backgroundBottomColor);
+        painter.fillRect(rect(), backgroundGradient);
+        painter.end();
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+    }
     
     if (!m_program) {
         return;
@@ -906,7 +918,14 @@ void PointCloudView::paintGL()
  
          // 渐变：反射率/距离使用同一色标，高度修正为顶部红、底部蓝
          QLinearGradient grad(barRect.topLeft(), barRect.bottomLeft());
-         auto addRefDistStops = [&grad]() {
+         auto addReflectivityStops = [this, &grad]() {
+             const int colorCount = int(m_legendGradientColors.size());
+             const int last = colorCount - 1;
+             for (int i = 0; i < colorCount; ++i) {
+                 grad.setColorAt(1.0 - double(i) / double(last), m_legendGradientColors.at(i));
+             }
+         };
+         auto addDistanceStops = [&grad]() {
              grad.setColorAt(0.00, QColor(255,   0,   0));
              grad.setColorAt(0.25, QColor(255, 255,   0));
              grad.setColorAt(0.50, QColor(  0, 255,   0));
@@ -918,7 +937,8 @@ void PointCloudView::paintGL()
              grad.setColorAt(0.00, QColor(255,   0,   0));
              grad.setColorAt(1.00, QColor(  0,   0, 255));
          };
-         if (m_legendMode == 0 || m_legendMode == 1) addRefDistStops();
+         if (m_legendMode == 0) addReflectivityStops();
+         else if (m_legendMode == 1) addDistanceStops();
          else if (m_legendMode == 2) addElevationStops();
          else { grad.setColorAt(0.0, Qt::white); grad.setColorAt(1.0, Qt::white); }
  
@@ -1336,6 +1356,13 @@ void PointCloudView::setPointSize(float sizePixels)
     update();
 }
 
+void PointCloudView::setBackgroundColors(const QColor& topColor, const QColor& bottomColor)
+{
+    m_backgroundTopColor = topColor;
+    m_backgroundBottomColor = bottomColor;
+    update();
+}
+
 void PointCloudView::setProjectionMode(ProjectionMode mode)
 {
     m_projectionMode = mode;
@@ -1347,7 +1374,8 @@ void PointCloudView::setLegend(int mode,
                                float maxVal,
                                bool visible,
                                const QVector<QColor>& lineColors,
-                               const QVector<int>& lineNumbers)
+                               const QVector<int>& lineNumbers,
+                               const QVector<QColor>& gradientColors)
 {
     m_legendMode = mode;
     m_legendMin = minVal;
@@ -1355,6 +1383,7 @@ void PointCloudView::setLegend(int mode,
     m_legendVisible = visible;
     m_lineLegendColors = lineColors;
     m_lineLegendNumbers = lineNumbers;
+    m_legendGradientColors = gradientColors;
     update();
 }
 

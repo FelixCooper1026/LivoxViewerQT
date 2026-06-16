@@ -3,6 +3,8 @@
 #include "dialogs/ImuVisualizationDialog.h"
 #include "widgets/SwitchCheckBox.h"
 
+#include "PointCloud/PointCloudColorizer.h"
+
 #include <QAbstractButton>
 #include <QApplication>
 #include <QButtonGroup>
@@ -20,6 +22,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QPalette>
+#include <QPair>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QPushButton>
@@ -619,7 +622,15 @@ void LivoxViewerWindow::loadViewPreferences()
     distanceLegendMax = settings.value("legend/distanceMax", distanceLegendMax).toFloat();
     elevationLegendMin = settings.value("legend/elevationMin", elevationLegendMin).toFloat();
     elevationLegendMax = settings.value("legend/elevationMax", elevationLegendMax).toFloat();
+    reflectivityColorScale = settings.value("color/reflectivityScale", reflectivityColorScale).toInt();
+    if (reflectivityColorScale < 0 || reflectivityColorScale > 6) {
+        reflectivityColorScale = 0;
+    }
     solidColor = settings.value("color/solidColor", solidColor).value<QColor>();
+    pointCloudBackgroundPreset = settings.value("background/preset", pointCloudBackgroundPreset).toInt();
+    if (pointCloudBackgroundPreset < BackgroundDeepBlack || pointCloudBackgroundPreset > BackgroundPureWhite) {
+        pointCloudBackgroundPreset = BackgroundGraphite;
+    }
     const QStringList storedLineColors = settings.value("color/lineColors").toStringList();
     for (int i = 0; i < storedLineColors.size() && i < lineColors.size(); ++i) {
         const QColor color(storedLineColors.at(i));
@@ -646,7 +657,41 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     pointCloudView->setGridConfig(config);
+    applyPointCloudBackground();
     updatePointCloudLegend();
+}
+
+QString colorBarStyleSheet(const QVector<QColor>& colors)
+{
+    QStringList stops;
+    const int colorCount = int(colors.size());
+    const int last = colorCount - 1;
+    for (int i = 0; i < colorCount; ++i) {
+        stops.append(QString("stop:%1 %2").arg(double(i) / double(last), 0, 'f', 3).arg(colors.at(i).name()));
+    }
+    return QString("QFrame { border: 1px solid palette(mid); border-radius: 3px; background: qlineargradient(x1:0, y1:0, x2:1, y2:0, %1); }")
+        .arg(stops.join(", "));
+}
+
+QString verticalColorBarStyleSheet(const QColor& topColor, const QColor& bottomColor)
+{
+    return QString("QFrame { border: 1px solid palette(mid); border-radius: 3px; background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 %1, stop:1 %2); }")
+        .arg(topColor.name(), bottomColor.name());
+}
+
+QPair<QColor, QColor> backgroundPresetColors(int preset)
+{
+    switch (preset) {
+    case 0: return {QColor("#050608"), QColor("#050608")};
+    case 2: return {QColor("#071426"), QColor("#0F2942")};
+    case 3: return {QColor("#263442"), QColor("#101820")};
+    case 4: return {QColor("#DCE8F2"), QColor("#405A72")};
+    case 5: return {QColor("#656B72"), QColor("#30343A")};
+    case 6: return {QColor("#F1F3F5"), QColor("#D9DEE3")};
+    case 7: return {QColor("#FFFFFF"), QColor("#FFFFFF")};
+    case 1:
+    default: return {QColor("#181B20"), QColor("#181B20")};
+    }
 }
 
 void LivoxViewerWindow::saveViewPreferences()
@@ -665,7 +710,9 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("legend/distanceMax", distanceLegendMax);
     settings.setValue("legend/elevationMin", elevationLegendMin);
     settings.setValue("legend/elevationMax", elevationLegendMax);
+    settings.setValue("color/reflectivityScale", reflectivityColorScale);
     settings.setValue("color/solidColor", solidColor);
+    settings.setValue("background/preset", pointCloudBackgroundPreset);
     QStringList storedLineColors;
     for (const QColor& color : lineColors) {
         storedLineColors.append(color.name(QColor::HexRgb));
@@ -750,14 +797,18 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* gridTab = createSettingsPage("网格", "调整点云视图中的世界坐标网格。");
     QWidget* legendTab = createSettingsPage("图例", "设置距离和高度着色图例的数值范围。");
     QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
+    QWidget* backgroundTab = createSettingsPage("背景", "设置 OpenGL 点云视图的背景颜色。");
 
     QVBoxLayout* themeLayout = qobject_cast<QVBoxLayout*>(themeTab->layout());
     QVBoxLayout* connectionLayout = qobject_cast<QVBoxLayout*>(connectionTab->layout());
     QVBoxLayout* gridLayout = qobject_cast<QVBoxLayout*>(gridTab->layout());
     QVBoxLayout* legendLayout = qobject_cast<QVBoxLayout*>(legendTab->layout());
     QVBoxLayout* colorPageLayout = qobject_cast<QVBoxLayout*>(colorTab->layout());
+    QVBoxLayout* backgroundLayout = qobject_cast<QVBoxLayout*>(backgroundTab->layout());
     QColor selectedSolidColor = solidColor;
     QVector<QColor> selectedLineColors = lineColors;
+    int selectedReflectivityColorScale = reflectivityColorScale;
+    int selectedBackgroundPreset = pointCloudBackgroundPreset;
     QButtonGroup* themeGroup = new QButtonGroup(&dlg);
     QWidget* themeOptions = new QWidget(themeTab);
     QHBoxLayout* themeOptionsLayout = new QHBoxLayout(themeOptions);
@@ -856,6 +907,69 @@ void LivoxViewerWindow::showPreferencesDialog()
     QDoubleSpinBox* distanceMaxSpin = createLegendSpin(distanceLegendMin + 0.01, 100000.0, distanceLegendMax);
     QDoubleSpinBox* elevationMinSpin = createLegendSpin(-100000.0, elevationLegendMax - 0.01, elevationLegendMin);
     QDoubleSpinBox* elevationMaxSpin = createLegendSpin(elevationLegendMin + 0.01, 100000.0, elevationLegendMax);
+
+    QWidget* reflectivityScaleRow = new QWidget(&dlg);
+    usePreferenceControlColumn(reflectivityScaleRow);
+    QHBoxLayout* reflectivityScaleLayout = new QHBoxLayout(reflectivityScaleRow);
+    reflectivityScaleLayout->setContentsMargins(0, 0, 0, 0);
+    reflectivityScaleLayout->setSpacing(8);
+    QComboBox* reflectivityScaleCombo = new QComboBox(reflectivityScaleRow);
+    reflectivityScaleCombo->addItems({
+        QStringLiteral("BGYR (Blue → Green → Yellow → Red)"),
+        QStringLiteral("Rainbow"),
+        QStringLiteral("Viridis"),
+        QStringLiteral("Turbo"),
+        QStringLiteral("Cividis"),
+        QStringLiteral("High contrast"),
+        QStringLiteral("Grayscale")
+    });
+    reflectivityScaleCombo->setCurrentIndex(selectedReflectivityColorScale);
+    reflectivityScaleCombo->setFixedWidth(280);
+    QFrame* reflectivityScalePreview = new QFrame(reflectivityScaleRow);
+    reflectivityScalePreview->setFixedSize(170, 20);
+    reflectivityScalePreview->setStyleSheet(colorBarStyleSheet(
+        PointCloudColorizer::reflectivityColorScaleStops(selectedReflectivityColorScale)));
+    reflectivityScaleLayout->addWidget(reflectivityScaleCombo);
+    reflectivityScaleLayout->addWidget(reflectivityScalePreview);
+    reflectivityScaleLayout->addStretch();
+    connect(reflectivityScaleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
+            [&selectedReflectivityColorScale, reflectivityScalePreview](int index) {
+                selectedReflectivityColorScale = index;
+                reflectivityScalePreview->setStyleSheet(colorBarStyleSheet(
+                    PointCloudColorizer::reflectivityColorScaleStops(selectedReflectivityColorScale)));
+            });
+
+    QWidget* backgroundPresetRow = new QWidget(&dlg);
+    usePreferenceControlColumn(backgroundPresetRow);
+    QHBoxLayout* backgroundPresetLayout = new QHBoxLayout(backgroundPresetRow);
+    backgroundPresetLayout->setContentsMargins(0, 0, 0, 0);
+    backgroundPresetLayout->setSpacing(8);
+    QComboBox* backgroundPresetCombo = new QComboBox(backgroundPresetRow);
+    backgroundPresetCombo->addItem(QStringLiteral("深黑 (Deep Black)"), BackgroundDeepBlack);
+    backgroundPresetCombo->addItem(QStringLiteral("石墨黑 (Graphite)"), BackgroundGraphite);
+    backgroundPresetCombo->addItem(QStringLiteral("午夜蓝 (Midnight Blue)"), BackgroundMidnightBlue);
+    backgroundPresetCombo->addItem(QStringLiteral("深灰蓝 (Slate)"), BackgroundSlate);
+    backgroundPresetCombo->addItem(QStringLiteral("CloudCompare 经典 (CloudCompare Classic)"), BackgroundCloudCompareClassic);
+    backgroundPresetCombo->addItem(QStringLiteral("中性灰 (Neutral Gray)"), BackgroundNeutralGray);
+    backgroundPresetCombo->addItem(QStringLiteral("浅灰 (Light Gray)"), BackgroundLightGray);
+    backgroundPresetCombo->addItem(QStringLiteral("纯白 (Pure White)"), BackgroundPureWhite);
+    const int backgroundIndex = backgroundPresetCombo->findData(selectedBackgroundPreset);
+    backgroundPresetCombo->setCurrentIndex(backgroundIndex >= 0 ? backgroundIndex : 1);
+    backgroundPresetCombo->setFixedWidth(280);
+    const QPair<QColor, QColor> initialBackgroundColors = backgroundPresetColors(selectedBackgroundPreset);
+    QFrame* backgroundPresetPreview = new QFrame(backgroundPresetRow);
+    backgroundPresetPreview->setFixedSize(170, 36);
+    backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(initialBackgroundColors.first,
+                                                                      initialBackgroundColors.second));
+    backgroundPresetLayout->addWidget(backgroundPresetCombo);
+    backgroundPresetLayout->addWidget(backgroundPresetPreview);
+    backgroundPresetLayout->addStretch();
+    connect(backgroundPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
+            [&selectedBackgroundPreset, backgroundPresetCombo, backgroundPresetPreview](int index) {
+                selectedBackgroundPreset = backgroundPresetCombo->itemData(index).toInt();
+                const QPair<QColor, QColor> colors = backgroundPresetColors(selectedBackgroundPreset);
+                backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(colors.first, colors.second));
+            });
 
     QWidget* solidColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(solidColorRow);
@@ -983,6 +1097,13 @@ void LivoxViewerWindow::showPreferencesDialog()
     legendLayout->addWidget(lineLegendSection);
     legendLayout->addStretch();
 
+    addPreferenceSectionTitle(colorPageLayout, "反射率模式");
+    QFrame* reflectivityColorSection = createPreferenceSection(colorTab);
+    addPreferenceRow(reflectivityColorSection,
+                     "色标",
+                     "设置反射率着色模式使用的颜色映射。",
+                     reflectivityScaleRow);
+    colorPageLayout->addWidget(reflectivityColorSection);
     addPreferenceSectionTitle(colorPageLayout, "纯色模式");
     QFrame* colorSection = createPreferenceSection(colorTab);
     addPreferenceRow(colorSection, "点云颜色", "设置纯色着色模式下所有点的显示颜色。", solidColorRow);
@@ -998,13 +1119,20 @@ void LivoxViewerWindow::showPreferencesDialog()
     colorPageLayout->addWidget(lineColorSection);
     colorPageLayout->addStretch();
 
-    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色"};
+    addPreferenceSectionTitle(backgroundLayout, "点云背景");
+    QFrame* backgroundSection = createPreferenceSection(backgroundTab);
+    addPreferenceRow(backgroundSection, "背景方案", "设置 OpenGL 点云可视化区域的顶部和底部背景颜色。", backgroundPresetRow);
+    backgroundLayout->addWidget(backgroundSection);
+    backgroundLayout->addStretch();
+
+    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景"};
     const QStringList navigationIcons = {
         ":/icons/settings_theme.svg",
         ":/icons/settings_connection.svg",
         ":/icons/settings_grid.svg",
         ":/icons/settings_legend.svg",
-        ":/icons/settings_color.svg"
+        ":/icons/settings_color.svg",
+        ":/icons/settings_theme.svg"
     };
     for (int i = 0; i < navigationNames.size(); ++i) {
         QPushButton* button = createPreferenceNavButton(navigationNames.at(i), navigationIcons.at(i), navigation);
@@ -1042,15 +1170,18 @@ void LivoxViewerWindow::showPreferencesDialog()
     distanceLegendMax = float(distanceMaxSpin->value());
     elevationLegendMin = float(elevationMinSpin->value());
     elevationLegendMax = float(elevationMaxSpin->value());
+    reflectivityColorScale = selectedReflectivityColorScale;
     solidColor = selectedSolidColor;
     lineColors = selectedLineColors;
+    pointCloudBackgroundPreset = selectedBackgroundPreset;
     themeMode = themeGroup->checkedId();
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
 
     pointCloudView->setGridConfig(config);
+    applyPointCloudBackground();
     applyUiTheme();
-    updatePointCloudLegend();
+    recolorPointCloudViews();
     if (playbackState.active && playbackState.frame >= 0) {
         showLvx2PlaybackFrame(playbackState.frame);
     }

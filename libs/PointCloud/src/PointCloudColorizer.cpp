@@ -13,28 +13,50 @@ constexpr int kColorByElevation = 2;
 constexpr int kColorSolid = 3;
 constexpr int kColorByLine = 4;
 
-void calculateReflectivityColor(uint8_t reflectivity, float& r, float& g, float& b)
+QColor interpolateColor(const QVector<QColor>& colors, float t)
 {
-    if (reflectivity < 30) {
-        r = 0.0f;
-        g = static_cast<float>(reflectivity * 255 / 30) / 255.0f;
-        b = 1.0f;
-    } else if (reflectivity < 90) {
-        r = 0.0f;
-        g = 1.0f;
-        b = static_cast<float>((90 - reflectivity) * 255 / 60) / 255.0f;
-    } else if (reflectivity < 150) {
-        r = static_cast<float>((reflectivity - 90) * 255 / 60) / 255.0f;
-        g = 1.0f;
-        b = 0.0f;
-    } else {
-        r = 1.0f;
-        g = static_cast<float>((255 - reflectivity) * 255 / (256 - 150)) / 255.0f;
-        b = 0.0f;
-    }
+    t = std::clamp(t, 0.0f, 1.0f);
+    const int colorCount = int(colors.size());
+    const float scaled = t * float(colorCount - 1);
+    const int index = std::min(int(std::floor(scaled)), colorCount - 2);
+    const float localT = scaled - float(index);
+    const QColor a = colors.at(index);
+    const QColor b = colors.at(index + 1);
+    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * localT,
+                            a.greenF() + (b.greenF() - a.greenF()) * localT,
+                            a.blueF() + (b.blueF() - a.blueF()) * localT);
+}
+
+void calculateReflectivityColor(uint8_t reflectivity, int scale, float& r, float& g, float& b)
+{
+    const QColor color = interpolateColor(reflectivityColorScaleStops(scale), float(reflectivity) / 255.0f);
+    r = color.redF();
+    g = color.greenF();
+    b = color.blueF();
 }
 
 } // namespace
+
+QVector<QColor> reflectivityColorScaleStops(int scale)
+{
+    switch (scale) {
+    case ReflectivityRainbow:
+        return {QColor("#0000FF"), QColor("#00FFFF"), QColor("#00FF00"), QColor("#FFFF00"), QColor("#FF0000")};
+    case ReflectivityViridis:
+        return {QColor("#440154"), QColor("#3B528B"), QColor("#21918C"), QColor("#5EC962"), QColor("#FDE725")};
+    case ReflectivityTurbo:
+        return {QColor("#30123B"), QColor("#4664D7"), QColor("#1AE4B6"), QColor("#A4FC3C"), QColor("#FABA39"), QColor("#C40000")};
+    case ReflectivityCividis:
+        return {QColor("#00204C"), QColor("#31446B"), QColor("#666870"), QColor("#A69D75"), QColor("#FFE945")};
+    case ReflectivityHighContrast:
+        return {QColor("#000000"), QColor("#0000FF"), QColor("#00FFFF"), QColor("#FFFF00"), QColor("#FF0000"), QColor("#FFFFFF")};
+    case ReflectivityGrayscale:
+        return {QColor("#000000"), QColor("#FFFFFF")};
+    case ReflectivityBGYR:
+    default:
+        return {QColor("#0000FF"), QColor("#00FF00"), QColor("#FFFF00"), QColor("#FF0000")};
+    }
+}
 
 PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& config)
 {
@@ -57,7 +79,7 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
 
     if (config.mode == kColorByReflectivity) {
         for (PointCloudPoint& point : points) {
-            calculateReflectivityColor(point.reflectivity, point.r, point.g, point.b);
+            calculateReflectivityColor(point.reflectivity, config.reflectivityColorScale, point.r, point.g, point.b);
         }
         legend.minValue = 0.0f;
         legend.maxValue = 255.0f;

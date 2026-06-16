@@ -156,6 +156,7 @@ private:
     int effectiveColorMode() const;
     void updatePointCloudLegend();
     void recolorPointCloudViews();
+    void applyPointCloudBackground();
     void updateProjectionControlsVisibility();
     void syncPointCloudVisualizationAction();
     void syncPointCloudStlModelAction();
@@ -220,6 +221,17 @@ private:
         ThemeFollowSystem = 0,
         ThemeLight = 1,
         ThemeDark = 2
+    };
+
+    enum PointCloudBackgroundPreset {
+        BackgroundDeepBlack = 0,
+        BackgroundGraphite,
+        BackgroundMidnightBlue,
+        BackgroundSlate,
+        BackgroundCloudCompareClassic,
+        BackgroundNeutralGray,
+        BackgroundLightGray,
+        BackgroundPureWhite
     };
 
     // 静态回调函数
@@ -335,6 +347,8 @@ private:
 
     int colorMode = ColorByReflectivity;
     int themeMode = ThemeFollowSystem;
+    int reflectivityColorScale = 0;
+    int pointCloudBackgroundPreset = BackgroundGraphite;
     QColor solidColor = QColor(255, 255, 255);
     QVector<QColor> lineColors = {
         QColor(33, 150, 243),

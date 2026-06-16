@@ -76,8 +76,10 @@ void LivoxViewerWindow::updatePointCloudLegend()
 
     const int mode = effectiveColorMode();
     if (mode == ColorByReflectivity) {
+        const QVector<QColor> reflectivityColors =
+            PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale);
         for (PointCloudView* view : views) {
-            view->setLegend(ColorByReflectivity, 0.0f, 255.0f, true);
+            view->setLegend(ColorByReflectivity, 0.0f, 255.0f, true, {}, {}, reflectivityColors);
         }
     } else if (mode == ColorByDistance) {
         for (PointCloudView* view : views) {
@@ -107,23 +109,72 @@ void LivoxViewerWindow::recolorPointCloudViews()
 {
     PointCloudColorizer::Config colorConfig;
     colorConfig.mode = effectiveColorMode();
+    colorConfig.reflectivityColorScale = reflectivityColorScale;
     colorConfig.solidColor = solidColor;
     colorConfig.lineColors = lineColors;
     colorConfig.distanceColorMin = distanceLegendMin;
     colorConfig.distanceColorMax = distanceLegendMax;
     colorConfig.elevationColorMin = elevationLegendMin;
     colorConfig.elevationColorMax = elevationLegendMax;
+    const QVector<QColor> reflectivityColors =
+        PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale);
 
-    forEachPointCloudView([&colorConfig](PointCloudView* view) {
-        view->recolorCurrentPointCloud([view, &colorConfig](QVector<PointCloudPoint>& points) {
+    forEachPointCloudView([&colorConfig, &reflectivityColors](PointCloudView* view) {
+        view->recolorCurrentPointCloud([view, &colorConfig, &reflectivityColors](QVector<PointCloudPoint>& points) {
             const PointCloudPipelineLegend legend = PointCloudColorizer::apply(points, colorConfig);
             view->setLegend(legend.mode,
                             legend.minValue,
                             legend.maxValue,
                             legend.visible,
                             legend.lineColors,
-                            legend.lineNumbers);
+                            legend.lineNumbers,
+                            colorConfig.mode == ColorByReflectivity ? reflectivityColors : QVector<QColor>());
         });
+    });
+}
+
+void LivoxViewerWindow::applyPointCloudBackground()
+{
+    QColor topColor;
+    QColor bottomColor;
+    switch (pointCloudBackgroundPreset) {
+    case BackgroundDeepBlack:
+        topColor = QColor("#050608");
+        bottomColor = QColor("#050608");
+        break;
+    case BackgroundMidnightBlue:
+        topColor = QColor("#071426");
+        bottomColor = QColor("#0F2942");
+        break;
+    case BackgroundSlate:
+        topColor = QColor("#263442");
+        bottomColor = QColor("#101820");
+        break;
+    case BackgroundCloudCompareClassic:
+        topColor = QColor("#DCE8F2");
+        bottomColor = QColor("#405A72");
+        break;
+    case BackgroundNeutralGray:
+        topColor = QColor("#656B72");
+        bottomColor = QColor("#30343A");
+        break;
+    case BackgroundLightGray:
+        topColor = QColor("#F1F3F5");
+        bottomColor = QColor("#D9DEE3");
+        break;
+    case BackgroundPureWhite:
+        topColor = QColor("#FFFFFF");
+        bottomColor = QColor("#FFFFFF");
+        break;
+    case BackgroundGraphite:
+    default:
+        topColor = QColor("#181B20");
+        bottomColor = QColor("#181B20");
+        break;
+    }
+
+    forEachPointCloudView([&topColor, &bottomColor](PointCloudView* view) {
+        view->setBackgroundColors(topColor, bottomColor);
     });
 }
 
