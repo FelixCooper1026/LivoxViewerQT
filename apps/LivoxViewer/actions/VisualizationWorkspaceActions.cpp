@@ -199,9 +199,10 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
         tabNumber = nextOfflinePointCloudTabNumber++;
     }
 
+    const QString fileName = QFileInfo(filePath).fileName();
     const int tabId = visualizationWorkspace->addTab(
         VisualizationWorkspace::TabKind::OfflinePointCloud,
-        QStringLiteral("离线点云%1").arg(tabNumber),
+        fileName.isEmpty() ? QStringLiteral("离线点云%1").arg(tabNumber) : fileName,
         view,
         true);
     visualizationWorkspace->setTabToolTip(tabId, QDir::toNativeSeparators(filePath));

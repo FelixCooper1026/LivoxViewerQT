@@ -1,5 +1,7 @@
 #include "LivoxViewerWindow.h"
 
+#include <QShortcut>
+
 #include <algorithm>
 void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
 {
@@ -7,7 +9,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
     imuState.gpsTimer = new QTimer(this);
     connect(imuState.gpsTimer, &QTimer::timeout, this, &LivoxViewerWindow::onGpsTick);
 
-    connect(playbackState.playPauseButton, &QPushButton::clicked, [this]() {
+    auto togglePlayback = [this]() {
         if (!playbackState.active) {
             return;
         }
@@ -22,35 +24,67 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
             showLvx2PlaybackFrame(0);
         }
         setLvx2PlaybackPlaying(true);
-    });
-    connect(playbackState.firstFrameButton, &QPushButton::clicked, [this]() {
+    };
+    auto showFirstFrame = [this]() {
         if (!playbackState.active || playbackState.frameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
         showLvx2PlaybackFrame(0);
-    });
-    connect(playbackState.prevFrameButton, &QPushButton::clicked, [this]() {
+    };
+    auto showPreviousFrame = [this]() {
         if (!playbackState.active || playbackState.frameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
         showLvx2PlaybackFrame(std::max(0, playbackState.frame - 1));
-    });
-    connect(playbackState.nextFrameButton, &QPushButton::clicked, [this]() {
+    };
+    auto showNextFrame = [this]() {
         if (!playbackState.active || playbackState.frameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
         showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 1));
-    });
-    connect(playbackState.lastFrameButton, &QPushButton::clicked, [this]() {
+    };
+    auto showPreviousShortcutFrame = [this]() {
+        if (!playbackState.active || playbackState.frameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(std::max(0, playbackState.frame - 2));
+    };
+    auto showNextShortcutFrame = [this]() {
+        if (!playbackState.active || playbackState.frameCount <= 0) {
+            return;
+        }
+        setLvx2PlaybackPlaying(false);
+        showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 2));
+    };
+    auto showLastFrame = [this]() {
         if (!playbackState.active || playbackState.frameCount <= 0) {
             return;
         }
         setLvx2PlaybackPlaying(false);
         showLvx2PlaybackFrame(playbackState.frameCount - 1);
-    });
+    };
+
+    connect(playbackState.playPauseButton, &QPushButton::clicked, togglePlayback);
+    connect(playbackState.firstFrameButton, &QPushButton::clicked, showFirstFrame);
+    connect(playbackState.prevFrameButton, &QPushButton::clicked, showPreviousFrame);
+    connect(playbackState.nextFrameButton, &QPushButton::clicked, showNextFrame);
+    connect(playbackState.lastFrameButton, &QPushButton::clicked, showLastFrame);
+
+    auto bindPlaybackShortcut = [this](int key, const auto& callback) {
+        QShortcut* shortcut = new QShortcut(QKeySequence(key), this);
+        shortcut->setContext(Qt::WindowShortcut);
+        connect(shortcut, &QShortcut::activated, this, callback);
+    };
+    bindPlaybackShortcut(Qt::Key_Space, togglePlayback);
+    bindPlaybackShortcut(Qt::Key_Left, showPreviousShortcutFrame);
+    bindPlaybackShortcut(Qt::Key_Right, showNextShortcutFrame);
+    bindPlaybackShortcut(Qt::CTRL | Qt::Key_Left, showFirstFrame);
+    bindPlaybackShortcut(Qt::CTRL | Qt::Key_Right, showLastFrame);
+
     connect(playbackState.progressSlider, &QSlider::valueChanged, this, &LivoxViewerWindow::onLvx2PlaybackSliderMoved);
     connect(playbackState.speedCombo, &QComboBox::currentTextChanged, [this](const QString& text) {
         QString speedText = text;

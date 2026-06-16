@@ -2,11 +2,13 @@
 
 #include "ThemeIconUtils.h"
 
+#include <QButtonGroup>
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QPainter>
 #include <QSplitter>
 #include <QStyle>
 #include <QTabBar>
@@ -14,6 +16,69 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+
+namespace {
+
+class VisualizationTabBar : public QTabBar
+{
+public:
+    explicit VisualizationTabBar(QWidget* parent = nullptr)
+        : QTabBar(parent)
+    {
+        setMouseTracking(true);
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        QTabBar::paintEvent(event);
+
+        QPainter painter(this);
+        QColor separatorColor = palette().color(QPalette::Mid);
+        separatorColor.setAlpha(170);
+        QPen pen(separatorColor, 2);
+        painter.setPen(pen);
+
+        const int activeIndex = currentIndex();
+        for (int index = 0; index < count() - 1; ++index) {
+            if (index == activeIndex || index + 1 == activeIndex ||
+                index == m_hoverIndex || index + 1 == m_hoverIndex) {
+                continue;
+            }
+
+            const QRect rect = tabRect(index);
+            if (!rect.isValid()) {
+                continue;
+            }
+            const int x = rect.right();
+            painter.drawLine(QPoint(x, rect.top() + 7), QPoint(x, rect.bottom() - 7));
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent* event) override
+    {
+        const int index = tabAt(event->pos());
+        if (m_hoverIndex != index) {
+            m_hoverIndex = index;
+            update();
+        }
+        QTabBar::mouseMoveEvent(event);
+    }
+
+    void leaveEvent(QEvent* event) override
+    {
+        if (m_hoverIndex >= 0) {
+            m_hoverIndex = -1;
+            update();
+        }
+        QTabBar::leaveEvent(event);
+    }
+
+private:
+    int m_hoverIndex = -1;
+};
+
+} // namespace
 
 VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     : QWidget(parent)
@@ -25,23 +90,29 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     QWidget* tabRow = new QWidget(this);
     tabRow->setObjectName(QStringLiteral("VisualizationTabRow"));
     QHBoxLayout* tabLayout = new QHBoxLayout(tabRow);
-    tabLayout->setContentsMargins(6, 4, 6, 4);
-    tabLayout->setSpacing(4);
+    tabLayout->setContentsMargins(8, 4, 8, 0);
+    tabLayout->setSpacing(6);
 
-    m_tabBar = new QTabBar(tabRow);
+    m_tabBar = new VisualizationTabBar(tabRow);
     m_tabBar->setDocumentMode(true);
     m_tabBar->setExpanding(false);
     m_tabBar->setMovable(false);
     m_tabBar->setTabsClosable(true);
+    m_tabBar->setElideMode(Qt::ElideMiddle);
+    m_tabBar->setUsesScrollButtons(true);
+    m_tabBar->setDrawBase(false);
     tabLayout->addWidget(m_tabBar, 1);
 
     m_singleButton = new QToolButton(tabRow);
     m_horizontalButton = new QToolButton(tabRow);
     m_verticalButton = new QToolButton(tabRow);
+    QButtonGroup* splitButtonGroup = new QButtonGroup(tabRow);
+    splitButtonGroup->setExclusive(true);
     for (QToolButton* button : {m_singleButton, m_horizontalButton, m_verticalButton}) {
         button->setCheckable(true);
         button->setAutoRaise(true);
         button->setIconSize(QSize(18, 18));
+        splitButtonGroup->addButton(button);
         tabLayout->addWidget(button);
     }
     ThemeIconUtils::setThemedSvgIcon(m_singleButton, QStringLiteral(":/icons/layout_single.svg"));
@@ -93,7 +164,41 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     connect(m_verticalButton, &QToolButton::clicked, this, [this]() { setSplitMode(SplitMode::Vertical); });
 
     setStyleSheet(QStringLiteral(
-        "QWidget#VisualizationTabRow { background: palette(window); border-bottom: 1px solid palette(mid); }"
+        "QWidget#VisualizationTabRow { background: palette(button); }"
+        "QTabBar { background: transparent; }"
+        "QTabBar::tab-bar { left: 0px; }"
+        "QTabBar::tab {"
+        "  min-width: 136px; max-width: 260px; min-height: 24px;"
+        "  padding: 3px 10px 3px 14px;"
+        "  margin-right: -1px;"
+        "  border: 1px solid palette(mid);"
+        "  border-bottom: none;"
+        "  border-top-left-radius: 7px;"
+        "  border-top-right-radius: 7px;"
+        "  background: palette(window);"
+        "  color: palette(window-text);"
+        "}"
+        "QTabBar::tab:!selected {"
+        "  margin-top: 5px;"
+        "  margin-bottom: 4px;"
+        "  min-height: 18px;"
+        "  background: palette(button);"
+        "  border-color: transparent;"
+        "  color: palette(mid);"
+        "}"
+        "QTabBar::tab:!selected:hover {"
+        "  margin-top: 0px;"
+        "  margin-bottom: 0px;"
+        "  min-height: 24px;"
+        "  background: palette(window);"
+        "  border-color: transparent;"
+        "  color: palette(window-text);"
+        "}"
+        "QTabBar::tab:selected {"
+        "  margin-top: 0px;"
+        "  background: palette(base);"
+        "  border-color: palette(mid);"
+        "}"
         "QFrame#VisualizationPane[focused=\"true\"] { border: 2px solid palette(highlight); }"
         "QFrame#VisualizationPane[focused=\"false\"] { border: 2px solid transparent; }"
         "QLabel#VisualizationPaneEmpty { color: palette(mid); }"));
@@ -118,7 +223,20 @@ int VisualizationWorkspace::addTab(TabKind kind, const QString& title, QWidget* 
 
     const int index = m_tabBar->addTab(title);
     m_tabBar->setTabData(index, tabId);
-    if (!closable) {
+    if (closable) {
+        QToolButton* closeButton = new QToolButton(m_tabBar);
+        closeButton->setText(QStringLiteral("×"));
+        closeButton->setAutoRaise(true);
+        closeButton->setCursor(Qt::ArrowCursor);
+        closeButton->setFixedSize(18, 18);
+        closeButton->setStyleSheet(QStringLiteral(
+            "QToolButton { border: none; border-radius: 9px; color: palette(mid); padding: 0px; }"
+            "QToolButton:hover { background: rgba(0, 0, 0, 24); color: palette(window-text); }"));
+        connect(closeButton, &QToolButton::clicked, this, [this, tabId]() {
+            emit tabCloseRequested(tabId);
+        });
+        m_tabBar->setTabButton(index, QTabBar::RightSide, closeButton);
+    } else {
         m_tabBar->setTabButton(index, QTabBar::RightSide, nullptr);
     }
     if (m_paneTabs[0] < 0) {
@@ -205,9 +323,11 @@ void VisualizationWorkspace::setTabToolTip(int tabId, const QString& toolTip)
 void VisualizationWorkspace::setSplitMode(SplitMode mode)
 {
     if (m_splitMode == mode) {
+        syncSplitButtons();
         return;
     }
     if (mode != SplitMode::Single && m_tabs.size() < 2) {
+        syncSplitButtons();
         return;
     }
     m_splitMode = mode;
@@ -224,6 +344,9 @@ void VisualizationWorkspace::setSplitMode(SplitMode mode)
         if (secondary >= 0) {
             setPaneTab(1, secondary);
         }
+    }
+    if (mode != SplitMode::Single) {
+        focusPane(m_focusedPane);
     }
     syncSplitButtons();
     emit splitModeChanged(mode);
@@ -331,7 +454,7 @@ void VisualizationWorkspace::focusPane(int pane)
     const int currentTab = m_paneTabs[pane];
     m_focusedPane = pane;
     for (int i = 0; i < 2; ++i) {
-        m_panes[i]->setProperty("focused", i == pane);
+        m_panes[i]->setProperty("focused", m_splitMode != SplitMode::Single && i == pane);
         m_panes[i]->style()->unpolish(m_panes[i]);
         m_panes[i]->style()->polish(m_panes[i]);
         m_panes[i]->update();
