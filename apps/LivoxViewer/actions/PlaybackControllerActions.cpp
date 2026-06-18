@@ -254,11 +254,7 @@ void LivoxViewerWindow::closeLvx2Playback(bool clearView)
     playbackState.devices.clear();
     playbackState.deviceVisible.clear();
     rebuildLvx2DeviceTab();
-    playbackState.slidingWindowStart = -1;
-    playbackState.slidingWindowEnd = -1;
-    playbackState.slidingWindowPoints.clear();
-    playbackState.slidingWindowSegmentPointCounts.clear();
-    playbackState.slidingWindowTimestamp = 0;
+    playbackState.resetSlidingWindow();
     playbackState.path.clear();
 
     updateLvx2PlaybackUi();
@@ -336,52 +332,81 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
         return frame;
     };
 
+    uint64_t windowStartTimestamp = 0;
+    uint64_t windowEndTimestamp = 0;
+    auto refreshWindowEndpointTimestamps = [&]() {
+        if (!playbackState.slidingWindowSegmentTimestamps.isEmpty()) {
+            windowStartTimestamp = playbackState.slidingWindowSegmentTimestamps.front();
+            windowEndTimestamp = playbackState.slidingWindowSegmentTimestamps.back();
+        }
+    };
+    auto recomputeSlidingWindowTimestamp = [&]() {
+        uint64_t timestamp = 0;
+        for (uint64_t segmentTimestamp : playbackState.slidingWindowSegmentTimestamps) {
+            timestamp = std::max(timestamp, segmentTimestamp);
+        }
+        playbackState.slidingWindowTimestamp = timestamp;
+    };
+    auto appendWindowSegment = [&](const PointCloudFrame& rawFrame) {
+        playbackState.slidingWindowPoints += rawFrame.points;
+        playbackState.slidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
+        playbackState.slidingWindowSegmentTimestamps.push_back(rawFrame.timestamp);
+        playbackState.slidingWindowTimestamp = std::max(playbackState.slidingWindowTimestamp, rawFrame.timestamp);
+    };
+
     if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
         const bool canIncrementalAdvance =
             (playbackState.slidingWindowStart >= 0 && playbackState.slidingWindowEnd >= 0 &&
+             playbackState.slidingWindowSegmentPointCounts.size() == playbackState.slidingWindowSegmentTimestamps.size() &&
              rawStartIndex >= playbackState.slidingWindowStart && rawEndIndex >= playbackState.slidingWindowEnd &&
              rawStartIndex - playbackState.slidingWindowStart <= 1 && rawEndIndex - playbackState.slidingWindowEnd <= 1);
 
         if (!canIncrementalAdvance) {
             playbackState.slidingWindowPoints.clear();
             playbackState.slidingWindowSegmentPointCounts.clear();
+            playbackState.slidingWindowSegmentTimestamps.clear();
+            playbackState.slidingWindowTimestamp = 0;
             for (int i = rawStartIndex; i < rawEndIndex; ++i) {
                 const PointCloudFrame rawFrame = readRawFrame(i);
-                playbackState.slidingWindowPoints += rawFrame.points;
-                playbackState.slidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
+                appendWindowSegment(rawFrame);
             }
         } else {
             if (rawStartIndex > playbackState.slidingWindowStart && !playbackState.slidingWindowSegmentPointCounts.isEmpty()) {
                 const int removeCount = playbackState.slidingWindowSegmentPointCounts.front();
+                const uint64_t removedTimestamp = playbackState.slidingWindowSegmentTimestamps.isEmpty()
+                    ? 0
+                    : playbackState.slidingWindowSegmentTimestamps.front();
                 if (removeCount > 0) {
                     playbackState.slidingWindowPoints.remove(0, removeCount);
                 }
                 playbackState.slidingWindowSegmentPointCounts.remove(0);
+                if (!playbackState.slidingWindowSegmentTimestamps.isEmpty()) {
+                    playbackState.slidingWindowSegmentTimestamps.remove(0);
+                }
+                if (removedTimestamp == playbackState.slidingWindowTimestamp) {
+                    recomputeSlidingWindowTimestamp();
+                }
             }
             if (rawEndIndex > playbackState.slidingWindowEnd) {
                 const PointCloudFrame addedFrame = readRawFrame(rawEndIndex - 1);
-                playbackState.slidingWindowPoints += addedFrame.points;
-                playbackState.slidingWindowSegmentPointCounts.push_back(addedFrame.points.size());
+                appendWindowSegment(addedFrame);
             }
         }
         playbackState.slidingWindowStart = rawStartIndex;
         playbackState.slidingWindowEnd = rawEndIndex;
-        playbackState.slidingWindowTimestamp = 0;
-        for (int i = playbackState.slidingWindowStart; i < playbackState.slidingWindowEnd; ++i) {
-            playbackState.slidingWindowTimestamp =
-                std::max(playbackState.slidingWindowTimestamp, readRawFrame(i).timestamp);
-        }
+        refreshWindowEndpointTimestamps();
     } else {
         playbackState.slidingWindowStart = rawStartIndex;
         playbackState.slidingWindowEnd = rawEndIndex;
         playbackState.slidingWindowPoints.clear();
         playbackState.slidingWindowSegmentPointCounts.clear();
+        playbackState.slidingWindowSegmentTimestamps.clear();
         playbackState.slidingWindowTimestamp = 0;
         for (int i = rawStartIndex; i < rawEndIndex; ++i) {
             const PointCloudFrame rawFrame = readRawFrame(i);
-            playbackState.slidingWindowPoints += rawFrame.points;
-            playbackState.slidingWindowTimestamp = std::max(playbackState.slidingWindowTimestamp, rawFrame.timestamp);
+            appendWindowSegment(rawFrame);
         }
+        refreshWindowEndpointTimestamps();
     }
 
     PointCloudFrame frame;
@@ -398,16 +423,14 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     }
 
     if (playbackState.source->kind() == Playback::SourceKind::Pcap) {
-        const PointCloudFrame startFrame = readRawFrame(rawStartIndex);
-        const PointCloudFrame endFrame = readRawFrame(rawEndIndex - 1);
         const bool rebuildImuHistory = previousPlaybackFrame < 0 || playbackFrameIndex != previousPlaybackFrame + 1;
         const uint64_t imuStartTimestamp =
             rebuildImuHistory ? 0ULL
                               : (playbackState.mode == Lvx2PlaybackMode::SlidingWindow
-                                     ? endFrame.timestamp
-                                     : startFrame.timestamp);
+                                     ? windowEndTimestamp
+                                     : windowStartTimestamp);
         const QVector<Playback::ImuSample> imuSamples =
-            playbackState.source->readImuSamples(imuStartTimestamp, endFrame.timestamp + kPcapRawFrameDurationNs);
+            playbackState.source->readImuSamples(imuStartTimestamp, windowEndTimestamp + kPcapRawFrameDurationNs);
         appendPlaybackImuSamples(playbackState, imuSamples, rebuildImuHistory);
     }
 

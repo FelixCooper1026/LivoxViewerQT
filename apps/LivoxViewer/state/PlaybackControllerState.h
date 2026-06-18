@@ -54,6 +54,7 @@ struct PlaybackControllerState
     int slidingWindowEnd = -1;
     QVector<PointCloudPoint> slidingWindowPoints;
     QVector<int> slidingWindowSegmentPointCounts;
+    QVector<uint64_t> slidingWindowSegmentTimestamps;
     uint64_t slidingWindowTimestamp = 0;
     QMap<uint32_t, uint32_t> imuHandleByLidarId;
     uint32_t nextPlaybackImuHandle = 0x80000001u;
@@ -64,6 +65,7 @@ struct PlaybackControllerState
         slidingWindowEnd = -1;
         slidingWindowPoints.clear();
         slidingWindowSegmentPointCounts.clear();
+        slidingWindowSegmentTimestamps.clear();
         slidingWindowTimestamp = 0;
     }
 

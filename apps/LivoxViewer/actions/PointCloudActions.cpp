@@ -23,11 +23,7 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
     }
     logMessage(QString("点云积分时间已设置为 %1 ms").arg(ms));
     if (playbackState.active) {
-        playbackState.slidingWindowStart = -1;
-        playbackState.slidingWindowEnd = -1;
-        playbackState.slidingWindowPoints.clear();
-        playbackState.slidingWindowSegmentPointCounts.clear();
-        playbackState.slidingWindowTimestamp = 0;
+        playbackState.resetSlidingWindow();
         const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
         const int rawFramesPerStep = std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
         if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {

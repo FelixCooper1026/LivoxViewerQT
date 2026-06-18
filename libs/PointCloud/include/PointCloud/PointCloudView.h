@@ -153,6 +153,7 @@ private:
     QOpenGLVertexArrayObject m_backgroundVao;
     QOpenGLBuffer m_vbo;
     QOpenGLVertexArrayObject m_vao;
+    qsizetype m_pointCloudBufferCapacityBytes = 0;
 
     QOpenGLBuffer m_axesVbo;
     QOpenGLVertexArrayObject m_axesVao;

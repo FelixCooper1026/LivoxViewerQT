@@ -5,19 +5,6 @@
 
 #include <QFile>
 #include <QtEndian>
-#include <QDebug>
-
-// 辅助：把 Playback::Extrinsic 的内存按十六进制字符串打印，方便调试（保持为原始字节，不依赖字段名）
-static QString extrinsicHexDump(const Playback::Extrinsic& e)
-{
-    const unsigned char* p = reinterpret_cast<const unsigned char*>(&e);
-    QString s;
-    s.reserve(sizeof(e) * 2);
-    for (size_t i = 0; i < sizeof(e); ++i) {
-        s += QString::asprintf("%02X", p[i]);
-    }
-    return s;
-}
 
 namespace {
 
@@ -85,18 +72,6 @@ bool Lvx2Reader::load(const QString& filePath)
         uiInfo.deviceType = deviceInfo.device_type;
         uiInfo.lidarSn = QString::fromLatin1(deviceInfo.lidar_sn).trimmed();
         devices_.push_back(uiInfo);
-
-        // DEBUG: 打印设备与外参信息，确认外参是否被创建并与 lidar_id 对应
-        qDebug() << "Lvx2Reader::load device:"
-                 << "lidar_id=" << deviceInfo.lidar_id
-                 << "type=" << deviceInfo.device_type
-                 << "sn=" << uiInfo.lidarSn
-                 << "lineCount=" << lineCounts_.value(deviceInfo.lidar_id)
-                 << "extrinsic_present=" << extrinsics_.contains(deviceInfo.lidar_id);
-        if (extrinsics_.contains(deviceInfo.lidar_id)) {
-            const Playback::Extrinsic ex = extrinsics_.value(deviceInfo.lidar_id);
-            qDebug() << "Lvx2Reader::load extrinsic_hex=" << extrinsicHexDump(ex);
-        }
     }
 
     const qint64 fileSize = file.size();
@@ -227,12 +202,6 @@ bool Lvx2Reader::readFrame(int frameIndex,
         const auto extrinsicIt = extrinsics_.constFind(packageHeader.lidar_id);
         const Playback::Extrinsic* extrinsic =
             (extrinsicIt == extrinsics_.constEnd()) ? nullptr : &extrinsicIt.value();
-        if (!extrinsic) {
-            qDebug() << "Lvx2Reader::readFrame - NO extrinsic for lidar_id=" << packageHeader.lidar_id;
-        } else {
-            qDebug() << "Lvx2Reader::readFrame - using extrinsic for lidar_id=" << packageHeader.lidar_id
-                     << "extrinsic_hex=" << extrinsicHexDump(*extrinsic);
-        }
         Lvx2PointParser::appendPackagePoints(packageHeader,
                                              payload,
                                              extrinsic,

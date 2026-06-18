@@ -329,7 +329,8 @@ void PointCloudView::setupBuffers()
     m_vbo.create();
     m_vbo.bind();
     m_vbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
-    m_vbo.allocate(1000 * sizeof(PointCloudPoint)); // 初始分配空间
+    m_pointCloudBufferCapacityBytes = qsizetype(1000) * qsizetype(sizeof(PointCloudPoint));
+    m_vbo.allocate(static_cast<int>(m_pointCloudBufferCapacityBytes)); // 初始分配空间
     
     // 设置顶点属性
     m_program->enableAttributeArray(0);
@@ -1301,7 +1302,16 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
     if (m_vbo.isCreated()) {
         ScopedOpenGLContext current(this);
         m_vbo.bind();
-        m_vbo.allocate(m_points.constData(), static_cast<int>(m_points.size() * qsizetype(sizeof(PointCloudPoint))));
+        const qsizetype byteCount = m_points.size() * qsizetype(sizeof(PointCloudPoint));
+        if (byteCount == 0) {
+            m_vbo.allocate(0);
+            m_pointCloudBufferCapacityBytes = 0;
+        } else if (byteCount > m_pointCloudBufferCapacityBytes) {
+            m_vbo.allocate(m_points.constData(), static_cast<int>(byteCount));
+            m_pointCloudBufferCapacityBytes = byteCount;
+        } else {
+            m_vbo.write(0, m_points.constData(), static_cast<int>(byteCount));
+        }
         m_vbo.release();
     }
     update();

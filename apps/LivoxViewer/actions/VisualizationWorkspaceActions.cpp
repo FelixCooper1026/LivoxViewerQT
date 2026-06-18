@@ -60,6 +60,7 @@ void LivoxViewerWindow::copyPlaybackSession(PlaybackControllerState& dst, const 
     dst.slidingWindowEnd = src.slidingWindowEnd;
     dst.slidingWindowPoints = src.slidingWindowPoints;
     dst.slidingWindowSegmentPointCounts = src.slidingWindowSegmentPointCounts;
+    dst.slidingWindowSegmentTimestamps = src.slidingWindowSegmentTimestamps;
     dst.slidingWindowTimestamp = src.slidingWindowTimestamp;
     dst.imuHandleByLidarId = src.imuHandleByLidarId;
     dst.nextPlaybackImuHandle = src.nextPlaybackImuHandle;

@@ -104,11 +104,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
     connect(playbackState.modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int index) {
         const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
         playbackState.mode = (index == 1) ? Lvx2PlaybackMode::SlidingWindow : Lvx2PlaybackMode::FrameByFrame;
-        playbackState.slidingWindowStart = -1;
-        playbackState.slidingWindowEnd = -1;
-        playbackState.slidingWindowPoints.clear();
-        playbackState.slidingWindowSegmentPointCounts.clear();
-        playbackState.slidingWindowTimestamp = 0;
+        playbackState.resetSlidingWindow();
         if (!playbackState.active) {
             updateLvx2PlaybackUi();
             return;
