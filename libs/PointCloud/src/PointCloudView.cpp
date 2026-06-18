@@ -103,6 +103,8 @@ PointCloudView::~PointCloudView()
     m_crossSectionTriangleVao.destroy();
     m_crossSectionVbo.destroy();
     m_crossSectionVao.destroy();
+    m_backgroundVbo.destroy();
+    m_backgroundVao.destroy();
     m_gridVbo.destroy();
     m_gridVao.destroy();
     m_axesVbo.destroy();
@@ -112,6 +114,10 @@ PointCloudView::~PointCloudView()
     if (m_program) {
         delete m_program;
         m_program = nullptr;
+    }
+    if (m_backgroundProgram) {
+        delete m_backgroundProgram;
+        m_backgroundProgram = nullptr;
     }
     if (hasContext) {
         doneCurrent();
@@ -181,6 +187,7 @@ void PointCloudView::initializeGL()
     glPointSize(2.0f);
     
     setupShaders();
+    setupBackgroundBuffers();
     setupBuffers();
     setupAxesBuffers();
     setupGridBuffers();
@@ -264,6 +271,54 @@ void PointCloudView::setupShaders()
     m_program->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
     m_program->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
     m_program->link();
+}
+
+void PointCloudView::setupBackgroundBuffers()
+{
+    const char* vertexShaderSource = R"(
+        #version 330 core
+        layout(location = 0) in vec2 aPos;
+        out float vPositionY;
+
+        void main() {
+            vPositionY = (aPos.y + 1.0) * 0.5;
+            gl_Position = vec4(aPos, 0.0, 1.0);
+        }
+    )";
+
+    const char* fragmentShaderSource = R"(
+        #version 330 core
+        in float vPositionY;
+        uniform vec3 uTopColor;
+        uniform vec3 uBottomColor;
+        out vec4 FragColor;
+
+        void main() {
+            FragColor = vec4(mix(uBottomColor, uTopColor, vPositionY), 1.0);
+        }
+    )";
+
+    m_backgroundProgram = new QOpenGLShaderProgram();
+    m_backgroundProgram->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
+    m_backgroundProgram->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
+    m_backgroundProgram->link();
+
+    const float vertices[] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+        -1.0f,  1.0f,
+         1.0f,  1.0f
+    };
+
+    m_backgroundVao.create();
+    m_backgroundVao.bind();
+    m_backgroundVbo.create();
+    m_backgroundVbo.bind();
+    m_backgroundVbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    m_backgroundVbo.allocate(vertices, int(sizeof(vertices)));
+    m_backgroundProgram->enableAttributeArray(0);
+    m_backgroundProgram->setAttributeBuffer(0, GL_FLOAT, 0, 2, 2 * int(sizeof(float)));
+    m_backgroundVao.release();
 }
 
 void PointCloudView::setupBuffers()
@@ -583,12 +638,18 @@ void PointCloudView::paintGL()
         glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     } else {
-        QPainter painter(this);
-        QLinearGradient backgroundGradient(rect().topLeft(), rect().bottomLeft());
-        backgroundGradient.setColorAt(0.0, m_backgroundTopColor);
-        backgroundGradient.setColorAt(1.0, m_backgroundBottomColor);
-        painter.fillRect(rect(), backgroundGradient);
-        painter.end();
+        glDisable(GL_DEPTH_TEST);
+        m_backgroundProgram->bind();
+        m_backgroundProgram->setUniformValue("uTopColor", QVector3D(m_backgroundTopColor.redF(),
+                                                                    m_backgroundTopColor.greenF(),
+                                                                    m_backgroundTopColor.blueF()));
+        m_backgroundProgram->setUniformValue("uBottomColor", QVector3D(m_backgroundBottomColor.redF(),
+                                                                       m_backgroundBottomColor.greenF(),
+                                                                       m_backgroundBottomColor.blueF()));
+        m_backgroundVao.bind();
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        m_backgroundVao.release();
+        m_backgroundProgram->release();
         glClear(GL_DEPTH_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
     }

@@ -81,6 +81,7 @@ private:
     void updateChartHover(ChartPanel& panel, const QPoint& mousePos);
     void hideChartHover(ChartPanel& panel);
     void positionChartEmptyOverlay(ChartPanel& panel);
+    void positionChartEmptyOverlays();
 
     LivoxViewerWindow* m_owner = nullptr;
     QListWidget* m_deviceList = nullptr;

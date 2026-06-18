@@ -1,6 +1,4 @@
 #include "LivoxViewerWindow.h"
-#include "ThemeIconUtils.h"
-
 #include <QIcon>
 #include <QStyle>
 
@@ -55,11 +53,6 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         playbackState.label->setWordWrap(false);
         playbackState.label->installEventFilter(this);
-        playbackState.closeButton = new QPushButton(playbackState.bar);
-        ThemeIconUtils::setThemedSvgIcon(playbackState.closeButton, QStringLiteral(":/icons/close_file.svg"));
-        playbackState.closeButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
-        playbackState.closeButton->setFixedSize(QSize(playbackIconSize + 10, playbackIconSize + 10));
-        playbackState.closeButton->setToolTip("关闭文件");
         playbackLayout->addWidget(playbackState.firstFrameButton);
         playbackLayout->addWidget(playbackState.prevFrameButton);
         playbackLayout->addWidget(playbackState.playPauseButton);
@@ -68,7 +61,6 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackLayout->addWidget(playbackState.progressSlider, 1);
         playbackLayout->addWidget(playbackState.speedCombo);
         playbackLayout->addWidget(playbackState.modeCombo);
-        playbackLayout->addWidget(playbackState.closeButton);
         playbackRootLayout->addLayout(playbackLayout);
         playbackRootLayout->addWidget(playbackState.label);
         playbackState.bar->setVisible(false);

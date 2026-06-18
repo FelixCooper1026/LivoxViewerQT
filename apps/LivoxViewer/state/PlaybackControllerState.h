@@ -40,7 +40,6 @@ struct PlaybackControllerState
     QPushButton* prevFrameButton = nullptr;
     QPushButton* nextFrameButton = nullptr;
     QPushButton* lastFrameButton = nullptr;
-    QPushButton* closeButton = nullptr;
     QSlider* progressSlider = nullptr;
     QLabel* label = nullptr;
     QComboBox* speedCombo = nullptr;

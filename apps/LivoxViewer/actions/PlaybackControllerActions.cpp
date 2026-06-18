@@ -556,9 +556,6 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         playbackState.progressSlider->setValue(std::clamp(displayFrameIndex, 0, std::max(0, displayFrameCount - 1)));
         playbackState.updatingSlider = false;
     }
-    if (playbackState.closeButton) {
-        playbackState.closeButton->setEnabled(!playbackState.loading);
-    }
     if (playbackState.modeCombo) {
         playbackState.modeCombo->setEnabled(playbackState.active && !playbackState.loading);
         playbackState.modeCombo->setCurrentIndex(playbackState.mode == Lvx2PlaybackMode::SlidingWindow ? 1 : 0);

@@ -16,7 +16,6 @@ void clearPlaybackUiPointers(PlaybackControllerState& state)
     state.prevFrameButton = nullptr;
     state.nextFrameButton = nullptr;
     state.lastFrameButton = nullptr;
-    state.closeButton = nullptr;
     state.progressSlider = nullptr;
     state.label = nullptr;
     state.speedCombo = nullptr;
@@ -32,7 +31,6 @@ void restorePlaybackUiPointers(PlaybackControllerState& state, const PlaybackCon
     state.prevFrameButton = controls.prevFrameButton;
     state.nextFrameButton = controls.nextFrameButton;
     state.lastFrameButton = controls.lastFrameButton;
-    state.closeButton = controls.closeButton;
     state.progressSlider = controls.progressSlider;
     state.label = controls.label;
     state.speedCombo = controls.speedCombo;

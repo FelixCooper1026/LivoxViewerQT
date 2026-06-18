@@ -1,6 +1,7 @@
 #include "PointCloud/PointCloudColorizer.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace PointCloudColorizer {
@@ -12,50 +13,88 @@ constexpr int kColorByDistance = 1;
 constexpr int kColorByElevation = 2;
 constexpr int kColorSolid = 3;
 constexpr int kColorByLine = 4;
+constexpr int kReflectivityScaleCount = ReflectivityGrayscale + 1;
+constexpr int kReflectivityValueCount = 256;
 
-QColor interpolateColor(const QVector<QColor>& colors, float t)
+struct Rgb {
+    float r;
+    float g;
+    float b;
+};
+
+struct ColorScaleDefinition {
+    std::array<Rgb, 6> colors;
+    int colorCount;
+};
+
+constexpr Rgb rgb(int r, int g, int b)
+{
+    return {float(r) / 255.0f, float(g) / 255.0f, float(b) / 255.0f};
+}
+
+constexpr std::array<ColorScaleDefinition, kReflectivityScaleCount> kReflectivityColorScales = {{
+    {std::array<Rgb, 6>{rgb(0, 0, 255), rgb(0, 255, 0), rgb(255, 255, 0), rgb(255, 0, 0)}, 4},
+    {std::array<Rgb, 6>{rgb(0, 0, 255), rgb(0, 255, 255), rgb(0, 255, 0), rgb(255, 255, 0), rgb(255, 0, 0)}, 5},
+    {std::array<Rgb, 6>{rgb(68, 1, 84), rgb(59, 82, 139), rgb(33, 145, 140), rgb(94, 201, 98), rgb(253, 231, 37)}, 5},
+    {std::array<Rgb, 6>{rgb(48, 18, 59), rgb(70, 100, 215), rgb(26, 228, 182), rgb(164, 252, 60), rgb(250, 186, 57), rgb(196, 0, 0)}, 6},
+    {std::array<Rgb, 6>{rgb(0, 32, 76), rgb(49, 68, 107), rgb(102, 104, 112), rgb(166, 157, 117), rgb(255, 233, 69)}, 5},
+    {std::array<Rgb, 6>{rgb(0, 0, 0), rgb(0, 0, 255), rgb(0, 255, 255), rgb(255, 255, 0), rgb(255, 0, 0), rgb(255, 255, 255)}, 6},
+    {std::array<Rgb, 6>{rgb(0, 0, 0), rgb(255, 255, 255)}, 2}
+}};
+
+Rgb interpolateColor(const ColorScaleDefinition& scale, float t)
 {
     t = std::clamp(t, 0.0f, 1.0f);
-    const int colorCount = int(colors.size());
+    const int colorCount = scale.colorCount;
     const float scaled = t * float(colorCount - 1);
     const int index = std::min(int(std::floor(scaled)), colorCount - 2);
     const float localT = scaled - float(index);
-    const QColor a = colors.at(index);
-    const QColor b = colors.at(index + 1);
-    return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * localT,
-                            a.greenF() + (b.greenF() - a.greenF()) * localT,
-                            a.blueF() + (b.blueF() - a.blueF()) * localT);
+    const Rgb& a = scale.colors[size_t(index)];
+    const Rgb& b = scale.colors[size_t(index + 1)];
+    return {a.r + (b.r - a.r) * localT,
+            a.g + (b.g - a.g) * localT,
+            a.b + (b.b - a.b) * localT};
+}
+
+std::array<std::array<Rgb, kReflectivityValueCount>, kReflectivityScaleCount> buildReflectivityLookupTables()
+{
+    std::array<std::array<Rgb, kReflectivityValueCount>, kReflectivityScaleCount> tables;
+    for (int scale = 0; scale < kReflectivityScaleCount; ++scale) {
+        for (int reflectivity = 0; reflectivity < kReflectivityValueCount; ++reflectivity) {
+            tables[size_t(scale)][size_t(reflectivity)] =
+                interpolateColor(kReflectivityColorScales[size_t(scale)], float(reflectivity) / 255.0f);
+        }
+    }
+    return tables;
+}
+
+const std::array<std::array<Rgb, kReflectivityValueCount>, kReflectivityScaleCount>& reflectivityLookupTables()
+{
+    static const std::array<std::array<Rgb, kReflectivityValueCount>, kReflectivityScaleCount> tables =
+        buildReflectivityLookupTables();
+    return tables;
 }
 
 void calculateReflectivityColor(uint8_t reflectivity, int scale, float& r, float& g, float& b)
 {
-    const QColor color = interpolateColor(reflectivityColorScaleStops(scale), float(reflectivity) / 255.0f);
-    r = color.redF();
-    g = color.greenF();
-    b = color.blueF();
+    const Rgb& color = reflectivityLookupTables()[size_t(scale)][size_t(reflectivity)];
+    r = color.r;
+    g = color.g;
+    b = color.b;
 }
 
 } // namespace
 
 QVector<QColor> reflectivityColorScaleStops(int scale)
 {
-    switch (scale) {
-    case ReflectivityRainbow:
-        return {QColor("#0000FF"), QColor("#00FFFF"), QColor("#00FF00"), QColor("#FFFF00"), QColor("#FF0000")};
-    case ReflectivityViridis:
-        return {QColor("#440154"), QColor("#3B528B"), QColor("#21918C"), QColor("#5EC962"), QColor("#FDE725")};
-    case ReflectivityTurbo:
-        return {QColor("#30123B"), QColor("#4664D7"), QColor("#1AE4B6"), QColor("#A4FC3C"), QColor("#FABA39"), QColor("#C40000")};
-    case ReflectivityCividis:
-        return {QColor("#00204C"), QColor("#31446B"), QColor("#666870"), QColor("#A69D75"), QColor("#FFE945")};
-    case ReflectivityHighContrast:
-        return {QColor("#000000"), QColor("#0000FF"), QColor("#00FFFF"), QColor("#FFFF00"), QColor("#FF0000"), QColor("#FFFFFF")};
-    case ReflectivityGrayscale:
-        return {QColor("#000000"), QColor("#FFFFFF")};
-    case ReflectivityBGYR:
-    default:
-        return {QColor("#0000FF"), QColor("#00FF00"), QColor("#FFFF00"), QColor("#FF0000")};
+    const ColorScaleDefinition& scaleDefinition = kReflectivityColorScales[size_t(scale)];
+    QVector<QColor> colors;
+    colors.reserve(scaleDefinition.colorCount);
+    for (int i = 0; i < scaleDefinition.colorCount; ++i) {
+        const Rgb& color = scaleDefinition.colors[size_t(i)];
+        colors.append(QColor::fromRgbF(color.r, color.g, color.b));
     }
+    return colors;
 }
 
 PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& config)

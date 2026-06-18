@@ -133,6 +133,7 @@ signals:
 
 private:
     void setupShaders();
+    void setupBackgroundBuffers();
     void setupBuffers();
     void setupAxesBuffers();
     void setupCrossSectionBuffers();
@@ -147,6 +148,9 @@ private:
     PointCloudCrossSection::Camera crossSectionCamera() const;
 
     QOpenGLShaderProgram *m_program;
+    QOpenGLShaderProgram* m_backgroundProgram = nullptr;
+    QOpenGLBuffer m_backgroundVbo;
+    QOpenGLVertexArrayObject m_backgroundVao;
     QOpenGLBuffer m_vbo;
     QOpenGLVertexArrayObject m_vao;
 

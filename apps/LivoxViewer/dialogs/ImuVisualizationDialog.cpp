@@ -264,6 +264,10 @@ void ImuVisualizationDialog::changeEvent(QEvent* event)
     if (event->type() == QEvent::PaletteChange ||
         event->type() == QEvent::ApplicationPaletteChange) {
         refreshTheme();
+    } else if (event->type() == QEvent::WindowStateChange) {
+        QTimer::singleShot(0, this, [this]() {
+            positionChartEmptyOverlays();
+        });
     }
 }
 
@@ -577,6 +581,13 @@ void ImuVisualizationDialog::positionChartEmptyOverlay(ChartPanel& panel)
     const int x = targetRect.left() + (targetRect.width() - panel.emptyOverlay->width()) / 2;
     const int y = targetRect.top() + (targetRect.height() - panel.emptyOverlay->height()) / 2;
     panel.emptyOverlay->move(std::max(targetRect.left(), x), std::max(targetRect.top(), y));
+}
+
+void ImuVisualizationDialog::positionChartEmptyOverlays()
+{
+    for (ChartPanel* panel : {&m_accChart, &m_gyroChart, &m_attitudeChart}) {
+        positionChartEmptyOverlay(*panel);
+    }
 }
 
 void ImuVisualizationDialog::updateChartHover(ChartPanel& panel, const QPoint& mousePos)

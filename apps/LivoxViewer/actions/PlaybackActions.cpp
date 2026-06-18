@@ -131,9 +131,6 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
             updateLvx2PlaybackUi();
         }
     });
-    connect(playbackState.closeButton, &QPushButton::clicked, [this]() {
-        closeLvx2Playback(true);
-    });
     actionShowImuCharts = toolsMenu->addAction("IMU数据可视化");
     connect(actionShowImuCharts, &QAction::triggered, this, &LivoxViewerWindow::onActionShowImuCharts);
 

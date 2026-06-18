@@ -73,6 +73,11 @@ void usePreferenceControlColumn(QWidget* widget)
     widget->setProperty("preferenceControlColumnWidth", kPreferenceControlColumnWidth);
 }
 
+void usePreferenceControlColumn(QWidget* widget, int width)
+{
+    widget->setProperty("preferenceControlColumnWidth", width);
+}
+
 void preparePreferenceSpinBox(QDoubleSpinBox* spin)
 {
     spin->setFixedWidth(kPreferenceSpinBoxWidth);
@@ -909,10 +914,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     QDoubleSpinBox* elevationMaxSpin = createLegendSpin(elevationLegendMin + 0.01, 100000.0, elevationLegendMax);
 
     QWidget* reflectivityScaleRow = new QWidget(&dlg);
-    usePreferenceControlColumn(reflectivityScaleRow);
-    QHBoxLayout* reflectivityScaleLayout = new QHBoxLayout(reflectivityScaleRow);
+    usePreferenceControlColumn(reflectivityScaleRow, 300);
+    QVBoxLayout* reflectivityScaleLayout = new QVBoxLayout(reflectivityScaleRow);
     reflectivityScaleLayout->setContentsMargins(0, 0, 0, 0);
-    reflectivityScaleLayout->setSpacing(8);
+    reflectivityScaleLayout->setSpacing(6);
     QComboBox* reflectivityScaleCombo = new QComboBox(reflectivityScaleRow);
     reflectivityScaleCombo->addItems({
         QStringLiteral("BGYR (Blue → Green → Yellow → Red)"),
@@ -926,12 +931,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     reflectivityScaleCombo->setCurrentIndex(selectedReflectivityColorScale);
     reflectivityScaleCombo->setFixedWidth(280);
     QFrame* reflectivityScalePreview = new QFrame(reflectivityScaleRow);
-    reflectivityScalePreview->setFixedSize(170, 20);
+    reflectivityScalePreview->setFixedSize(280, 20);
     reflectivityScalePreview->setStyleSheet(colorBarStyleSheet(
         PointCloudColorizer::reflectivityColorScaleStops(selectedReflectivityColorScale)));
     reflectivityScaleLayout->addWidget(reflectivityScaleCombo);
     reflectivityScaleLayout->addWidget(reflectivityScalePreview);
-    reflectivityScaleLayout->addStretch();
     connect(reflectivityScaleCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
             [&selectedReflectivityColorScale, reflectivityScalePreview](int index) {
                 selectedReflectivityColorScale = index;
@@ -940,10 +944,10 @@ void LivoxViewerWindow::showPreferencesDialog()
             });
 
     QWidget* backgroundPresetRow = new QWidget(&dlg);
-    usePreferenceControlColumn(backgroundPresetRow);
-    QHBoxLayout* backgroundPresetLayout = new QHBoxLayout(backgroundPresetRow);
+    usePreferenceControlColumn(backgroundPresetRow, 300);
+    QVBoxLayout* backgroundPresetLayout = new QVBoxLayout(backgroundPresetRow);
     backgroundPresetLayout->setContentsMargins(0, 0, 0, 0);
-    backgroundPresetLayout->setSpacing(8);
+    backgroundPresetLayout->setSpacing(6);
     QComboBox* backgroundPresetCombo = new QComboBox(backgroundPresetRow);
     backgroundPresetCombo->addItem(QStringLiteral("深黑 (Deep Black)"), BackgroundDeepBlack);
     backgroundPresetCombo->addItem(QStringLiteral("石墨黑 (Graphite)"), BackgroundGraphite);
@@ -958,12 +962,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     backgroundPresetCombo->setFixedWidth(280);
     const QPair<QColor, QColor> initialBackgroundColors = backgroundPresetColors(selectedBackgroundPreset);
     QFrame* backgroundPresetPreview = new QFrame(backgroundPresetRow);
-    backgroundPresetPreview->setFixedSize(170, 36);
+    backgroundPresetPreview->setFixedSize(280, 44);
     backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(initialBackgroundColors.first,
                                                                       initialBackgroundColors.second));
     backgroundPresetLayout->addWidget(backgroundPresetCombo);
     backgroundPresetLayout->addWidget(backgroundPresetPreview);
-    backgroundPresetLayout->addStretch();
     connect(backgroundPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
             [&selectedBackgroundPreset, backgroundPresetCombo, backgroundPresetPreview](int index) {
                 selectedBackgroundPreset = backgroundPresetCombo->itemData(index).toInt();

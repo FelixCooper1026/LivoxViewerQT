@@ -25,6 +25,7 @@
 #include <QListWidgetItem>
 #include <QMessageBox>
 #include <QNetworkInterface>
+#include <QPalette>
 #include <QPushButton>
 #include <QSizePolicy>
 #include <QSpinBox>
@@ -42,7 +43,7 @@ struct DeviceRow {
     QLabel* listDotLabel = nullptr;
     QLabel* listNameLabel = nullptr;
     QLabel* listTypeLabel = nullptr;
-    QLineEdit* nameEdit = nullptr;
+    QLabel* nameLabel = nullptr;
     QComboBox* devType = nullptr;
     QComboBox* hostIp = nullptr;
     QLineEdit* mcIp = nullptr;
@@ -56,7 +57,6 @@ struct DeviceRow {
     QSpinBox* hostPointPort = nullptr;
     QSpinBox* hostImuPort = nullptr;
     QSpinBox* hostLogPort = nullptr;
-    bool autoName = true;
 };
 
 QLabel* createConfigGeneratorFieldLabel(const QString& text, QWidget* parent)
@@ -81,9 +81,35 @@ QFrame* createConfigGeneratorSection(QWidget* parent)
 {
     QFrame* section = new QFrame(parent);
     section->setObjectName("ConfigGeneratorSection");
-    section->setFrameShape(QFrame::StyledPanel);
+    section->setFrameShape(QFrame::NoFrame);
     section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     return section;
+}
+
+QFrame* createConfigGeneratorDivider(QWidget* parent)
+{
+    QFrame* divider = new QFrame(parent);
+    divider->setObjectName("ConfigGeneratorDivider");
+    divider->setFixedHeight(1);
+    divider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    return divider;
+}
+
+QFrame* createConfigGeneratorVerticalDivider(QWidget* parent)
+{
+    QFrame* divider = new QFrame(parent);
+    divider->setObjectName("ConfigGeneratorVerticalDivider");
+    divider->setFixedWidth(1);
+    divider->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    return divider;
+}
+
+void applyPlaceholderTextColor(QLineEdit* edit)
+{
+    QPalette pal = edit->palette();
+    const bool dark = QApplication::palette().color(QPalette::Window).lightness() < 128;
+    pal.setColor(QPalette::PlaceholderText, dark ? QColor(150, 154, 160) : QColor(96, 100, 108));
+    edit->setPalette(pal);
 }
 
 QLineEdit* createFixedPortEdit(QWidget* parent)
@@ -144,9 +170,12 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     dlg.setMinimumSize(860, 640);
     dlg.setStyleSheet(
         "QFrame#ConfigGeneratorSection {"
-        "  border: 1px solid palette(mid);"
-        "  border-radius: 6px;"
-        "  background: palette(base);"
+        "  border: none;"
+        "  background: transparent;"
+        "}"
+        "QFrame#ConfigGeneratorDivider, QFrame#ConfigGeneratorVerticalDivider {"
+        "  border: none;"
+        "  background: palette(mid);"
         "}"
         "QLabel#ConfigGeneratorSectionTitle {"
         "  color: palette(window-text);"
@@ -207,6 +236,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     logLayout->setContentsMargins(14, 10, 14, 12);
     logLayout->setSpacing(10);
     logLayout->addWidget(createConfigGeneratorSectionTitle("日志配置", logSection));
+    logLayout->addWidget(createConfigGeneratorDivider(logSection));
 
     QWidget* logTopRow = new QWidget(logSection);
     QHBoxLayout* logTopLayout = new QHBoxLayout(logTopRow);
@@ -246,6 +276,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     logPathLayout->addWidget(browseButton);
     logLayout->addWidget(logPathRow);
     mainLayout->addWidget(logSection);
+    mainLayout->addWidget(createConfigGeneratorDivider(&dlg));
 
     QObject::connect(browseButton, &QPushButton::clicked, &dlg, [&]() {
         const QString startDir = editPath->text().trimmed().isEmpty() ? QDir::currentPath() : editPath->text().trimmed();
@@ -323,9 +354,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
 
     auto updateDeviceListItem = [&](DeviceRow* row) {
         const bool selected = deviceListUi.list && deviceListUi.list->currentItem() == row->listItem;
-        const QString nameText = row->nameEdit->text().trimmed().isEmpty()
-            ? QStringLiteral("设备")
-            : row->nameEdit->text().trimmed();
+        const QString nameText = row->nameLabel->text();
         const QString typeText = deviceTypeDisplayName(deviceTypeKey(row));
         row->listNameLabel->setText(nameText);
         row->listTypeLabel->setText(typeText);
@@ -343,12 +372,10 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         deviceListUi.removeButton->setEnabled(deviceRows.size() > 1);
     };
 
-    auto renumberAutoDeviceNames = [&]() {
+    auto renumberDeviceNames = [&]() {
         for (int i = 0; i < deviceRows.size(); ++i) {
             DeviceRow* row = deviceRows.at(i);
-            if (row->autoName) {
-                row->nameEdit->setText(QString("设备 %1").arg(i + 1));
-            }
+            row->nameLabel->setText(QString("设备 %1").arg(i + 1));
         }
     };
 
@@ -376,6 +403,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     deviceListHeaderLayout->addWidget(btnAddDevice);
     deviceListHeaderLayout->addWidget(btnRemoveDevice);
     deviceListLayout->addWidget(deviceListHeader);
+    deviceListLayout->addWidget(createConfigGeneratorDivider(deviceListPanel));
 
     QListWidget* deviceList = new QListWidget(deviceListPanel);
     deviceList->setObjectName("ConfigGeneratorDeviceList");
@@ -391,12 +419,14 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     deviceListUi.countLabel = deviceCountLabel;
     deviceListLayout->addWidget(deviceCountLabel);
     deviceAreaLayout->addWidget(deviceListPanel);
+    deviceAreaLayout->addWidget(createConfigGeneratorVerticalDivider(&dlg));
 
     QFrame* detailPanel = createConfigGeneratorSection(&dlg);
     QVBoxLayout* detailLayout = new QVBoxLayout(detailPanel);
     detailLayout->setContentsMargins(20, 14, 20, 14);
     detailLayout->setSpacing(12);
     detailLayout->addWidget(createConfigGeneratorSectionTitle("设备详情", detailPanel));
+    detailLayout->addWidget(createConfigGeneratorDivider(detailPanel));
 
     QStackedWidget* detailStack = new QStackedWidget(detailPanel);
     deviceListUi.detailStack = detailStack;
@@ -417,17 +447,21 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         formGrid->setVerticalSpacing(8);
         formGrid->setColumnMinimumWidth(0, 88);
 
-        row->nameEdit = new QLineEdit(QString("设备 %1").arg(deviceRows.size() + 1), row->detailPage);
+        row->nameLabel = new QLabel(QString("设备 %1").arg(deviceRows.size() + 1), row->detailPage);
+        row->nameLabel->setMinimumHeight(28);
+        row->nameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        row->nameLabel->setStyleSheet("color: palette(window-text);");
         row->devType = new QComboBox(row->detailPage);
         addDeviceTypeItems(row->devType);
         row->hostIp = new QComboBox(row->detailPage);
         populateHostIpsTo(row->hostIp);
         row->mcIp = new QLineEdit(row->detailPage);
         row->mcIp->setPlaceholderText("可选，例如 224.1.1.5，留空表示不启用");
+        applyPlaceholderTextColor(row->mcIp);
 
         int formRow = 0;
         formGrid->addWidget(createConfigGeneratorFieldLabel("设备名称", row->detailPage), formRow, 0);
-        formGrid->addWidget(row->nameEdit, formRow, 1);
+        formGrid->addWidget(row->nameLabel, formRow, 1);
         ++formRow;
         formGrid->addWidget(createConfigGeneratorFieldLabel("设备类型", row->detailPage), formRow, 0);
         formGrid->addWidget(row->devType, formRow, 1);
@@ -438,6 +472,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         formGrid->addWidget(createConfigGeneratorFieldLabel("组播 IP", row->detailPage), formRow, 0);
         formGrid->addWidget(row->mcIp, formRow, 1);
         detailPageLayout->addLayout(formGrid);
+        detailPageLayout->addWidget(createConfigGeneratorDivider(row->detailPage));
 
         QLabel* portTitle = createConfigGeneratorSectionTitle("端口映射配置", row->detailPage);
         detailPageLayout->addWidget(portTitle);
@@ -519,12 +554,6 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         detailStack->addWidget(row->detailPage);
         deviceRows.append(row);
 
-        QObject::connect(row->nameEdit, &QLineEdit::textChanged, &dlg, [&, row]() {
-            updateDeviceListItem(row);
-        });
-        QObject::connect(row->nameEdit, &QLineEdit::textEdited, &dlg, [row]() {
-            row->autoName = false;
-        });
         QObject::connect(row->devType, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg, [&, row](int) {
             const QString type = deviceTypeKey(row);
             applyFixedPortDefaults(row, type);
@@ -536,7 +565,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         });
 
         deviceList->setCurrentItem(row->listItem);
-        renumberAutoDeviceNames();
+        renumberDeviceNames();
         refreshDeviceList();
     };
 
@@ -566,7 +595,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         detailStack->removeWidget(row->detailPage);
         row->detailPage->deleteLater();
         delete row;
-        renumberAutoDeviceNames();
+        renumberDeviceNames();
         const int newRow = qMin(rowIndex, deviceRows.size() - 1);
         deviceList->setCurrentRow(newRow);
         refreshDeviceList();
