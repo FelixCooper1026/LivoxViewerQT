@@ -1135,7 +1135,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         ":/icons/settings_grid.svg",
         ":/icons/settings_legend.svg",
         ":/icons/settings_color.svg",
-        ":/icons/settings_theme.svg"
+        ":/icons/settings_background.svg"
     };
     for (int i = 0; i < navigationNames.size(); ++i) {
         QPushButton* button = createPreferenceNavButton(navigationNames.at(i), navigationIcons.at(i), navigation);
