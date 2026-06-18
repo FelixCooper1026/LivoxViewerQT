@@ -38,7 +38,7 @@
 namespace {
 
 constexpr double kVisibleWindowSec = 5.0;
-constexpr int kRefreshIntervalMs = 100;
+constexpr int kRefreshIntervalMs = 33;
 constexpr int kDeviceRefreshIntervalMs = 500;
 
 const QColor kAxisXColor(214, 64, 69);
