@@ -109,6 +109,7 @@ PointCloudView::~PointCloudView()
     m_gridVao.destroy();
     m_axesVbo.destroy();
     m_axesVao.destroy();
+    destroyPointCloudSegments();
     m_vbo.destroy();
     m_vao.destroy();
     if (m_program) {
@@ -128,17 +129,18 @@ PointCloudView::~PointCloudView()
 bool PointCloudView::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius)
 {
     QMatrix4x4 mvp = m_projection * m_modelView;
-    QMutexLocker locker(&m_pointsMutex);
     float dpr = devicePixelRatioF();
     int effectiveRadius = std::max(pixelRadius, int(std::round((m_pointSize / std::max(1.0f, dpr)) * 1.8f)));
     float radiusSq = float(effectiveRadius * effectiveRadius);
     float bestDistSq = std::numeric_limits<float>::max();
     float bestZ = std::numeric_limits<float>::max();
     bool found = false;
-    for (const PointCloudPoint& p : m_points) {
+    forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
         QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) continue;
+        if (clip.w() == 0.0f) {
+            return true;
+        }
         QVector3D ndc = clip.toVector3DAffine();
         float sx = (ndc.x() * 0.5f + 0.5f) * width();
         float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * height();
@@ -155,7 +157,8 @@ bool PointCloudView::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QP
                 found = true;
             }
         }
-    }
+        return true;
+    });
     return found;
 }
 
@@ -753,6 +756,14 @@ void PointCloudView::paintGL()
         glDrawArrays(GL_POINTS, 0, m_points.size());
         m_vao.release();
     }
+    for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (!segment || segment->pointCount <= 0 || !segment->vao.isCreated()) {
+            continue;
+        }
+        segment->vao.bind();
+        glDrawArrays(GL_POINTS, 0, segment->pointCount);
+        segment->vao.release();
+    }
 
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
         m_program->setUniformValue("uPersistEnabled", 0);
@@ -1197,22 +1208,22 @@ void PointCloudView::mouseReleaseEvent(QMouseEvent *event)
             QMatrix4x4 mvp = m_selProjection * m_selModelView;
             float zmin =  std::numeric_limits<float>::max();
             float zmax = -std::numeric_limits<float>::max();
-            {
-                QMutexLocker locker(&m_pointsMutex);
-                for (const PointCloudPoint& p : m_points) {
-                    QVector4D hp(p.x, p.y, p.z, 1.0f);
-                    QVector4D clip = mvp * hp;
-                    if (clip.w() == 0.0f) continue;
-                    QVector3D ndc = clip.toVector3DAffine();
-                    float sx = (ndc.x() * 0.5f + 0.5f) * float(m_selViewportW);
-                    float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(m_selViewportH);
-                    if (sel.contains(QPoint(int(sx), int(sy)))) {
-                        float vz = (m_selModelView * hp).z();
-                        if (vz < zmin) zmin = vz;
-                        if (vz > zmax) zmax = vz;
-                    }
+            forEachDisplayedPoint([&](const PointCloudPoint& p) {
+                QVector4D hp(p.x, p.y, p.z, 1.0f);
+                QVector4D clip = mvp * hp;
+                if (clip.w() == 0.0f) {
+                    return true;
                 }
-            }
+                QVector3D ndc = clip.toVector3DAffine();
+                float sx = (ndc.x() * 0.5f + 0.5f) * float(m_selViewportW);
+                float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(m_selViewportH);
+                if (sel.contains(QPoint(int(sx), int(sy)))) {
+                    float vz = (m_selModelView * hp).z();
+                    if (vz < zmin) zmin = vz;
+                    if (vz > zmax) zmax = vz;
+                }
+                return true;
+            });
             if (zmin <= zmax) {
                 m_selViewZMin = zmin;
                 m_selViewZMax = zmax;
@@ -1298,6 +1309,7 @@ void PointCloudView::dropEvent(QDropEvent* event)
 void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
 {
     QMutexLocker locker(&m_pointsMutex);
+    destroyPointCloudSegments();
     m_points = std::move(points);
     if (m_vbo.isCreated()) {
         ScopedOpenGLContext current(this);
@@ -1315,6 +1327,159 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
         m_vbo.release();
     }
     update();
+}
+
+void PointCloudView::uploadPointCloudSegment(PointCloudSegment& segment)
+{
+    segment.pointCount = segment.points.size();
+    if (!m_program || !context()) {
+        return;
+    }
+
+    ScopedOpenGLContext current(this);
+    if (!segment.vao.isCreated()) {
+        segment.vao.create();
+    }
+    segment.vao.bind();
+    if (!segment.vbo.isCreated()) {
+        segment.vbo.create();
+        segment.vbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    }
+    segment.vbo.bind();
+    m_program->bind();
+
+    const qsizetype byteCount = segment.points.size() * qsizetype(sizeof(PointCloudPoint));
+    if (byteCount == 0) {
+        segment.vbo.allocate(0);
+        segment.bufferCapacityBytes = 0;
+    } else if (byteCount > segment.bufferCapacityBytes) {
+        segment.vbo.allocate(segment.points.constData(), static_cast<int>(byteCount));
+        segment.bufferCapacityBytes = byteCount;
+    } else {
+        segment.vbo.write(0, segment.points.constData(), static_cast<int>(byteCount));
+    }
+
+    m_program->enableAttributeArray(0);
+    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(PointCloudPoint, x), 3, sizeof(PointCloudPoint));
+    m_program->enableAttributeArray(1);
+    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(PointCloudPoint, r), 3, sizeof(PointCloudPoint));
+    segment.vbo.release();
+    segment.vao.release();
+    m_program->release();
+}
+
+void PointCloudView::destroyPointCloudSegments()
+{
+    if (m_pointCloudSegments.empty()) {
+        return;
+    }
+
+    ScopedOpenGLContext current(this);
+    for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (!segment) {
+            continue;
+        }
+        if (segment->vbo.isCreated()) {
+            segment->vbo.destroy();
+        }
+        if (segment->vao.isCreated()) {
+            segment->vao.destroy();
+        }
+    }
+    m_pointCloudSegments.clear();
+}
+
+void PointCloudView::clearPointCloudSegments()
+{
+    QMutexLocker locker(&m_pointsMutex);
+    m_points.clear();
+    destroyPointCloudSegments();
+    if (m_vbo.isCreated()) {
+        ScopedOpenGLContext current(this);
+        m_vbo.bind();
+        m_vbo.allocate(0);
+        m_pointCloudBufferCapacityBytes = 0;
+        m_vbo.release();
+    }
+    update();
+}
+
+void PointCloudView::appendPointCloudSegment(QVector<PointCloudPoint>&& points)
+{
+    QMutexLocker locker(&m_pointsMutex);
+    m_points.clear();
+    auto segment = std::make_unique<PointCloudSegment>();
+    segment->points = std::move(points);
+    uploadPointCloudSegment(*segment);
+    m_pointCloudSegments.push_back(std::move(segment));
+    update();
+}
+
+void PointCloudView::removeFirstPointCloudSegment()
+{
+    QMutexLocker locker(&m_pointsMutex);
+    if (m_pointCloudSegments.empty()) {
+        return;
+    }
+
+    std::unique_ptr<PointCloudSegment>& segment = m_pointCloudSegments.front();
+    if (segment) {
+        ScopedOpenGLContext current(this);
+        if (segment->vbo.isCreated()) {
+            segment->vbo.destroy();
+        }
+        if (segment->vao.isCreated()) {
+            segment->vao.destroy();
+        }
+    }
+    m_pointCloudSegments.pop_front();
+    update();
+}
+
+int PointCloudView::pointCloudSegmentCount() const
+{
+    QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex));
+    return int(m_pointCloudSegments.size());
+}
+
+QVector<PointCloudPoint> PointCloudView::currentPoints() const
+{
+    QVector<PointCloudPoint> points;
+    QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex));
+    qsizetype pointCount = m_points.size();
+    for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (segment) {
+            pointCount += segment->points.size();
+        }
+    }
+    points.reserve(pointCount);
+    points += m_points;
+    for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (segment) {
+            points += segment->points;
+        }
+    }
+    return points;
+}
+
+void PointCloudView::forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const
+{
+    QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex));
+    for (const PointCloudPoint& point : m_points) {
+        if (!visitor(point)) {
+            return;
+        }
+    }
+    for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (!segment) {
+            continue;
+        }
+        for (const PointCloudPoint& point : segment->points) {
+            if (!visitor(point)) {
+                return;
+            }
+        }
+    }
 }
 
 void PointCloudView::uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices)
@@ -1393,6 +1558,19 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
         PointCloudCrossSection::updateClip(m_crossSectionState);
         uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
         emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        return;
+    }
+
+    if (!m_pointCloudSegments.empty()) {
+        QMutexLocker locker(&m_pointsMutex);
+        for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (!segment) {
+                continue;
+            }
+            colorize(segment->points);
+            uploadPointCloudSegment(*segment);
+        }
+        update();
         return;
     }
 
@@ -1524,11 +1702,7 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
     }
 
     if (enabled) {
-        QVector<PointCloudPoint> sourcePoints;
-        {
-            QMutexLocker locker(&m_pointsMutex);
-            sourcePoints = m_points;
-        }
+        QVector<PointCloudPoint> sourcePoints = currentPoints();
         if (!PointCloudCrossSection::initializeBox(m_crossSectionState, sourcePoints)) {
             m_crossSectionState.enabled = false;
             emit crossSectionChanged(0, 0);
@@ -1581,36 +1755,42 @@ QVector<PointCloudPoint> PointCloudView::pointsInRect(const QRect& rect, int max
     QVector<PointCloudPoint> result;
     if (rect.isEmpty()) return result;
     QMatrix4x4 mvp = m_projection * m_modelView;
-    QMutexLocker locker(&m_pointsMutex);
-    result.reserve(qMin(maxPoints, m_points.size()));
-    for (const PointCloudPoint& p : m_points) {
+    result.reserve(std::min(maxPoints, 4096));
+    forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
         QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) continue;
+        if (clip.w() == 0.0f) {
+            return true;
+        }
         QVector3D ndc = clip.toVector3DAffine();
         float sx = (ndc.x() * 0.5f + 0.5f) * width();
         float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * height();
         if (rect.contains(QPoint(int(sx), int(sy)))) {
             result.push_back(p);
-            if (result.size() >= maxPoints) break;
+            if (result.size() >= maxPoints) {
+                return false;
+            }
         }
-    }
+        return true;
+    });
     return result;
 }
 
 QVector<PointCloudPoint> PointCloudView::pointsInAabb(const QVector3D& min, const QVector3D& max, int maxPoints)
 {
     QVector<PointCloudPoint> result;
-    QMutexLocker locker(&m_pointsMutex);
-    result.reserve(qMin(maxPoints, m_points.size()));
-    for (const PointCloudPoint& p : m_points) {
+    result.reserve(std::min(maxPoints, 4096));
+    forEachDisplayedPoint([&](const PointCloudPoint& p) {
         if (p.x >= min.x() && p.x <= max.x() &&
             p.y >= min.y() && p.y <= max.y() &&
             p.z >= min.z() && p.z <= max.z()) {
             result.push_back(p);
-            if (result.size() >= maxPoints) break;
+            if (result.size() >= maxPoints) {
+                return false;
+            }
         }
-    }
+        return true;
+    });
     return result;
 }
 
@@ -1619,20 +1799,24 @@ QVector<PointCloudPoint> PointCloudView::pointsInPersistSelection(int maxPoints)
     QVector<PointCloudPoint> result;
     if (!m_selectionLocked) return result;
     QMatrix4x4 mvp = m_selProjection * m_selModelView;
-    QMutexLocker locker(&m_pointsMutex);
-    result.reserve(qMin(maxPoints, m_points.size()));
-    for (const PointCloudPoint& p : m_points) {
+    result.reserve(std::min(maxPoints, 4096));
+    forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
         QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) continue;
+        if (clip.w() == 0.0f) {
+            return true;
+        }
         QVector3D ndc = clip.toVector3DAffine();
         float sx = (ndc.x() * 0.5f + 0.5f) * float(m_selViewportW);
         float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(m_selViewportH);
         float vz = (m_selModelView * hp).z();
         if (sx >= m_selRectLogical.left() && sx <= m_selRectLogical.right() && sy >= m_selRectLogical.top() && sy <= m_selRectLogical.bottom() && vz >= m_selViewZMin && vz <= m_selViewZMax) {
             result.push_back(p);
-            if (result.size() >= maxPoints) break;
+            if (result.size() >= maxPoints) {
+                return false;
+            }
         }
-    }
+        return true;
+    });
     return result;
 } 

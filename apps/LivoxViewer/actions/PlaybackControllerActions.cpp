@@ -4,6 +4,7 @@
 #include "Lvx2/Lvx2Reader.h"
 #include "Pcap/PcapPlaybackController.h"
 #include "Pcap/PushMsgParser.h"
+#include "PointCloud/PointCloudColorizer.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -80,6 +81,19 @@ static int displayPlaybackFrameCount(const Playback::Source* source)
 
     const int rawFrameCount = source->frameCount();
     return std::max(1, (rawFrameCount + kRawFramesPerDisplayFrame - 1) / kRawFramesPerDisplayFrame);
+}
+
+static QVector<int> lineNumbersForPoints(const QVector<PointCloudPoint>& points)
+{
+    QVector<int> lineNumbers;
+    for (const PointCloudPoint& point : points) {
+        const int line = int(point.line);
+        if (!lineNumbers.contains(line)) {
+            lineNumbers.push_back(line);
+        }
+    }
+    std::sort(lineNumbers.begin(), lineNumbers.end());
+    return lineNumbers;
 }
 
 static QString formatPlaybackTime(int frameNumber, int totalFrameCount)
@@ -347,76 +361,126 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
         }
         playbackState.slidingWindowTimestamp = timestamp;
     };
-    auto appendWindowSegment = [&](const PointCloudFrame& rawFrame) {
-        playbackState.slidingWindowPoints += rawFrame.points;
-        playbackState.slidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
-        playbackState.slidingWindowSegmentTimestamps.push_back(rawFrame.timestamp);
-        playbackState.slidingWindowTimestamp = std::max(playbackState.slidingWindowTimestamp, rawFrame.timestamp);
+    auto updateSegmentedLegend = [this]() {
+        if (!pointCloudView) {
+            return;
+        }
+
+        const int mode = effectiveColorMode();
+        if (mode == ColorByReflectivity) {
+            pointCloudView->setLegend(ColorByReflectivity,
+                                      0.0f,
+                                      255.0f,
+                                      true,
+                                      {},
+                                      {},
+                                      PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale));
+        } else if (mode == ColorByDistance) {
+            pointCloudView->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
+        } else if (mode == ColorByElevation) {
+            pointCloudView->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+        } else if (mode == ColorSolid) {
+            pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
+        } else if (mode == ColorByLine) {
+            QVector<int> usedLines;
+            for (const QVector<int>& segmentLines : playbackState.slidingWindowSegmentLineNumbers) {
+                for (int line : segmentLines) {
+                    if (!usedLines.contains(line)) {
+                        usedLines.push_back(line);
+                    }
+                }
+            }
+            std::sort(usedLines.begin(), usedLines.end());
+
+            QVector<QColor> usedColors;
+            usedColors.reserve(usedLines.size());
+            for (int line : usedLines) {
+                usedColors.push_back(lineColors.at(line % lineColors.size()));
+            }
+            pointCloudView->setLegend(ColorByLine, 0.0f, 1.0f, true, usedColors, usedLines);
+        }
     };
 
-    if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
+    const bool useSegmentedSlidingWindow =
+        playbackState.mode == Lvx2PlaybackMode::SlidingWindow &&
+        pointCloudView &&
+        !pointCloudView->isCrossSectionModeEnabled();
+
+    if (useSegmentedSlidingWindow) {
         const bool canIncrementalAdvance =
             (playbackState.slidingWindowStart >= 0 && playbackState.slidingWindowEnd >= 0 &&
              playbackState.slidingWindowSegmentPointCounts.size() == playbackState.slidingWindowSegmentTimestamps.size() &&
+             playbackState.slidingWindowSegmentLineNumbers.size() == playbackState.slidingWindowSegmentTimestamps.size() &&
+             pointCloudView->pointCloudSegmentCount() == playbackState.slidingWindowSegmentTimestamps.size() &&
              rawStartIndex >= playbackState.slidingWindowStart && rawEndIndex >= playbackState.slidingWindowEnd &&
              rawStartIndex - playbackState.slidingWindowStart <= 1 && rawEndIndex - playbackState.slidingWindowEnd <= 1);
 
+        auto appendProcessedSegment = [&](int rawIndex) {
+            PointCloudFrame segmentFrame = readRawFrame(rawIndex);
+            applyPointCloudPipeline(segmentFrame, pointCloudView);
+            playbackState.slidingWindowSegmentPointCounts.push_back(segmentFrame.points.size());
+            playbackState.slidingWindowSegmentTimestamps.push_back(segmentFrame.timestamp);
+            playbackState.slidingWindowSegmentLineNumbers.push_back(lineNumbersForPoints(segmentFrame.points));
+            playbackState.slidingWindowTimestamp = std::max(playbackState.slidingWindowTimestamp, segmentFrame.timestamp);
+            pointCloudView->appendPointCloudSegment(std::move(segmentFrame.points));
+        };
+
         if (!canIncrementalAdvance) {
-            playbackState.slidingWindowPoints.clear();
-            playbackState.slidingWindowSegmentPointCounts.clear();
-            playbackState.slidingWindowSegmentTimestamps.clear();
-            playbackState.slidingWindowTimestamp = 0;
+            playbackState.resetSlidingWindow();
+            pointCloudView->clearPointCloudSegments();
             for (int i = rawStartIndex; i < rawEndIndex; ++i) {
-                const PointCloudFrame rawFrame = readRawFrame(i);
-                appendWindowSegment(rawFrame);
+                appendProcessedSegment(i);
             }
         } else {
             if (rawStartIndex > playbackState.slidingWindowStart && !playbackState.slidingWindowSegmentPointCounts.isEmpty()) {
-                const int removeCount = playbackState.slidingWindowSegmentPointCounts.front();
                 const uint64_t removedTimestamp = playbackState.slidingWindowSegmentTimestamps.isEmpty()
                     ? 0
                     : playbackState.slidingWindowSegmentTimestamps.front();
-                if (removeCount > 0) {
-                    playbackState.slidingWindowPoints.remove(0, removeCount);
-                }
                 playbackState.slidingWindowSegmentPointCounts.remove(0);
                 if (!playbackState.slidingWindowSegmentTimestamps.isEmpty()) {
                     playbackState.slidingWindowSegmentTimestamps.remove(0);
                 }
+                if (!playbackState.slidingWindowSegmentLineNumbers.isEmpty()) {
+                    playbackState.slidingWindowSegmentLineNumbers.remove(0);
+                }
+                pointCloudView->removeFirstPointCloudSegment();
                 if (removedTimestamp == playbackState.slidingWindowTimestamp) {
                     recomputeSlidingWindowTimestamp();
                 }
             }
             if (rawEndIndex > playbackState.slidingWindowEnd) {
-                const PointCloudFrame addedFrame = readRawFrame(rawEndIndex - 1);
-                appendWindowSegment(addedFrame);
+                appendProcessedSegment(rawEndIndex - 1);
             }
         }
         playbackState.slidingWindowStart = rawStartIndex;
         playbackState.slidingWindowEnd = rawEndIndex;
         refreshWindowEndpointTimestamps();
+        updateSegmentedLegend();
     } else {
+        playbackState.resetSlidingWindow();
         playbackState.slidingWindowStart = rawStartIndex;
         playbackState.slidingWindowEnd = rawEndIndex;
-        playbackState.slidingWindowPoints.clear();
-        playbackState.slidingWindowSegmentPointCounts.clear();
-        playbackState.slidingWindowSegmentTimestamps.clear();
-        playbackState.slidingWindowTimestamp = 0;
+        PointCloudFrame frame;
+        frame.device_handle = 0;
+        frame.timestamp = 0;
         for (int i = rawStartIndex; i < rawEndIndex; ++i) {
             const PointCloudFrame rawFrame = readRawFrame(i);
-            appendWindowSegment(rawFrame);
+            if (playbackState.slidingWindowSegmentTimestamps.isEmpty()) {
+                windowStartTimestamp = rawFrame.timestamp;
+            }
+            frame.points += rawFrame.points;
+            frame.timestamp = std::max(frame.timestamp, rawFrame.timestamp);
+            playbackState.slidingWindowSegmentPointCounts.push_back(rawFrame.points.size());
+            playbackState.slidingWindowSegmentTimestamps.push_back(rawFrame.timestamp);
+            playbackState.slidingWindowSegmentLineNumbers.push_back(lineNumbersForPoints(rawFrame.points));
         }
+        playbackState.slidingWindowTimestamp = frame.timestamp;
         refreshWindowEndpointTimestamps();
-    }
 
-    PointCloudFrame frame;
-    frame.device_handle = 0;
-    frame.timestamp = playbackState.slidingWindowTimestamp;
-    frame.points = playbackState.slidingWindowPoints;
-
-    applyPointCloudPipeline(frame, pointCloudView);
-    if (pointCloudView) {
-        pointCloudView->updatePointCloud(std::move(frame));
+        applyPointCloudPipeline(frame, pointCloudView);
+        if (pointCloudView) {
+            pointCloudView->updatePointCloud(std::move(frame));
+        }
     }
     if (selectionRealtimeEnabled && pointCloudView && (attrTable || selectionTable)) {
         updateSelectionTableAndLog();

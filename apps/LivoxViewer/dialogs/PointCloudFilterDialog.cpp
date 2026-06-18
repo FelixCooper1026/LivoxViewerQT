@@ -137,8 +137,17 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                 if (desc10) desc10->setText(QString("%1（%2）").arg(meaning10, confToText(filterState.tagVal10)));
             };
 
-            auto connectFilterSpin = [this, updateMeanings](QSpinBox* spin, const QString& desc) {
-                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterState.dialog, [this, spin, desc, updateMeanings]() {
+            auto refreshPointCloud = [this]() {
+                if (playbackState.active && playbackState.frame >= 0) {
+                    playbackState.resetSlidingWindow();
+                    showLvx2PlaybackFrame(playbackState.frame);
+                } else if (pointCloudView) {
+                    pointCloudView->update();
+                }
+            };
+
+            auto connectFilterSpin = [this, updateMeanings, refreshPointCloud](QSpinBox* spin, const QString& desc) {
+                connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), filterState.dialog, [this, spin, desc, updateMeanings, refreshPointCloud]() {
                     if (desc == "Bit[7-6]") filterState.tagVal76 = spin->value();
                     else if (desc == "Bit[5-4]") filterState.tagVal54 = spin->value();
                     else if (desc == "Bit[3-2]") filterState.tagVal32 = spin->value();
@@ -147,7 +156,7 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                     // 更新含义说明和标签
                     updateMeanings();
 
-                    if (pointCloudView) pointCloudView->update();
+                    refreshPointCloud();
                 });
             };
 
@@ -160,13 +169,13 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
 
 
 
-            connect(filterState.showNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this](bool en) {
+            connect(filterState.showNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this, refreshPointCloud](bool en) {
                 filterState.showNoisePoints = en;
-                if (pointCloudView) pointCloudView->update();
+                refreshPointCloud();
             });
-            connect(filterState.removeNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this](bool en) {
+            connect(filterState.removeNoiseCheck, &QCheckBox::toggled, filterState.dialog, [this, refreshPointCloud](bool en) {
                 filterState.removeNoisePoints = en;
-                if (pointCloudView) pointCloudView->update();
+                refreshPointCloud();
             });
 
 
@@ -183,22 +192,23 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             };
 
             // 连接滤噪列表相关信号
-            connect(filterState.addNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, currentTagLabel, updateCurrentTagDisplay]() {
+            connect(filterState.addNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, currentTagLabel, updateCurrentTagDisplay, refreshPointCloud]() {
                 uint8_t tag = makeFilterTag();
                 if (!filterState.noiseFilterTags.contains(tag)) {
                     filterState.noiseFilterTags.append(tag);
                     updateNoiseFilterList();
                     updateCurrentTagDisplay(); // 立即更新按钮状态和文字
+                    refreshPointCloud();
                 }
             });
 
-            connect(filterState.removeNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, updateCurrentTagDisplay]() {
+            connect(filterState.removeNoiseFilterButton, &QPushButton::clicked, filterState.dialog, [this, updateCurrentTagDisplay, refreshPointCloud]() {
                 int currentRow = filterState.noiseFilterList->currentRow();
                 if (currentRow >= 0 && currentRow < filterState.noiseFilterTags.size()) {
                     filterState.noiseFilterTags.removeAt(currentRow);
                     updateNoiseFilterList();
                     updateCurrentTagDisplay(); // 立即更新按钮状态和文字
-                    if (pointCloudView) pointCloudView->update();
+                    refreshPointCloud();
                 }
             });
 

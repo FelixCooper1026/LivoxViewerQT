@@ -55,6 +55,11 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
 void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;
+    if (playbackState.active && playbackState.frame >= 0) {
+        playbackState.resetSlidingWindow();
+        showLvx2PlaybackFrame(playbackState.frame);
+        return;
+    }
     recolorPointCloudViews();
 }
 

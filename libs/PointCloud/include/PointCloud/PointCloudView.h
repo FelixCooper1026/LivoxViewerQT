@@ -23,7 +23,9 @@
 #include <QVector3D>
 #include <QWheelEvent>
 
+#include <deque>
 #include <functional>
+#include <memory>
 
 class PointCloudView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
 {
@@ -64,6 +66,10 @@ public:
     GridConfig gridConfig() const { return m_gridConfig; }
     void updatePointCloud(const PointCloudFrame& frame);
     void updatePointCloud(PointCloudFrame&& frame);
+    void clearPointCloudSegments();
+    void appendPointCloudSegment(QVector<PointCloudPoint>&& points);
+    void removeFirstPointCloudSegment();
+    int pointCloudSegmentCount() const;
     void recolorCurrentPointCloud(const std::function<void(QVector<PointCloudPoint>&)>& colorize);
     void clearPointCloud();
     void resetView();
@@ -77,7 +83,7 @@ public:
                    const QVector<int>& lineNumbers = {},
                    const QVector<QColor>& gradientColors = {});
     QRect currentSelectionRect() const { return m_selectionRect(); }
-    QVector<PointCloudPoint> currentPoints() const { QMutexLocker locker(const_cast<QMutex*>(&m_pointsMutex)); return m_points; }
+    QVector<PointCloudPoint> currentPoints() const;
     void setSelectionModeEnabled(bool enabled);
     bool isSelectionModeEnabled() const { return m_selectionModeEnabled; }
     QVector<PointCloudPoint> pointsInRect(const QRect& rect, int maxPoints = 5000);
@@ -132,6 +138,8 @@ signals:
     void crossSectionChanged(int clippedPointCount, int sourcePointCount);
 
 private:
+    struct PointCloudSegment;
+
     void setupShaders();
     void setupBackgroundBuffers();
     void setupBuffers();
@@ -140,6 +148,9 @@ private:
     QVector3D mapToArcball(const QPoint& p) const;
     bool pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius = 10);
     void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
+    void uploadPointCloudSegment(PointCloudSegment& segment);
+    void destroyPointCloudSegments();
+    void forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const;
     void updateCrossSectionPointCloud();
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
@@ -175,6 +186,16 @@ private:
     QMatrix4x4 m_modelView;
 
     QVector<PointCloudPoint> m_points;
+    struct PointCloudSegment {
+        QVector<PointCloudPoint> points;
+        QOpenGLBuffer vbo;
+        QOpenGLVertexArrayObject vao;
+        qsizetype bufferCapacityBytes = 0;
+        int pointCount = 0;
+
+        PointCloudSegment() : vbo(QOpenGLBuffer::VertexBuffer) {}
+    };
+    std::deque<std::unique_ptr<PointCloudSegment>> m_pointCloudSegments;
     QMutex m_pointsMutex;
 
     bool m_gridVisible;
