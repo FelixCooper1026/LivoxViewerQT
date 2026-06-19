@@ -25,8 +25,6 @@
 #include <QIcon>
 #include <QPalette>
 #include <QPair>
-#include <QPainter>
-#include <QPen>
 #include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -42,8 +40,6 @@
 #include <QStyleHints>
 #include <QStackedWidget>
 #include <QStringList>
-#include <QStyledItemDelegate>
-#include <QStyleOptionViewItem>
 #include <QTextStream>
 #include <QTimer>
 #include <QToolButton>
@@ -78,54 +74,6 @@ public:
         }
         return QProxyStyle::styleHint(hint, option, widget, returnData);
     }
-};
-
-class ComboBoxPopupDelegate : public QStyledItemDelegate
-{
-public:
-    explicit ComboBoxPopupDelegate(QComboBox* combo, QObject* parent)
-        : QStyledItemDelegate(parent)
-        , m_combo(combo)
-    {}
-
-    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
-    {
-        QStyledItemDelegate::paint(painter, option, index);
-        if (!m_combo) {
-            return;
-        }
-
-        const QModelIndex currentIndex =
-            m_combo->model()->index(m_combo->currentIndex(), m_combo->modelColumn(), m_combo->rootModelIndex());
-        if (index != currentIndex) {
-            return;
-        }
-
-        const QColor checkColor = (option.state & QStyle::State_Selected)
-            ? option.palette.color(QPalette::HighlightedText)
-            : option.palette.color(QPalette::Text);
-        const QRect checkRect = option.rect.adjusted(option.rect.width() - 28, 0, -10, 0);
-        const QPointF p1(checkRect.left() + 3.0, checkRect.center().y() + 1.0);
-        const QPointF p2(checkRect.left() + 7.0, checkRect.center().y() + 5.0);
-        const QPointF p3(checkRect.left() + 15.0, checkRect.center().y() - 5.0);
-
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setPen(QPen(checkColor, 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter->drawLine(p1, p2);
-        painter->drawLine(p2, p3);
-        painter->restore();
-    }
-
-    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
-    {
-        QSize size = QStyledItemDelegate::sizeHint(option, index);
-        size.rwidth() += 28;
-        return size;
-    }
-
-private:
-    QPointer<QComboBox> m_combo;
 };
 
 class ComboBoxPopupBehaviorFilter : public QObject
@@ -175,11 +123,9 @@ private:
         }
 
         QAbstractItemView* view = combo->view();
-        view->setMinimumWidth(combo->width() + 28);
-        if (!view->property("livoxComboPopupDelegateInstalled").toBool()) {
-            view->setItemDelegate(new ComboBoxPopupDelegate(combo, view));
+        if (!view->property("livoxComboPopupBehaviorInstalled").toBool()) {
             view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-            view->setProperty("livoxComboPopupDelegateInstalled", true);
+            view->setProperty("livoxComboPopupBehaviorInstalled", true);
             view->installEventFilter(this);
         }
         view->setProperty("livoxComboPopupOwner", QVariant::fromValue<QObject*>(combo));
@@ -196,7 +142,9 @@ private:
             if (!combo || combo->view() != view || combo->count() <= 0) {
                 return;
             }
-            view->setMinimumWidth(combo->width() + 28);
+            const QModelIndex currentIndex =
+                combo->model()->index(combo->currentIndex(), combo->modelColumn(), combo->rootModelIndex());
+            view->setCurrentIndex(currentIndex);
             const QModelIndex firstIndex = combo->model()->index(0, combo->modelColumn(), combo->rootModelIndex());
             view->scrollTo(firstIndex, QAbstractItemView::PositionAtTop);
             view->viewport()->update();
