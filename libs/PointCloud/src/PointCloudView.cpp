@@ -11,8 +11,10 @@
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QPointer>
 #include <QUrl>
 #include <QVector4D>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace {
 
@@ -110,6 +112,82 @@ void uploadPointCloudBuffer(QOpenGLWidget* widget,
     program->release();
 }
 
+struct SegmentPointSnapshot {
+    quint64 segmentId = 0;
+    bool singleBuffer = false;
+    QVector<PointCloudPoint> points;
+};
+
+struct ClipSegmentResult {
+    quint64 segmentId = 0;
+    bool singleBuffer = false;
+    QVector<PointCloudPoint> clippedPoints;
+};
+
+struct ClipJobResult {
+    quint64 generation = 0;
+    bool fullWindow = false;
+    QVector<ClipSegmentResult> segments;
+};
+
+struct SelectionSegmentResult {
+    quint64 segmentId = 0;
+    bool singleBuffer = false;
+    QVector<PointCloudPoint> selectedPoints;
+};
+
+struct SelectionJobResult {
+    quint64 generation = 0;
+    QVector<SelectionSegmentResult> segments;
+};
+
+struct SelectionPublishResult {
+    quint64 generation = 0;
+    QVector<PointCloudPoint> points;
+    int zeroPointCount = 0;
+};
+
+bool containsSelectionPoint(const PointCloudPoint& point, const PointCloudView::SelectionRegion& region)
+{
+    if (!region.valid || region.viewportW <= 0 || region.viewportH <= 0) {
+        return false;
+    }
+    const QVector4D hp(point.x, point.y, point.z, 1.0f);
+    const QVector4D clip = region.mvp * hp;
+    if (clip.w() == 0.0f) {
+        return false;
+    }
+    const QVector3D ndc = clip.toVector3DAffine();
+    const float sx = (ndc.x() * 0.5f + 0.5f) * float(region.viewportW);
+    const float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(region.viewportH);
+    return sx >= region.rect.left() && sx <= region.rect.right() &&
+           sy >= region.rect.top() && sy <= region.rect.bottom();
+}
+
+QVector<PointCloudPoint> selectPointsInRegion(const QVector<PointCloudPoint>& points,
+                                              const PointCloudView::SelectionRegion& region)
+{
+    QVector<PointCloudPoint> selected;
+    selected.reserve(std::min<int>(int(points.size()), 4096));
+    for (const PointCloudPoint& point : points) {
+        if (containsSelectionPoint(point, region)) {
+            selected.push_back(point);
+        }
+    }
+    return selected;
+}
+
+int zeroPointCount(const QVector<PointCloudPoint>& points)
+{
+    int count = 0;
+    for (const PointCloudPoint& point : points) {
+        if (point.x == 0.0f && point.y == 0.0f && point.z == 0.0f) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 } // namespace
 
 // PointCloudView 实现
@@ -134,6 +212,16 @@ PointCloudView::PointCloudView(QWidget *parent)
     // 默认视角：X 向上、Y 向左、Z 向外（斜45°视角看向Z轴）
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
                 * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
+
+    m_crossSectionClipDebounceTimer = new QTimer(this);
+    m_crossSectionClipDebounceTimer->setSingleShot(true);
+    m_crossSectionClipDebounceTimer->setInterval(0);
+    connect(m_crossSectionClipDebounceTimer, &QTimer::timeout, this, &PointCloudView::startCrossSectionClipJob);
+
+    m_selectionPublishDebounceTimer = new QTimer(this);
+    m_selectionPublishDebounceTimer->setSingleShot(true);
+    m_selectionPublishDebounceTimer->setInterval(150);
+    connect(m_selectionPublishDebounceTimer, &QTimer::timeout, this, &PointCloudView::startSelectionPublishJob);
 }
 
 PointCloudView::~PointCloudView()
@@ -155,6 +243,8 @@ PointCloudView::~PointCloudView()
     m_axesVbo.destroy();
     m_axesVao.destroy();
     destroyPointCloudSegments();
+    m_selectionVbo.destroy();
+    m_selectionVao.destroy();
     m_vbo.destroy();
     m_vao.destroy();
     if (m_program) {
@@ -759,26 +849,15 @@ void PointCloudView::paintGL()
     // ==========================================
     // 3. 准备绘制点云：恢复并设置点云的选择状态逻辑
     // ==========================================
-    // 持久选择（使用选择当时的矩阵参数）
-    if (m_selectionLocked) {
-        m_program->setUniformValue("uPersistEnabled", 1);
-        m_program->setUniformValue("uPersistRect", QVector4D(m_selRectLogical.left(), m_selRectLogical.top(), m_selRectLogical.right(), m_selRectLogical.bottom()));
-        // 在 CPU 端提前计算好 MVP 矩阵
-        QMatrix4x4 selMVP = m_selProjection * m_selModelView;
-        m_program->setUniformValue("uSelMVP", selMVP);
-        m_program->setUniformValue("uViewport", QVector2D(float(m_selViewportW), float(m_selViewportH)));
-        m_program->setUniformValue("uDepthRange", QVector2D(m_selViewZMin, m_selViewZMax));
-    } else {
-        m_program->setUniformValue("uPersistEnabled", 0);
-        m_program->setUniformValue("uPersistRect", QVector4D(0,0,0,0));
-        m_program->setUniformValue("uSelModelView", QMatrix4x4());
-        m_program->setUniformValue("uSelProjection", QMatrix4x4());
-        m_program->setUniformValue("uViewport", QVector2D(0,0));
-        m_program->setUniformValue("uDepthRange", QVector2D(0,0));
-    }
+    m_program->setUniformValue("uPersistEnabled", 0);
+    m_program->setUniformValue("uPersistRect", QVector4D(0,0,0,0));
+    m_program->setUniformValue("uSelModelView", QMatrix4x4());
+    m_program->setUniformValue("uSelProjection", QMatrix4x4());
+    m_program->setUniformValue("uViewport", QVector2D(0,0));
+    m_program->setUniformValue("uDepthRange", QVector2D(0,0));
 
     // 拖拽时的屏幕框高亮
-    if (m_selectionModeEnabled && m_selecting && !m_selectionLocked) {
+    if (m_selectionModeEnabled && m_selecting) {
         QRect sel = m_selectionRect();
         if (!sel.isEmpty()) {
             float dpr = devicePixelRatioF();
@@ -821,6 +900,28 @@ void PointCloudView::paintGL()
             glDrawArrays(GL_POINTS, 0, segment->pointCount);
             segment->vao.release();
         }
+    }
+
+    if (m_selectionLocked) {
+        m_program->setUniformValue("uSelectionEnabled", 0);
+        m_program->setUniformValue("uPersistEnabled", 0);
+        m_program->setUniformValue("uPointSize", m_pointSize + 1.0f);
+        glDepthFunc(GL_LEQUAL);
+        if (m_selectionPointCount > 0 && m_selectionVao.isCreated()) {
+            m_selectionVao.bind();
+            glDrawArrays(GL_POINTS, 0, m_selectionPointCount);
+            m_selectionVao.release();
+        }
+        for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (!segment || segment->selectedPointCount <= 0 || !segment->selectedVao.isCreated()) {
+                continue;
+            }
+            segment->selectedVao.bind();
+            glDrawArrays(GL_POINTS, 0, segment->selectedPointCount);
+            segment->selectedVao.release();
+        }
+        glDepthFunc(GL_LESS);
+        m_program->setUniformValue("uPointSize", m_pointSize);
     }
 
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
@@ -1105,7 +1206,7 @@ void PointCloudView::paintGL()
      }
 
     // 屏幕框矩形（仅拖拽过程显示）
-    if (m_selecting && !m_selectionLocked) {
+    if (m_selecting) {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         QRect r = m_selectionRect();
@@ -1135,7 +1236,7 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
         event->button() == Qt::LeftButton &&
         PointCloudCrossSection::beginDrag(m_crossSectionState, crossSectionCamera(), event->pos())) {
         setCursor(Qt::ClosedHandCursor);
-        updateCrossSectionPointCloud();
+        update();
         return;
     }
 
@@ -1160,6 +1261,13 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
     if (m_selectionModeEnabled && event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         // 开启新的框选
         m_selectionLocked = false;
+        m_selectionRegion = SelectionRegion();
+        ++m_selectionGeneration;
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            clearSelectionCaches();
+        }
+        emit selectionPointsReady({}, 0);
         m_selecting = true;
         m_selStart = m_selEnd = event->pos();
         update();
@@ -1194,7 +1302,7 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
 
     if (m_crossSectionState.dragging) {
         PointCloudCrossSection::updateDrag(m_crossSectionState, crossSectionCamera(), event->pos());
-        updateCrossSectionPointCloud();
+        requestCrossSectionClip(false);
         update();
         return;
     }
@@ -1203,6 +1311,7 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
 
     if (m_selectionModeEnabled && m_selecting && m_activeButton == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         m_selEnd = event->pos();
+        updateSelectionRegionFromRect(m_selectionRect());
         update();
         return;
     } else if (m_activeButton == Qt::LeftButton) {
@@ -1244,6 +1353,7 @@ void PointCloudView::mouseReleaseEvent(QMouseEvent *event)
     Q_UNUSED(event);
     if (m_crossSectionState.dragging) {
         PointCloudCrossSection::endDrag(m_crossSectionState);
+        requestCrossSectionClip(true);
         m_mousePressed = false;
         m_activeButton = Qt::NoButton;
         setCursor(Qt::ArrowCursor);
@@ -1252,48 +1362,8 @@ void PointCloudView::mouseReleaseEvent(QMouseEvent *event)
     }
 
     if (m_selectionModeEnabled && m_selecting && m_activeButton == Qt::LeftButton) {
-        // 完成框选：记录选择当时的矩阵、视口以及选择矩形与深度范围
         m_selecting = false;
-        QRect sel = m_selectionRect();
-        if (!sel.isEmpty()) {
-            // 捕获选择时的矩阵（当前帧的）
-            m_selModelView = m_modelView;
-            m_selProjection = m_projection;
-            m_selViewportW = width();
-            m_selViewportH = height();
-            m_selRectLogical = sel;
-            // 计算深度范围（基于选择时矩阵）
-            QMatrix4x4 mvp = m_selProjection * m_selModelView;
-            float zmin =  std::numeric_limits<float>::max();
-            float zmax = -std::numeric_limits<float>::max();
-            forEachDisplayedPoint([&](const PointCloudPoint& p) {
-                QVector4D hp(p.x, p.y, p.z, 1.0f);
-                QVector4D clip = mvp * hp;
-                if (clip.w() == 0.0f) {
-                    return true;
-                }
-                QVector3D ndc = clip.toVector3DAffine();
-                float sx = (ndc.x() * 0.5f + 0.5f) * float(m_selViewportW);
-                float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(m_selViewportH);
-                if (sel.contains(QPoint(int(sx), int(sy)))) {
-                    float vz = (m_selModelView * hp).z();
-                    if (vz < zmin) zmin = vz;
-                    if (vz > zmax) zmax = vz;
-                }
-                return true;
-            });
-            if (zmin <= zmax) {
-                m_selViewZMin = zmin;
-                m_selViewZMax = zmax;
-                m_selectionLocked = true;
-            } else {
-                m_selectionLocked = false;
-            }
-        }
-        QWidget* w = window();
-        if (w) {
-            QMetaObject::invokeMethod(w, "onSelectionFinished", Qt::QueuedConnection);
-        }
+        updateSelectionRegionFromRect(m_selectionRect());
         update();
     }
     m_mousePressed = false;
@@ -1369,6 +1439,7 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
     QMutexLocker locker(&m_pointsMutex);
     destroyPointCloudSegments();
     m_points = std::move(points);
+    uploadSelectionPoints(QVector<PointCloudPoint>());
     if (m_vbo.isCreated()) {
         ScopedOpenGLContext current(this);
         m_vbo.bind();
@@ -1409,6 +1480,41 @@ void PointCloudView::uploadPointCloudSegmentClip(PointCloudSegment& segment)
                            segment.clippedPointCount);
 }
 
+void PointCloudView::uploadPointCloudSegmentSelection(PointCloudSegment& segment)
+{
+    QVector<PointCloudPoint> overlayPoints = segment.selectedPoints;
+    for (PointCloudPoint& point : overlayPoints) {
+        point.r = 1.0f;
+        point.g = 0.0f;
+        point.b = 0.0f;
+    }
+    uploadPointCloudBuffer(this,
+                           m_program,
+                           overlayPoints,
+                           segment.selectedVbo,
+                           segment.selectedVao,
+                           segment.selectedBufferCapacityBytes,
+                           segment.selectedPointCount);
+}
+
+void PointCloudView::uploadSelectionPoints(QVector<PointCloudPoint>&& points)
+{
+    m_selectedPoints = std::move(points);
+    QVector<PointCloudPoint> overlayPoints = m_selectedPoints;
+    for (PointCloudPoint& point : overlayPoints) {
+        point.r = 1.0f;
+        point.g = 0.0f;
+        point.b = 0.0f;
+    }
+    uploadPointCloudBuffer(this,
+                           m_program,
+                           overlayPoints,
+                           m_selectionVbo,
+                           m_selectionVao,
+                           m_selectionBufferCapacityBytes,
+                           m_selectionPointCount);
+}
+
 void PointCloudView::destroyPointCloudSegments()
 {
     if (m_pointCloudSegments.empty()) {
@@ -1432,14 +1538,46 @@ void PointCloudView::destroyPointCloudSegments()
         if (segment->clippedVao.isCreated()) {
             segment->clippedVao.destroy();
         }
+        clearSegmentSelectionBuffers(*segment);
     }
     m_pointCloudSegments.clear();
+}
+
+void PointCloudView::clearSegmentSelectionBuffers(PointCloudSegment& segment)
+{
+    segment.selectedPoints.clear();
+    segment.selectedPointCount = 0;
+    segment.selectedBufferCapacityBytes = 0;
+    if (segment.selectedVbo.isCreated() || segment.selectedVao.isCreated()) {
+        ScopedOpenGLContext current(this);
+        if (segment.selectedVbo.isCreated()) {
+            segment.selectedVbo.destroy();
+        }
+        if (segment.selectedVao.isCreated()) {
+            segment.selectedVao.destroy();
+        }
+    }
+}
+
+void PointCloudView::clearSelectionCaches()
+{
+    uploadSelectionPoints(QVector<PointCloudPoint>());
+    for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+        if (segment) {
+            clearSegmentSelectionBuffers(*segment);
+        }
+    }
 }
 
 void PointCloudView::clearPointCloudSegments()
 {
     QMutexLocker locker(&m_pointsMutex);
+    ++m_crossSectionClipGeneration;
+    ++m_selectionGeneration;
     m_points.clear();
+    m_selectedPoints.clear();
+    m_selectionPointCount = 0;
+    m_selectionBufferCapacityBytes = 0;
     destroyPointCloudSegments();
     if (m_vbo.isCreated()) {
         ScopedOpenGLContext current(this);
@@ -1448,37 +1586,39 @@ void PointCloudView::clearPointCloudSegments()
         m_pointCloudBufferCapacityBytes = 0;
         m_vbo.release();
     }
+    if (m_selectionVbo.isCreated() || m_selectionVao.isCreated()) {
+        ScopedOpenGLContext current(this);
+        if (m_selectionVbo.isCreated()) {
+            m_selectionVbo.destroy();
+        }
+        if (m_selectionVao.isCreated()) {
+            m_selectionVao.destroy();
+        }
+    }
     update();
 }
 
 void PointCloudView::appendPointCloudSegment(QVector<PointCloudPoint>&& points)
 {
-    int clippedPointCount = 0;
-    int sourcePointCount = 0;
+    quint64 segmentId = 0;
+    QVector<PointCloudPoint> segmentPointsSnapshot;
     const bool crossSectionEnabled = m_crossSectionState.enabled && m_crossSectionState.initialized;
+    const bool selectionEnabled = m_selectionLocked && m_selectionRegion.valid;
     {
         QMutexLocker locker(&m_pointsMutex);
         m_points.clear();
         auto segment = std::make_unique<PointCloudSegment>();
+        segment->id = m_nextPointCloudSegmentId++;
         segment->points = std::move(points);
         uploadPointCloudSegment(*segment);
-        if (crossSectionEnabled) {
-            segment->clippedPoints = PointCloudCrossSection::clip(segment->points, m_crossSectionState);
-            uploadPointCloudSegmentClip(*segment);
-        }
+        segmentId = segment->id;
+        segmentPointsSnapshot = segment->points;
         m_pointCloudSegments.push_back(std::move(segment));
-        if (crossSectionEnabled) {
-            for (const std::unique_ptr<PointCloudSegment>& currentSegment : m_pointCloudSegments) {
-                if (!currentSegment) {
-                    continue;
-                }
-                sourcePointCount += currentSegment->points.size();
-                clippedPointCount += currentSegment->clippedPoints.size();
-            }
-        }
     }
     if (crossSectionEnabled) {
-        emit crossSectionChanged(clippedPointCount, sourcePointCount);
+        startCrossSectionSegmentClipJob(segmentId, segmentPointsSnapshot);
+    } else if (selectionEnabled) {
+        startSelectionSegmentJob(segmentId, segmentPointsSnapshot);
     }
     update();
 }
@@ -1488,6 +1628,7 @@ void PointCloudView::removeFirstPointCloudSegment()
     int clippedPointCount = 0;
     int sourcePointCount = 0;
     const bool crossSectionEnabled = m_crossSectionState.enabled && m_crossSectionState.initialized;
+    const bool selectionEnabled = m_selectionLocked && m_selectionRegion.valid;
     {
         QMutexLocker locker(&m_pointsMutex);
         if (m_pointCloudSegments.empty()) {
@@ -1509,6 +1650,7 @@ void PointCloudView::removeFirstPointCloudSegment()
             if (segment->clippedVao.isCreated()) {
                 segment->clippedVao.destroy();
             }
+            clearSegmentSelectionBuffers(*segment);
         }
         m_pointCloudSegments.pop_front();
         if (crossSectionEnabled) {
@@ -1523,6 +1665,9 @@ void PointCloudView::removeFirstPointCloudSegment()
     }
     if (crossSectionEnabled) {
         emit crossSectionChanged(clippedPointCount, sourcePointCount);
+    }
+    if (selectionEnabled) {
+        requestSelectionPublish();
     }
     update();
 }
@@ -1670,66 +1815,520 @@ PointCloudCrossSection::Camera PointCloudView::crossSectionCamera() const
     return PointCloudCrossSection::Camera{m_modelView, m_projection, QSize(width(), height())};
 }
 
-void PointCloudView::updateCrossSectionPointCloud()
+void PointCloudView::requestCrossSectionClip(bool immediate)
 {
-    int clippedPointCount = 0;
-    int sourcePointCount = 0;
-    bool updatedSegments = false;
+    if (!m_crossSectionState.enabled || !m_crossSectionState.initialized) {
+        return;
+    }
+    if (immediate) {
+        if (m_crossSectionClipDebounceTimer) {
+            m_crossSectionClipDebounceTimer->stop();
+        }
+        if (m_crossSectionClipRunning) {
+            m_crossSectionClipPending = true;
+            return;
+        }
+        ++m_crossSectionClipGeneration;
+        startCrossSectionClipJob();
+    } else if (m_crossSectionClipRunning) {
+        m_crossSectionClipPending = true;
+    } else {
+        ++m_crossSectionClipGeneration;
+        startCrossSectionClipJob();
+    }
+}
+
+void PointCloudView::startCrossSectionClipJob()
+{
+    if (!m_crossSectionState.enabled || !m_crossSectionState.initialized) {
+        return;
+    }
+    if (m_crossSectionClipRunning) {
+        m_crossSectionClipPending = true;
+        return;
+    }
+
+    QVector<SegmentPointSnapshot> snapshots;
+    const quint64 generation = m_crossSectionClipGeneration;
+    const PointCloudCrossSection::State state = m_crossSectionState;
     {
         QMutexLocker locker(&m_pointsMutex);
-        if (!m_pointCloudSegments.empty()) {
-            for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
-                if (!segment) {
-                    continue;
-                }
-                segment->clippedPoints = PointCloudCrossSection::clip(segment->points, m_crossSectionState);
-                uploadPointCloudSegmentClip(*segment);
-                sourcePointCount += segment->points.size();
-                clippedPointCount += segment->clippedPoints.size();
+        snapshots.reserve(int(m_pointCloudSegments.size()));
+        for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (!segment) {
+                continue;
             }
-            m_crossSectionState.sourcePoints.clear();
-            m_crossSectionState.clippedPoints.clear();
-            updatedSegments = true;
+            snapshots.push_back(SegmentPointSnapshot{segment->id, false, segment->points});
         }
     }
-    if (updatedSegments) {
-        emit crossSectionChanged(clippedPointCount, sourcePointCount);
+
+    if (snapshots.isEmpty()) {
+        if (state.sourcePoints.isEmpty()) {
+            PointCloudCrossSection::updateClip(m_crossSectionState);
+            uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
+            emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+            return;
+        }
+        snapshots.push_back(SegmentPointSnapshot{0, true, state.sourcePoints});
+    }
+
+    m_crossSectionClipRunning = true;
+    m_crossSectionClipPending = false;
+    m_crossSectionClipRemaining = snapshots.size();
+    const QPointer<PointCloudView> guard(this);
+    for (const SegmentPointSnapshot& snapshot : snapshots) {
+        QtConcurrent::run([guard, generation, state, snapshot]() mutable {
+            ClipSegmentResult segmentResult{
+                snapshot.segmentId,
+                snapshot.singleBuffer,
+                PointCloudCrossSection::clip(snapshot.points, state)
+            };
+            if (!guard) {
+                return;
+            }
+            QMetaObject::invokeMethod(guard.data(), [guard, generation, segmentResult = std::move(segmentResult)]() mutable {
+                if (!guard) {
+                    return;
+                }
+
+                PointCloudView* view = guard.data();
+                const bool stale = generation != view->m_crossSectionClipGeneration ||
+                                   !view->m_crossSectionState.enabled ||
+                                   !view->m_crossSectionState.initialized;
+
+                QVector<PointCloudPoint> selectionSnapshot;
+                quint64 appliedSegmentId = 0;
+                if (!stale) {
+                    if (segmentResult.singleBuffer) {
+                        QVector<PointCloudPoint> clippedPoints = std::move(segmentResult.clippedPoints);
+                        view->m_crossSectionState.clippedPoints = clippedPoints;
+                        view->uploadPointCloudPoints(std::move(clippedPoints));
+                    } else {
+                        QMutexLocker locker(&view->m_pointsMutex);
+                        for (std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                            if (!segment || segment->id != segmentResult.segmentId) {
+                                continue;
+                            }
+                            segment->clippedPoints = std::move(segmentResult.clippedPoints);
+                            selectionSnapshot = segment->clippedPoints;
+                            appliedSegmentId = segment->id;
+                            view->uploadPointCloudSegmentClip(*segment);
+                            break;
+                        }
+                        view->m_crossSectionState.sourcePoints.clear();
+                        view->m_crossSectionState.clippedPoints.clear();
+                    }
+                    view->update();
+                    if (appliedSegmentId != 0 && view->m_selectionLocked && view->m_selectionRegion.valid) {
+                        view->startSelectionSegmentJob(appliedSegmentId, selectionSnapshot);
+                    }
+                }
+
+                --view->m_crossSectionClipRemaining;
+                if (view->m_crossSectionClipRemaining > 0) {
+                    return;
+                }
+
+                int clippedPointCount = 0;
+                int sourcePointCount = 0;
+                if (!view->m_pointCloudSegments.empty()) {
+                    QMutexLocker locker(&view->m_pointsMutex);
+                    for (const std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                        if (!segment) {
+                            continue;
+                        }
+                        sourcePointCount += segment->points.size();
+                        clippedPointCount += segment->clippedPoints.size();
+                    }
+                } else {
+                    sourcePointCount = view->m_crossSectionState.sourcePoints.size();
+                    clippedPointCount = view->m_crossSectionState.clippedPoints.size();
+                }
+
+                const bool restart = view->m_crossSectionClipPending ||
+                                     generation != view->m_crossSectionClipGeneration;
+                view->m_crossSectionClipRunning = false;
+                view->m_crossSectionClipPending = false;
+                emit view->crossSectionChanged(clippedPointCount, sourcePointCount);
+                if (view->m_selectionLocked && view->m_selectionRegion.valid && !restart) {
+                    view->requestSelectionUpdate();
+                }
+                if (restart && view->m_crossSectionState.enabled && view->m_crossSectionState.initialized) {
+                    view->startCrossSectionClipJob();
+                }
+            }, Qt::QueuedConnection);
+        });
+    }
+}
+
+void PointCloudView::startCrossSectionSegmentClipJob(quint64 segmentId, const QVector<PointCloudPoint>& points)
+{
+    if (!m_crossSectionState.enabled || !m_crossSectionState.initialized || segmentId == 0) {
+        return;
+    }
+    const quint64 generation = m_crossSectionClipGeneration;
+    const PointCloudCrossSection::State state = m_crossSectionState;
+    const QPointer<PointCloudView> guard(this);
+    QtConcurrent::run([guard, generation, segmentId, state, points]() mutable {
+        ClipJobResult result;
+        result.generation = generation;
+        result.fullWindow = false;
+        result.segments.push_back(ClipSegmentResult{segmentId, false, PointCloudCrossSection::clip(points, state)});
+        if (!guard) {
+            return;
+        }
+        QMetaObject::invokeMethod(guard.data(), [guard, result = std::move(result)]() mutable {
+            if (!guard) {
+                return;
+            }
+            PointCloudView* view = guard.data();
+            if (result.generation != view->m_crossSectionClipGeneration ||
+                !view->m_crossSectionState.enabled ||
+                !view->m_crossSectionState.initialized ||
+                result.segments.isEmpty()) {
+                return;
+            }
+
+            QVector<PointCloudPoint> selectionSnapshot;
+            quint64 appliedSegmentId = 0;
+            int clippedPointCount = 0;
+            int sourcePointCount = 0;
+            {
+                QMutexLocker locker(&view->m_pointsMutex);
+                const ClipSegmentResult& segmentResult = result.segments.first();
+                for (std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                    if (!segment || segment->id != segmentResult.segmentId) {
+                        continue;
+                    }
+                    segment->clippedPoints = segmentResult.clippedPoints;
+                    selectionSnapshot = segment->clippedPoints;
+                    appliedSegmentId = segment->id;
+                    view->uploadPointCloudSegmentClip(*segment);
+                    break;
+                }
+                for (const std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                    if (!segment) {
+                        continue;
+                    }
+                    sourcePointCount += segment->points.size();
+                    clippedPointCount += segment->clippedPoints.size();
+                }
+            }
+            emit view->crossSectionChanged(clippedPointCount, sourcePointCount);
+            view->update();
+            if (appliedSegmentId != 0 && view->m_selectionLocked && view->m_selectionRegion.valid) {
+                view->startSelectionSegmentJob(appliedSegmentId, selectionSnapshot);
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
+void PointCloudView::updateCrossSectionPointCloud()
+{
+    requestCrossSectionClip(true);
+}
+
+void PointCloudView::updateSelectionRegionFromRect(const QRect& rect)
+{
+    if (rect.isEmpty()) {
+        m_selectionLocked = false;
+        m_selectionRegion = SelectionRegion();
+        requestSelectionUpdate();
+        return;
+    }
+
+    m_selModelView = m_modelView;
+    m_selProjection = m_projection;
+    m_selViewportW = width();
+    m_selViewportH = height();
+    m_selRectLogical = rect;
+    m_selViewZMin = -std::numeric_limits<float>::max();
+    m_selViewZMax = std::numeric_limits<float>::max();
+    m_selectionRegion.valid = true;
+    m_selectionRegion.mvp = m_selProjection * m_selModelView;
+    m_selectionRegion.modelView = m_selModelView;
+    m_selectionRegion.rect = rect;
+    m_selectionRegion.viewportW = m_selViewportW;
+    m_selectionRegion.viewportH = m_selViewportH;
+    m_selectionLocked = true;
+    requestSelectionUpdate();
+}
+
+void PointCloudView::requestSelectionUpdate()
+{
+    if (!m_selectionLocked || !m_selectionRegion.valid) {
+        ++m_selectionGeneration;
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            clearSelectionCaches();
+        }
+        emit selectionPointsReady({}, 0);
         update();
         return;
     }
 
-    PointCloudCrossSection::updateClip(m_crossSectionState);
-    uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
-    emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+    if (m_selectionJobRunning) {
+        m_selectionJobPending = true;
+        return;
+    }
+
+    ++m_selectionGeneration;
+    startSelectionJob();
+}
+
+void PointCloudView::startSelectionJob()
+{
+    if (!m_selectionLocked || !m_selectionRegion.valid) {
+        return;
+    }
+    if (m_selectionJobRunning) {
+        m_selectionJobPending = true;
+        return;
+    }
+
+    QVector<SegmentPointSnapshot> snapshots;
+    const quint64 generation = m_selectionGeneration;
+    const SelectionRegion region = m_selectionRegion;
+    {
+        QMutexLocker locker(&m_pointsMutex);
+        if (!m_points.isEmpty()) {
+            snapshots.push_back(SegmentPointSnapshot{0, true, m_points});
+        }
+        snapshots.reserve(snapshots.size() + int(m_pointCloudSegments.size()));
+        for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (!segment) {
+                continue;
+            }
+            const QVector<PointCloudPoint>& displayedPoints =
+                (m_crossSectionState.enabled && m_crossSectionState.initialized)
+                    ? segment->clippedPoints
+                    : segment->points;
+            snapshots.push_back(SegmentPointSnapshot{segment->id, false, displayedPoints});
+        }
+    }
+
+    if (snapshots.isEmpty()) {
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            clearSelectionCaches();
+        }
+        emit selectionPointsReady({}, 0);
+        update();
+        return;
+    }
+
+    m_selectionJobRunning = true;
+    m_selectionJobPending = false;
+    m_selectionJobRemaining = snapshots.size();
+    const QPointer<PointCloudView> guard(this);
+    for (const SegmentPointSnapshot& snapshot : snapshots) {
+        QtConcurrent::run([guard, generation, region, snapshot]() mutable {
+            SelectionSegmentResult result{
+                snapshot.segmentId,
+                snapshot.singleBuffer,
+                selectPointsInRegion(snapshot.points, region)
+            };
+            if (!guard) {
+                return;
+            }
+            QMetaObject::invokeMethod(guard.data(), [guard, generation, result = std::move(result)]() mutable {
+                if (!guard) {
+                    return;
+                }
+                PointCloudView* view = guard.data();
+                const bool stale = generation != view->m_selectionGeneration ||
+                                   !view->m_selectionLocked ||
+                                   !view->m_selectionRegion.valid;
+                if (!stale) {
+                    {
+                        QMutexLocker locker(&view->m_pointsMutex);
+                        if (result.singleBuffer) {
+                            view->uploadSelectionPoints(std::move(result.selectedPoints));
+                        } else {
+                            for (std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                                if (!segment || segment->id != result.segmentId) {
+                                    continue;
+                                }
+                                segment->selectedPoints = std::move(result.selectedPoints);
+                                view->uploadPointCloudSegmentSelection(*segment);
+                                break;
+                            }
+                        }
+                    }
+                    view->update();
+                }
+
+                --view->m_selectionJobRemaining;
+                if (view->m_selectionJobRemaining > 0) {
+                    return;
+                }
+
+                const bool restart = view->m_selectionJobPending ||
+                                     generation != view->m_selectionGeneration;
+                view->m_selectionJobRunning = false;
+                view->m_selectionJobPending = false;
+                if (generation == view->m_selectionGeneration &&
+                    view->m_selectionLocked &&
+                    view->m_selectionRegion.valid) {
+                    view->requestSelectionPublish();
+                }
+                if (restart && view->m_selectionLocked && view->m_selectionRegion.valid) {
+                    view->startSelectionJob();
+                }
+            }, Qt::QueuedConnection);
+        });
+    }
+}
+
+void PointCloudView::startSelectionSegmentJob(quint64 segmentId, const QVector<PointCloudPoint>& points)
+{
+    if (!m_selectionLocked || !m_selectionRegion.valid || segmentId == 0) {
+        return;
+    }
+    const quint64 generation = m_selectionGeneration;
+    const SelectionRegion region = m_selectionRegion;
+    const QPointer<PointCloudView> guard(this);
+    QtConcurrent::run([guard, generation, segmentId, region, points]() mutable {
+        SelectionSegmentResult result{segmentId, false, selectPointsInRegion(points, region)};
+        if (!guard) {
+            return;
+        }
+        QMetaObject::invokeMethod(guard.data(), [guard, generation, result = std::move(result)]() mutable {
+            if (!guard) {
+                return;
+            }
+            PointCloudView* view = guard.data();
+            if (generation != view->m_selectionGeneration ||
+                !view->m_selectionLocked ||
+                !view->m_selectionRegion.valid) {
+                return;
+            }
+            {
+                QMutexLocker locker(&view->m_pointsMutex);
+                for (std::unique_ptr<PointCloudSegment>& segment : view->m_pointCloudSegments) {
+                    if (!segment || segment->id != result.segmentId) {
+                        continue;
+                    }
+                    segment->selectedPoints = std::move(result.selectedPoints);
+                    view->uploadPointCloudSegmentSelection(*segment);
+                    break;
+                }
+            }
+            view->requestSelectionPublish();
+            view->update();
+        }, Qt::QueuedConnection);
+    });
+}
+
+void PointCloudView::requestSelectionPublish()
+{
+    if (!m_selectionLocked || !m_selectionRegion.valid) {
+        return;
+    }
+    if (m_selectionPublishRunning) {
+        m_selectionPublishPending = true;
+        return;
+    }
+    startSelectionPublishJob();
+}
+
+void PointCloudView::startSelectionPublishJob()
+{
+    if (!m_selectionLocked || !m_selectionRegion.valid) {
+        return;
+    }
+    if (m_selectionPublishRunning) {
+        m_selectionPublishPending = true;
+        return;
+    }
+
+    QVector<QVector<PointCloudPoint>> selectedSnapshots;
+    const quint64 generation = m_selectionGeneration;
+    {
+        QMutexLocker locker(&m_pointsMutex);
+        if (!m_selectedPoints.isEmpty()) {
+            selectedSnapshots.push_back(m_selectedPoints);
+        }
+        selectedSnapshots.reserve(selectedSnapshots.size() + int(m_pointCloudSegments.size()));
+        for (const std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (segment && !segment->selectedPoints.isEmpty()) {
+                selectedSnapshots.push_back(segment->selectedPoints);
+            }
+        }
+    }
+
+    m_selectionPublishRunning = true;
+    m_selectionPublishPending = false;
+    const QPointer<PointCloudView> guard(this);
+    QtConcurrent::run([guard, generation, selectedSnapshots = std::move(selectedSnapshots)]() mutable {
+        SelectionPublishResult result;
+        result.generation = generation;
+        qsizetype totalCount = 0;
+        for (const QVector<PointCloudPoint>& selectedPoints : selectedSnapshots) {
+            totalCount += selectedPoints.size();
+        }
+        result.points.reserve(totalCount);
+        for (const QVector<PointCloudPoint>& selectedPoints : selectedSnapshots) {
+            result.points += selectedPoints;
+        }
+        result.zeroPointCount = zeroPointCount(result.points);
+        if (!guard) {
+            return;
+        }
+        QMetaObject::invokeMethod(guard.data(), [guard, result = std::move(result)]() mutable {
+            if (!guard) {
+                return;
+            }
+            PointCloudView* view = guard.data();
+            const bool stale = result.generation != view->m_selectionGeneration ||
+                               !view->m_selectionLocked ||
+                               !view->m_selectionRegion.valid;
+            if (!stale) {
+                emit view->selectionPointsReady(std::move(result.points), result.zeroPointCount);
+            }
+
+            const bool restart = view->m_selectionPublishPending ||
+                                 result.generation != view->m_selectionGeneration;
+            view->m_selectionPublishRunning = false;
+            view->m_selectionPublishPending = false;
+            if (restart && view->m_selectionLocked && view->m_selectionRegion.valid) {
+                view->startSelectionPublishJob();
+            }
+        }, Qt::QueuedConnection);
+    });
 }
 
 void PointCloudView::updatePointCloud(const PointCloudFrame& frame)
 {
     if (m_crossSectionState.enabled) {
-        PointCloudCrossSection::setSourcePoints(m_crossSectionState, frame.points);
-        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
-        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        m_crossSectionState.sourcePoints = frame.points;
+        m_crossSectionState.clippedPoints.clear();
+        requestCrossSectionClip(true);
         return;
     }
     uploadPointCloudPoints(QVector<PointCloudPoint>(frame.points));
+    if (m_selectionLocked && m_selectionRegion.valid) {
+        requestSelectionUpdate();
+    }
 }
 
 void PointCloudView::updatePointCloud(PointCloudFrame&& frame)
 {
     if (m_crossSectionState.enabled) {
-        PointCloudCrossSection::setSourcePoints(m_crossSectionState, frame.points);
-        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
-        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        m_crossSectionState.sourcePoints = std::move(frame.points);
+        m_crossSectionState.clippedPoints.clear();
+        requestCrossSectionClip(true);
         return;
     }
     uploadPointCloudPoints(std::move(frame.points));
+    if (m_selectionLocked && m_selectionRegion.valid) {
+        requestSelectionUpdate();
+    }
 }
 
 void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<PointCloudPoint>&)>& colorize)
 {
     if (m_crossSectionState.enabled && pointCloudSegmentCount() > 0) {
-        int clippedPointCount = 0;
-        int sourcePointCount = 0;
         {
             QMutexLocker locker(&m_pointsMutex);
             for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
@@ -1738,33 +2337,41 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
                 }
                 colorize(segment->points);
                 uploadPointCloudSegment(*segment);
-                segment->clippedPoints = PointCloudCrossSection::clip(segment->points, m_crossSectionState);
-                uploadPointCloudSegmentClip(*segment);
-                sourcePointCount += segment->points.size();
-                clippedPointCount += segment->clippedPoints.size();
+                segment->clippedPoints.clear();
+                segment->clippedPointCount = 0;
+                clearSegmentSelectionBuffers(*segment);
             }
         }
-        emit crossSectionChanged(clippedPointCount, sourcePointCount);
+        requestCrossSectionClip(true);
         update();
         return;
     }
 
     if (m_crossSectionState.enabled) {
         colorize(m_crossSectionState.sourcePoints);
-        PointCloudCrossSection::updateClip(m_crossSectionState);
-        uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
-        emit crossSectionChanged(m_crossSectionState.clippedPoints.size(), m_crossSectionState.sourcePoints.size());
+        m_crossSectionState.clippedPoints.clear();
+        requestCrossSectionClip(true);
         return;
     }
 
     if (pointCloudSegmentCount() > 0) {
-        QMutexLocker locker(&m_pointsMutex);
-        for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
-            if (!segment) {
-                continue;
+        const bool selectionNeedsUpdate = m_selectionLocked && m_selectionRegion.valid;
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+                if (!segment) {
+                    continue;
+                }
+                colorize(segment->points);
+                uploadPointCloudSegment(*segment);
+                if (selectionNeedsUpdate) {
+                    segment->selectedPoints.clear();
+                    segment->selectedPointCount = 0;
+                }
             }
-            colorize(segment->points);
-            uploadPointCloudSegment(*segment);
+        }
+        if (selectionNeedsUpdate) {
+            requestSelectionUpdate();
         }
         update();
         return;
@@ -1777,12 +2384,20 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
     }
     colorize(points);
     uploadPointCloudPoints(std::move(points));
+    if (m_selectionLocked && m_selectionRegion.valid) {
+        requestSelectionUpdate();
+    }
 }
 
 void PointCloudView::clearPointCloud()
 {
     uploadPointCloudPoints(QVector<PointCloudPoint>());
     m_crossSectionState = PointCloudCrossSection::State();
+    m_selectionLocked = false;
+    m_selectionRegion = SelectionRegion();
+    ++m_crossSectionClipGeneration;
+    ++m_selectionGeneration;
+    emit selectionPointsReady({}, 0);
     printf("PointCloudView: cleared all points\n");
 }
 
@@ -1887,6 +2502,13 @@ void PointCloudView::setSelectionModeEnabled(bool enabled)
         m_selViewportH = 0;
         m_selViewZMin = 0.0f;
         m_selViewZMax = 0.0f;
+        m_selectionRegion = SelectionRegion();
+        ++m_selectionGeneration;
+        {
+            QMutexLocker locker(&m_pointsMutex);
+            clearSelectionCaches();
+        }
+        emit selectionPointsReady({}, 0);
         update();
     }
 }
@@ -1895,6 +2517,11 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
 {
     if (m_crossSectionState.enabled == enabled) {
         return;
+    }
+
+    ++m_crossSectionClipGeneration;
+    if (m_crossSectionClipDebounceTimer) {
+        m_crossSectionClipDebounceTimer->stop();
     }
 
     if (enabled) {
@@ -1946,6 +2573,9 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
         }
         m_crossSectionState = PointCloudCrossSection::State();
         emit crossSectionChanged(sourcePointCount, sourcePointCount);
+        if (m_selectionLocked && m_selectionRegion.valid) {
+            requestSelectionUpdate();
+        }
         update();
         return;
     }
@@ -1955,6 +2585,9 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
     m_crossSectionState = PointCloudCrossSection::State();
     uploadPointCloudPoints(std::move(restored));
     emit crossSectionChanged(restoredCount, restoredCount);
+    if (m_selectionLocked && m_selectionRegion.valid) {
+        requestSelectionUpdate();
+    }
 }
 
 void PointCloudView::resetCrossSectionBoxToCurrentCloud()

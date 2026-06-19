@@ -133,6 +133,7 @@ void LivoxViewerWindow::initializeUserInterface()
     realtimePointCloudView->setPointSize(pointSizePx);
     pointCloudView = realtimePointCloudView;
     connect(realtimePointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
+    connect(realtimePointCloudView, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
     realtimeVisualizationTabId = visualizationWorkspace->addTab(
         VisualizationWorkspace::TabKind::RealtimePointCloud,
         QStringLiteral("实时点云"),

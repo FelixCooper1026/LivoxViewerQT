@@ -19,6 +19,7 @@
 #include <QPoint>
 #include <QQuaternion>
 #include <QRect>
+#include <QTimer>
 #include <QVector>
 #include <QVector3D>
 #include <QWheelEvent>
@@ -32,6 +33,15 @@ class PointCloudView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
     Q_OBJECT
 
 public:
+    struct SelectionRegion {
+        bool valid = false;
+        QMatrix4x4 mvp;
+        QMatrix4x4 modelView;
+        QRect rect;
+        int viewportW = 0;
+        int viewportH = 0;
+    };
+
     enum class ViewPreset {
         World = 0,
         Front = 1,
@@ -86,6 +96,7 @@ public:
     QVector<PointCloudPoint> currentPoints() const;
     void setSelectionModeEnabled(bool enabled);
     bool isSelectionModeEnabled() const { return m_selectionModeEnabled; }
+    void requestSelectionUpdate();
     QVector<PointCloudPoint> pointsInRect(const QRect& rect, int maxPoints = 5000);
     QVector<PointCloudPoint> pointsInAabb(const QVector3D& min, const QVector3D& max, int maxPoints = 5000);
     QVector<PointCloudPoint> pointsInPersistSelection(int maxPoints = 5000);
@@ -136,6 +147,7 @@ protected:
 signals:
     void lvx2FileDropped(const QString& filePath);
     void crossSectionChanged(int clippedPointCount, int sourcePointCount);
+    void selectionPointsReady(QVector<PointCloudPoint> points, int zeroPointCount);
 
 private:
     struct PointCloudSegment;
@@ -150,10 +162,22 @@ private:
     void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
     void uploadPointCloudSegment(PointCloudSegment& segment);
     void uploadPointCloudSegmentClip(PointCloudSegment& segment);
+    void uploadPointCloudSegmentSelection(PointCloudSegment& segment);
+    void uploadSelectionPoints(QVector<PointCloudPoint>&& points);
     void destroyPointCloudSegments();
     bool pointCloudSegmentSourceBounds(QVector3D& minPoint, QVector3D& maxPoint) const;
     void forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const;
     void updateCrossSectionPointCloud();
+    void requestCrossSectionClip(bool immediate);
+    void startCrossSectionClipJob();
+    void startCrossSectionSegmentClipJob(quint64 segmentId, const QVector<PointCloudPoint>& points);
+    void clearSegmentSelectionBuffers(PointCloudSegment& segment);
+    void clearSelectionCaches();
+    void updateSelectionRegionFromRect(const QRect& rect);
+    void startSelectionJob();
+    void startSelectionSegmentJob(quint64 segmentId, const QVector<PointCloudPoint>& points);
+    void requestSelectionPublish();
+    void startSelectionPublishJob();
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void setupStlModelBuffers();
@@ -188,25 +212,53 @@ private:
     QMatrix4x4 m_modelView;
 
     QVector<PointCloudPoint> m_points;
+    QVector<PointCloudPoint> m_selectedPoints;
     struct PointCloudSegment {
+        quint64 id = 0;
         QVector<PointCloudPoint> points;
         QVector<PointCloudPoint> clippedPoints;
+        QVector<PointCloudPoint> selectedPoints;
         QOpenGLBuffer vbo;
         QOpenGLVertexArrayObject vao;
         QOpenGLBuffer clippedVbo;
         QOpenGLVertexArrayObject clippedVao;
+        QOpenGLBuffer selectedVbo;
+        QOpenGLVertexArrayObject selectedVao;
         qsizetype bufferCapacityBytes = 0;
         qsizetype clippedBufferCapacityBytes = 0;
+        qsizetype selectedBufferCapacityBytes = 0;
         int pointCount = 0;
         int clippedPointCount = 0;
+        int selectedPointCount = 0;
 
         PointCloudSegment()
             : vbo(QOpenGLBuffer::VertexBuffer)
             , clippedVbo(QOpenGLBuffer::VertexBuffer)
+            , selectedVbo(QOpenGLBuffer::VertexBuffer)
         {}
     };
     std::deque<std::unique_ptr<PointCloudSegment>> m_pointCloudSegments;
     QMutex m_pointsMutex;
+    quint64 m_nextPointCloudSegmentId = 1;
+
+    QOpenGLBuffer m_selectionVbo;
+    QOpenGLVertexArrayObject m_selectionVao;
+    qsizetype m_selectionBufferCapacityBytes = 0;
+    int m_selectionPointCount = 0;
+
+    SelectionRegion m_selectionRegion;
+    QTimer* m_crossSectionClipDebounceTimer = nullptr;
+    QTimer* m_selectionPublishDebounceTimer = nullptr;
+    quint64 m_crossSectionClipGeneration = 0;
+    bool m_crossSectionClipRunning = false;
+    bool m_crossSectionClipPending = false;
+    int m_crossSectionClipRemaining = 0;
+    quint64 m_selectionGeneration = 0;
+    bool m_selectionJobRunning = false;
+    bool m_selectionJobPending = false;
+    int m_selectionJobRemaining = 0;
+    bool m_selectionPublishRunning = false;
+    bool m_selectionPublishPending = false;
 
     bool m_gridVisible;
     QOpenGLVertexArrayObject m_gridVao;

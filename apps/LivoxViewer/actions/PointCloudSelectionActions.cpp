@@ -2,7 +2,9 @@
 
 #include <QAbstractTableModel>
 #include <QHeaderView>
+#include <QPointer>
 #include <QTableView>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <algorithm>
 
@@ -25,6 +27,13 @@ struct SelectionPointRow
 {
     PointCloudPoint point;
     int originalIndex = 0;
+};
+
+struct SelectionTableBuildResult
+{
+    QVector<SelectionPointRow> rows;
+    bool useSphericalColumns = false;
+    int zeroPointCount = 0;
 };
 
 class SelectionPointTableModel : public QAbstractTableModel
@@ -107,14 +116,20 @@ public:
 
     void setPoints(QVector<PointCloudPoint>&& points)
     {
+        QVector<SelectionPointRow> rows;
+        rows.reserve(points.size());
+        for (int i = 0; i < points.size(); ++i) {
+            rows.push_back(SelectionPointRow{points.at(i), i});
+        }
+        setRows(std::move(rows), !points.isEmpty() && points.first().spherical);
+    }
+
+    void setRows(QVector<SelectionPointRow>&& rows, bool useSphericalColumns)
+    {
         beginResetModel();
         const int previousRoiStart = roiStart_;
-        useSphericalColumns_ = !points.isEmpty() && points.first().spherical;
-        rows_.clear();
-        rows_.reserve(points.size());
-        for (int i = 0; i < points.size(); ++i) {
-            rows_.push_back(SelectionPointRow{points.at(i), i});
-        }
+        useSphericalColumns_ = useSphericalColumns;
+        rows_ = std::move(rows);
         if (sortColumn_ >= 0) {
             sortRows();
         }
@@ -238,6 +253,18 @@ SelectionPointTableModel* ensureSelectionModel(QTableView* table)
     return model;
 }
 
+SelectionTableBuildResult buildSelectionTableRows(QVector<PointCloudPoint>&& points, int zeroPointCount)
+{
+    SelectionTableBuildResult result;
+    result.zeroPointCount = zeroPointCount;
+    result.useSphericalColumns = !points.isEmpty() && points.first().spherical;
+    result.rows.reserve(points.size());
+    for (int i = 0; i < points.size(); ++i) {
+        result.rows.push_back(SelectionPointRow{points.at(i), i});
+    }
+    return result;
+}
+
 } // namespace
 
 void LivoxViewerWindow::onMeasurementUpdated()
@@ -262,44 +289,79 @@ void LivoxViewerWindow::updateSelectionTableAndLog()
         return;
     }
 
-    QVector<PointCloudPoint> pts;
-    if (pointCloudView->hasSelectionAabb()) {
-        pts = pointCloudView->pointsInPersistSelection(20000000);
-    } else {
-        QRect sel = pointCloudView->currentSelectionRect();
-        if (!sel.isEmpty()) {
-            pts = pointCloudView->pointsInRect(sel, 20000000);
+    if (!pointCloudView->hasSelectionAabb()) {
+        lastSelectionCount = -1;
+        if (selectionSummaryLabel) {
+            selectionSummaryLabel->setText("未框选点云");
         }
+        model->clear();
+        return;
     }
 
-    if (!pts.isEmpty()) {
-        int zeroCount = 0;
-        for (const PointCloudPoint& p : pts) {
-            if (p.x == 0.0f && p.y == 0.0f && p.z == 0.0f) {
-                ++zeroCount;
-            }
-        }
-        const int totalCount = pts.size();
-        const int validCount = totalCount - zeroCount;
+    if (selectionSummaryLabel) {
+        selectionSummaryLabel->setText("框选点云计算中...");
+    }
+    pointCloudView->requestSelectionUpdate();
+}
 
-        if (selectionSummaryLabel) {
-            selectionSummaryLabel->setText(QString("框选点云个数: %1\n零点个数: %2\n总数: %3")
-                                           .arg(validCount)
-                                           .arg(zeroCount)
-                                           .arg(totalCount));
-        }
-        lastSelectionCount = totalCount;
+void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, int zeroPointCount)
+{
+    PointCloudView* sourceView = qobject_cast<PointCloudView*>(sender());
+    if (sourceView && sourceView != pointCloudView) {
+        return;
+    }
 
-        model->setPoints(std::move(pts));
-        pointCloudView->update();
-    } else {
+    QTableView* table = attrTable ? attrTable : selectionTable;
+    SelectionPointTableModel* model = ensureSelectionModel(table);
+    if (!model || !pointCloudView) {
+        return;
+    }
+
+    const quint64 generation = ++selectionTableGeneration;
+    if (points.isEmpty()) {
         lastSelectionCount = -1;
         if (selectionSummaryLabel) {
             selectionSummaryLabel->setText("未框选点云");
         }
         model->clear();
         pointCloudView->update();
+        return;
     }
+
+    if (selectionSummaryLabel) {
+        selectionSummaryLabel->setText("框选点云表格加载中...");
+    }
+
+    const QPointer<LivoxViewerWindow> guard(this);
+    QtConcurrent::run([guard, generation, points = std::move(points), zeroPointCount]() mutable {
+        SelectionTableBuildResult result = buildSelectionTableRows(std::move(points), zeroPointCount);
+        if (!guard) {
+            return;
+        }
+        QMetaObject::invokeMethod(guard.data(), [guard, generation, result = std::move(result)]() mutable {
+            if (!guard || generation != guard->selectionTableGeneration) {
+                return;
+            }
+            LivoxViewerWindow* window = guard.data();
+            QTableView* table = window->attrTable ? window->attrTable : window->selectionTable;
+            SelectionPointTableModel* model = ensureSelectionModel(table);
+            if (!model || !window->pointCloudView) {
+                return;
+            }
+
+            const int totalCount = result.rows.size();
+            const int validCount = totalCount - result.zeroPointCount;
+            if (window->selectionSummaryLabel) {
+                window->selectionSummaryLabel->setText(QString("框选点云个数: %1\n零点个数: %2\n总数: %3")
+                                                       .arg(validCount)
+                                                       .arg(result.zeroPointCount)
+                                                       .arg(totalCount));
+            }
+            window->lastSelectionCount = totalCount;
+            model->setRows(std::move(result.rows), result.useSphericalColumns);
+            window->pointCloudView->update();
+        }, Qt::QueuedConnection);
+    });
 }
 
 void LivoxViewerWindow::onSelectionFinished()

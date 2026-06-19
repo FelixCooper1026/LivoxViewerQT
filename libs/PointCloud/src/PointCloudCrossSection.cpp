@@ -509,12 +509,19 @@ QVector<PointCloudPoint> clip(const QVector<PointCloudPoint>& points, const Stat
 
     QVector<PointCloudPoint> clipped;
     clipped.reserve(points.size());
+    const QVector3D center = state.box.center;
     const QVector3D half = state.box.halfExtents;
+    const QVector3D axisX = state.box.orientation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)).normalized();
+    const QVector3D axisY = state.box.orientation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)).normalized();
+    const QVector3D axisZ = state.box.orientation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)).normalized();
     for (const PointCloudPoint& point : points) {
-        const QVector3D local = localFromWorld(state.box, QVector3D(point.x, point.y, point.z));
-        if (std::abs(local.x()) <= half.x() &&
-            std::abs(local.y()) <= half.y() &&
-            std::abs(local.z()) <= half.z()) {
+        const QVector3D delta(point.x - center.x(), point.y - center.y(), point.z - center.z());
+        const float localX = QVector3D::dotProduct(delta, axisX);
+        const float localY = QVector3D::dotProduct(delta, axisY);
+        const float localZ = QVector3D::dotProduct(delta, axisZ);
+        if (std::abs(localX) <= half.x() &&
+            std::abs(localY) <= half.y() &&
+            std::abs(localZ) <= half.z()) {
             clipped.push_back(point);
         }
     }
@@ -659,7 +666,6 @@ bool updateDrag(State& state, const Camera& camera, const QPoint& mousePos)
                                  state.dragStartBox.orientation).normalized();
     }
 
-    updateClip(state);
     return true;
 }
 

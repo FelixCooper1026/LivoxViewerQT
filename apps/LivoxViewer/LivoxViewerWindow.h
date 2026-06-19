@@ -376,6 +376,7 @@ private:
     // 实时框选支持
     int lastSelectionCount = -1;
     bool selectionRealtimeEnabled = false;
+    quint64 selectionTableGeneration = 0;
 
     // 测距暂停播放
     bool measurementModeActive = false;
@@ -538,6 +539,7 @@ private slots:
     void onPlanarProjectionRadiusChanged(double radius);
     void onPointCloudVisualizationToggled(bool enabled);
     void onSelectionFinished();
+    void onSelectionPointsReady(QVector<PointCloudPoint> points, int zeroPointCount);
     void onCaptureTick();
     void onActionCaptureImuTriggered();
     void onGpsSimulateToggled(bool enabled);

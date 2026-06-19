@@ -32,9 +32,6 @@ void LivoxViewerWindow::presentPointCloudFrame(const PointCloudFrame& frame)
         if (realtimePointCloudView) {
             realtimePointCloudView->updatePointCloud(std::move(frame));
         }
-        if (selectionRealtimeEnabled && pointCloudView == realtimePointCloudView && (attrTable || selectionTable)) {
-            updateSelectionTableAndLog();
-        }
     }, Qt::QueuedConnection);
 }
 
@@ -160,7 +157,4 @@ void LivoxViewerWindow::onRenderTick()
         }
     }
 
-    if (selectionRealtimeEnabled && pointCloudView == realtimePointCloudView && (attrTable || selectionTable)) {
-        updateSelectionTableAndLog();
-    }
 }
