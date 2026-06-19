@@ -179,6 +179,7 @@ uint32_t LivoxViewerWindow::playbackImuHandleForLidarId(PlaybackControllerState&
 int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
 {
     PointCloudView* view = new PointCloudView(visualizationWorkspace);
+    view->installEventFilter(this);
     view->setMinimumSize(200, 200);
     view->setPointSize(pointSizePx);
     view->setMeasurementModeEnabled(measurementModeActive);

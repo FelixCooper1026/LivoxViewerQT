@@ -132,7 +132,7 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         frame->setFrameShape(QFrame::NoFrame);
         frame->installEventFilter(this);
         QVBoxLayout* layout = new QVBoxLayout(frame);
-        layout->setContentsMargins(2, 2, 2, 2);
+        layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
         QLabel* emptyLabel = new QLabel(QStringLiteral("选择一个标签页"), frame);
         emptyLabel->setAlignment(Qt::AlignCenter);
@@ -200,7 +200,7 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         "  border-color: palette(mid);"
         "}"
         "QFrame#VisualizationPane[focused=\"true\"] { border: 2px solid palette(highlight); }"
-        "QFrame#VisualizationPane[focused=\"false\"] { border: 2px solid transparent; }"
+        "QFrame#VisualizationPane[focused=\"false\"] { border: none; }"
         "QLabel#VisualizationPaneEmpty { color: palette(mid); }"));
     syncSplitButtons();
     focusPane(0);
@@ -453,8 +453,13 @@ void VisualizationWorkspace::focusPane(int pane)
 {
     const int currentTab = m_paneTabs[pane];
     m_focusedPane = pane;
+    const bool splitActive = m_splitMode != SplitMode::Single;
     for (int i = 0; i < 2; ++i) {
-        m_panes[i]->setProperty("focused", m_splitMode != SplitMode::Single && i == pane);
+        m_panes[i]->setProperty("focused", splitActive && i == pane);
+        m_paneLayouts[i]->setContentsMargins(splitActive ? 2 : 0,
+                                             splitActive ? 2 : 0,
+                                             splitActive ? 2 : 0,
+                                             splitActive ? 2 : 0);
         m_panes[i]->style()->unpolish(m_panes[i]);
         m_panes[i]->style()->polish(m_panes[i]);
         m_panes[i]->update();

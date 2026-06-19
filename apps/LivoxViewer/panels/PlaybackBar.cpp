@@ -5,6 +5,16 @@
 QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
 {
     playbackState.bar = new QWidget(parent);
+        playbackState.bar->setObjectName(QStringLiteral("PlaybackOverlayBar"));
+        playbackState.bar->setAttribute(Qt::WA_StyledBackground, true);
+        playbackState.bar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        playbackState.bar->setStyleSheet(QStringLiteral(
+            "QWidget#PlaybackOverlayBar {"
+            "  background: palette(window);"
+            "  border: 1px solid palette(mid);"
+            "  border-radius: 6px;"
+            "}"
+            "QWidget#PlaybackOverlayBar QLabel { color: palette(window-text); }"));
         QVBoxLayout* playbackRootLayout = new QVBoxLayout(playbackState.bar);
         playbackRootLayout->setContentsMargins(8, 4, 8, 4);
         playbackRootLayout->setSpacing(2);

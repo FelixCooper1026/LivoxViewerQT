@@ -608,6 +608,7 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
     }
 
     playbackState.bar->setVisible(playbackState.active || playbackState.loading);
+    updatePlaybackBarGeometry();
     if (!playbackState.active && !playbackState.loading) {
         return;
     }
@@ -660,6 +661,32 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         }
         setElidedPlaybackLabelText(playbackState.label, playbackInfo);
     }
+    updatePlaybackBarGeometry();
+}
+
+void LivoxViewerWindow::updatePlaybackBarGeometry()
+{
+    if (!playbackState.bar || !visualizationWorkspace) {
+        return;
+    }
+
+    if (!playbackState.bar->isVisible() || !pointCloudView || !isOfflinePointCloudTab(activeVisualizationTabId)) {
+        return;
+    }
+
+    if (playbackState.bar->parentWidget() != visualizationWorkspace) {
+        playbackState.bar->setParent(visualizationWorkspace);
+    }
+
+    const QPoint viewTopLeft = pointCloudView->mapTo(visualizationWorkspace, QPoint(0, 0));
+    const int margin = 10;
+    const int barWidth = std::max(1, pointCloudView->width() - margin * 2);
+    const int barHeight = playbackState.bar->sizeHint().height();
+    playbackState.bar->setGeometry(viewTopLeft.x() + margin,
+                                   viewTopLeft.y() + margin,
+                                   barWidth,
+                                   barHeight);
+    playbackState.bar->raise();
 }
 
 bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
@@ -722,6 +749,14 @@ bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
     } else if (watched == playbackState.label &&
                event->type() == QEvent::Resize) {
         refreshElidedPlaybackLabelText(playbackState.label);
+        updatePlaybackBarGeometry();
+    } else if ((watched == visualizationWorkspace || qobject_cast<PointCloudView*>(watched)) &&
+               (event->type() == QEvent::Resize ||
+                event->type() == QEvent::Move ||
+                event->type() == QEvent::Show)) {
+        QMetaObject::invokeMethod(this, [this]() {
+            updatePlaybackBarGeometry();
+        }, Qt::QueuedConnection);
     }
 
     return QMainWindow::eventFilter(watched, event);

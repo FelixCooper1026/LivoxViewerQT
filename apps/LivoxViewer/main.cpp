@@ -1,5 +1,6 @@
 #include <QApplication>
 #include <QIcon>
+#include <QSurfaceFormat>
 #include "AppVersion.h"
 #include "LivoxViewerWindow.h"
 
@@ -15,6 +16,12 @@ int main(int argc, char *argv[])
 #ifdef _WIN32
     SetDllDirectoryA("C:\\Windows\\System32\\Npcap");
 #endif
+
+    QSurfaceFormat glFormat = QSurfaceFormat::defaultFormat();
+    glFormat.setDepthBufferSize(24);
+    glFormat.setStencilBufferSize(8);
+    glFormat.setSamples(4);
+    QSurfaceFormat::setDefaultFormat(glFormat);
 
     QApplication app(argc, argv);
 

@@ -128,7 +128,9 @@ void LivoxViewerWindow::initializeUserInterface()
     centralLayout->setSpacing(0);
 
     visualizationWorkspace = new VisualizationWorkspace(centralContainer);
+    visualizationWorkspace->installEventFilter(this);
     realtimePointCloudView = new PointCloudView(visualizationWorkspace);
+    realtimePointCloudView->installEventFilter(this);
     realtimePointCloudView->setMinimumSize(200, 200);
     realtimePointCloudView->setPointSize(pointSizePx);
     pointCloudView = realtimePointCloudView;
@@ -149,10 +151,9 @@ void LivoxViewerWindow::initializeUserInterface()
     // 顶部可视化功能栏（两行）
     QWidget* viewerToolbar = createViewerToolbar(centralContainer);
 
-    createPlaybackBar(centralContainer);
+    createPlaybackBar(visualizationWorkspace);
 
     centralLayout->addWidget(viewerToolbar);
-    centralLayout->addWidget(playbackState.bar);
     centralLayout->addWidget(visualizationWorkspace, 1);
     setCentralWidget(centralContainer);
     resize(defaultMainWindowSize());
@@ -191,6 +192,7 @@ void LivoxViewerWindow::initializeUserInterface()
     const int logDockHeight = qMin(kLogDockMaxHeight, qMax(kLogDockMinHeight, height() / 4));
     resizeDocks({lidarDevicesDock, paramsDock}, {devicesDockWidth, paramsDockWidth}, Qt::Horizontal);
     resizeDocks({logDock}, {logDockHeight}, Qt::Vertical);
+    lidarDevicesDock->raise();
 
     createMenusAndActions();
 }

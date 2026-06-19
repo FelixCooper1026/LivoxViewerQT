@@ -67,7 +67,7 @@ QVector<StlModel::Vertex> transformDeviceModelVertices(const QVector<StlModel::V
     return transformed;
 }
 
-void uploadPointCloudBuffer(QOpenGLWidget* widget,
+bool uploadPointCloudBuffer(QOpenGLWidget* widget,
                             QOpenGLShaderProgram* program,
                             const QVector<PointCloudPoint>& points,
                             QOpenGLBuffer& vbo,
@@ -77,10 +77,14 @@ void uploadPointCloudBuffer(QOpenGLWidget* widget,
 {
     pointCount = points.size();
     if (!program || !widget || !widget->context()) {
-        return;
+        return false;
     }
 
     ScopedOpenGLContext current(widget);
+    if (QOpenGLContext::currentContext() != widget->context()) {
+        return false;
+    }
+
     if (!vao.isCreated()) {
         vao.create();
     }
@@ -110,6 +114,7 @@ void uploadPointCloudBuffer(QOpenGLWidget* widget,
     vbo.release();
     vao.release();
     program->release();
+    return true;
 }
 
 struct SegmentPointSnapshot {
@@ -322,6 +327,7 @@ void PointCloudView::initializeGL()
     glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
+    glEnable(GL_MULTISAMPLE);
     glPointSize(2.0f);
     
     setupShaders();
@@ -659,6 +665,11 @@ void PointCloudView::setGridConfig(const GridConfig& config)
     if (!normalized.color.isValid()) {
         normalized.color = QColor(77, 77, 77);
     }
+    if (normalized.type != GridConfig::Square &&
+        normalized.type != GridConfig::ConcentricCircles &&
+        normalized.type != GridConfig::SquareAndConcentricCircles) {
+        normalized.type = GridConfig::Square;
+    }
 
     m_gridConfig = normalized;
 
@@ -692,10 +703,23 @@ void PointCloudView::setupGridBuffers()
         gridVertices.push_back({p2.x(), p2.y(), p2.z(), r, g, b});
     };
 
-    if (m_gridConfig.type == GridConfig::ConcentricCircles) {
+    const bool drawSquareGrid =
+        m_gridConfig.type == GridConfig::Square ||
+        m_gridConfig.type == GridConfig::SquareAndConcentricCircles;
+    const bool drawConcentricCircles =
+        m_gridConfig.type == GridConfig::ConcentricCircles ||
+        m_gridConfig.type == GridConfig::SquareAndConcentricCircles;
+
+    if (drawSquareGrid) {
+        for (float i = -range; i <= range + 1e-4f; i += step) {
+            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f));
+            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f));
+        }
+    }
+
+    if (drawConcentricCircles) {
         addLine(QVector3D(-range, 0.0f, 0.0f), QVector3D(range, 0.0f, 0.0f));
         addLine(QVector3D(0.0f, -range, 0.0f), QVector3D(0.0f, range, 0.0f));
-
         for (float radius = step; radius <= range + 1e-4f; radius += step) {
             for (int i = 0; i < ringSegments; ++i) {
                 const float a0 = (2.0f * pi * float(i)) / float(ringSegments);
@@ -703,11 +727,6 @@ void PointCloudView::setupGridBuffers()
                 addLine(QVector3D(radius * std::cos(a0), radius * std::sin(a0), 0.0f),
                         QVector3D(radius * std::cos(a1), radius * std::sin(a1), 0.0f));
             }
-        }
-    } else {
-        for (float i = -range; i <= range + 1e-4f; i += step) {
-            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f));
-            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f));
         }
     }
 
@@ -798,6 +817,8 @@ void PointCloudView::paintGL()
     }
     
     m_program->bind();
+    syncPendingPointCloudBuffers();
+    m_program->bind();
     
     // 1. 设置基础变换矩阵 (目标中心轨道相机模型)
     m_modelView.setToIdentity();
@@ -837,12 +858,18 @@ void PointCloudView::paintGL()
 
     // 绘制网格
     if (m_gridVisible) {
-        glLineWidth(1.0f); 
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glEnable(GL_LINE_SMOOTH);
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+        glLineWidth(1.0f);
         if (m_gridVertexCount > 0) {
             m_gridVao.bind();
             glDrawArrays(GL_LINES, 0, m_gridVertexCount);
             m_gridVao.release();
         }
+        glDisable(GL_LINE_SMOOTH);
+        glDisable(GL_BLEND);
     }
     glLineWidth(1.0f);
 
@@ -1440,44 +1467,43 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
     destroyPointCloudSegments();
     m_points = std::move(points);
     uploadSelectionPoints(QVector<PointCloudPoint>());
-    if (m_vbo.isCreated()) {
-        ScopedOpenGLContext current(this);
-        m_vbo.bind();
-        const qsizetype byteCount = m_points.size() * qsizetype(sizeof(PointCloudPoint));
-        if (byteCount == 0) {
-            m_vbo.allocate(0);
-            m_pointCloudBufferCapacityBytes = 0;
-        } else if (byteCount > m_pointCloudBufferCapacityBytes) {
-            m_vbo.allocate(m_points.constData(), static_cast<int>(byteCount));
-            m_pointCloudBufferCapacityBytes = byteCount;
-        } else {
-            m_vbo.write(0, m_points.constData(), static_cast<int>(byteCount));
-        }
-        m_vbo.release();
+    int pointCount = m_points.size();
+    if (!uploadPointCloudBuffer(this,
+                                m_program,
+                                m_points,
+                                m_vbo,
+                                m_vao,
+                                m_pointCloudBufferCapacityBytes,
+                                pointCount)) {
+        m_pointCloudGpuUploadPending = true;
     }
     update();
 }
 
 void PointCloudView::uploadPointCloudSegment(PointCloudSegment& segment)
 {
-    uploadPointCloudBuffer(this,
-                           m_program,
-                           segment.points,
-                           segment.vbo,
-                           segment.vao,
-                           segment.bufferCapacityBytes,
-                           segment.pointCount);
+    if (!uploadPointCloudBuffer(this,
+                                m_program,
+                                segment.points,
+                                segment.vbo,
+                                segment.vao,
+                                segment.bufferCapacityBytes,
+                                segment.pointCount)) {
+        m_pointCloudGpuUploadPending = true;
+    }
 }
 
 void PointCloudView::uploadPointCloudSegmentClip(PointCloudSegment& segment)
 {
-    uploadPointCloudBuffer(this,
-                           m_program,
-                           segment.clippedPoints,
-                           segment.clippedVbo,
-                           segment.clippedVao,
-                           segment.clippedBufferCapacityBytes,
-                           segment.clippedPointCount);
+    if (!uploadPointCloudBuffer(this,
+                                m_program,
+                                segment.clippedPoints,
+                                segment.clippedVbo,
+                                segment.clippedVao,
+                                segment.clippedBufferCapacityBytes,
+                                segment.clippedPointCount)) {
+        m_pointCloudGpuUploadPending = true;
+    }
 }
 
 void PointCloudView::uploadPointCloudSegmentSelection(PointCloudSegment& segment)
@@ -1488,13 +1514,15 @@ void PointCloudView::uploadPointCloudSegmentSelection(PointCloudSegment& segment
         point.g = 0.0f;
         point.b = 0.0f;
     }
-    uploadPointCloudBuffer(this,
-                           m_program,
-                           overlayPoints,
-                           segment.selectedVbo,
-                           segment.selectedVao,
-                           segment.selectedBufferCapacityBytes,
-                           segment.selectedPointCount);
+    if (!uploadPointCloudBuffer(this,
+                                m_program,
+                                overlayPoints,
+                                segment.selectedVbo,
+                                segment.selectedVao,
+                                segment.selectedBufferCapacityBytes,
+                                segment.selectedPointCount)) {
+        m_pointCloudGpuUploadPending = true;
+    }
 }
 
 void PointCloudView::uploadSelectionPoints(QVector<PointCloudPoint>&& points)
@@ -1506,13 +1534,91 @@ void PointCloudView::uploadSelectionPoints(QVector<PointCloudPoint>&& points)
         point.g = 0.0f;
         point.b = 0.0f;
     }
-    uploadPointCloudBuffer(this,
-                           m_program,
-                           overlayPoints,
-                           m_selectionVbo,
-                           m_selectionVao,
-                           m_selectionBufferCapacityBytes,
-                           m_selectionPointCount);
+    if (!uploadPointCloudBuffer(this,
+                                m_program,
+                                overlayPoints,
+                                m_selectionVbo,
+                                m_selectionVao,
+                                m_selectionBufferCapacityBytes,
+                                m_selectionPointCount)) {
+        m_pointCloudGpuUploadPending = true;
+    }
+}
+
+void PointCloudView::syncPendingPointCloudBuffers()
+{
+    if (!m_pointCloudGpuUploadPending || !m_program || !context()) {
+        return;
+    }
+
+    bool synced = true;
+    {
+        QMutexLocker locker(&m_pointsMutex);
+        if (!m_points.isEmpty() || m_vbo.isCreated()) {
+            int pointCount = m_points.size();
+            synced = uploadPointCloudBuffer(this,
+                                            m_program,
+                                            m_points,
+                                            m_vbo,
+                                            m_vao,
+                                            m_pointCloudBufferCapacityBytes,
+                                            pointCount) && synced;
+        }
+        for (std::unique_ptr<PointCloudSegment>& segment : m_pointCloudSegments) {
+            if (!segment) {
+                continue;
+            }
+            synced = uploadPointCloudBuffer(this,
+                                            m_program,
+                                            segment->points,
+                                            segment->vbo,
+                                            segment->vao,
+                                            segment->bufferCapacityBytes,
+                                            segment->pointCount) && synced;
+            if (!segment->clippedPoints.isEmpty() || segment->clippedVbo.isCreated()) {
+                synced = uploadPointCloudBuffer(this,
+                                                m_program,
+                                                segment->clippedPoints,
+                                                segment->clippedVbo,
+                                                segment->clippedVao,
+                                                segment->clippedBufferCapacityBytes,
+                                                segment->clippedPointCount) && synced;
+            }
+            if (!segment->selectedPoints.isEmpty() || segment->selectedVbo.isCreated()) {
+                QVector<PointCloudPoint> overlayPoints = segment->selectedPoints;
+                for (PointCloudPoint& point : overlayPoints) {
+                    point.r = 1.0f;
+                    point.g = 0.0f;
+                    point.b = 0.0f;
+                }
+                synced = uploadPointCloudBuffer(this,
+                                                m_program,
+                                                overlayPoints,
+                                                segment->selectedVbo,
+                                                segment->selectedVao,
+                                                segment->selectedBufferCapacityBytes,
+                                                segment->selectedPointCount) && synced;
+            }
+        }
+    }
+
+    if (!m_selectedPoints.isEmpty() || m_selectionVbo.isCreated()) {
+        QVector<PointCloudPoint> overlayPoints = m_selectedPoints;
+        for (PointCloudPoint& point : overlayPoints) {
+            point.r = 1.0f;
+            point.g = 0.0f;
+            point.b = 0.0f;
+        }
+        synced = uploadPointCloudBuffer(this,
+                                        m_program,
+                                        overlayPoints,
+                                        m_selectionVbo,
+                                        m_selectionVao,
+                                        m_selectionBufferCapacityBytes,
+                                        m_selectionPointCount) && synced;
+    }
+
+    m_pointCloudGpuUploadPending = !synced;
 }
 
 void PointCloudView::destroyPointCloudSegments()

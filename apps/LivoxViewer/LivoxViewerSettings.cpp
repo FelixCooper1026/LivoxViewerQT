@@ -657,7 +657,8 @@ void LivoxViewerWindow::loadViewPreferences()
         settings.value("grid/type", int(config.type)).toInt());
 
     if (config.type != PointCloudView::GridConfig::Square &&
-        config.type != PointCloudView::GridConfig::ConcentricCircles) {
+        config.type != PointCloudView::GridConfig::ConcentricCircles &&
+        config.type != PointCloudView::GridConfig::SquareAndConcentricCircles) {
         config.type = PointCloudView::GridConfig::Square;
     }
 
@@ -882,21 +883,15 @@ void LivoxViewerWindow::showPreferencesDialog()
         colorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedColor.name()));
     });
 
-    QWidget* typeRow = new QWidget(&dlg);
-    usePreferenceControlColumn(typeRow);
-    QHBoxLayout* typeLayout = new QHBoxLayout(typeRow);
-    typeLayout->setContentsMargins(0, 0, 0, 0);
-    typeLayout->setSpacing(12);
-    QRadioButton* squareRadio = new QRadioButton("方形", typeRow);
-    QRadioButton* circleRadio = new QRadioButton("同心圆", typeRow);
-    if (config.type == PointCloudView::GridConfig::ConcentricCircles) {
-        circleRadio->setChecked(true);
-    } else {
-        squareRadio->setChecked(true);
-    }
-    typeLayout->addWidget(squareRadio);
-    typeLayout->addWidget(circleRadio);
-    typeLayout->addStretch();
+    QComboBox* gridTypeCombo = new QComboBox(&dlg);
+    gridTypeCombo->addItem(QStringLiteral("方形"), int(PointCloudView::GridConfig::Square));
+    gridTypeCombo->addItem(QStringLiteral("同心圆"), int(PointCloudView::GridConfig::ConcentricCircles));
+    gridTypeCombo->addItem(QStringLiteral("方形 + 同心圆"), int(PointCloudView::GridConfig::SquareAndConcentricCircles));
+    const int gridTypeIndex = gridTypeCombo->findData(int(config.type));
+    gridTypeCombo->setCurrentIndex(gridTypeIndex >= 0 ? gridTypeIndex : 0);
+    gridTypeCombo->setMinimumWidth(180);
+    gridTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    usePreferenceControlColumn(gridTypeCombo, 220);
 
     auto createLegendSpin = [&dlg](double minValue, double maxValue, double value) {
         QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
@@ -1078,7 +1073,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     addPreferenceRow(gridSection, "范围", "控制网格从中心向外显示的最大距离。", rangeSpin);
     addPreferenceRow(gridSection, "间距", "控制相邻网格线或圆环之间的距离。", stepSpin);
     addPreferenceRow(gridSection, "颜色", "设置网格线的显示颜色。", colorRow);
-    addPreferenceRow(gridSection, "类型", "选择方形网格或同心圆网格。", typeRow);
+    addPreferenceRow(gridSection, "类型", "选择方形网格、同心圆网格或两者同时显示。", gridTypeCombo);
     gridLayout->addWidget(gridSection);
     gridLayout->addStretch();
 
@@ -1166,9 +1161,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     config.range = float(rangeSpin->value());
     config.step = float(stepSpin->value());
     config.color = selectedColor;
-    config.type = circleRadio->isChecked()
-        ? PointCloudView::GridConfig::ConcentricCircles
-        : PointCloudView::GridConfig::Square;
+    config.type = static_cast<PointCloudView::GridConfig::Type>(gridTypeCombo->currentData().toInt());
     distanceLegendMin = float(distanceMinSpin->value());
     distanceLegendMax = float(distanceMaxSpin->value());
     elevationLegendMin = float(elevationMinSpin->value());

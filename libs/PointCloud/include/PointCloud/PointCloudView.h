@@ -59,7 +59,8 @@ public:
     struct GridConfig {
         enum Type {
             Square = 0,
-            ConcentricCircles = 1
+            ConcentricCircles = 1,
+            SquareAndConcentricCircles = 2
         };
 
         float range = 100.0f;
@@ -164,6 +165,7 @@ private:
     void uploadPointCloudSegmentClip(PointCloudSegment& segment);
     void uploadPointCloudSegmentSelection(PointCloudSegment& segment);
     void uploadSelectionPoints(QVector<PointCloudPoint>&& points);
+    void syncPendingPointCloudBuffers();
     void destroyPointCloudSegments();
     bool pointCloudSegmentSourceBounds(QVector3D& minPoint, QVector3D& maxPoint) const;
     void forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const;
@@ -245,6 +247,7 @@ private:
     QOpenGLVertexArrayObject m_selectionVao;
     qsizetype m_selectionBufferCapacityBytes = 0;
     int m_selectionPointCount = 0;
+    bool m_pointCloudGpuUploadPending = false;
 
     SelectionRegion m_selectionRegion;
     QTimer* m_crossSectionClipDebounceTimer = nullptr;

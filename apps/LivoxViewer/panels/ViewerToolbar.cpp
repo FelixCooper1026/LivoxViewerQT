@@ -721,7 +721,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     transformGroup->setVisible(false);
 
     ToolbarGroup* toolsGroup = new ToolbarGroup("点云工具", viewerToolbar);
-    toolsGroup->setCompactPriority(2);
+    toolsGroup->setCompactPriority(3);
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
     ThemeIconUtils::setThemedSvgIcon(measureAction, QStringLiteral(":/icons/measure.svg"));
     pointCloudMeasureAction = measureAction;
@@ -930,6 +930,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(toolsGroup);
 
     ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);
+    projectionGroup->setCompactPriority(4);
     QActionGroup* projectionModeGroup = new QActionGroup(projectionGroup);
     projectionModeGroup->setExclusive(true);
 
@@ -1023,6 +1024,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(viewGroup);
 
     ToolbarGroup* captureGroup = new ToolbarGroup("数据采集", viewerToolbar);
+    captureGroup->setCompactPriority(2);
 
     QAction* pointCloudCaptureAction = new QAction(QIcon(":/icons/capture_camera.svg"), "点云录制", this);
     ThemeIconUtils::setThemedSvgIcon(pointCloudCaptureAction, QStringLiteral(":/icons/capture_camera.svg"));

@@ -174,6 +174,7 @@ private:
     void closeLvx2Playback(bool clearView = true);
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();
+    void updatePlaybackBarGeometry();
     void setLvx2PlaybackPlaying(bool playing);
     void finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source);
     int playbackRawEndIndexForFrame(int playbackFrameIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
