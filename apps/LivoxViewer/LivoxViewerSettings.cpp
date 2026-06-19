@@ -6,8 +6,10 @@
 #include "PointCloud/PointCloudColorizer.h"
 
 #include <QAbstractButton>
+#include <QAbstractItemView>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QChildEvent>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -23,8 +25,12 @@
 #include <QIcon>
 #include <QPalette>
 #include <QPair>
+#include <QPainter>
+#include <QPen>
+#include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QProxyStyle>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
@@ -36,9 +42,13 @@
 #include <QStyleHints>
 #include <QStackedWidget>
 #include <QStringList>
+#include <QStyledItemDelegate>
+#include <QStyleOptionViewItem>
 #include <QTextStream>
+#include <QTimer>
 #include <QToolButton>
 #include <QtGlobal>
+#include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -46,9 +56,161 @@ namespace {
 
 constexpr int kDockStateVersion = 2;
 constexpr int kPreferenceControlColumnWidth = 115;
-constexpr int kPreferenceSpinBoxWidth = 100;
+constexpr int kPreferenceComboBoxWidth = 115;
+constexpr int kPreferenceSpinBoxWidth = 115;
 constexpr int kPreferenceFontPointIncrease = 1;
 constexpr int kPreferenceNavIconTextSpacingChars = 2;
+
+class ComboBoxPopupStyle : public QProxyStyle
+{
+public:
+    explicit ComboBoxPopupStyle(QStyle* baseStyle)
+        : QProxyStyle(baseStyle)
+    {}
+
+    int styleHint(StyleHint hint,
+                  const QStyleOption* option = nullptr,
+                  const QWidget* widget = nullptr,
+                  QStyleHintReturn* returnData = nullptr) const override
+    {
+        if (hint == QStyle::SH_ComboBox_Popup) {
+            return 0;
+        }
+        return QProxyStyle::styleHint(hint, option, widget, returnData);
+    }
+};
+
+class ComboBoxPopupDelegate : public QStyledItemDelegate
+{
+public:
+    explicit ComboBoxPopupDelegate(QComboBox* combo, QObject* parent)
+        : QStyledItemDelegate(parent)
+        , m_combo(combo)
+    {}
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        if (!m_combo) {
+            return;
+        }
+
+        const QModelIndex currentIndex =
+            m_combo->model()->index(m_combo->currentIndex(), m_combo->modelColumn(), m_combo->rootModelIndex());
+        if (index != currentIndex) {
+            return;
+        }
+
+        const QColor checkColor = (option.state & QStyle::State_Selected)
+            ? option.palette.color(QPalette::HighlightedText)
+            : option.palette.color(QPalette::Text);
+        const QRect checkRect = option.rect.adjusted(option.rect.width() - 28, 0, -10, 0);
+        const QPointF p1(checkRect.left() + 3.0, checkRect.center().y() + 1.0);
+        const QPointF p2(checkRect.left() + 7.0, checkRect.center().y() + 5.0);
+        const QPointF p3(checkRect.left() + 15.0, checkRect.center().y() - 5.0);
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        painter->setPen(QPen(checkColor, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter->drawLine(p1, p2);
+        painter->drawLine(p2, p3);
+        painter->restore();
+    }
+
+private:
+    QPointer<QComboBox> m_combo;
+};
+
+class ComboBoxPopupBehaviorFilter : public QObject
+{
+public:
+    explicit ComboBoxPopupBehaviorFilter(QObject* parent = nullptr)
+        : QObject(parent)
+    {}
+
+    void installRecursively(QObject* object)
+    {
+        if (!object) {
+            return;
+        }
+        if (QComboBox* combo = qobject_cast<QComboBox*>(object)) {
+            installComboBox(combo);
+        }
+        const QObjectList children = object->children();
+        for (QObject* child : children) {
+            installRecursively(child);
+        }
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() == QEvent::ChildAdded) {
+            QPointer<QObject> child(static_cast<QChildEvent*>(event)->child());
+            QTimer::singleShot(0, this, [this, child]() {
+                installRecursively(child);
+            });
+        } else if (event->type() == QEvent::Polish || event->type() == QEvent::Show) {
+            if (QComboBox* combo = qobject_cast<QComboBox*>(watched)) {
+                installComboBox(combo);
+            } else if (QAbstractItemView* view = qobject_cast<QAbstractItemView*>(watched)) {
+                keepPopupAtTop(view);
+            }
+        }
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    void installComboBox(QComboBox* combo)
+    {
+        if (!combo || !combo->view()) {
+            return;
+        }
+
+        QAbstractItemView* view = combo->view();
+        if (!view->property("livoxComboPopupDelegateInstalled").toBool()) {
+            view->setItemDelegate(new ComboBoxPopupDelegate(combo, view));
+            view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            view->setProperty("livoxComboPopupDelegateInstalled", true);
+            view->installEventFilter(this);
+        }
+        view->setProperty("livoxComboPopupOwner", QVariant::fromValue<QObject*>(combo));
+    }
+
+    void keepPopupAtTop(QAbstractItemView* view)
+    {
+        QObject* owner = view->property("livoxComboPopupOwner").value<QObject*>();
+        QComboBox* combo = qobject_cast<QComboBox*>(owner);
+        if (!combo || combo->view() != view || combo->count() <= 0) {
+            return;
+        }
+        QTimer::singleShot(0, view, [combo, view]() {
+            if (!combo || combo->view() != view || combo->count() <= 0) {
+                return;
+            }
+            const QModelIndex firstIndex = combo->model()->index(0, combo->modelColumn(), combo->rootModelIndex());
+            view->scrollTo(firstIndex, QAbstractItemView::PositionAtTop);
+            view->viewport()->update();
+        });
+    }
+};
+
+void installComboBoxPopupBehavior(QApplication* app)
+{
+    static QPointer<ComboBoxPopupBehaviorFilter> behaviorFilter;
+    if (!app) {
+        return;
+    }
+    if (!behaviorFilter) {
+        behaviorFilter = new ComboBoxPopupBehaviorFilter(app);
+        app->installEventFilter(behaviorFilter);
+    }
+
+    const QWidgetList topLevelWidgets = QApplication::topLevelWidgets();
+    for (QWidget* widget : topLevelWidgets) {
+        behaviorFilter->installRecursively(widget);
+    }
+}
 
 void setPreferenceFont(QWidget* widget, int pointSize, QFont::Weight weight)
 {
@@ -564,7 +726,7 @@ void LivoxViewerWindow::applyUiTheme()
         return;
     }
 
-    app->setStyle(QStyleFactory::create("Fusion"));
+    app->setStyle(new ComboBoxPopupStyle(QStyleFactory::create("Fusion")));
     QPalette palette;
 
     const bool darkTheme = shouldUseDarkTheme();
@@ -602,6 +764,7 @@ void LivoxViewerWindow::applyUiTheme()
 
     app->setPalette(palette);
     app->setStyleSheet(darkTheme ? darkThemeControlStyleSheet() : QString());
+    installComboBoxPopupBehavior(app);
     ThemeIconUtils::refreshObject(this);
     refreshApplicationStyles();
     if (imuState.visualizationDialog) {
@@ -889,9 +1052,9 @@ void LivoxViewerWindow::showPreferencesDialog()
     gridTypeCombo->addItem(QStringLiteral("方形 + 同心圆"), int(PointCloudView::GridConfig::SquareAndConcentricCircles));
     const int gridTypeIndex = gridTypeCombo->findData(int(config.type));
     gridTypeCombo->setCurrentIndex(gridTypeIndex >= 0 ? gridTypeIndex : 0);
-    gridTypeCombo->setMinimumWidth(180);
-    gridTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-    usePreferenceControlColumn(gridTypeCombo, 220);
+    gridTypeCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    gridTypeCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    usePreferenceControlColumn(gridTypeCombo, kPreferenceComboBoxWidth);
 
     auto createLegendSpin = [&dlg](double minValue, double maxValue, double value) {
         QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
