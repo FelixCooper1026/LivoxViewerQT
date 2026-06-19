@@ -328,8 +328,14 @@ void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, 
         return;
     }
 
+    const int totalCount = points.size();
+    const int validCount = totalCount - zeroPointCount;
+    lastSelectionCount = totalCount;
     if (selectionSummaryLabel) {
-        selectionSummaryLabel->setText("框选点云表格加载中...");
+        selectionSummaryLabel->setText(QString("框选点云个数: %1\n零点个数: %2\n总数: %3")
+                                       .arg(validCount)
+                                       .arg(zeroPointCount)
+                                       .arg(totalCount));
     }
 
     const QPointer<LivoxViewerWindow> guard(this);
@@ -349,15 +355,6 @@ void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, 
                 return;
             }
 
-            const int totalCount = result.rows.size();
-            const int validCount = totalCount - result.zeroPointCount;
-            if (window->selectionSummaryLabel) {
-                window->selectionSummaryLabel->setText(QString("框选点云个数: %1\n零点个数: %2\n总数: %3")
-                                                       .arg(validCount)
-                                                       .arg(result.zeroPointCount)
-                                                       .arg(totalCount));
-            }
-            window->lastSelectionCount = totalCount;
             model->setRows(std::move(result.rows), result.useSphericalColumns);
             window->pointCloudView->update();
         }, Qt::QueuedConnection);
