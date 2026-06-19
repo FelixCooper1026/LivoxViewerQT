@@ -92,7 +92,7 @@ public:
 
     void setCrossSectionModeEnabled(bool enabled);
     bool isCrossSectionModeEnabled() const { return m_crossSectionState.enabled; }
-    QVector<PointCloudPoint> currentCrossSectionPoints() const { return m_crossSectionState.clippedPoints; }
+    QVector<PointCloudPoint> currentCrossSectionPoints() const;
     void resetCrossSectionBoxToCurrentCloud();
     void setCrossSectionControlsVisible(bool visible);
     bool crossSectionControlsVisible() const { return m_crossSectionState.controlsVisible; }
@@ -149,7 +149,9 @@ private:
     bool pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius = 10);
     void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
     void uploadPointCloudSegment(PointCloudSegment& segment);
+    void uploadPointCloudSegmentClip(PointCloudSegment& segment);
     void destroyPointCloudSegments();
+    bool pointCloudSegmentSourceBounds(QVector3D& minPoint, QVector3D& maxPoint) const;
     void forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const;
     void updateCrossSectionPointCloud();
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
@@ -188,12 +190,20 @@ private:
     QVector<PointCloudPoint> m_points;
     struct PointCloudSegment {
         QVector<PointCloudPoint> points;
+        QVector<PointCloudPoint> clippedPoints;
         QOpenGLBuffer vbo;
         QOpenGLVertexArrayObject vao;
+        QOpenGLBuffer clippedVbo;
+        QOpenGLVertexArrayObject clippedVao;
         qsizetype bufferCapacityBytes = 0;
+        qsizetype clippedBufferCapacityBytes = 0;
         int pointCount = 0;
+        int clippedPointCount = 0;
 
-        PointCloudSegment() : vbo(QOpenGLBuffer::VertexBuffer) {}
+        PointCloudSegment()
+            : vbo(QOpenGLBuffer::VertexBuffer)
+            , clippedVbo(QOpenGLBuffer::VertexBuffer)
+        {}
     };
     std::deque<std::unique_ptr<PointCloudSegment>> m_pointCloudSegments;
     QMutex m_pointsMutex;

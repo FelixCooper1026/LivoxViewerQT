@@ -403,8 +403,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 
     const bool useSegmentedSlidingWindow =
         playbackState.mode == Lvx2PlaybackMode::SlidingWindow &&
-        pointCloudView &&
-        !pointCloudView->isCrossSectionModeEnabled();
+        pointCloudView;
 
     if (useSegmentedSlidingWindow) {
         const bool canIncrementalAdvance =

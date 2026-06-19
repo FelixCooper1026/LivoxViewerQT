@@ -442,6 +442,21 @@ void considerHit(HitResult& best, HandleType handle, float distance)
     }
 }
 
+void initializeBoxGeometry(State& state, const QVector3D& minPoint, const QVector3D& maxPoint)
+{
+    state.box.center = (minPoint + maxPoint) * 0.5f;
+    state.box.halfExtents = (maxPoint - minPoint) * 0.5f;
+    state.box.halfExtents.setX(std::max(kMinHalfExtent, state.box.halfExtents.x()));
+    state.box.halfExtents.setY(std::max(kMinHalfExtent, state.box.halfExtents.y()));
+    state.box.halfExtents.setZ(std::max(kMinHalfExtent, state.box.halfExtents.z()));
+    state.box.orientation = QQuaternion();
+    state.enabled = true;
+    state.initialized = true;
+    state.dragging = false;
+    state.activeHandle = HandleType::None;
+    state.hoverHandle = HandleType::None;
+}
+
 } // namespace
 
 bool initializeBox(State& state, const QVector<PointCloudPoint>& points)
@@ -464,18 +479,17 @@ bool initializeBox(State& state, const QVector<PointCloudPoint>& points)
         maxPoint.setZ(std::max(maxPoint.z(), point.z));
     }
 
-    state.box.center = (minPoint + maxPoint) * 0.5f;
-    state.box.halfExtents = (maxPoint - minPoint) * 0.5f;
-    state.box.halfExtents.setX(std::max(kMinHalfExtent, state.box.halfExtents.x()));
-    state.box.halfExtents.setY(std::max(kMinHalfExtent, state.box.halfExtents.y()));
-    state.box.halfExtents.setZ(std::max(kMinHalfExtent, state.box.halfExtents.z()));
-    state.box.orientation = QQuaternion();
-    state.enabled = true;
-    state.initialized = true;
+    initializeBoxGeometry(state, minPoint, maxPoint);
     state.sourcePoints = points;
     state.clippedPoints = points;
-    state.dragging = false;
-    state.activeHandle = HandleType::None;
+    return true;
+}
+
+bool initializeBoxFromBounds(State& state, const QVector3D& minPoint, const QVector3D& maxPoint)
+{
+    initializeBoxGeometry(state, minPoint, maxPoint);
+    state.sourcePoints.clear();
+    state.clippedPoints.clear();
     return true;
 }
 
