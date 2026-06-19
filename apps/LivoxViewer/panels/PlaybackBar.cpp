@@ -8,13 +8,32 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.bar->setObjectName(QStringLiteral("PlaybackOverlayBar"));
         playbackState.bar->setAttribute(Qt::WA_StyledBackground, true);
         playbackState.bar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        const QColor playbackBg = playbackState.bar->palette().window().color();
+        const QColor playbackBorder = playbackState.bar->palette().mid().color();
+        const QColor playbackText = playbackState.bar->palette().windowText().color();
+
+        auto rgbaString = [](const QColor& color, int alpha) {
+            return QStringLiteral("rgba(%1, %2, %3, %4)")
+                .arg(color.red())
+                .arg(color.green())
+                .arg(color.blue())
+                .arg(alpha);
+        };
+
         playbackState.bar->setStyleSheet(QStringLiteral(
             "QWidget#PlaybackOverlayBar {"
-            "  background: palette(window);"
-            "  border: 1px solid palette(mid);"
+            "  background-color: %1;"
+            "  border: 1px solid %2;"
             "  border-radius: 6px;"
             "}"
-            "QWidget#PlaybackOverlayBar QLabel { color: palette(window-text); }"));
+            "QWidget#PlaybackOverlayBar QLabel {"
+            "  color: %3;"
+            "  background: transparent;"
+            "}").arg(
+                rgbaString(playbackBg, 150),      // 0 全透明，255 不透明
+                rgbaString(playbackBorder, 150),
+                playbackText.name()
+            ));
         QVBoxLayout* playbackRootLayout = new QVBoxLayout(playbackState.bar);
         playbackRootLayout->setContentsMargins(8, 4, 8, 4);
         playbackRootLayout->setSpacing(2);
