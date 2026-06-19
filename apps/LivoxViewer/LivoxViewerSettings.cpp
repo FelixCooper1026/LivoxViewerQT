@@ -111,10 +111,17 @@ public:
 
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setPen(QPen(checkColor, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter->setPen(QPen(checkColor, 1.2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         painter->drawLine(p1, p2);
         painter->drawLine(p2, p3);
         painter->restore();
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        size.rwidth() += 28;
+        return size;
     }
 
 private:
@@ -168,6 +175,7 @@ private:
         }
 
         QAbstractItemView* view = combo->view();
+        view->setMinimumWidth(combo->width() + 28);
         if (!view->property("livoxComboPopupDelegateInstalled").toBool()) {
             view->setItemDelegate(new ComboBoxPopupDelegate(combo, view));
             view->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -188,6 +196,7 @@ private:
             if (!combo || combo->view() != view || combo->count() <= 0) {
                 return;
             }
+            view->setMinimumWidth(combo->width() + 28);
             const QModelIndex firstIndex = combo->model()->index(0, combo->modelColumn(), combo->rootModelIndex());
             view->scrollTo(firstIndex, QAbstractItemView::PositionAtTop);
             view->viewport()->update();
