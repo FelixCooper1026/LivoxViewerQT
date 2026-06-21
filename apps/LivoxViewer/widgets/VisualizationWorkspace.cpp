@@ -51,7 +51,7 @@ protected:
                 continue;
             }
             const int x = rect.right();
-            painter.drawLine(QPoint(x, rect.top() + 7), QPoint(x, rect.bottom() - 7));
+            painter.drawLine(QPoint(x, rect.top() + 5), QPoint(x, rect.bottom() - 5));
         }
     }
 
@@ -90,8 +90,8 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     QWidget* tabRow = new QWidget(this);
     tabRow->setObjectName(QStringLiteral("VisualizationTabRow"));
     QHBoxLayout* tabLayout = new QHBoxLayout(tabRow);
-    tabLayout->setContentsMargins(8, 4, 8, 0);
-    tabLayout->setSpacing(6);
+    tabLayout->setContentsMargins(0, 2, 8, 0);
+    tabLayout->setSpacing(4);
 
     m_tabBar = new VisualizationTabBar(tabRow);
     m_tabBar->setDocumentMode(true);
@@ -111,7 +111,8 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     for (QToolButton* button : {m_singleButton, m_horizontalButton, m_verticalButton}) {
         button->setCheckable(true);
         button->setAutoRaise(true);
-        button->setIconSize(QSize(18, 18));
+        button->setIconSize(QSize(16, 16));
+        button->setFixedSize(24, 22);
         splitButtonGroup->addButton(button);
         tabLayout->addWidget(button);
     }
@@ -164,12 +165,12 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     connect(m_verticalButton, &QToolButton::clicked, this, [this]() { setSplitMode(SplitMode::Vertical); });
 
     setStyleSheet(QStringLiteral(
-        "QWidget#VisualizationTabRow { background: palette(button); }"
+        "QWidget#VisualizationTabRow { background: palette(window); }"
         "QTabBar { background: transparent; }"
         "QTabBar::tab-bar { left: 0px; }"
         "QTabBar::tab {"
-        "  min-width: 136px; max-width: 260px; min-height: 24px;"
-        "  padding: 3px 10px 3px 14px;"
+        "  min-width: 128px; max-width: 240px; min-height: 22px;"
+        "  padding: 2px 8px 2px 12px;"
         "  margin-right: -1px;"
         "  border: 1px solid palette(mid);"
         "  border-bottom: none;"
@@ -179,19 +180,22 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         "  color: palette(window-text);"
         "}"
         "QTabBar::tab:!selected {"
-        "  margin-top: 5px;"
-        "  margin-bottom: 4px;"
-        "  min-height: 18px;"
-        "  background: palette(button);"
+        "  margin-top: 3px;"
+        "  margin-bottom: 2px;"
+        "  min-height: 16px;"
+        "  background: palette(window);"
         "  border-color: transparent;"
         "  color: palette(mid);"
         "}"
         "QTabBar::tab:!selected:hover {"
-        "  margin-top: 0px;"
-        "  margin-bottom: 0px;"
-        "  min-height: 24px;"
-        "  background: palette(window);"
-        "  border-color: transparent;"
+        "  margin-left: 2px;"
+        "  margin-right: 2px;"
+        "  margin-top: 2px;"
+        "  margin-bottom: 2px;"
+        "  min-height: 20px;"
+        "  background: #d8d8d8;"
+        "  border: 1px solid transparent;"
+        "  border-radius: 10px;"
         "  color: palette(window-text);"
         "}"
         "QTabBar::tab:selected {"
