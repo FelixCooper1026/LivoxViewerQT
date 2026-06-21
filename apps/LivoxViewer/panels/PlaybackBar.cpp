@@ -49,7 +49,7 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
         playbackState.progressSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         playbackState.progressSlider->installEventFilter(this);
         playbackState.speedCombo = new QComboBox(playbackState.bar);
-        playbackState.speedCombo->addItems({"x0.1", "x0.5", "x1.0", "x2.0", "x4.0", "x8.0"});
+        playbackState.speedCombo->addItems({"x0.1", "x0.5", "x1.0", "x2.0", "x4.0", "x8.0", "x16.0"});
         playbackState.speedCombo->setCurrentText("x1.0");
         playbackState.modeCombo = new QComboBox(playbackState.bar);
         playbackState.modeCombo->addItems({"逐帧播放", "滑窗播放"});

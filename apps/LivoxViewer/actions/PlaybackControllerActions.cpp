@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QMessageBox>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QStyleOptionSlider>
 #include <QToolButton>
@@ -638,6 +639,11 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         playbackState.progressSlider->setEnabled(playbackState.active && !playbackState.loading && playbackState.frameCount > 0);
         playbackState.progressSlider->setValue(std::clamp(displayFrameIndex, 0, std::max(0, displayFrameCount - 1)));
         playbackState.updatingSlider = false;
+    }
+    if (playbackState.speedCombo) {
+        QSignalBlocker blocker(playbackState.speedCombo);
+        playbackState.speedCombo->setEnabled(playbackState.active && !playbackState.loading);
+        playbackState.speedCombo->setCurrentText(QStringLiteral("x%1").arg(playbackState.speed, 0, 'f', 1));
     }
     if (playbackState.modeCombo) {
         playbackState.modeCombo->setEnabled(playbackState.active && !playbackState.loading);
