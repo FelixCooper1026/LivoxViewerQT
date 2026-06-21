@@ -228,11 +228,11 @@ public:
     {
         setObjectName("ViewerToolbarGroup");
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-        setFixedHeight(fontMetrics().height() * 4 + 6);
+        setFixedHeight(fontMetrics().height() * 3 + 8);
 
         QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(8, 5, 8, 0);
-        root->setSpacing(5);
+        root->setContentsMargins(8, 2, 8, 0);
+        root->setSpacing(8);
 
         m_controls = new QWidget(this);
         m_controlsLayout = new QHBoxLayout(m_controls);
@@ -253,7 +253,7 @@ public:
 
         QWidget* titleRow = new QWidget(this);
         QHBoxLayout* titleLayout = new QHBoxLayout(titleRow);
-        titleLayout->setContentsMargins(0, 2, 0, 0);
+        titleLayout->setContentsMargins(0, 0, 0, 0);
         titleLayout->setSpacing(3);
         titleLayout->addStretch();
 
@@ -262,7 +262,7 @@ public:
         titleFont.setPointSizeF(std::max(7.0, titleFont.pointSizeF() * 0.9));
         m_title->setFont(titleFont);
         m_title->setAlignment(Qt::AlignCenter);
-        titleRow->setFixedHeight(m_title->sizeHint().height() + 5);
+        titleRow->setFixedHeight(m_title->sizeHint().height() + 2);
         titleLayout->addWidget(m_title);
 
         titleLayout->addStretch();
@@ -492,10 +492,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 {
     QWidget* viewerToolbar = new QWidget(parent);
     viewerToolbar->setObjectName("ViewerToolbar");
-    viewerToolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    viewerToolbar->setMinimumHeight(fontMetrics().height() * 4);
+    viewerToolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    viewerToolbar->setFixedHeight(fontMetrics().height() * 3 + 16);
     QVBoxLayout* viewerLayout = new QVBoxLayout(viewerToolbar);
-    viewerLayout->setContentsMargins(8, 4, 8, 4);
+    viewerLayout->setContentsMargins(8, 2, 8, 2);
     viewerLayout->setSpacing(0);
 
     QWidget* toolbarContent = new QWidget(viewerToolbar);
@@ -507,7 +507,6 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     const QSize toolbarIconSize(fontMetrics().height() + 8, fontMetrics().height() + 8);
 
     ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar);
-    displayGroup->setLeadingSeparatorVisible(true);
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
     ThemeIconUtils::setThemedSvgIcon(gridAction, QStringLiteral(":/icons/grid.svg"));
     gridAction->setCheckable(true);

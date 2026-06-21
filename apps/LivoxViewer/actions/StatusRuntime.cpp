@@ -4,6 +4,13 @@ void LivoxViewerWindow::createStatusBarAndTimers()
 {
     // 状态栏
     QStatusBar* statusBar = new QStatusBar(this);
+    statusBar->setStyleSheet(QStringLiteral(
+        "QStatusBar {"
+        "  border-top: 1px solid palette(mid);"
+        "  background: palette(window);"
+        "}"
+        "QStatusBar::item { border: none; }"
+    ));
     setStatusBar(statusBar);
     statusLabelBar = new QLabel("就绪", statusBar);
     statusLabelBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);

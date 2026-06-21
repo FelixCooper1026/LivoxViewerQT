@@ -50,7 +50,7 @@
 
 namespace {
 
-constexpr int kDockStateVersion = 2;
+constexpr int kDockStateVersion = 4;
 constexpr int kPreferenceControlColumnWidth = 115;
 constexpr int kPreferenceComboBoxWidth = 115;
 constexpr int kPreferenceSpinBoxWidth = 115;
@@ -619,9 +619,21 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
 
     // 恢复窗口布局与几何
     QSettings settings("Livox", "LivoxViewerQT");
+    restoreGeometry(settings.value("geometry").toByteArray());
     if (settings.value("layout/version", 0).toInt() == kDockStateVersion) {
-        restoreGeometry(settings.value("geometry").toByteArray());
         restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
+    }
+    if (networkDock && lidarDevicesDock) {
+        removeDockWidget(networkDock);
+        addDockWidget(Qt::LeftDockWidgetArea, networkDock);
+        splitDockWidget(networkDock, lidarDevicesDock, Qt::Vertical);
+        if (imuDock) {
+            tabifyDockWidget(lidarDevicesDock, imuDock);
+        }
+        if (lvx2FileDock) {
+            tabifyDockWidget(lidarDevicesDock, lvx2FileDock);
+        }
+        networkDock->show();
     }
     if (lvx2FileDock) {
         lvx2FileDock->hide();
@@ -629,6 +641,57 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     if (attrDock) {
         attrDock->hide();
     }
+
+    QTimer::singleShot(0, this, [this]() {
+        for (QTabBar* tabBar : findChildren<QTabBar*>()) {
+            bool isDeviceDockTabs = false;
+            for (int index = 0; index < tabBar->count(); ++index) {
+                const QString text = tabBar->tabText(index);
+                if (text == QStringLiteral("设备") ||
+                    text == QStringLiteral("IMU数据") ||
+                    text == QStringLiteral("文件信息")) {
+                    isDeviceDockTabs = true;
+                    break;
+                }
+            }
+            if (!isDeviceDockTabs) {
+                continue;
+            }
+
+            tabBar->setObjectName(QStringLiteral("DeviceDockTabBar"));
+            tabBar->setDocumentMode(true);
+            tabBar->setDrawBase(false);
+            tabBar->setExpanding(false);
+            tabBar->setElideMode(Qt::ElideNone);
+            tabBar->setUsesScrollButtons(false);
+            tabBar->setStyleSheet(QStringLiteral(
+                "QTabBar#DeviceDockTabBar {"
+                "  qproperty-drawBase: false;"
+                "  border: none;"
+                "  background: transparent;"
+                "}"
+                "QTabBar#DeviceDockTabBar::base {"
+                "  border: none;"
+                "  background: transparent;"
+                "}"
+                "QTabBar#DeviceDockTabBar::tab {"
+                "  border: none;"
+                "  border-bottom: 2px solid transparent;"
+                "  background: transparent;"
+                "  padding: 5px 8px;"
+                "  margin-right: 2px;"
+                "}"
+                "QTabBar#DeviceDockTabBar::tab:selected {"
+                "  color: #2f8cff;"
+                "  border-bottom-color: #2f8cff;"
+                "  font-weight: 600;"
+                "}"
+                "QTabBar#DeviceDockTabBar::tab:!selected {"
+                "  color: palette(window-text);"
+                "}"
+            ));
+        }
+    });
 }
 
 LivoxViewerWindow::~LivoxViewerWindow()

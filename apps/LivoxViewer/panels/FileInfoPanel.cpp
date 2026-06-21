@@ -8,6 +8,18 @@ void LivoxViewerWindow::createFileInfoPanel()
     lvx2FileDock = new QDockWidget(QStringLiteral("文件信息"), this);
     lvx2FileDock->setObjectName("Lvx2FileDock");
     lvx2FileDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    lvx2FileDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#Lvx2FileDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#Lvx2FileDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* hiddenFileTitleBar = new QWidget(lvx2FileDock);
+    hiddenFileTitleBar->setFixedHeight(0);
+    lvx2FileDock->setTitleBarWidget(hiddenFileTitleBar);
+
     QWidget* lvx2FileContent = new QWidget(lvx2FileDock);
     QVBoxLayout* lvx2FileLayout = new QVBoxLayout(lvx2FileContent);
     lvx2FileLayout->setContentsMargins(8, 8, 8, 8);

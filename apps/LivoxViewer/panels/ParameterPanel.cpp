@@ -143,19 +143,22 @@ QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidge
 {
     QFrame* section = new QFrame(parent);
     section->setObjectName("StatusInfoSection");
-    section->setFrameShape(QFrame::StyledPanel);
+    section->setFrameShape(QFrame::NoFrame);
     section->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    section->setStyleSheet("QFrame#StatusInfoSection { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+    section->setStyleSheet(
+        "QFrame#StatusInfoSection {"
+        "  border: 0;"
+        "  border-bottom: 1px solid palette(mid);"
+        "  background: transparent;"
+        "}"
+    );
 
     QHBoxLayout* layout = new QHBoxLayout(section);
-    layout->setContentsMargins(8, 3, 8, 3);
-    layout->setSpacing(8);
+    layout->setContentsMargins(0, 7, 0, 7);
+    layout->setSpacing(12);
 
     QLabel* titleLabel = new QLabel(title, section);
-    QFont titleFont = titleLabel->font();
-    titleFont.setBold(true);
-    titleLabel->setFont(titleFont);
-    titleLabel->setMinimumWidth(titleLabel->fontMetrics().horizontalAdvance("异常时间过滤") + 6);
+    titleLabel->setMinimumWidth(titleLabel->fontMetrics().horizontalAdvance("时间同步类型") + 12);
     titleLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
     valueLabel->setParent(section);
@@ -164,9 +167,9 @@ QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidge
     valueLabel->setTextFormat(Qt::PlainText);
     valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     valueLabel->setMinimumWidth(0);
-    valueLabel->setMinimumHeight(22);
+    valueLabel->setMinimumHeight(20);
     valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    valueLabel->setStyleSheet("QLabel { background: transparent; color: palette(window-text); padding: 2px 0; border: none; }");
+    valueLabel->setStyleSheet("QLabel { background: transparent; color: palette(mid); padding: 0; border: none; }");
 
     layout->addWidget(titleLabel, 0, Qt::AlignVCenter);
     layout->addWidget(valueLabel, 1, Qt::AlignVCenter);
@@ -205,6 +208,18 @@ void LivoxViewerWindow::createParameterPanel()
     paramsDock = new QDockWidget("参数", this);
     paramsDock->setObjectName("ParamsDock");
     paramsDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    paramsDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#ParamsDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#ParamsDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* hiddenParamsTitleBar = new QWidget(paramsDock);
+    hiddenParamsTitleBar->setFixedHeight(0);
+    paramsDock->setTitleBarWidget(hiddenParamsTitleBar);
+
     QWidget* paramsDockContent = new QWidget(paramsDock);
     QVBoxLayout* paramsOuterLayout = new QVBoxLayout(paramsDockContent);
     paramsOuterLayout->setContentsMargins(8, 8, 8, 8);
@@ -214,6 +229,18 @@ void LivoxViewerWindow::createParameterPanel()
     attrDock = new QDockWidget("点属性", this);
     attrDock->setObjectName("AttrDock");
     attrDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    attrDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#AttrDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#AttrDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* hiddenAttrTitleBar = new QWidget(attrDock);
+    hiddenAttrTitleBar->setFixedHeight(0);
+    attrDock->setTitleBarWidget(hiddenAttrTitleBar);
+
     QWidget* attrContent = new QWidget(attrDock);
     QVBoxLayout* attrLayout = new QVBoxLayout(attrContent);
     attrLayout->setContentsMargins(8, 8, 8, 8);
@@ -274,8 +301,43 @@ void LivoxViewerWindow::createParameterPanel()
 
     // 参数标签
     paramTabWidget = new QTabWidget(paramsDockContent);
+    paramTabWidget->setObjectName(QStringLiteral("ParameterTabs"));
     paramTabWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     paramTabWidget->setMinimumWidth(0);
+    paramTabWidget->setDocumentMode(true);
+    paramTabWidget->tabBar()->setDrawBase(false);
+    paramTabWidget->tabBar()->setExpanding(false);
+    paramTabWidget->tabBar()->setElideMode(Qt::ElideNone);
+    paramTabWidget->tabBar()->setUsesScrollButtons(false);
+    paramTabWidget->setStyleSheet(QStringLiteral(
+        "QTabWidget#ParameterTabs::pane {"
+        "  border: none;"
+        "}"
+        "QTabWidget#ParameterTabs QTabBar {"
+        "  qproperty-drawBase: false;"
+        "  border: none;"
+        "  background: transparent;"
+        "}"
+        "QTabWidget#ParameterTabs QTabBar::base {"
+        "  border: none;"
+        "  background: transparent;"
+        "}"
+        "QTabWidget#ParameterTabs QTabBar::tab {"
+        "  border: none;"
+        "  border-bottom: 2px solid transparent;"
+        "  background: transparent;"
+        "  padding: 5px 8px;"
+        "  margin-right: 2px;"
+        "}"
+        "QTabWidget#ParameterTabs QTabBar::tab:selected {"
+        "  color: #2f8cff;"
+        "  border-bottom-color: #2f8cff;"
+        "  font-weight: 600;"
+        "}"
+        "QTabWidget#ParameterTabs QTabBar::tab:!selected {"
+        "  color: palette(window-text);"
+        "}"
+    ));
 
     // 基本配置页
     QWidget* basicTab = new QWidget();
@@ -413,9 +475,9 @@ void LivoxViewerWindow::createParameterPanel()
         connect(applyButton, &QPushButton::clicked, [this, key, ipEdit, portEdit]() { applyHostIpConfig(key, ipEdit->text(), portEdit->value()); });
     };
 
-    createTargetRow("点云数据", kKeyLidarPointDataHostIpCfg, 57000, "应用点云数据发送目标 IP 和端口");
-    createTargetRow("IMU数据", kKeyLidarImuHostIpCfg, 57000, "应用 IMU 数据发送目标 IP 和端口");
-    createTargetRow("推送信息", kKeyStateInfoHostIpCfg, 57000, "应用状态/推送信息发送目标 IP 和端口");
+    createTargetRow("点云数据", kKeyLidarPointDataHostIpCfg, 56301, "应用点云数据发送目标 IP 和端口");
+    createTargetRow("IMU数据", kKeyLidarImuHostIpCfg, 56401, "应用 IMU 数据发送目标 IP 和端口");
+    createTargetRow("推送信息", kKeyStateInfoHostIpCfg, 56201, "应用状态/推送信息发送目标 IP 和端口");
     connect(syncTargetIpButton, &QPushButton::clicked, this, [this, targetIpEdits]() {
         const QString selectedName = networkInterfaceCombo
             ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
@@ -631,8 +693,9 @@ void LivoxViewerWindow::createParameterPanel()
     statusTab->setMinimumWidth(0);
     statusTab->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     QVBoxLayout* statusLayout = new QVBoxLayout(statusTab);
-    statusLayout->setSpacing(4);
+    statusLayout->setSpacing(0);
     statusLayout->setContentsMargins(8, 8, 8, 8);
+
     for (uint16_t key : statusKeysVec) {
         QLabel* valueLabel = new QLabel("无信息");
         QString statusTitle;
@@ -659,14 +722,22 @@ void LivoxViewerWindow::createParameterPanel()
     }
     statusLayout->addStretch();
 
-    paramTabWidget->insertTab(0, statusTab, "状态信息");
+    paramTabWidget->insertTab(0, statusTab, "设备参数");
     paramTabWidget->setCurrentIndex(0);
 
     paramsOuterLayout->addWidget(paramTabWidget);
     paramsDockContent->setLayout(paramsOuterLayout);
 
     QScrollArea* paramsScroll = new QScrollArea(paramsDock);
+    paramsScroll->setObjectName(QStringLiteral("ParamsDockScroll"));
     paramsScroll->setWidgetResizable(true);
+    paramsScroll->setFrameShape(QFrame::NoFrame);
+    paramsScroll->setStyleSheet(QStringLiteral(
+        "QScrollArea#ParamsDockScroll {"
+        "  border: 0;"
+        "  background: palette(window);"
+        "}"
+    ));
     paramsScroll->setWidget(paramsDockContent);
     paramsScroll->setSizeAdjustPolicy(QAbstractScrollArea::AdjustToContents);
     paramsDock->setWidget(paramsScroll);

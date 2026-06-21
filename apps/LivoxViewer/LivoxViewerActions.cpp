@@ -2,6 +2,7 @@
 
 #include <QDateTime>
 #include <QDebug>
+#include <QScrollBar>
 
 namespace {
 
@@ -108,5 +109,8 @@ void LivoxViewerWindow::logMessage(const QString& message)
     QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
     QString logEntry = QString("[%1] %2").arg(timestamp).arg(message);
     logText->append(logEntry);
+    if (logText->property("autoScroll").toBool()) {
+        logText->verticalScrollBar()->setValue(logText->verticalScrollBar()->maximum());
+    }
     qDebug() << logEntry;
 }

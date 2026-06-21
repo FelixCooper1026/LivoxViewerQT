@@ -258,6 +258,7 @@ private:
     QLabel* statusLabelBar;
 
     // Docks and toolbar
+    QDockWidget* networkDock = nullptr;
     QDockWidget* lidarDevicesDock;
     QDockWidget* paramsDock;
     QDockWidget* imuDock = nullptr;

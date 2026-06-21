@@ -9,6 +9,18 @@ void LivoxViewerWindow::createImuPanel()
     imuDock = new QDockWidget("IMU数据", this);
     imuDock->setObjectName("ImuDock");
     imuDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    imuDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#ImuDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#ImuDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* hiddenImuTitleBar = new QWidget(imuDock);
+    hiddenImuTitleBar->setFixedHeight(0);
+    imuDock->setTitleBarWidget(hiddenImuTitleBar);
+
     QWidget* imuContent = new QWidget(imuDock);
     QVBoxLayout* imuLayout = new QVBoxLayout(imuContent);
     imuLayout->setContentsMargins(8, 8, 8, 8);
@@ -72,6 +84,7 @@ void LivoxViewerWindow::createImuPanel()
 
     QScrollArea* imuScroll = new QScrollArea(imuDock);
     imuScroll->setWidgetResizable(true);
+    imuScroll->setFrameShape(QFrame::NoFrame);
     imuScroll->setWidget(imuContent);
     imuDock->setWidget(imuScroll);
     imuDock->setMinimumWidth(0);

@@ -21,8 +21,8 @@ constexpr int kDevicesDockMinWidth = 220;
 constexpr int kDevicesDockMaxWidth = 320;
 constexpr int kParamsDockMinWidth = 320;
 constexpr int kParamsDockMaxWidth = 460;
-constexpr int kLogDockMinHeight = 150;
-constexpr int kLogDockMaxHeight = 260;
+constexpr int kLogDockMinHeight = 110;
+constexpr int kLogDockMaxHeight = 180;
 
 void clearLayoutItems(QLayout* layout)
 {
@@ -64,6 +64,47 @@ QString hmsDisplayColor(int severity)
     case 4: return darkTheme ? QStringLiteral("#ff4d6d") : QStringLiteral("#8b0000");
     default: return QApplication::palette().color(QPalette::WindowText).name();
     }
+}
+
+QWidget* createDeviceEmptyState(QWidget* parent, const std::function<void()>& refreshCallback)
+{
+    QWidget* emptyState = new QWidget(parent);
+    emptyState->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QVBoxLayout* layout = new QVBoxLayout(emptyState);
+    layout->setContentsMargins(12, 48, 12, 48);
+    layout->setSpacing(8);
+    layout->setAlignment(Qt::AlignHCenter);
+
+    QLabel* iconLabel = new QLabel(QStringLiteral("▱"), emptyState);
+    QFont iconFont = iconLabel->font();
+    iconFont.setPointSize(iconFont.pointSize() + 28);
+    iconFont.setWeight(QFont::Light);
+    iconLabel->setFont(iconFont);
+    iconLabel->setAlignment(Qt::AlignCenter);
+    iconLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+
+    QLabel* titleLabel = new QLabel(QStringLiteral("未发现设备"), emptyState);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    titleLabel->setAlignment(Qt::AlignCenter);
+
+    QLabel* hintLabel = new QLabel(QStringLiteral("请选择网卡或刷新"), emptyState);
+    hintLabel->setAlignment(Qt::AlignCenter);
+    hintLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
+
+    QPushButton* refreshButton = new QPushButton(QStringLiteral("刷新"), emptyState);
+    refreshButton->setFixedWidth(96);
+    refreshButton->setCursor(Qt::PointingHandCursor);
+    QObject::connect(refreshButton, &QPushButton::clicked, emptyState, refreshCallback);
+
+    layout->addWidget(iconLabel);
+    layout->addWidget(titleLabel);
+    layout->addWidget(hintLabel);
+    layout->addSpacing(14);
+    layout->addWidget(refreshButton, 0, Qt::AlignHCenter);
+    return emptyState;
 }
 
 class RealtimeDeviceCard : public QFrame
@@ -148,12 +189,20 @@ void LivoxViewerWindow::initializeUserInterface()
     connect(visualizationWorkspace, &VisualizationWorkspace::tabCloseRequested,
             this, &LivoxViewerWindow::closeVisualizationTab);
 
-    // 顶部可视化功能栏（两行）
-    QWidget* viewerToolbar = createViewerToolbar(centralContainer);
+    // 顶部可视化功能栏独占整行，左右 Dock 从点云区域开始对齐。
+    mainToolBar = new QToolBar(QStringLiteral("工具栏"), this);
+    mainToolBar->setObjectName(QStringLiteral("MainToolBar"));
+    mainToolBar->setMovable(false);
+    mainToolBar->setFloatable(false);
+    mainToolBar->setAllowedAreas(Qt::TopToolBarArea);
+    mainToolBar->setContentsMargins(0, 0, 0, 0);
+    QWidget* viewerToolbar = createViewerToolbar(mainToolBar);
+    mainToolBar->addWidget(viewerToolbar);
+    mainToolBar->setFixedHeight(viewerToolbar->height() + 4);
+    addToolBar(Qt::TopToolBarArea, mainToolBar);
 
     createPlaybackBar(visualizationWorkspace);
 
-    centralLayout->addWidget(viewerToolbar);
     centralLayout->addWidget(visualizationWorkspace, 1);
     setCentralWidget(centralContainer);
     resize(defaultMainWindowSize());
@@ -180,6 +229,12 @@ void LivoxViewerWindow::initializeUserInterface()
     createFileInfoPanel();
     createLogPanel();
 
+    setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
+    setTabPosition(Qt::RightDockWidgetArea, QTabWidget::North);
+    setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+    setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+
+    networkDock->setMinimumWidth(kDevicesDockMinWidth);
     lidarDevicesDock->setMinimumWidth(kDevicesDockMinWidth);
     imuDock->setMinimumWidth(kDevicesDockMinWidth);
     lvx2FileDock->setMinimumWidth(kDevicesDockMinWidth);
@@ -189,7 +244,7 @@ void LivoxViewerWindow::initializeUserInterface()
     // 初始布局尺寸（近似 CloudCompare）：左侧窄、右侧中、底部适中
     const int devicesDockWidth = preferredDockWidth(width(), 16, kDevicesDockMinWidth, kDevicesDockMaxWidth);
     const int paramsDockWidth = preferredDockWidth(width(), 24, kParamsDockMinWidth, kParamsDockMaxWidth);
-    const int logDockHeight = qMin(kLogDockMaxHeight, qMax(kLogDockMinHeight, height() / 4));
+    const int logDockHeight = qMin(kLogDockMaxHeight, qMax(kLogDockMinHeight, height() / 6));
     resizeDocks({lidarDevicesDock, paramsDock}, {devicesDockWidth, paramsDockWidth}, Qt::Horizontal);
     resizeDocks({logDock}, {logDockHeight}, Qt::Vertical);
     lidarDevicesDock->raise();
@@ -250,6 +305,9 @@ void LivoxViewerWindow::rebuildRealtimeDeviceCards()
 
     QStringList signature;
     signature.reserve(devices.size());
+    if (devices.isEmpty()) {
+        signature.append(QStringLiteral("__empty__"));
+    }
     for (const LidarDeviceInfo& device : devices) {
         const bool active = hasCurrentLidarHandle && currentLidarHandle == device.handle;
         signature.append(realtimeDeviceCardSignature(device, active));
@@ -261,6 +319,21 @@ void LivoxViewerWindow::rebuildRealtimeDeviceCards()
 
     QVBoxLayout* deviceListLayout = qobject_cast<QVBoxLayout*>(realtimeDeviceListWidget->layout());
     clearLayoutItems(deviceListLayout);
+    if (devices.isEmpty()) {
+        auto refreshCallback = [this]() {
+            refreshNetworkInterfaces();
+            if (sdk_started || sdk_initialized || realtimeState == RealtimeConnectionState::Running) {
+                restartRealtimeConnectionForNetworkChange();
+                return;
+            }
+            stopLidarDiscovery();
+            startLidarDiscovery();
+        };
+        deviceListLayout->addStretch(1);
+        deviceListLayout->addWidget(createDeviceEmptyState(realtimeDeviceListWidget, refreshCallback));
+        deviceListLayout->addStretch(2);
+        return;
+    }
     for (const LidarDeviceInfo& device : devices) {
         deviceListLayout->addWidget(createRealtimeDeviceCard(device));
     }

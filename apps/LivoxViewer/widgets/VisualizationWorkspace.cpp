@@ -199,8 +199,7 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         "  background: palette(base);"
         "  border-color: palette(mid);"
         "}"
-        "QFrame#VisualizationPane[focused=\"true\"] { border: 2px solid palette(highlight); }"
-        "QFrame#VisualizationPane[focused=\"false\"] { border: none; }"
+        "QFrame#VisualizationPane { border: none; }"
         "QLabel#VisualizationPaneEmpty { color: palette(mid); }"));
     syncSplitButtons();
     focusPane(0);

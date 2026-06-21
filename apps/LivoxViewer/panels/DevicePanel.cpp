@@ -6,19 +6,36 @@
 
 void LivoxViewerWindow::createDevicePanel()
 {
-    // 左侧：设备与状态 Dock
+    networkDock = new QDockWidget(QStringLiteral("网卡"), this);
+    networkDock->setObjectName(QStringLiteral("NetworkDock"));
+    networkDock->setAllowedAreas(Qt::LeftDockWidgetArea);
+    networkDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    networkDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#NetworkDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#NetworkDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* hiddenNetworkTitleBar = new QWidget(networkDock);
+    hiddenNetworkTitleBar->setFixedHeight(0);
+    networkDock->setTitleBarWidget(hiddenNetworkTitleBar);
+
     lidarDevicesDock = new QDockWidget("设备", this);
     lidarDevicesDock->setObjectName("DevicesDock");
     lidarDevicesDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    QWidget* lidarDevicesDockContent = new QWidget(lidarDevicesDock);
-    QVBoxLayout* lidarDevicesLayout = new QVBoxLayout(lidarDevicesDockContent);
-    lidarDevicesLayout->setContentsMargins(8, 8, 8, 8);
-    lidarDevicesLayout->setSpacing(8);
-
-    // 网络接口选择
-    QWidget* networkBlock = new QWidget(lidarDevicesDockContent);
+    lidarDevicesDock->setStyleSheet(QStringLiteral(
+        "QDockWidget#DevicesDock {"
+        "  border: none;"
+        "}"
+        "QDockWidget#DevicesDock::title {"
+        "  border: none;"
+        "}"
+    ));
+    QWidget* networkBlock = new QWidget(networkDock);
     QVBoxLayout* hostnetworkLayout = new QVBoxLayout(networkBlock);
-    hostnetworkLayout->setContentsMargins(0, 0, 0, 0);
+    hostnetworkLayout->setContentsMargins(8, 8, 8, 8);
     hostnetworkLayout->setSpacing(4);
     QWidget* networkRow = new QWidget(networkBlock);
     QHBoxLayout* networkSelectLayout = new QHBoxLayout(networkRow);
@@ -40,7 +57,20 @@ void LivoxViewerWindow::createDevicePanel()
     networkSelectLayout->addWidget(networkInterfaceCombo, 1);
     networkSelectLayout->addWidget(btnRefreshNetwork);
     hostnetworkLayout->addWidget(networkRow);
-    lidarDevicesLayout->addWidget(networkBlock);
+    networkDock->setWidget(networkBlock);
+    const int networkDockHeight = fontMetrics().height() + 32;
+    networkDock->setMinimumHeight(networkDockHeight);
+    networkDock->setMaximumHeight(networkDockHeight);
+
+    QWidget* hiddenDeviceTitleBar = new QWidget(lidarDevicesDock);
+    hiddenDeviceTitleBar->setFixedHeight(0);
+    lidarDevicesDock->setTitleBarWidget(hiddenDeviceTitleBar);
+
+    QWidget* lidarDevicesDockContent = new QWidget(lidarDevicesDock);
+    QVBoxLayout* lidarDevicesLayout = new QVBoxLayout(lidarDevicesDockContent);
+    lidarDevicesLayout->setContentsMargins(8, 8, 8, 8);
+    lidarDevicesLayout->setSpacing(8);
+
     connect(networkInterfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &LivoxViewerWindow::onNetworkInterfaceChanged);
     connect(btnRefreshNetwork, &QPushButton::clicked, this, [this]() {
         refreshNetworkInterfaces();
@@ -70,10 +100,20 @@ void LivoxViewerWindow::createDevicePanel()
     lidarDevicesDockContent->setLayout(lidarDevicesLayout);
 
     QScrollArea* lidarDevicesScroll = new QScrollArea(lidarDevicesDock);
+    lidarDevicesScroll->setObjectName(QStringLiteral("DevicesDockScroll"));
     lidarDevicesScroll->setWidgetResizable(true);
+    lidarDevicesScroll->setFrameShape(QFrame::NoFrame);
+    lidarDevicesScroll->setStyleSheet(QStringLiteral(
+        "QScrollArea#DevicesDockScroll {"
+        "  border: 0;"
+        "  background: palette(window);"
+        "}"
+    ));
     lidarDevicesScroll->setWidget(lidarDevicesDockContent);
     lidarDevicesDock->setWidget(lidarDevicesScroll);
     lidarDevicesDock->setMinimumWidth(0);
 
+    addDockWidget(Qt::LeftDockWidgetArea, networkDock);
     addDockWidget(Qt::LeftDockWidgetArea, lidarDevicesDock);
+    splitDockWidget(networkDock, lidarDevicesDock, Qt::Vertical);
 }
