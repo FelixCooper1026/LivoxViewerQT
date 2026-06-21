@@ -645,51 +645,59 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     QTimer::singleShot(0, this, [this]() {
         for (QTabBar* tabBar : findChildren<QTabBar*>()) {
             bool isDeviceDockTabs = false;
+            bool isParameterDockTabs = false;
             for (int index = 0; index < tabBar->count(); ++index) {
                 const QString text = tabBar->tabText(index);
                 if (text == QStringLiteral("设备") ||
                     text == QStringLiteral("IMU数据") ||
                     text == QStringLiteral("文件信息")) {
                     isDeviceDockTabs = true;
-                    break;
+                } else if (text == QStringLiteral("参数") ||
+                           text == QStringLiteral("点属性")) {
+                    isParameterDockTabs = true;
                 }
             }
-            if (!isDeviceDockTabs) {
+            if (!isDeviceDockTabs && !isParameterDockTabs) {
                 continue;
             }
 
-            tabBar->setObjectName(QStringLiteral("DeviceDockTabBar"));
+            tabBar->setObjectName(isDeviceDockTabs
+                ? QStringLiteral("DeviceDockTabBar")
+                : QStringLiteral("ParameterDockTabBar"));
             tabBar->setDocumentMode(true);
             tabBar->setDrawBase(false);
             tabBar->setExpanding(false);
             tabBar->setElideMode(Qt::ElideNone);
             tabBar->setUsesScrollButtons(false);
+            const QString objectSelector = isDeviceDockTabs
+                ? QStringLiteral("QTabBar#DeviceDockTabBar")
+                : QStringLiteral("QTabBar#ParameterDockTabBar");
             tabBar->setStyleSheet(QStringLiteral(
-                "QTabBar#DeviceDockTabBar {"
+                "%1 {"
                 "  qproperty-drawBase: false;"
                 "  border: none;"
                 "  background: transparent;"
                 "}"
-                "QTabBar#DeviceDockTabBar::base {"
+                "%1::base {"
                 "  border: none;"
                 "  background: transparent;"
                 "}"
-                "QTabBar#DeviceDockTabBar::tab {"
+                "%1::tab {"
                 "  border: none;"
                 "  border-bottom: 2px solid transparent;"
                 "  background: transparent;"
                 "  padding: 5px 8px;"
                 "  margin-right: 2px;"
                 "}"
-                "QTabBar#DeviceDockTabBar::tab:selected {"
+                "%1::tab:selected {"
                 "  color: #2f8cff;"
                 "  border-bottom-color: #2f8cff;"
                 "  font-weight: 600;"
                 "}"
-                "QTabBar#DeviceDockTabBar::tab:!selected {"
+                "%1::tab:!selected {"
                 "  color: palette(window-text);"
                 "}"
-            ));
+            ).arg(objectSelector));
         }
     });
 }

@@ -101,6 +101,7 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     m_tabBar->setElideMode(Qt::ElideMiddle);
     m_tabBar->setUsesScrollButtons(true);
     m_tabBar->setDrawBase(false);
+    syncTabTheme();
     tabLayout->addWidget(m_tabBar, 1);
 
     m_singleButton = new QToolButton(tabRow);
@@ -188,8 +189,8 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         "  color: palette(mid);"
         "}"
         "QTabBar::tab:!selected:hover {"
-        "  margin-left: 2px;"
-        "  margin-right: 2px;"
+        "  margin-left: 3px;"
+        "  margin-right: 3px;"
         "  margin-top: 2px;"
         "  margin-bottom: 2px;"
         "  min-height: 20px;"
@@ -197,6 +198,9 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
         "  border: 1px solid transparent;"
         "  border-radius: 10px;"
         "  color: palette(window-text);"
+        "}"
+        "QTabBar[visualizationWorkspaceTheme=\"dark\"]::tab:!selected:hover {"
+        "  color: #202020;"
         "}"
         "QTabBar::tab:selected {"
         "  margin-top: 0px;"
@@ -389,6 +393,14 @@ QWidget* VisualizationWorkspace::tabWidget(int tabId) const
     return tabById(tabId)->widget;
 }
 
+void VisualizationWorkspace::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange || event->type() == QEvent::ApplicationPaletteChange) {
+        syncTabTheme();
+    }
+}
+
 bool VisualizationWorkspace::eventFilter(QObject* watched, QEvent* event)
 {
     if (event->type() == QEvent::MouseButtonPress) {
@@ -540,6 +552,25 @@ void VisualizationWorkspace::syncTabBar()
         m_tabBar->setCurrentIndex(index);
         m_tabBar->blockSignals(false);
     }
+}
+
+void VisualizationWorkspace::syncTabTheme()
+{
+    if (!m_tabBar) {
+        return;
+    }
+
+    const QString theme = palette().color(QPalette::Window).lightness() < 128
+        ? QStringLiteral("dark")
+        : QStringLiteral("light");
+    if (m_tabBar->property("visualizationWorkspaceTheme").toString() == theme) {
+        return;
+    }
+
+    m_tabBar->setProperty("visualizationWorkspaceTheme", theme);
+    m_tabBar->style()->unpolish(m_tabBar);
+    m_tabBar->style()->polish(m_tabBar);
+    m_tabBar->update();
 }
 
 void VisualizationWorkspace::syncSplitButtons()

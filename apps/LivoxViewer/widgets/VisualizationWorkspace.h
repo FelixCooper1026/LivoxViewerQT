@@ -51,6 +51,7 @@ signals:
     void splitModeChanged(VisualizationWorkspace::SplitMode mode);
 
 protected:
+    void changeEvent(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
@@ -73,6 +74,7 @@ private:
     void detachPaneWidget(int pane);
     int bestRecentTab(int excludedTabIdA, int excludedTabIdB) const;
     void syncTabBar();
+    void syncTabTheme();
     void syncSplitButtons();
     void installFocusFilter(QWidget* widget, int tabId);
 
