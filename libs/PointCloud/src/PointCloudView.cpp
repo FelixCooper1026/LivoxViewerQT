@@ -44,6 +44,9 @@ private:
 };
 
 constexpr float kModelMillimetersToMeters = 0.001f;
+constexpr float kDefaultNearPlane = 0.1f;
+constexpr float kMinimumNearPlane = 0.005f;
+constexpr float kNearPlaneDistanceRatio = 0.05f;
 
 StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
 {
@@ -152,21 +155,50 @@ struct SelectionPublishResult {
     int zeroPointCount = 0;
 };
 
+struct ProjectedScreenPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+};
+
+bool projectVisiblePointToScreen(const QVector4D& hp,
+                                 const QMatrix4x4& mvp,
+                                 int viewportW,
+                                 int viewportH,
+                                 ProjectedScreenPoint& projected)
+{
+    if (viewportW <= 0 || viewportH <= 0) {
+        return false;
+    }
+
+    const QVector4D clip = mvp * hp;
+    if (clip.w() <= 0.0f) {
+        return false;
+    }
+
+    const QVector3D ndc = clip.toVector3DAffine();
+    if (ndc.x() < -1.0f || ndc.x() > 1.0f ||
+        ndc.y() < -1.0f || ndc.y() > 1.0f ||
+        ndc.z() < -1.0f || ndc.z() > 1.0f) {
+        return false;
+    }
+
+    projected.x = (ndc.x() * 0.5f + 0.5f) * float(viewportW);
+    projected.y = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(viewportH);
+    return true;
+}
+
 bool containsSelectionPoint(const PointCloudPoint& point, const PointCloudView::SelectionRegion& region)
 {
     if (!region.valid || region.viewportW <= 0 || region.viewportH <= 0) {
         return false;
     }
     const QVector4D hp(point.x, point.y, point.z, 1.0f);
-    const QVector4D clip = region.mvp * hp;
-    if (clip.w() == 0.0f) {
+    ProjectedScreenPoint projected;
+    if (!projectVisiblePointToScreen(hp, region.mvp, region.viewportW, region.viewportH, projected)) {
         return false;
     }
-    const QVector3D ndc = clip.toVector3DAffine();
-    const float sx = (ndc.x() * 0.5f + 0.5f) * float(region.viewportW);
-    const float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(region.viewportH);
-    return sx >= region.rect.left() && sx <= region.rect.right() &&
-           sy >= region.rect.top() && sy <= region.rect.bottom();
+    return projected.x >= region.rect.left() && projected.x <= region.rect.right() &&
+           projected.y >= region.rect.top() && projected.y <= region.rect.bottom();
 }
 
 QVector<PointCloudPoint> selectPointsInRegion(const QVector<PointCloudPoint>& points,
@@ -277,15 +309,12 @@ bool PointCloudView::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QP
     bool found = false;
     forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
-        QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) {
+        ProjectedScreenPoint projected;
+        if (!projectVisiblePointToScreen(hp, mvp, width(), height(), projected)) {
             return true;
         }
-        QVector3D ndc = clip.toVector3DAffine();
-        float sx = (ndc.x() * 0.5f + 0.5f) * width();
-        float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * height();
-        float dx = sx - pos.x();
-        float dy = sy - pos.y();
+        float dx = projected.x - pos.x();
+        float dy = projected.y - pos.y();
         float distSq = dx*dx + dy*dy;
         if (distSq <= radiusSq) {
             float vz = (m_modelView * hp).z();
@@ -293,7 +322,7 @@ bool PointCloudView::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QP
                 bestDistSq = distSq;
                 bestZ = vz;
                 outWorld = QVector3D(p.x, p.y, p.z);
-                outScreen = QPoint(int(std::round(sx)), int(std::round(sy)));
+                outScreen = QPoint(int(std::round(projected.x)), int(std::round(projected.y)));
                 found = true;
             }
         }
@@ -835,7 +864,9 @@ void PointCloudView::paintGL()
 
     // 设置基础投影矩阵    
     m_projection.setToIdentity();
-    const float nearPlane = 0.1f;
+    const float nearPlane = std::clamp(m_distance * kNearPlaneDistanceRatio,
+                                       kMinimumNearPlane,
+                                       kDefaultNearPlane);
     float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
     const float fovY = 45.0f;
     const float aspect = float(qMax(1, width())) / float(qMax(1, height()));
@@ -1073,12 +1104,11 @@ void PointCloudView::paintGL()
         };
         auto projectToScreen = [&](const QVector3D& w) -> QPoint {
             QVector4D hp(w, 1.0f);
-            QVector4D clip = m_projection * (m_modelView * hp);
-            if (clip.w() == 0.0f) return QPoint(-10000, -10000);
-            QVector3D ndc = clip.toVector3DAffine();
-            int sx = int(std::round((ndc.x() * 0.5f + 0.5f) * width()));
-            int sy = int(std::round((1.0f - (ndc.y() * 0.5f + 0.5f)) * height()));
-            return QPoint(sx, sy);
+            ProjectedScreenPoint projected;
+            if (!projectVisiblePointToScreen(hp, m_projection * m_modelView, width(), height(), projected)) {
+                return QPoint(-10000, -10000);
+            }
+            return QPoint(int(std::round(projected.x)), int(std::round(projected.y)));
         };
         QPoint p1s = m_haveP1 ? projectToScreen(m_p1) : QPoint();
         QPoint p2s = m_haveP2 ? projectToScreen(m_p2) : QPoint();
@@ -2744,14 +2774,11 @@ QVector<PointCloudPoint> PointCloudView::pointsInRect(const QRect& rect, int max
     result.reserve(std::min(maxPoints, 4096));
     forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
-        QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) {
+        ProjectedScreenPoint projected;
+        if (!projectVisiblePointToScreen(hp, mvp, width(), height(), projected)) {
             return true;
         }
-        QVector3D ndc = clip.toVector3DAffine();
-        float sx = (ndc.x() * 0.5f + 0.5f) * width();
-        float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * height();
-        if (rect.contains(QPoint(int(sx), int(sy)))) {
+        if (rect.contains(QPoint(int(projected.x), int(projected.y)))) {
             result.push_back(p);
             if (result.size() >= maxPoints) {
                 return false;
@@ -2788,15 +2815,14 @@ QVector<PointCloudPoint> PointCloudView::pointsInPersistSelection(int maxPoints)
     result.reserve(std::min(maxPoints, 4096));
     forEachDisplayedPoint([&](const PointCloudPoint& p) {
         QVector4D hp(p.x, p.y, p.z, 1.0f);
-        QVector4D clip = mvp * hp;
-        if (clip.w() == 0.0f) {
+        ProjectedScreenPoint projected;
+        if (!projectVisiblePointToScreen(hp, mvp, m_selViewportW, m_selViewportH, projected)) {
             return true;
         }
-        QVector3D ndc = clip.toVector3DAffine();
-        float sx = (ndc.x() * 0.5f + 0.5f) * float(m_selViewportW);
-        float sy = (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(m_selViewportH);
         float vz = (m_selModelView * hp).z();
-        if (sx >= m_selRectLogical.left() && sx <= m_selRectLogical.right() && sy >= m_selRectLogical.top() && sy <= m_selRectLogical.bottom() && vz >= m_selViewZMin && vz <= m_selViewZMax) {
+        if (projected.x >= m_selRectLogical.left() && projected.x <= m_selRectLogical.right() &&
+            projected.y >= m_selRectLogical.top() && projected.y <= m_selRectLogical.bottom() &&
+            vz >= m_selViewZMin && vz <= m_selViewZMax) {
             result.push_back(p);
             if (result.size() >= maxPoints) {
                 return false;

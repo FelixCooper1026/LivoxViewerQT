@@ -17,6 +17,9 @@
 
 namespace {
 
+constexpr int kPanelVisibilityButtonSize = 34;
+constexpr int kPanelVisibilityIconSize = 24;
+
 QToolButton* createPanelVisibilityButton(QWidget* parent, const QString& iconPath, const QString& tooltip)
 {
     QToolButton* button = new QToolButton(parent);
@@ -24,15 +27,15 @@ QToolButton* createPanelVisibilityButton(QWidget* parent, const QString& iconPat
     button->setAutoRaise(true);
     button->setCursor(Qt::PointingHandCursor);
     button->setToolTip(tooltip);
-    button->setIconSize(QSize(18, 18));
-    button->setFixedSize(28, 28);
+    button->setIconSize(QSize(kPanelVisibilityIconSize, kPanelVisibilityIconSize));
+    button->setFixedSize(kPanelVisibilityButtonSize, kPanelVisibilityButtonSize);
     ThemeIconUtils::setThemedSvgIcon(button, iconPath);
     button->setStyleSheet(QStringLiteral(
         "QToolButton {"
         "  border: 1px solid transparent;"
-        "  border-radius: 4px;"
+        "  border-radius: 5px;"
         "  background: transparent;"
-        "  padding: 3px;"
+        "  padding: 4px;"
         "}"
         "QToolButton:hover {"
         "  background: palette(alternate-base);"
