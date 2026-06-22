@@ -7,6 +7,7 @@
 #include <QMutex>
 #include <QPointer>
 #include <QQuaternion>
+#include <QDateTime>
 #include <QString>
 #include <QVector>
 #include <atomic>
@@ -15,6 +16,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QDateTimeEdit;
 class QDialog;
 class QLabel;
 class QProgressBar;
@@ -80,7 +82,11 @@ struct ImuVisualizationDeviceDescriptor
 struct ImuRuntimeState
 {
     QCheckBox* gpsSimulateCheck = nullptr;
+    QDateTimeEdit* gpsDateTimeEdit = nullptr;
+    QPushButton* gpsUseCurrentTimeButton = nullptr;
     QTimer* gpsTimer = nullptr;
+    QDateTime gpsSimulationBaseUtc;
+    qint64 gpsSimulationElapsedSeconds = 0;
     QPushButton* displayButton = nullptr;
     QLabel* dataValueLabels[3][2] = {};
 

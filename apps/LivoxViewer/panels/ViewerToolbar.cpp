@@ -624,7 +624,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->addPrimaryWidget(createIconButton(stlModelAction, displayGroup, toolbarIconSize));
 
     QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
-    spinFrameIntervalTop->setRange(100, 30000);
+    spinFrameIntervalTop->setRange(100, 60000);
     spinFrameIntervalTop->setSingleStep(100);
     spinFrameIntervalTop->setSuffix(" ms");
     spinFrameIntervalTop->setValue(static_cast<int>(frameIntervalMs));
