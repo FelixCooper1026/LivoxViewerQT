@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 #include "LivoxCore/LidarDiagnostics.h"
 #include <QApplication>
 #include <QGuiApplication>
@@ -66,7 +67,7 @@ QString hmsDisplayColor(int severity)
     }
 }
 
-QWidget* createDeviceEmptyState(QWidget* parent, const std::function<void()>& refreshCallback)
+QWidget* createDeviceEmptyState(QWidget* parent)
 {
     QWidget* emptyState = new QWidget(parent);
     emptyState->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -76,13 +77,11 @@ QWidget* createDeviceEmptyState(QWidget* parent, const std::function<void()>& re
     layout->setSpacing(8);
     layout->setAlignment(Qt::AlignHCenter);
 
-    QLabel* iconLabel = new QLabel(QStringLiteral("▱"), emptyState);
-    QFont iconFont = iconLabel->font();
-    iconFont.setPointSize(iconFont.pointSize() + 28);
-    iconFont.setWeight(QFont::Light);
-    iconLabel->setFont(iconFont);
+    QLabel* iconLabel = new QLabel(emptyState);
+    const QSize emptyStateIconSize(48, 48);
+    ThemeIconUtils::setThemedSvgPixmap(iconLabel, QStringLiteral(":/icons/empty_state.svg"), emptyStateIconSize);
+    iconLabel->setFixedSize(emptyStateIconSize);
     iconLabel->setAlignment(Qt::AlignCenter);
-    iconLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
 
     QLabel* titleLabel = new QLabel(QStringLiteral("未发现设备"), emptyState);
     QFont titleFont = titleLabel->font();
@@ -90,20 +89,13 @@ QWidget* createDeviceEmptyState(QWidget* parent, const std::function<void()>& re
     titleLabel->setFont(titleFont);
     titleLabel->setAlignment(Qt::AlignCenter);
 
-    QLabel* hintLabel = new QLabel(QStringLiteral("请选择网卡或刷新"), emptyState);
+    QLabel* hintLabel = new QLabel(QStringLiteral("请刷新网卡列表\n并选择与设备连接的网卡"), emptyState);
     hintLabel->setAlignment(Qt::AlignCenter);
     hintLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
 
-    QPushButton* refreshButton = new QPushButton(QStringLiteral("刷新"), emptyState);
-    refreshButton->setFixedWidth(96);
-    refreshButton->setCursor(Qt::PointingHandCursor);
-    QObject::connect(refreshButton, &QPushButton::clicked, emptyState, refreshCallback);
-
-    layout->addWidget(iconLabel);
+    layout->addWidget(iconLabel, 0, Qt::AlignHCenter);
     layout->addWidget(titleLabel);
     layout->addWidget(hintLabel);
-    layout->addSpacing(14);
-    layout->addWidget(refreshButton, 0, Qt::AlignHCenter);
     return emptyState;
 }
 
@@ -248,6 +240,7 @@ void LivoxViewerWindow::initializeUserInterface()
     resizeDocks({lidarDevicesDock, paramsDock}, {devicesDockWidth, paramsDockWidth}, Qt::Horizontal);
     resizeDocks({logDock}, {logDockHeight}, Qt::Vertical);
     lidarDevicesDock->raise();
+    rebuildRealtimeDeviceCards();
 
     createMenusAndActions();
 }
@@ -267,7 +260,9 @@ void LivoxViewerWindow::updateLidarDeviceList()
         const QList<LidarDeviceInfo> values = lidarDevices.values();
         devices.reserve(values.size());
         for (const LidarDeviceInfo& device : values) {
-            devices.append(device);
+            if (device.is_connected) {
+                devices.append(device);
+            }
         }
     }
 
@@ -280,6 +275,15 @@ void LivoxViewerWindow::updateLidarDeviceList()
     }
     if (devices.isEmpty()) {
         clearCurrentDevice();
+        {
+            QMutexLocker locker(&frameMutex);
+            pendingFrames.clear();
+            lastSeenTimestamp.clear();
+            lastFrameTimestamp.clear();
+        }
+        if (realtimePointCloudView) {
+            realtimePointCloudView->clearPointCloud();
+        }
     } else if (!hasCurrentLidarHandle || !currentExists) {
         setCurrentDeviceHandle(devices.first().handle);
     }
@@ -299,7 +303,9 @@ void LivoxViewerWindow::rebuildRealtimeDeviceCards()
         const QList<LidarDeviceInfo> values = lidarDevices.values();
         devices.reserve(values.size());
         for (const LidarDeviceInfo& device : values) {
-            devices.append(device);
+            if (device.is_connected) {
+                devices.append(device);
+            }
         }
     }
 
@@ -320,17 +326,8 @@ void LivoxViewerWindow::rebuildRealtimeDeviceCards()
     QVBoxLayout* deviceListLayout = qobject_cast<QVBoxLayout*>(realtimeDeviceListWidget->layout());
     clearLayoutItems(deviceListLayout);
     if (devices.isEmpty()) {
-        auto refreshCallback = [this]() {
-            refreshNetworkInterfaces();
-            if (sdk_started || sdk_initialized || realtimeState == RealtimeConnectionState::Running) {
-                restartRealtimeConnectionForNetworkChange();
-                return;
-            }
-            stopLidarDiscovery();
-            startLidarDiscovery();
-        };
         deviceListLayout->addStretch(1);
-        deviceListLayout->addWidget(createDeviceEmptyState(realtimeDeviceListWidget, refreshCallback));
+        deviceListLayout->addWidget(createDeviceEmptyState(realtimeDeviceListWidget));
         deviceListLayout->addStretch(2);
         return;
     }

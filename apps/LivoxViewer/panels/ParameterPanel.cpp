@@ -169,7 +169,7 @@ QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidge
     valueLabel->setMinimumWidth(0);
     valueLabel->setMinimumHeight(20);
     valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    valueLabel->setStyleSheet("QLabel { background: transparent; color: palette(mid); padding: 0; border: none; }");
+    valueLabel->setStyleSheet("QLabel { background: transparent; color: palette(window-text); padding: 0; border: none; }");
 
     layout->addWidget(titleLabel, 0, Qt::AlignVCenter);
     layout->addWidget(valueLabel, 1, Qt::AlignVCenter);
