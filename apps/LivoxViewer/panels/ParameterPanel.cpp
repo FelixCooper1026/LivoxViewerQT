@@ -158,6 +158,9 @@ QFrame* createStatusInfoSection(const QString& title, QLabel* valueLabel, QWidge
     layout->setSpacing(12);
 
     QLabel* titleLabel = new QLabel(title, section);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
     titleLabel->setMinimumWidth(titleLabel->fontMetrics().horizontalAdvance("时间同步类型") + 12);
     titleLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
