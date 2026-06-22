@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 
 void LivoxViewerWindow::createLogPanel()
 {
@@ -27,8 +28,8 @@ void LivoxViewerWindow::createLogPanel()
     QPushButton* copyLogButton = new QPushButton(QStringLiteral("复制"), logHeader);
     QCheckBox* autoScrollCheck = new QCheckBox(QStringLiteral("自动滚动"), logHeader);
     autoScrollCheck->setChecked(true);
-    clearLogButton->setIcon(QIcon(QStringLiteral(":/icons/convert_clear.svg")));
-    copyLogButton->setIcon(QIcon(QStringLiteral(":/icons/copy.svg")));
+    ThemeIconUtils::setThemedSvgIcon(clearLogButton, QStringLiteral(":/icons/convert_clear.svg"));
+    ThemeIconUtils::setThemedSvgIcon(copyLogButton, QStringLiteral(":/icons/copy.svg"));
     for (QPushButton* button : {clearLogButton, copyLogButton}) {
         button->setFlat(true);
         button->setCursor(Qt::PointingHandCursor);

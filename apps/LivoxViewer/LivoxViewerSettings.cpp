@@ -50,7 +50,7 @@
 
 namespace {
 
-constexpr int kDockStateVersion = 4;
+constexpr int kDockStateVersion = 5;
 constexpr int kPreferenceControlColumnWidth = 104;
 constexpr int kPreferenceComboBoxWidth = 104;
 constexpr int kPreferenceSpinBoxWidth = 104;
@@ -622,18 +622,6 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     restoreGeometry(settings.value("geometry").toByteArray());
     if (settings.value("layout/version", 0).toInt() == kDockStateVersion) {
         restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
-    }
-    if (networkDock && lidarDevicesDock) {
-        removeDockWidget(networkDock);
-        addDockWidget(Qt::LeftDockWidgetArea, networkDock);
-        splitDockWidget(networkDock, lidarDevicesDock, Qt::Vertical);
-        if (imuDock) {
-            tabifyDockWidget(lidarDevicesDock, imuDock);
-        }
-        if (lvx2FileDock) {
-            tabifyDockWidget(lidarDevicesDock, lvx2FileDock);
-        }
-        networkDock->show();
     }
     if (lvx2FileDock) {
         lvx2FileDock->hide();
