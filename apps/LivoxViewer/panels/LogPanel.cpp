@@ -19,27 +19,49 @@ void LivoxViewerWindow::createLogPanel()
     QWidget* logHeader = new QWidget(logDockContent);
     QHBoxLayout* logHeaderLayout = new QHBoxLayout(logHeader);
     logHeaderLayout->setContentsMargins(0, 0, 0, 0);
-    logHeaderLayout->setSpacing(8);
+    logHeaderLayout->setSpacing(0);
     QLabel* logTitle = new QLabel(QStringLiteral("日志"), logHeader);
     QFont logTitleFont = logTitle->font();
     logTitleFont.setBold(true);
     logTitle->setFont(logTitleFont);
-    QPushButton* clearLogButton = new QPushButton(QStringLiteral("清空"), logHeader);
-    QPushButton* copyLogButton = new QPushButton(QStringLiteral("复制"), logHeader);
+    QToolButton* clearLogButton = new QToolButton(logHeader);
+    QToolButton* copyLogButton = new QToolButton(logHeader);
     QCheckBox* autoScrollCheck = new QCheckBox(QStringLiteral("自动滚动"), logHeader);
+    clearLogButton->setText(QStringLiteral("清空"));
+    copyLogButton->setText(QStringLiteral("复制"));
     autoScrollCheck->setChecked(true);
     ThemeIconUtils::setThemedSvgIcon(clearLogButton, QStringLiteral(":/icons/convert_clear.svg"));
     ThemeIconUtils::setThemedSvgIcon(copyLogButton, QStringLiteral(":/icons/copy.svg"));
-    for (QPushButton* button : {clearLogButton, copyLogButton}) {
-        button->setFlat(true);
+    for (QToolButton* button : {clearLogButton, copyLogButton}) {
+        button->setAutoRaise(true);
+        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         button->setCursor(Qt::PointingHandCursor);
         button->setIconSize(QSize(fontMetrics().height() + 2, fontMetrics().height() + 2));
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton {"
+            "  border: none;"
+            "  background: transparent;"
+            "  color: palette(window-text);"
+            "  padding: 0;"
+            "}"
+            "QToolButton:hover {"
+            "  color: palette(highlight);"
+            "}"
+        ));
     }
+    autoScrollCheck->setCursor(Qt::PointingHandCursor);
+
+    QWidget* logActions = new QWidget(logHeader);
+    QHBoxLayout* logActionsLayout = new QHBoxLayout(logActions);
+    logActionsLayout->setContentsMargins(0, 0, 0, 0);
+    logActionsLayout->setSpacing(20);
+    logActionsLayout->addWidget(clearLogButton);
+    logActionsLayout->addWidget(copyLogButton);
+    logActionsLayout->addWidget(autoScrollCheck);
+
     logHeaderLayout->addWidget(logTitle);
     logHeaderLayout->addStretch();
-    logHeaderLayout->addWidget(clearLogButton);
-    logHeaderLayout->addWidget(copyLogButton);
-    logHeaderLayout->addWidget(autoScrollCheck);
+    logHeaderLayout->addWidget(logActions);
     logLayout->addWidget(logHeader);
 
     QFrame* logFrame = new QFrame(logDockContent);
