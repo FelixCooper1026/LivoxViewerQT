@@ -199,26 +199,34 @@ void LivoxViewerWindow::refreshSerialPorts()
 void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
 {
     if (!enabled) {
-        imuState.serialRunning.store(false);
+        const bool wasRunning = imuState.serialRunning.exchange(false);
         if (imuState.serialThread.joinable()) imuState.serialThread.join();
-        logMessage("串口转发GPS已关闭");
-        statusLabelBar->setText("串口转发GPS已关闭");
+        if (wasRunning) {
+            logMessage("串口 GPRMC 输入已关闭");
+            statusLabelBar->setText("串口 GPRMC 输入已关闭");
+        }
         return;
     }
     LidarDeviceInfo currentDevice;
     if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+        QSignalBlocker blocker(imuState.serialEnableCheck);
         imuState.serialEnableCheck->setChecked(false);
+        logMessage("串口 GPRMC 输入启动失败：未选择已连接设备");
+        statusLabelBar->setText("串口 GPRMC 输入启动失败：未选择已连接设备");
         return;
     }
     QString portName = imuState.serialPortCombo ? imuState.serialPortCombo->currentText() : QString();
     if (portName.isEmpty() || portName == "未检测到可用串口，无法启用串口转发输入") {
+        QSignalBlocker blocker(imuState.serialEnableCheck);
         imuState.serialEnableCheck->setChecked(false);
+        logMessage("串口 GPRMC 输入启动失败：未选择有效串口");
+        statusLabelBar->setText("串口 GPRMC 输入启动失败：未选择有效串口");
         return;
     }
     imuState.serialRunning.store(true);
     QMetaObject::invokeMethod(this, [this, portName]() {
-        logMessage(QString("串口转发GPS已启用，端口: %1").arg(portName));
-        statusLabelBar->setText(QString("串口转发GPS已启用，端口: %1").arg(portName));
+        logMessage(QString("串口 GPRMC 输入已启用，端口: %1").arg(portName));
+        statusLabelBar->setText(QString("串口 GPRMC 输入已启用，端口: %1").arg(portName));
     }, Qt::QueuedConnection);
 
     imuState.serialThread = std::thread([this, portName]() {
@@ -229,12 +237,12 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
         serial.setParity(QSerialPort::NoParity);
         serial.setStopBits(QSerialPort::OneStop);
         if (!serial.open(QIODevice::ReadOnly)) {
+            imuState.serialRunning.store(false);
             QMetaObject::invokeMethod(this, [this, portName]() {
                 imuState.serialEnableCheck->setChecked(false);
-                logMessage(QString("串口转发GPS启动失败，无法打开端口: %1").arg(portName));
-                statusLabelBar->setText(QString("串口转发GPS启动失败，端口: %1").arg(portName));
+                logMessage(QString("串口 GPRMC 输入启动失败，无法打开端口: %1").arg(portName));
+                statusLabelBar->setText(QString("串口 GPRMC 输入启动失败，端口: %1").arg(portName));
             }, Qt::QueuedConnection);
-            imuState.serialRunning.store(false);
             return;
         }
         QByteArray buffer;
@@ -254,14 +262,14 @@ void LivoxViewerWindow::onSerialEnableToggled(bool enabled)
 
                         if (line.startsWith("$GPRMC") || line.startsWith("$GNRMC")) {
                             QMetaObject::invokeMethod(this, [this, gpsMessage, portName]() {
-                                logMessage(QString("串口转发GPS同步: %1").arg(gpsMessage));
-                                statusLabelBar->setText(QString("串口转发GPS同步中... 端口: %1").arg(portName));
+                                logMessage(QString("串口 GPRMC 同步: %1").arg(gpsMessage));
+                                statusLabelBar->setText(QString("串口 GPRMC 同步中... 端口: %1").arg(portName));
                             }, Qt::QueuedConnection);
 
                             SetLivoxLidarRmcSyncTime(currentDevice.handle, line.constData(), static_cast<uint16_t>(line.size()), nullptr, nullptr);
                         } else {
                             QMetaObject::invokeMethod(this, [this, gpsMessage]() {
-                                logMessage(QString("串口转发GPS报文: %1").arg(gpsMessage));
+                                logMessage(QString("串口 NMEA 报文: %1").arg(gpsMessage));
                             }, Qt::QueuedConnection);
                         }
                     }
