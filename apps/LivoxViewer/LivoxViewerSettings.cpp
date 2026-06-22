@@ -14,7 +14,6 @@
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFile>
@@ -915,7 +914,7 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QDialog dlg(this);
     dlg.setWindowTitle("首选项");
-    dlg.resize(760, 520);
+    dlg.resize(900, 640);
     increasePreferenceBaseFont(&dlg);
     const int originalThemeMode = themeMode;
 
@@ -1117,12 +1116,7 @@ void LivoxViewerWindow::showPreferencesDialog()
                     PointCloudColorizer::reflectivityColorScaleStops(selectedReflectivityColorScale)));
             });
 
-    QWidget* backgroundPresetRow = new QWidget(&dlg);
-    usePreferenceControlColumn(backgroundPresetRow, 300);
-    QVBoxLayout* backgroundPresetLayout = new QVBoxLayout(backgroundPresetRow);
-    backgroundPresetLayout->setContentsMargins(0, 0, 0, 0);
-    backgroundPresetLayout->setSpacing(6);
-    QComboBox* backgroundPresetCombo = new QComboBox(backgroundPresetRow);
+    QComboBox* backgroundPresetCombo = new QComboBox(backgroundTab);
     backgroundPresetCombo->addItem(QStringLiteral("深黑 (Deep Black)"), BackgroundDeepBlack);
     backgroundPresetCombo->addItem(QStringLiteral("石墨黑 (Graphite)"), BackgroundGraphite);
     backgroundPresetCombo->addItem(QStringLiteral("午夜蓝 (Midnight Blue)"), BackgroundMidnightBlue);
@@ -1133,14 +1127,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     backgroundPresetCombo->addItem(QStringLiteral("纯白 (Pure White)"), BackgroundPureWhite);
     const int backgroundIndex = backgroundPresetCombo->findData(selectedBackgroundPreset);
     backgroundPresetCombo->setCurrentIndex(backgroundIndex >= 0 ? backgroundIndex : 1);
-    backgroundPresetCombo->setFixedWidth(280);
+    backgroundPresetCombo->setFixedWidth(360);
+    usePreferenceControlColumn(backgroundPresetCombo, 360);
     const QPair<QColor, QColor> initialBackgroundColors = backgroundPresetColors(selectedBackgroundPreset);
-    QFrame* backgroundPresetPreview = new QFrame(backgroundPresetRow);
-    backgroundPresetPreview->setFixedSize(280, 44);
+    QFrame* backgroundPresetPreview = new QFrame(backgroundTab);
+    backgroundPresetPreview->setFixedHeight(300);
+    backgroundPresetPreview->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(initialBackgroundColors.first,
                                                                       initialBackgroundColors.second));
-    backgroundPresetLayout->addWidget(backgroundPresetCombo);
-    backgroundPresetLayout->addWidget(backgroundPresetPreview);
     connect(backgroundPresetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
             [&selectedBackgroundPreset, backgroundPresetCombo, backgroundPresetPreview](int index) {
                 selectedBackgroundPreset = backgroundPresetCombo->itemData(index).toInt();
@@ -1225,15 +1219,17 @@ void LivoxViewerWindow::showPreferencesDialog()
     connect(elevationMaxSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
             [elevationMinSpin](double value) { elevationMinSpin->setMaximum(value - 0.01); });
 
-    QDialogButtonBox* box = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, settingsContent);
-    if (QPushButton* okButton = box->button(QDialogButtonBox::Ok)) {
-        okButton->setText(QStringLiteral("确定"));
-    }
-    if (QPushButton* cancelButton = box->button(QDialogButtonBox::Cancel)) {
-        cancelButton->setText(QStringLiteral("取消"));
-    }
-    connect(box, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(box, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QWidget* buttonRow = new QWidget(settingsContent);
+    QHBoxLayout* buttonRowLayout = new QHBoxLayout(buttonRow);
+    buttonRowLayout->setContentsMargins(0, 0, 0, 0);
+    buttonRowLayout->setSpacing(8);
+    QPushButton* okButton = new QPushButton(QStringLiteral("确定"), buttonRow);
+    QPushButton* cancelButton = new QPushButton(QStringLiteral("取消"), buttonRow);
+    buttonRowLayout->addStretch();
+    buttonRowLayout->addWidget(okButton);
+    buttonRowLayout->addWidget(cancelButton);
+    connect(okButton, &QPushButton::clicked, &dlg, &QDialog::accept);
+    connect(cancelButton, &QPushButton::clicked, &dlg, &QDialog::reject);
 
     addPreferenceSectionTitle(themeLayout, "外观");
     QFrame* themeSection = createPreferenceSection(themeTab);
@@ -1298,8 +1294,10 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     addPreferenceSectionTitle(backgroundLayout, "点云背景");
     QFrame* backgroundSection = createPreferenceSection(backgroundTab);
-    addPreferenceRow(backgroundSection, "背景方案", "设置 OpenGL 点云可视化区域的顶部和底部背景颜色。", backgroundPresetRow);
+    addPreferenceRow(backgroundSection, "背景方案", "设置 OpenGL 点云可视化区域的顶部和底部背景颜色。", backgroundPresetCombo);
     backgroundLayout->addWidget(backgroundSection);
+    backgroundLayout->addSpacing(12);
+    backgroundLayout->addWidget(backgroundPresetPreview);
     backgroundLayout->addStretch();
 
     const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景"};
@@ -1325,7 +1323,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     }
 
     settingsContentLayout->addWidget(pages, 1);
-    settingsContentLayout->addWidget(box, 0, Qt::AlignRight);
+    settingsContentLayout->addWidget(buttonRow);
 
     contentLayout->addWidget(navigation);
     contentLayout->addWidget(settingsContent, 1);

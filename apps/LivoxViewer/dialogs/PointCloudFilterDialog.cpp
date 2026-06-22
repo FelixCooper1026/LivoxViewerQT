@@ -1,4 +1,5 @@
 #include "LivoxViewerWindow.h"
+#include <QDialogButtonBox>
 #include <QListWidget>
 
 void LivoxViewerWindow::showPointCloudFilterDialog()
@@ -103,14 +104,11 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             noiseLayout->addWidget(filterState.removeNoiseCheck);
             layout->addWidget(noiseGroup);
 
-            // 控制按钮
-            QWidget* ctrlRow = new QWidget(filterState.dialog);
-            QHBoxLayout* ctrlLayout = new QHBoxLayout(ctrlRow);
-            ctrlLayout->setContentsMargins(0,0,0,0);
-            QPushButton* closeBtn = new QPushButton("关闭", ctrlRow);
-            ctrlLayout->addStretch();
-            ctrlLayout->addWidget(closeBtn);
-            layout->addWidget(ctrlRow);
+            QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, filterState.dialog);
+            if (QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close)) {
+                closeButton->setText(QStringLiteral("关闭"));
+            }
+            layout->addWidget(buttonBox);
 
             // 连接信号
             auto updateTagLabel = [this]() {
@@ -238,7 +236,7 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             connectFilterSpinWithTag(filterState.spin32, "Bit[3-2]");
             connectFilterSpinWithTag(filterState.spin10, "Bit[1-0]");
 
-            connect(closeBtn, &QPushButton::clicked, filterState.dialog, &QDialog::accept);
+            connect(buttonBox, &QDialogButtonBox::rejected, filterState.dialog, &QDialog::accept);
 
             // 设置初始状态
             if (filterState.showNoiseCheck) filterState.showNoiseCheck->setChecked(filterState.showNoisePoints);

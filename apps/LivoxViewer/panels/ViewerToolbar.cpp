@@ -223,7 +223,7 @@ private:
 class ToolbarGroup : public QWidget
 {
 public:
-    explicit ToolbarGroup(const QString& title, QWidget* parent = nullptr)
+    explicit ToolbarGroup(const QString& title, QWidget* parent = nullptr, int leftMargin = 8)
         : QWidget(parent)
     {
         setObjectName("ViewerToolbarGroup");
@@ -231,7 +231,7 @@ public:
         setFixedHeight(fontMetrics().height() * 3 + 8);
 
         QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(8, 2, 8, 0);
+        root->setContentsMargins(leftMargin, 2, 8, 0);
         root->setSpacing(8);
 
         m_controls = new QWidget(this);
@@ -506,7 +506,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 
     const QSize toolbarIconSize(fontMetrics().height() + 8, fontMetrics().height() + 8);
 
-    ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar);
+    ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar, 0);
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
     ThemeIconUtils::setThemedSvgIcon(gridAction, QStringLiteral(":/icons/grid.svg"));
     gridAction->setCheckable(true);

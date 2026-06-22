@@ -188,6 +188,13 @@ void LivoxViewerWindow::initializeUserInterface()
     mainToolBar->setFloatable(false);
     mainToolBar->setAllowedAreas(Qt::TopToolBarArea);
     mainToolBar->setContentsMargins(0, 0, 0, 0);
+    mainToolBar->setStyleSheet(QStringLiteral(
+        "QToolBar#MainToolBar {"
+        "  padding: 0;"
+        "  margin: 0;"
+        "  spacing: 0;"
+        "}"
+    ));
     QWidget* viewerToolbar = createViewerToolbar(mainToolBar);
     mainToolBar->addWidget(viewerToolbar);
     mainToolBar->setFixedHeight(viewerToolbar->height() + 4);
