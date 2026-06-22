@@ -18,9 +18,9 @@ constexpr int kDefaultWindowMinWidth = 1100;
 constexpr int kDefaultWindowMaxWidth = 1680;
 constexpr int kDefaultWindowMinHeight = 720;
 constexpr int kDefaultWindowMaxHeight = 1000;
-constexpr int kDevicesDockMinWidth = 220;
+constexpr int kDevicesDockMinWidth = 200;
 constexpr int kDevicesDockMaxWidth = 320;
-constexpr int kParamsDockMinWidth = 320;
+constexpr int kParamsDockMinWidth = 300;
 constexpr int kParamsDockMaxWidth = 460;
 constexpr int kLogDockMinHeight = 110;
 constexpr int kLogDockMaxHeight = 180;
@@ -241,8 +241,8 @@ void LivoxViewerWindow::initializeUserInterface()
     attrDock->setMinimumWidth(kParamsDockMinWidth);
 
     // 初始布局尺寸（近似 CloudCompare）：左侧窄、右侧中、底部适中
-    const int devicesDockWidth = preferredDockWidth(width(), 16, kDevicesDockMinWidth, kDevicesDockMaxWidth);
-    const int paramsDockWidth = preferredDockWidth(width(), 24, kParamsDockMinWidth, kParamsDockMaxWidth);
+    const int devicesDockWidth = preferredDockWidth(width(), 15, kDevicesDockMinWidth, kDevicesDockMaxWidth);
+    const int paramsDockWidth = preferredDockWidth(width(), 22, kParamsDockMinWidth, kParamsDockMaxWidth);
     const int logDockHeight = qMin(kLogDockMaxHeight, qMax(kLogDockMinHeight, height() / 6));
     resizeDocks({lidarDevicesDock, paramsDock}, {devicesDockWidth, paramsDockWidth}, Qt::Horizontal);
     resizeDocks({logDock}, {logDockHeight}, Qt::Vertical);

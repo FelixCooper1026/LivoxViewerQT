@@ -68,6 +68,7 @@ void LivoxViewerWindow::createHelpActions()
         QFrame* infoFrame = new QFrame(&dlg);
         infoFrame->setObjectName(QStringLiteral("AboutInfoFrame"));
         infoFrame->setFrameShape(QFrame::StyledPanel);
+        infoFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
         infoFrame->setStyleSheet(
             "QFrame#AboutInfoFrame {"
             "  border: 1px solid palette(mid);"
@@ -128,6 +129,7 @@ void LivoxViewerWindow::createHelpActions()
             infoFrame);
         frameLayout->addLayout(infoLayout);
         rootLayout->addWidget(infoFrame);
+        rootLayout->addStretch();
 
         QDialogButtonBox* buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, &dlg);
         if (QPushButton* closeButton = buttonBox->button(QDialogButtonBox::Close)) {
