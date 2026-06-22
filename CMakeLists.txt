@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 1.5.2
+    VERSION 1.5.3
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES CXX
 )

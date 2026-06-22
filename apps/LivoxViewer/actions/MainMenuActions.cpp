@@ -51,6 +51,22 @@ void LivoxViewerWindow::createMenusAndActions()
 
     // 菜单栏
     menuBar = new QMenuBar(this);
+    menuBar->setStyleSheet(QStringLiteral(
+        "QMenuBar {"
+        "  background: palette(window);"
+        "  border: none;"
+        "}"
+        "QMenuBar::item {"
+        "  padding: 4px 8px;"
+        "  border: none;"
+        "  background: transparent;"
+        "}"
+        "QMenuBar::item:selected,"
+        "QMenuBar::item:pressed {"
+        "  border: none;"
+        "  background: palette(alternate-base);"
+        "}"
+    ));
     setMenuBar(menuBar);
     fileMenu = menuBar->addMenu("文件");
     viewMenu = menuBar->addMenu("视图");
