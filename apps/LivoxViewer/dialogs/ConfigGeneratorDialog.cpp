@@ -117,7 +117,7 @@ QLineEdit* createFixedPortEdit(QWidget* parent)
     QLineEdit* edit = new QLineEdit(parent);
     edit->setEnabled(false);
     edit->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    edit->setMinimumWidth(150);
+    edit->setMinimumWidth(128);
     edit->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return edit;
 }
@@ -126,7 +126,7 @@ QSpinBox* createHostPortSpin(QWidget* parent)
 {
     QSpinBox* spin = new QSpinBox(parent);
     spin->setRange(0, 65535);
-    spin->setMinimumWidth(150);
+    spin->setMinimumWidth(128);
     spin->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     return spin;
 }
@@ -209,7 +209,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
         "  background: palette(dark);"
         "}"
         "QComboBox, QSpinBox, QLineEdit {"
-        "  min-height: 28px;"
+        "  min-height: 24px;"
         "}"
         "QListWidget#ConfigGeneratorDeviceList {"
         "  border: none;"
@@ -254,7 +254,7 @@ bool LivoxViewerWindow::showConfigGeneratorDialog()
     QSpinBox* spinCache = new QSpinBox(logTopRow);
     spinCache->setRange(0, 100000);
     spinCache->setValue(500);
-    spinCache->setMinimumWidth(90);
+    spinCache->setMinimumWidth(76);
     QLabel* cacheUnitLabel = createConfigGeneratorFieldLabel("MB", logTopRow);
     logTopLayout->addWidget(lblCache);
     logTopLayout->addWidget(spinCache);

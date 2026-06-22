@@ -51,9 +51,9 @@
 namespace {
 
 constexpr int kDockStateVersion = 4;
-constexpr int kPreferenceControlColumnWidth = 115;
-constexpr int kPreferenceComboBoxWidth = 115;
-constexpr int kPreferenceSpinBoxWidth = 115;
+constexpr int kPreferenceControlColumnWidth = 104;
+constexpr int kPreferenceComboBoxWidth = 104;
+constexpr int kPreferenceSpinBoxWidth = 104;
 constexpr int kPreferenceFontPointIncrease = 1;
 constexpr int kPreferenceNavIconTextSpacingChars = 2;
 
@@ -251,7 +251,7 @@ QString darkThemeControlStyleSheet()
 
     return QStringLiteral(
         "QComboBox, QLineEdit, QAbstractSpinBox {"
-        "  min-height: 22px;"
+        "  min-height: 20px;"
         "  border: 1px solid %1;"
         "  border-radius: 4px;"
         "  background: palette(base);"
@@ -260,10 +260,10 @@ QString darkThemeControlStyleSheet()
         "  selection-color: palette(highlighted-text);"
         "}"
         "QComboBox {"
-        "  padding: 3px 24px 3px 7px;"
+        "  padding: 2px 20px 2px 6px;"
         "}"
         "QLineEdit, QAbstractSpinBox {"
-        "  padding: 3px 7px;"
+        "  padding: 2px 6px;"
         "}"
         "QComboBox:hover, QLineEdit:hover, QAbstractSpinBox:hover {"
         "  border-color: %2;"
@@ -279,7 +279,7 @@ QString darkThemeControlStyleSheet()
         "QComboBox::drop-down {"
         "  subcontrol-origin: padding;"
         "  subcontrol-position: top right;"
-        "  width: 22px;"
+        "  width: 18px;"
         "  border-left: 1px solid %1;"
         "  border-top-right-radius: 4px;"
         "  border-bottom-right-radius: 4px;"
@@ -290,8 +290,8 @@ QString darkThemeControlStyleSheet()
         "}"
         "QComboBox::down-arrow {"
         "  image: url(%4);"
-        "  width: 10px;"
-        "  height: 10px;"
+        "  width: 8px;"
+        "  height: 8px;"
         "}"
         "QComboBox QAbstractItemView {"
         "  border: 1px solid %1;"
