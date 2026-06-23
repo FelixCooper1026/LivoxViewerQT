@@ -232,7 +232,7 @@ public:
         setFixedHeight(fontMetrics().height() * 3 + 8);
 
         QVBoxLayout* root = new QVBoxLayout(this);
-        root->setContentsMargins(leftMargin, 2, 8, 0);
+        root->setContentsMargins(leftMargin, 0, 8, 0);
         root->setSpacing(8);
 
         m_controls = new QWidget(this);
@@ -513,7 +513,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     viewerToolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     viewerToolbar->setFixedHeight(fontMetrics().height() * 3 + 16);
     QVBoxLayout* viewerLayout = new QVBoxLayout(viewerToolbar);
-    viewerLayout->setContentsMargins(8, 2, 8, 2);
+    viewerLayout->setContentsMargins(8, 3, 8, 2);
     viewerLayout->setSpacing(0);
 
     QWidget* toolbarContent = new QWidget(viewerToolbar);

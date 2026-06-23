@@ -17,8 +17,8 @@
 
 namespace {
 
-constexpr int kPanelVisibilityButtonSize = 34;
-constexpr int kPanelVisibilityIconSize = 24;
+constexpr int kPanelVisibilityButtonSize = 24;
+constexpr int kPanelVisibilityIconSize = 22;
 
 QToolButton* createPanelVisibilityButton(QWidget* parent, const QString& iconPath, const QString& tooltip)
 {
@@ -33,14 +33,21 @@ QToolButton* createPanelVisibilityButton(QWidget* parent, const QString& iconPat
     button->setStyleSheet(QStringLiteral(
         "QToolButton {"
         "  border: 1px solid transparent;"
-        "  border-radius: 5px;"
+        "  border-radius: 4px;"
         "  background: transparent;"
-        "  padding: 4px;"
+        "  padding: 1px;"
         "}"
         "QToolButton:hover {"
         "  background: palette(alternate-base);"
         "}"
     ));
+    return button;
+}
+
+QToolButton* createMenuIconButton(QWidget* parent, const QString& iconPath, const QString& tooltip)
+{
+    QToolButton* button = createPanelVisibilityButton(parent, iconPath, tooltip);
+    button->setCheckable(false);
     return button;
 }
 
@@ -58,9 +65,11 @@ void LivoxViewerWindow::createMenusAndActions()
         "QMenuBar {"
         "  background: palette(window);"
         "  border: none;"
+        "  border-bottom: 1px solid palette(mid);"
+        "  padding: 3px 0 0 0;"
         "}"
         "QMenuBar::item {"
-        "  padding: 4px 8px;"
+        "  padding: 4px 12px 4px 12px;"
         "  border: none;"
         "  background: transparent;"
         "}"
@@ -86,19 +95,25 @@ void LivoxViewerWindow::createMenusAndActions()
     QToolButton* leftPanelButton = createPanelVisibilityButton(
         panelControls,
         QStringLiteral(":/icons/layout_panel_left.svg"),
-        QStringLiteral("显示/隐藏左侧网卡、设备、IMU数据和文件信息面板"));
+        QStringLiteral("显示/隐藏左侧面板"));
     QToolButton* bottomPanelButton = createPanelVisibilityButton(
         panelControls,
         QStringLiteral(":/icons/layout_panel_bottom.svg"),
-        QStringLiteral("显示/隐藏日志面板"));
+        QStringLiteral("显示/隐藏底部面板"));
     QToolButton* rightPanelButton = createPanelVisibilityButton(
         panelControls,
         QStringLiteral(":/icons/layout_panel_right.svg"),
-        QStringLiteral("显示/隐藏右侧参数和点属性面板"));
+        QStringLiteral("显示/隐藏右侧面板"));
+
+    QToolButton* settingsButton = createMenuIconButton(
+        panelControls,
+        QStringLiteral(":/icons/settings.svg"),
+        QStringLiteral("首选项"));
 
     panelControlsLayout->addWidget(leftPanelButton);
     panelControlsLayout->addWidget(bottomPanelButton);
     panelControlsLayout->addWidget(rightPanelButton);
+    panelControlsLayout->addWidget(settingsButton);
     menuBar->setCornerWidget(panelControls, Qt::TopRightCorner);
 
     auto syncPanelButtons = [this, leftPanelButton, bottomPanelButton, rightPanelButton]() {
@@ -157,6 +172,7 @@ void LivoxViewerWindow::createMenusAndActions()
         }
         syncPanelButtons();
     });
+    connect(settingsButton, &QToolButton::clicked, this, &LivoxViewerWindow::showPreferencesDialog);
 
     for (QDockWidget* dock : {networkDock, lidarDevicesDock, imuDock, lvx2FileDock, logDock, paramsDock, attrDock}) {
         connect(dock, &QDockWidget::visibilityChanged, panelControls, syncPanelButtons);
