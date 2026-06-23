@@ -61,6 +61,10 @@
     <file>layout_panel_bottom_active.svg</file>
     <file>layout_panel_right_active.svg</file>
     <file>settings.svg</file>
+    <file>window_minimize.svg</file>
+    <file>window_maximize.svg</file>
+    <file>window_restore.svg</file>
+    <file>window_close.svg</file>
 
     <file alias="app_icon.png">../resources/app_icon.png</file>
   </qresource>

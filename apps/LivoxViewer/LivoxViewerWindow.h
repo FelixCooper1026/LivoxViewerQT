@@ -132,6 +132,8 @@ private:
     void createFileInfoPanel();
     void createLogPanel();
     void createMenusAndActions();
+    QWidget* createCustomTitleBar(QWidget* panelControls);
+    void updateWindowControlButtons();
     void showFormatConvertDialog();
     void showFirmwareUpgradeDialog();
     void showPointCloudFilterDialog();
@@ -313,6 +315,9 @@ private:
     ParameterUiState parameterState;
 
     // Menu
+    QWidget* customTitleBar = nullptr;
+    QLabel* windowTitleLabel = nullptr;
+    QToolButton* maximizeRestoreButton = nullptr;
     QMenuBar* menuBar;
     QMenu* fileMenu;
     QMenu* deviceMenu;
@@ -562,6 +567,14 @@ private slots:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* event) override;
+#if defined(Q_OS_WIN)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
+#else
+    bool nativeEvent(const QByteArray& eventType, void* message, long* result) override;
+#endif
+#endif
 
 };
 

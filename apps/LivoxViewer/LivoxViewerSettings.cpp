@@ -592,6 +592,8 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     , lidarDiscoveryTimer(nullptr)
     , lidarDiscoveryActive(false)
 {
+    setWindowFlag(Qt::FramelessWindowHint, true);
+    setWindowTitle(QApplication::applicationDisplayName());
     initializeUserInterface();
     loadViewPreferences();
 
