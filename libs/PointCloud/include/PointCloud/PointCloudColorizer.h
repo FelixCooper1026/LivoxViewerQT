@@ -18,8 +18,9 @@ enum ReflectivityColorScale {
     ReflectivityHighContrast = 5,
     ReflectivityGrayscale = 6,
     ReflectivityPlasma = 7,
-    ReflectivityTerrain = 8,
-    ReflectivityInferno = 9
+    ReflectivitySpectral = 8,
+    ReflectivityTerrain = 9,
+    ReflectivityGISTEarth = 10
 };
 
 struct Config {

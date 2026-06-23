@@ -498,8 +498,9 @@ QStringList reflectivityScaleNames()
         QStringLiteral("High contrast"),
         QStringLiteral("Grayscale"),
         QStringLiteral("Plasma"),
+        QStringLiteral("Spectral"),
         QStringLiteral("Terrain"),
-        QStringLiteral("Inferno")
+        QStringLiteral("GISTEarth")
     };
 }
 

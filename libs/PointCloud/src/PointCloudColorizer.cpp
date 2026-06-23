@@ -13,7 +13,7 @@ constexpr int kColorByDistance = 1;
 constexpr int kColorByElevation = 2;
 constexpr int kColorSolid = 3;
 constexpr int kColorByLine = 4;
-constexpr int kReflectivityScaleCount = ReflectivityInferno + 1;
+constexpr int kReflectivityScaleCount = ReflectivityGISTEarth + 1;
 constexpr int kReflectivityValueCount = 256;
 
 struct Rgb {
@@ -51,8 +51,9 @@ constexpr std::array<ColorScaleDefinition, kReflectivityScaleCount> kReflectivit
     {std::array<ColorScaleStop, 15>{stop(170, 255, 255, 0.0f), stop(158, 158, 158, 0.01f), stop(0, 0, 127, 0.02f), stop(0, 255, 0, 0.04f), stop(0, 85, 0, 0.08f), stop(255, 255, 0, 0.16f), stop(255, 0, 0, 0.32f), stop(135, 0, 0, 0.5f), stop(232, 232, 232, 1.0f)}, 9},
     {std::array<ColorScaleStop, 15>{stop(0, 0, 0, 0.0f), stop(255, 255, 255, 1.0f)}, 2},
     {std::array<ColorScaleStop, 15>{stop(13, 8, 135, 0.0f), stop(53, 4, 152, 0.071429f), stop(83, 2, 163, 0.142857f), stop(111, 0, 168, 0.214286f), stop(139, 10, 165, 0.285714f), stop(163, 30, 154, 0.357143f), stop(184, 50, 137, 0.428571f), stop(204, 71, 120, 0.5f), stop(219, 92, 104, 0.571429f), stop(233, 113, 88, 0.642857f), stop(244, 136, 73, 0.714286f), stop(251, 162, 56, 0.785714f), stop(254, 189, 42, 0.857143f), stop(250, 218, 36, 0.928571f), stop(240, 249, 33, 1.0f)}, 15},
+    {std::array<ColorScaleStop, 15>{stop(0, 0, 0, 0.0f), stop(126, 0, 143, 0.071429f), stop(24, 0, 167, 0.142857f), stop(0, 28, 221, 0.214286f), stop(0, 144, 221, 0.285714f), stop(0, 170, 165, 0.357143f), stop(0, 161, 61, 0.428571f), stop(0, 188, 0, 0.5f), stop(0, 236, 0, 0.571429f), stop(161, 255, 0, 0.642857f), stop(243, 229, 0, 0.714286f), stop(255, 165, 0, 0.785714f), stop(249, 0, 0, 0.857143f), stop(211, 0, 0, 0.928571f), stop(204, 204, 204, 1.0f)}, 15},
     {std::array<ColorScaleStop, 15>{stop(51, 51, 153, 0.0f), stop(27, 99, 201, 0.071429f), stop(3, 147, 249, 0.142857f), stop(0, 184, 160, 0.214286f), stop(37, 211, 109, 0.285714f), stop(109, 226, 124, 0.357143f), stop(181, 240, 138, 0.428571f), stop(254, 254, 152, 0.5f), stop(218, 208, 133, 0.571429f), stop(182, 162, 114, 0.642857f), stop(146, 115, 94, 0.714286f), stop(147, 117, 110, 0.785714f), stop(183, 163, 159, 0.857143f), stop(219, 209, 207, 0.928571f), stop(255, 255, 255, 1.0f)}, 15},
-    {std::array<ColorScaleStop, 15>{stop(0, 0, 4, 0.0f), stop(13, 8, 41, 0.071429f), stop(40, 11, 83, 0.142857f), stop(71, 11, 106, 0.214286f), stop(101, 21, 110, 0.285714f), stop(130, 32, 108, 0.357143f), stop(159, 42, 99, 0.428571f), stop(188, 55, 84, 0.5f), stop(212, 72, 66, 0.571429f), stop(232, 96, 45, 0.642857f), stop(245, 125, 21, 0.714286f), stop(252, 159, 7, 0.785714f), stop(250, 194, 40, 0.857143f), stop(243, 229, 93, 0.928571f), stop(252, 255, 164, 1.0f)}, 15}
+    {std::array<ColorScaleStop, 15>{stop(0, 0, 0, 0.0f), stop(12, 25, 118, 0.071429f), stop(24, 65, 121, 0.142857f), stop(36, 100, 124, 0.214286f), stop(48, 129, 126, 0.285714f), stop(57, 139, 104, 0.357143f), stop(65, 149, 82, 0.428571f), stop(94, 160, 75, 0.5f), stop(130, 169, 84, 0.571429f), stop(160, 177, 90, 0.642857f), stop(185, 179, 95, 0.714286f), stop(193, 163, 103, 0.785714f), stop(213, 177, 148, 0.857143f), stop(233, 205, 197, 0.928571f), stop(253, 251, 251, 1.0f)}, 15}
 }};
 
 constexpr const char* kViridisScaleHex =

@@ -806,7 +806,7 @@ void LivoxViewerWindow::loadViewPreferences()
     elevationLegendMin = settings.value("legend/elevationMin", elevationLegendMin).toFloat();
     elevationLegendMax = settings.value("legend/elevationMax", elevationLegendMax).toFloat();
     reflectivityColorScale = settings.value("color/reflectivityScale", reflectivityColorScale).toInt();
-    if (reflectivityColorScale < 0 || reflectivityColorScale > PointCloudColorizer::ReflectivityInferno) {
+    if (reflectivityColorScale < 0 || reflectivityColorScale > PointCloudColorizer::ReflectivityGISTEarth) {
         reflectivityColorScale = 0;
     }
     solidColor = settings.value("color/solidColor", solidColor).value<QColor>();
@@ -1101,8 +1101,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         QStringLiteral("High contrast"),
         QStringLiteral("Grayscale"),
         QStringLiteral("Plasma"),
+        QStringLiteral("Spectral"),
         QStringLiteral("Terrain"),
-        QStringLiteral("Inferno")
+        QStringLiteral("GISTEarth")
     });
     reflectivityScaleCombo->setCurrentIndex(selectedReflectivityColorScale);
     reflectivityScaleCombo->setFixedWidth(280);
