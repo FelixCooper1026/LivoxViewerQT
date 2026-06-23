@@ -19,6 +19,7 @@
 #include <QStandardPaths>
 #include <QToolButton>
 #include <QUrl>
+#include <QWindow>
 
 #include <algorithm>
 #include <cstdlib>
@@ -249,6 +250,14 @@ protected:
                          HTCAPTION,
                          MAKELPARAM(nativePos.x, nativePos.y));
 #else
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+            if (QWindow* windowHandle = m_window->windowHandle()) {
+                if (windowHandle->startSystemMove()) {
+                    event->accept();
+                    return;
+                }
+            }
+#endif
             m_dragging = true;
             m_dragOffset = globalMousePosition(event) - m_window->frameGeometry().topLeft();
 #endif
@@ -362,7 +371,9 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     layout->setContentsMargins(8, 0, 0, 0);
     layout->setSpacing(0);
 
-    menuBar->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
+    menuBar->setNativeMenuBar(false);
+    menuBar->setMinimumWidth(menuBar->sizeHint().width());
+    menuBar->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
     layout->addWidget(menuBar, 0, Qt::AlignVCenter);
     layout->addStretch(1);
 
