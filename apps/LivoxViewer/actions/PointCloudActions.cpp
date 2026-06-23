@@ -55,6 +55,7 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
 void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;
+    syncReflectivityColorScaleControls();
     if (playbackState.active && playbackState.frame >= 0) {
         playbackState.resetSlidingWindow();
         showLvx2PlaybackFrame(playbackState.frame);
@@ -65,6 +66,34 @@ void LivoxViewerWindow::onColorModeClicked(int index)
 int LivoxViewerWindow::effectiveColorMode() const
 {
     return colorMode;
+}
+
+void LivoxViewerWindow::syncReflectivityColorScaleControls()
+{
+    if (reflectivityScaleCombo) {
+        QSignalBlocker blocker(reflectivityScaleCombo);
+        reflectivityScaleCombo->setCurrentIndex(reflectivityColorScale);
+    }
+    if (overflowReflectivityScaleCombo) {
+        QSignalBlocker blocker(overflowReflectivityScaleCombo);
+        overflowReflectivityScaleCombo->setCurrentIndex(reflectivityColorScale);
+    }
+
+    const bool visible = colorMode == ColorByReflectivity;
+    if (reflectivityScaleRow) {
+        reflectivityScaleRow->setProperty("toolbarOptionalHidden", !visible);
+        reflectivityScaleRow->setVisible(visible);
+        reflectivityScaleRow->updateGeometry();
+    }
+    if (reflectivityScaleCombo) {
+        reflectivityScaleCombo->setEnabled(visible);
+    }
+    if (overflowReflectivityScaleCombo) {
+        overflowReflectivityScaleCombo->setEnabled(visible);
+    }
+    if (overflowReflectivityScaleAction) {
+        overflowReflectivityScaleAction->setVisible(visible);
+    }
 }
 
 void LivoxViewerWindow::updatePointCloudLegend()

@@ -158,6 +158,7 @@ private:
     void recolorPointCloudViews();
     void applyPointCloudBackground();
     void updateProjectionControlsVisibility();
+    void syncReflectivityColorScaleControls();
     void syncPointCloudVisualizationAction();
     void syncPointCloudStlModelAction();
     void syncPointCloudToolActions();
@@ -323,6 +324,10 @@ private:
     // 点云可视化控制（UI控件指针与状态）
     QSpinBox* pointSizeSpin = nullptr;
     QComboBox* colorModeCombo = nullptr;
+    QComboBox* reflectivityScaleCombo = nullptr;
+    QComboBox* overflowReflectivityScaleCombo = nullptr;
+    QAction* overflowReflectivityScaleAction = nullptr;
+    QWidget* reflectivityScaleRow = nullptr;
     QWidget* projectionControlsGroup = nullptr;
     QDoubleSpinBox* projectionDepthSpin = nullptr;
     QToolButton* projectionDepthCheck = nullptr;

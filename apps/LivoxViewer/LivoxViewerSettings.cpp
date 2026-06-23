@@ -806,7 +806,7 @@ void LivoxViewerWindow::loadViewPreferences()
     elevationLegendMin = settings.value("legend/elevationMin", elevationLegendMin).toFloat();
     elevationLegendMax = settings.value("legend/elevationMax", elevationLegendMax).toFloat();
     reflectivityColorScale = settings.value("color/reflectivityScale", reflectivityColorScale).toInt();
-    if (reflectivityColorScale < 0 || reflectivityColorScale > 6) {
+    if (reflectivityColorScale < 0 || reflectivityColorScale > PointCloudColorizer::ReflectivityInferno) {
         reflectivityColorScale = 0;
     }
     solidColor = settings.value("color/solidColor", solidColor).value<QColor>();
@@ -1099,7 +1099,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         QStringLiteral("Turbo"),
         QStringLiteral("Cividis"),
         QStringLiteral("High contrast"),
-        QStringLiteral("Grayscale")
+        QStringLiteral("Grayscale"),
+        QStringLiteral("Plasma"),
+        QStringLiteral("Terrain"),
+        QStringLiteral("Inferno")
     });
     reflectivityScaleCombo->setCurrentIndex(selectedReflectivityColorScale);
     reflectivityScaleCombo->setFixedWidth(280);
@@ -1351,6 +1354,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
 
+    syncReflectivityColorScaleControls();
     pointCloudView->setGridConfig(config);
     applyPointCloudBackground();
     applyUiTheme();

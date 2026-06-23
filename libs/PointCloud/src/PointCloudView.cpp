@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QLinearGradient>
+#include <QMatrix3x3>
 #include <QOpenGLFunctions>
 #include <QOpenGLContext>
 #include <QMimeData>
@@ -48,24 +49,43 @@ constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
 
-StlModel::Vertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
+StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
 {
     return {
         (sourceXReversed ? vertex.x : -vertex.x) * kModelMillimetersToMeters,
         vertex.z * kModelMillimetersToMeters,
         vertex.y * kModelMillimetersToMeters,
-        vertex.r,
-        vertex.g,
-        vertex.b
+        0.72f,
+        0.76f,
+        0.78f,
+        0.0f,
+        0.0f,
+        1.0f
     };
 }
 
-QVector<StlModel::Vertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices, bool sourceXReversed)
+QVector<StlRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices, bool sourceXReversed)
 {
-    QVector<StlModel::Vertex> transformed;
+    QVector<StlRenderVertex> transformed;
     transformed.reserve(vertices.size());
-    for (const StlModel::Vertex& vertex : vertices) {
-        transformed.push_back(transformDeviceModelVertex(vertex, sourceXReversed));
+    for (int i = 0; i + 2 < vertices.size(); i += 3) {
+        StlRenderVertex a = transformDeviceModelVertex(vertices.at(i), sourceXReversed);
+        StlRenderVertex b = transformDeviceModelVertex(vertices.at(i + 1), sourceXReversed);
+        StlRenderVertex c = transformDeviceModelVertex(vertices.at(i + 2), sourceXReversed);
+        QVector3D normal = QVector3D::crossProduct(
+            QVector3D(b.x - a.x, b.y - a.y, b.z - a.z),
+            QVector3D(c.x - a.x, c.y - a.y, c.z - a.z));
+        if (normal.lengthSquared() > 0.0f) {
+            normal.normalize();
+        } else {
+            normal = QVector3D(0.0f, 0.0f, 1.0f);
+        }
+        for (StlRenderVertex* vertex : {&a, &b, &c}) {
+            vertex->nx = normal.x();
+            vertex->ny = normal.y();
+            vertex->nz = normal.z();
+            transformed.push_back(*vertex);
+        }
     }
     return transformed;
 }
@@ -374,11 +394,14 @@ void PointCloudView::setupShaders()
         #version 330 core
         layout(location = 0) in vec3 aPos;
         layout(location = 1) in vec3 aColor;
+        layout(location = 2) in vec3 aNormal;
 
         // 正常渲染用的矩阵
         uniform mat4 modelView;
         uniform mat4 projection;
+        uniform mat3 normalMatrix;
         uniform float uPointSize;
+        uniform int uModelLighting;
 
         // 框选专用的 Uniform (来自 m_selectionLocked == true 时)
         uniform int uPersistEnabled;
@@ -388,13 +411,18 @@ void PointCloudView::setupShaders()
 
         // 传给片元着色器的变量
         out vec3 vColor;
+        out vec3 vNormal;
+        out vec3 vViewPosition;
         flat out int vIsSelected; // 【关键】flat 关键字表示这个整数不需要插值，原样传给片元
 
         void main() {
             // 1. 常规的顶点位置计算 (为了屏幕显示)
-            gl_Position = projection * modelView * vec4(aPos, 1.0);
+            vec4 viewPosition = modelView * vec4(aPos, 1.0);
+            gl_Position = projection * viewPosition;
             gl_PointSize = uPointSize;
             vColor = aColor;
+            vNormal = normalize(normalMatrix * aNormal);
+            vViewPosition = viewPosition.xyz;
             
             // 2. 默认未选中
             vIsSelected = 0;
@@ -426,7 +454,11 @@ void PointCloudView::setupShaders()
     const char *fragmentShaderSource = R"(
         #version 330 core
         in vec3 vColor;
+        in vec3 vNormal;
+        in vec3 vViewPosition;
         flat in int vIsSelected; // 接收顶点着色器传来的判断结果
+
+        uniform int uModelLighting;
 
         out vec4 FragColor;
 
@@ -434,6 +466,17 @@ void PointCloudView::setupShaders()
             // 片元着色器只做最简单的 IF 判断，不涉及任何矩阵运算！
             if (vIsSelected == 1) {
                 FragColor = vec4(1.0, 0.0, 0.0, 1.0); // 框选的点涂成纯红色
+            } else if (uModelLighting == 1) {
+                vec3 normal = normalize(vNormal);
+                vec3 viewDir = normalize(-vViewPosition);
+                vec3 keyLight = normalize(vec3(-0.45, 0.35, 0.82));
+                vec3 fillLight = normalize(vec3(0.68, -0.32, 0.52));
+                float diffuse = 0.46 * max(dot(normal, keyLight), 0.0)
+                              + 0.22 * max(dot(normal, fillLight), 0.0);
+                vec3 halfDir = normalize(keyLight + viewDir);
+                float specular = 0.10 * pow(max(dot(normal, halfDir), 0.0), 32.0);
+                vec3 color = vColor * (0.36 + diffuse) + vec3(specular);
+                FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
             } else {
                 FragColor = vec4(vColor, 1.0);        // 没选中的点保持原色
             }
@@ -670,9 +713,11 @@ void PointCloudView::setupStlModelBuffers()
     m_stlModelVbo.allocate(1);
 
     m_program->enableAttributeArray(0);
-    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(StlModel::Vertex, x), 3, sizeof(StlModel::Vertex));
+    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(StlRenderVertex, x), 3, sizeof(StlRenderVertex));
     m_program->enableAttributeArray(1);
-    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(StlModel::Vertex, r), 3, sizeof(StlModel::Vertex));
+    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(StlRenderVertex, r), 3, sizeof(StlRenderVertex));
+    m_program->enableAttributeArray(2);
+    m_program->setAttributeBuffer(2, GL_FLOAT, offsetof(StlRenderVertex, nx), 3, sizeof(StlRenderVertex));
 
     m_stlModelVao.release();
     m_stlModelVbo.release();
@@ -877,9 +922,13 @@ void PointCloudView::paintGL()
         const float halfWidth = halfHeight * aspect;
         m_projection.ortho(-halfWidth, halfWidth, -halfHeight, halfHeight, nearPlane, farPlane);
     }
+    QMatrix3x3 normalMatrix;
+    normalMatrix.setToIdentity();
     m_program->setUniformValue("modelView", m_modelView);
     m_program->setUniformValue("projection", m_projection);
+    m_program->setUniformValue("normalMatrix", normalMatrix);
     m_program->setUniformValue("uPointSize", m_pointSize);
+    m_program->setUniformValue("uModelLighting", 0);
 
     // ==========================================
     // 2. 绘制基础图元：网格 (注：坐标轴被移到了后面作为 Overlay 绘制)
@@ -985,10 +1034,13 @@ void PointCloudView::paintGL()
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
         m_program->setUniformValue("uPersistEnabled", 0);
         m_program->setUniformValue("uSelectionEnabled", 0);
+        m_program->setUniformValue("normalMatrix", m_modelView.normalMatrix());
+        m_program->setUniformValue("uModelLighting", 1);
         glEnable(GL_DEPTH_TEST);
         m_stlModelVao.bind();
         glDrawArrays(GL_TRIANGLES, 0, m_stlModelVertices.size());
         m_stlModelVao.release();
+        m_program->setUniformValue("uModelLighting", 0);
     }
 
     if (m_crossSectionState.enabled && m_crossSectionState.initialized) {
@@ -1942,7 +1994,7 @@ void PointCloudView::uploadStlModelVertices()
     }
     ScopedOpenGLContext current(this);
     m_stlModelVbo.bind();
-    m_stlModelVbo.allocate(m_stlModelVertices.constData(), static_cast<int>(m_stlModelVertices.size() * qsizetype(sizeof(StlModel::Vertex))));
+    m_stlModelVbo.allocate(m_stlModelVertices.constData(), static_cast<int>(m_stlModelVertices.size() * qsizetype(sizeof(StlRenderVertex))));
     m_stlModelVbo.release();
 }
 

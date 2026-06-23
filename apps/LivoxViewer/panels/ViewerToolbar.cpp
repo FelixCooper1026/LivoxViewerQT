@@ -15,6 +15,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QStringList>
 #include <QToolButton>
 #include <QWidgetAction>
 
@@ -486,6 +487,22 @@ void addWidgetAction(QMenu* menu, const QString& label, QWidget* widget)
     menu->addAction(action);
 }
 
+QStringList reflectivityScaleNames()
+{
+    return {
+        QStringLiteral("BGYR"),
+        QStringLiteral("Rainbow"),
+        QStringLiteral("Viridis"),
+        QStringLiteral("Turbo"),
+        QStringLiteral("Cividis"),
+        QStringLiteral("High contrast"),
+        QStringLiteral("Grayscale"),
+        QStringLiteral("Plasma"),
+        QStringLiteral("Terrain"),
+        QStringLiteral("Inferno")
+    };
+}
+
 } // namespace
 
 QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
@@ -648,6 +665,15 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QWidget* colorModeRow = createIconLabeledWidget(":/icons/paint_bucket.svg", "点云着色模式", colorModeCombo, displayGroup, toolbarIconSize);
     displayGroup->addPrimaryWidget(colorModeRow);
 
+    reflectivityScaleCombo = new QComboBox(displayGroup);
+    reflectivityScaleCombo->addItems(reflectivityScaleNames());
+    reflectivityScaleCombo->setCurrentIndex(reflectivityColorScale);
+    reflectivityScaleCombo->setToolTip(QStringLiteral("反射率色标"));
+    reflectivityScaleRow = createIconLabeledWidget(":/icons/settings_color.svg", QStringLiteral("反射率色标"), reflectivityScaleCombo, displayGroup, toolbarIconSize);
+    reflectivityScaleRow->setProperty("toolbarOptionalHidden", colorMode != ColorByReflectivity);
+    reflectivityScaleRow->setVisible(colorMode == ColorByReflectivity);
+    displayGroup->addPrimaryWidget(reflectivityScaleRow);
+
     displayGroup->moreMenu()->addAction(gridAction);
     displayGroup->moreMenu()->addAction(actionPointCloudVisualization);
     displayGroup->moreMenu()->addAction(stlModelAction);
@@ -656,6 +682,9 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
     overflowColorMode->addItems({"反射率", "距离", "高度", "纯色", "线号"});
     overflowColorMode->setCurrentIndex(colorModeCombo->currentIndex());
+    overflowReflectivityScaleCombo = new QComboBox(displayGroup->moreMenu());
+    overflowReflectivityScaleCombo->addItems(reflectivityScaleNames());
+    overflowReflectivityScaleCombo->setCurrentIndex(reflectivityColorScale);
     connect(colorModeCombo, QOverload<int>::of(&QComboBox::activated), this, [this, overflowColorMode](int index) {
         QSignalBlocker blocker(overflowColorMode);
         overflowColorMode->setCurrentIndex(index);
@@ -669,6 +698,43 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         onColorModeClicked(index);
     });
     addWidgetAction(displayGroup->moreMenu(), "着色", overflowColorMode);
+    connect(reflectivityScaleCombo, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
+        reflectivityColorScale = index;
+        syncReflectivityColorScaleControls();
+        if (playbackState.active && playbackState.frame >= 0) {
+            showLvx2PlaybackFrame(playbackState.frame);
+        }
+        recolorPointCloudViews();
+        saveViewPreferences();
+    });
+    connect(overflowReflectivityScaleCombo, QOverload<int>::of(&QComboBox::activated), this, [this](int index) {
+        reflectivityColorScale = index;
+        syncReflectivityColorScaleControls();
+        if (playbackState.active && playbackState.frame >= 0) {
+            showLvx2PlaybackFrame(playbackState.frame);
+        }
+        recolorPointCloudViews();
+        saveViewPreferences();
+    });
+    QWidgetAction* overflowReflectivityScaleWidgetAction = new QWidgetAction(displayGroup->moreMenu());
+    overflowReflectivityScaleAction = overflowReflectivityScaleWidgetAction;
+    QWidget* overflowReflectivityScaleRow = new QWidget(displayGroup->moreMenu());
+    QHBoxLayout* overflowReflectivityScaleLayout = new QHBoxLayout(overflowReflectivityScaleRow);
+    overflowReflectivityScaleLayout->setContentsMargins(8, 4, 8, 4);
+    overflowReflectivityScaleLayout->setSpacing(6);
+    overflowReflectivityScaleLayout->addWidget(new QLabel(QStringLiteral("色标"), overflowReflectivityScaleRow));
+    overflowReflectivityScaleLayout->addWidget(overflowReflectivityScaleCombo);
+    overflowReflectivityScaleWidgetAction->setDefaultWidget(overflowReflectivityScaleRow);
+    displayGroup->moreMenu()->addAction(overflowReflectivityScaleWidgetAction);
+    connect(colorModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) {
+                syncReflectivityColorScaleControls();
+            });
+    connect(overflowColorMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [this](int) {
+                syncReflectivityColorScaleControls();
+            });
+    syncReflectivityColorScaleControls();
     toolbarLayout->addWidget(displayGroup);
 
     ToolbarGroup* transformGroup = new ToolbarGroup("点云变换", viewerToolbar);

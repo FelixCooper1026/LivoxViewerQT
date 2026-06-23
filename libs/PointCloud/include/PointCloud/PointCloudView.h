@@ -28,6 +28,18 @@
 #include <functional>
 #include <memory>
 
+struct StlRenderVertex {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    float r = 0.72f;
+    float g = 0.76f;
+    float b = 0.78f;
+    float nx = 0.0f;
+    float ny = 0.0f;
+    float nz = 1.0f;
+};
+
 class PointCloudView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
 {
     Q_OBJECT
@@ -207,7 +219,7 @@ private:
     int m_crossSectionTriangleVertexCount = 0;
     QOpenGLBuffer m_stlModelVbo;
     QOpenGLVertexArrayObject m_stlModelVao;
-    QVector<StlModel::Vertex> m_stlModelVertices;
+    QVector<StlRenderVertex> m_stlModelVertices;
     bool m_stlModelVisible = false;
 
     QMatrix4x4 m_projection;
