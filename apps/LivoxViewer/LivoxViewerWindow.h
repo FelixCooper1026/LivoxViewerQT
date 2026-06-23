@@ -134,6 +134,7 @@ private:
     void createMenusAndActions();
     QWidget* createCustomTitleBar(QWidget* panelControls);
     void updateWindowControlButtons();
+    void updateCustomTitleBarInsets();
     void showFormatConvertDialog();
     void showFirmwareUpgradeDialog();
     void showPointCloudFilterDialog();

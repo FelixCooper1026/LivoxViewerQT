@@ -4,6 +4,7 @@
 #include <QAbstractButton>
 #include <QApplication>
 #include <QCursor>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -20,6 +21,7 @@
 #include <QUrl>
 
 #include <algorithm>
+#include <cstdlib>
 
 #ifdef Q_OS_WIN
 #ifndef WIN32_LEAN_AND_MEAN
@@ -38,6 +40,8 @@ constexpr int kWindowControlButtonWidth = 46;
 constexpr int kWindowControlButtonHeight = 32;
 constexpr int kResizeBorderWidth = 8;
 constexpr int kTitleBarTopResizeBorderWidth = 2;
+constexpr unsigned int kWmNcUahDrawCaption = 0x00AE;
+constexpr unsigned int kWmNcUahDrawFrame = 0x00AF;
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 QPoint globalMousePosition(QMouseEvent* event)
@@ -64,7 +68,7 @@ bool isInteractiveTitleBarChild(QWidget* child, QWidget* titleBar)
 void minimizeWindow(QMainWindow* window)
 {
 #ifdef Q_OS_WIN
-    ShowWindow(HWND(window->winId()), SW_MINIMIZE);
+    PostMessageW(HWND(window->winId()), WM_SYSCOMMAND, SC_MINIMIZE, 0);
 #else
     window->showMinimized();
 #endif
@@ -74,7 +78,7 @@ void toggleMaximizedWindow(QMainWindow* window)
 {
 #ifdef Q_OS_WIN
     HWND hwnd = HWND(window->winId());
-    ShowWindow(hwnd, IsZoomed(hwnd) ? SW_RESTORE : SW_MAXIMIZE);
+    PostMessageW(hwnd, WM_SYSCOMMAND, IsZoomed(hwnd) ? SC_RESTORE : SC_MAXIMIZE, 0);
 #else
     window->isMaximized() ? window->showNormal() : window->showMaximized();
 #endif
@@ -83,26 +87,113 @@ void toggleMaximizedWindow(QMainWindow* window)
 void closeWindow(QMainWindow* window)
 {
 #ifdef Q_OS_WIN
-    SendMessageW(HWND(window->winId()), WM_SYSCOMMAND, SC_CLOSE, 0);
+    PostMessageW(HWND(window->winId()), WM_SYSCOMMAND, SC_CLOSE, 0);
 #else
     window->close();
 #endif
 }
 
 #ifdef Q_OS_WIN
+void disableDwmWindowBorder(HWND hwnd)
+{
+    HMODULE dwmapi = LoadLibraryW(L"dwmapi.dll");
+    if (!dwmapi) {
+        return;
+    }
+    using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+    DwmSetWindowAttributeFn setWindowAttribute =
+        reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+    if (setWindowAttribute) {
+        constexpr DWORD kDwmwaBorderColor = 34;
+        constexpr COLORREF kDwmwaColorNone = 0xFFFFFFFE;
+        setWindowAttribute(hwnd, kDwmwaBorderColor, &kDwmwaColorNone, sizeof(kDwmwaColorNone));
+    }
+    FreeLibrary(dwmapi);
+}
+
+bool isWindowMaximizedNative(HWND hwnd);
+
 void enableNativeWindowBehavior(QMainWindow* window)
 {
     HWND hwnd = HWND(window->winId());
     const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
     SetWindowLongPtrW(hwnd, GWL_STYLE,
-                      (style & ~WS_CAPTION) | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+                      style | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+    disableDwmWindowBorder(hwnd);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
 
 bool isWindowMaximized(QMainWindow* window)
 {
-    return IsZoomed(HWND(window->winId()));
+    return isWindowMaximizedNative(HWND(window->winId()));
+}
+
+bool isWindowMaximizedNative(HWND hwnd)
+{
+    const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    WINDOWPLACEMENT placement = {};
+    placement.length = sizeof(placement);
+    GetWindowPlacement(hwnd, &placement);
+    return IsZoomed(hwnd) ||
+           (style & WS_MAXIMIZE) ||
+           placement.showCmd == SW_MAXIMIZE;
+}
+
+int systemMetricForWindow(HWND hwnd, int metric)
+{
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    using GetDpiForWindowFn = UINT(WINAPI*)(HWND);
+    using GetSystemMetricsForDpiFn = int(WINAPI*)(int, UINT);
+    GetDpiForWindowFn getDpiForWindow =
+        reinterpret_cast<GetDpiForWindowFn>(GetProcAddress(user32, "GetDpiForWindow"));
+    GetSystemMetricsForDpiFn getSystemMetricsForDpi =
+        reinterpret_cast<GetSystemMetricsForDpiFn>(GetProcAddress(user32, "GetSystemMetricsForDpi"));
+    if (getDpiForWindow && getSystemMetricsForDpi) {
+        return getSystemMetricsForDpi(metric, getDpiForWindow(hwnd));
+    }
+    return GetSystemMetrics(metric);
+}
+
+int nativeFrameWidth(HWND hwnd)
+{
+    return systemMetricForWindow(hwnd, SM_CXFRAME) + systemMetricForWindow(hwnd, SM_CXPADDEDBORDER);
+}
+
+int nativeFrameHeight(HWND hwnd)
+{
+    return systemMetricForWindow(hwnd, SM_CYFRAME) + systemMetricForWindow(hwnd, SM_CXPADDEDBORDER);
+}
+
+bool isMaximizedOuterFrameRect(const RECT& rect, const RECT& work, HWND hwnd)
+{
+    const int tolerance = 6;
+    const int frameX = nativeFrameWidth(hwnd);
+    const int frameY = nativeFrameHeight(hwnd);
+    return std::abs(rect.left - (work.left - frameX)) <= tolerance &&
+           std::abs(rect.top - (work.top - frameY)) <= tolerance &&
+           std::abs(rect.right - (work.right + frameX)) <= tolerance &&
+           std::abs(rect.bottom - (work.bottom + frameY)) <= tolerance;
+}
+
+bool rectCoversWorkArea(const RECT& rect, const RECT& work)
+{
+    const int tolerance = 6;
+    return rect.left <= work.left + tolerance &&
+           rect.top <= work.top + tolerance &&
+           rect.right >= work.right - tolerance &&
+           rect.bottom >= work.bottom - tolerance;
+}
+
+QString rectToDebugString(const RECT& rect)
+{
+    return QStringLiteral("(%1,%2)-(%3,%4) %5x%6")
+        .arg(rect.left)
+        .arg(rect.top)
+        .arg(rect.right)
+        .arg(rect.bottom)
+        .arg(rect.right - rect.left)
+        .arg(rect.bottom - rect.top);
 }
 #endif
 
@@ -313,6 +404,7 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     });
 
     updateWindowControlButtons();
+    updateCustomTitleBarInsets();
     return titleBar;
 }
 
@@ -337,6 +429,26 @@ void LivoxViewerWindow::updateWindowControlButtons()
     }
 }
 
+void LivoxViewerWindow::updateCustomTitleBarInsets()
+{
+    if (!customTitleBar) {
+        return;
+    }
+
+    int topInset = 0;
+#ifdef Q_OS_WIN
+    HWND hwnd = HWND(winId());
+    if (isWindowMaximizedNative(hwnd)) {
+        topInset = nativeFrameHeight(hwnd);
+    }
+#endif
+
+    customTitleBar->setFixedHeight(kTitleBarHeight + topInset);
+    if (QLayout* layout = customTitleBar->layout()) {
+        layout->setContentsMargins(8, topInset, 0, 0);
+    }
+}
+
 void LivoxViewerWindow::changeEvent(QEvent* event)
 {
     QMainWindow::changeEvent(event);
@@ -346,6 +458,7 @@ void LivoxViewerWindow::changeEvent(QEvent* event)
         event->type() == QEvent::PaletteChange ||
         event->type() == QEvent::ApplicationPaletteChange) {
         updateWindowControlButtons();
+        updateCustomTitleBarInsets();
     }
 }
 
@@ -358,6 +471,23 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
 {
     Q_UNUSED(eventType)
     MSG* msg = static_cast<MSG*>(message);
+    if (msg->message == WM_NCACTIVATE) {
+        *result = TRUE;
+        return true;
+    }
+
+    if (msg->message == WM_NCPAINT ||
+        msg->message == kWmNcUahDrawCaption ||
+        msg->message == kWmNcUahDrawFrame) {
+        *result = 0;
+        return true;
+    }
+
+    if (msg->message == WM_SIZE ||
+        msg->message == WM_WINDOWPOSCHANGED) {
+        updateCustomTitleBarInsets();
+    }
+
     if (msg->message == WM_GETMINMAXINFO) {
         MINMAXINFO* info = reinterpret_cast<MINMAXINFO*>(msg->lParam);
         MONITORINFO monitorInfo = {};
@@ -365,21 +495,55 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
         GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
         const RECT work = monitorInfo.rcWork;
         const RECT monitor = monitorInfo.rcMonitor;
-        info->ptMaxPosition.x = work.left - monitor.left;
-        info->ptMaxPosition.y = work.top - monitor.top;
-        info->ptMaxSize.x = work.right - work.left;
-        info->ptMaxSize.y = work.bottom - work.top;
+        const int frameX = nativeFrameWidth(msg->hwnd);
+        const int frameY = nativeFrameHeight(msg->hwnd);
+        info->ptMaxPosition.x = work.left - monitor.left - frameX;
+        info->ptMaxPosition.y = work.top - monitor.top - frameY;
+        info->ptMaxSize.x = work.right - work.left + frameX * 2;
+        info->ptMaxSize.y = work.bottom - work.top + frameY * 2;
+        const LONG_PTR style = GetWindowLongPtrW(msg->hwnd, GWL_STYLE);
+        qDebug().noquote()
+            << "[WindowFrame] WM_GETMINMAXINFO"
+            << "monitor" << rectToDebugString(monitorInfo.rcMonitor)
+            << "work" << rectToDebugString(monitorInfo.rcWork)
+            << "frame" << frameX << frameY
+            << "IsZoomed" << bool(IsZoomed(msg->hwnd))
+            << "WS_MAXIMIZE" << bool(style & WS_MAXIMIZE);
         *result = 0;
         return true;
     }
 
     if (msg->message == WM_NCCALCSIZE) {
-        if (msg->wParam && IsZoomed(msg->hwnd)) {
+        if (msg->wParam) {
             NCCALCSIZE_PARAMS* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
+            const RECT proposed = params->rgrc[0];
             MONITORINFO monitorInfo = {};
             monitorInfo.cbSize = sizeof(monitorInfo);
-            GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-            params->rgrc[0] = monitorInfo.rcWork;
+            GetMonitorInfoW(MonitorFromRect(&proposed, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+            const bool nativeMaximized = isWindowMaximizedNative(msg->hwnd);
+            const bool matchOuter = isMaximizedOuterFrameRect(proposed, monitorInfo.rcWork, msg->hwnd);
+            const bool coversWork = rectCoversWorkArea(proposed, monitorInfo.rcWork);
+            const LONG_PTR style = GetWindowLongPtrW(msg->hwnd, GWL_STYLE);
+            WINDOWPLACEMENT placement = {};
+            placement.length = sizeof(placement);
+            GetWindowPlacement(msg->hwnd, &placement);
+            qDebug().noquote()
+                << "[WindowFrame] WM_NCCALCSIZE"
+                << "monitor" << rectToDebugString(monitorInfo.rcMonitor)
+                << "work" << rectToDebugString(monitorInfo.rcWork)
+                << "proposed" << rectToDebugString(proposed)
+                << "frame" << nativeFrameWidth(msg->hwnd) << nativeFrameHeight(msg->hwnd)
+                << "IsZoomed" << bool(IsZoomed(msg->hwnd))
+                << "WS_MAXIMIZE" << bool(style & WS_MAXIMIZE)
+                << "showCmd" << placement.showCmd
+                << "matchOuter" << matchOuter
+                << "coversWork" << coversWork;
+            if (nativeMaximized || matchOuter || coversWork) {
+                params->rgrc[0].left = monitorInfo.rcWork.left;
+                params->rgrc[0].top = monitorInfo.rcWork.top;
+                params->rgrc[0].right = monitorInfo.rcWork.right;
+                params->rgrc[0].bottom = monitorInfo.rcWork.bottom;
+            }
         }
         *result = 0;
         return true;
@@ -517,9 +681,6 @@ void LivoxViewerWindow::createMenusAndActions()
     setMenuWidget(customTitleBar);
 #ifdef Q_OS_WIN
     enableNativeWindowBehavior(this);
-    QTimer::singleShot(0, this, [this]() {
-        enableNativeWindowBehavior(this);
-    });
 #endif
 
     auto syncPanelButtons = [this, leftPanelButton, bottomPanelButton, rightPanelButton]() {
