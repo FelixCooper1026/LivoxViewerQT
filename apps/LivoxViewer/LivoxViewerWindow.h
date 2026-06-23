@@ -135,6 +135,8 @@ private:
     QWidget* createCustomTitleBar(QWidget* panelControls);
     void updateWindowControlButtons();
     void updateCustomTitleBarInsets();
+    void updateMenuOverflow();
+    void rebuildMenuOverflow();
     void showFormatConvertDialog();
     void showFirmwareUpgradeDialog();
     void showPointCloudFilterDialog();
@@ -324,6 +326,8 @@ private:
     QMenu* deviceMenu;
     QMenu* helpMenu;
     QMenu* viewMenu;
+    QMenu* menuOverflowMenu = nullptr;
+    QAction* menuOverflowAction = nullptr;
     QAction* exitAction;
     QAction* aboutAction;
 

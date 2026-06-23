@@ -16,6 +16,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QStringList>
+#include <QTimer>
 #include <QToolButton>
 #include <QWidgetAction>
 
@@ -77,6 +78,10 @@ public:
     {
         QSize size;
         for (QLayoutItem* item : m_items) {
+            QWidget* widget = item->widget();
+            if (widget && widget->isHidden()) {
+                continue;
+            }
             QSize itemSize = item->minimumSize();
             itemSize.setHeight(std::max(itemSize.height(), item->sizeHint().height()));
             size = size.expandedTo(itemSize);
@@ -284,6 +289,12 @@ public:
     QHBoxLayout* controlsLayout() const { return m_controlsLayout; }
     QMenu* moreMenu() const { return m_moreMenu; }
 
+    void refreshOverflow()
+    {
+        updateOverflow();
+        updateGeometry();
+    }
+
     void setLeadingSeparatorVisible(bool visible)
     {
         setProperty("leadingSeparator", visible);
@@ -399,6 +410,49 @@ private:
     int m_compactPriority = 0;
 };
 
+class ViewerToolbarContainer : public QWidget
+{
+public:
+    explicit ViewerToolbarContainer(QWidget* parent = nullptr)
+        : QWidget(parent)
+    {
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QWidget::resizeEvent(event);
+        scheduleOverflowRefresh();
+    }
+
+    void showEvent(QShowEvent* event) override
+    {
+        QWidget::showEvent(event);
+        scheduleOverflowRefresh();
+    }
+
+private:
+    void scheduleOverflowRefresh()
+    {
+        QTimer::singleShot(0, this, [this]() {
+            refreshToolbarGroups(this);
+            if (QLayout* toolbarLayout = layout()) {
+                toolbarLayout->invalidate();
+            }
+        });
+    }
+
+    static void refreshToolbarGroups(QObject* object)
+    {
+        for (QObject* child : object->children()) {
+            if (ToolbarGroup* group = dynamic_cast<ToolbarGroup*>(child)) {
+                group->refreshOverflow();
+            }
+            refreshToolbarGroups(child);
+        }
+    }
+};
+
 QToolButton* createIconButton(QAction* action, QWidget* parent, const QSize& iconSize)
 {
     QToolButton* button = new QToolButton(parent);
@@ -508,7 +562,7 @@ QStringList reflectivityScaleNames()
 
 QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 {
-    QWidget* viewerToolbar = new QWidget(parent);
+    QWidget* viewerToolbar = new ViewerToolbarContainer(parent);
     viewerToolbar->setObjectName("ViewerToolbar");
     viewerToolbar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     viewerToolbar->setFixedHeight(fontMetrics().height() * 3 + 16);

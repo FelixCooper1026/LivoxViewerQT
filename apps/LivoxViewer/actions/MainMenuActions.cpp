@@ -2,6 +2,7 @@
 #include "ThemeIconUtils.h"
 
 #include <QAbstractButton>
+#include <QActionEvent>
 #include <QApplication>
 #include <QCursor>
 #include <QDebug>
@@ -13,16 +14,21 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
 #include <QRadioButton>
+#include <QResizeEvent>
+#include <QShowEvent>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QToolButton>
 #include <QUrl>
 #include <QWindow>
 
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 
 #ifdef Q_OS_WIN
 #ifndef WIN32_LEAN_AND_MEAN
@@ -37,10 +43,15 @@ namespace {
 constexpr int kPanelVisibilityButtonSize = 24;
 constexpr int kPanelVisibilityIconSize = 22;
 constexpr int kTitleBarHeight = 34;
+constexpr int kTitleBarLeftMargin = 2;
+constexpr int kTitleBarAppIconAreaWidth = 30;
+constexpr int kTitleBarAppIconSize = 24;
 constexpr int kWindowControlButtonWidth = 46;
 constexpr int kWindowControlButtonHeight = 32;
 constexpr int kResizeBorderWidth = 8;
 constexpr int kTitleBarTopResizeBorderWidth = 2;
+constexpr int kMenuItemHorizontalPadding = 24;
+constexpr int kMenuOverflowTextWidth = 36;
 constexpr unsigned int kWmNcUahDrawCaption = 0x00AE;
 constexpr unsigned int kWmNcUahDrawFrame = 0x00AF;
 
@@ -65,6 +76,82 @@ bool isInteractiveTitleBarChild(QWidget* child, QWidget* titleBar)
     }
     return false;
 }
+
+class CompactMenuBar : public QMenuBar
+{
+public:
+    explicit CompactMenuBar(QWidget* parent = nullptr)
+        : QMenuBar(parent)
+    {
+    }
+
+    std::function<void()> compactLayoutRequested;
+
+    QSize sizeHint() const override
+    {
+        QSize hint = QMenuBar::sizeHint();
+        hint.setWidth(fullMenuWidth());
+        return hint;
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        QSize hint = QMenuBar::minimumSizeHint();
+        hint.setWidth(0);
+        return hint;
+    }
+
+protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QMenuBar::resizeEvent(event);
+        scheduleCompactLayout();
+    }
+
+    void showEvent(QShowEvent* event) override
+    {
+        QMenuBar::showEvent(event);
+        scheduleCompactLayout();
+    }
+
+    void actionEvent(QActionEvent* event) override
+    {
+        QMenuBar::actionEvent(event);
+        scheduleCompactLayout();
+    }
+
+private:
+    void scheduleCompactLayout()
+    {
+        if (m_compactLayoutPending) {
+            return;
+        }
+        m_compactLayoutPending = true;
+        QTimer::singleShot(0, this, [this]() {
+            m_compactLayoutPending = false;
+            if (compactLayoutRequested) {
+                compactLayoutRequested();
+            }
+        });
+    }
+
+    int fullMenuWidth() const
+    {
+        int width = 0;
+        for (QAction* action : actions()) {
+            if (action->text() == QStringLiteral("...")) {
+                continue;
+            }
+            QString text = action->text();
+            text.replace(QStringLiteral("&&"), QStringLiteral("&"));
+            text.remove(QLatin1Char('&'));
+            width += fontMetrics().horizontalAdvance(text) + kMenuItemHorizontalPadding;
+        }
+        return width;
+    }
+
+    bool m_compactLayoutPending = false;
+};
 
 void minimizeWindow(QMainWindow* window)
 {
@@ -368,18 +455,31 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
 {
     CustomTitleBar* titleBar = new CustomTitleBar(this);
     QHBoxLayout* layout = new QHBoxLayout(titleBar);
-    layout->setContentsMargins(8, 0, 0, 0);
+    layout->setContentsMargins(kTitleBarLeftMargin, 0, 0, 0);
     layout->setSpacing(0);
 
+    QLabel* appIconLabel = new QLabel(titleBar);
+    appIconLabel->setObjectName(QStringLiteral("TitleBarAppIcon"));
+    appIconLabel->setFixedSize(kTitleBarAppIconAreaWidth, kTitleBarHeight);
+    appIconLabel->setAlignment(Qt::AlignCenter);
+    appIconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    const QIcon appIcon = QApplication::windowIcon().isNull()
+        ? QIcon(QStringLiteral(":/icons/app_icon.png"))
+        : QApplication::windowIcon();
+    appIconLabel->setPixmap(appIcon.pixmap(QSize(kTitleBarAppIconSize, kTitleBarAppIconSize)));
+    layout->addWidget(appIconLabel, 0, Qt::AlignVCenter);
+
     menuBar->setNativeMenuBar(false);
-    menuBar->setMinimumWidth(menuBar->sizeHint().width());
-    menuBar->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
+    menuBar->setMinimumWidth(0);
+    menuBar->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(menuBar, 0, Qt::AlignVCenter);
     layout->addStretch(1);
 
     windowTitleLabel = new QLabel(titleBar);
     windowTitleLabel->setObjectName(QStringLiteral("WindowTitleLabel"));
     windowTitleLabel->setAlignment(Qt::AlignCenter);
+    windowTitleLabel->setMinimumWidth(0);
+    windowTitleLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     windowTitleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     layout->addWidget(windowTitleLabel, 0, Qt::AlignVCenter);
     layout->addStretch(1);
@@ -419,6 +519,80 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     return titleBar;
 }
 
+void LivoxViewerWindow::updateMenuOverflow()
+{
+    if (!menuBar || !menuOverflowAction) {
+        return;
+    }
+
+    const int availableWidth = menuBar->width();
+    if (availableWidth <= 0) {
+        return;
+    }
+
+    QVector<QAction*> menuActions;
+    for (QAction* action : menuBar->actions()) {
+        if (action != menuOverflowAction) {
+            menuActions.append(action);
+        }
+    }
+
+    auto actionWidth = [this](QAction* action) {
+        QString text = action->text();
+        text.replace(QStringLiteral("&&"), QStringLiteral("&"));
+        text.remove(QLatin1Char('&'));
+        return menuBar->fontMetrics().horizontalAdvance(text) + kMenuItemHorizontalPadding;
+    };
+
+    int totalWidth = 0;
+    for (QAction* action : menuActions) {
+        totalWidth += actionWidth(action);
+    }
+
+    const bool needsOverflow = totalWidth > availableWidth;
+    int remainingWidth = needsOverflow
+        ? std::max(0, availableWidth - kMenuOverflowTextWidth)
+        : availableWidth;
+    bool hiddenMenuFound = false;
+
+    for (QAction* action : menuActions) {
+        const int width = actionWidth(action);
+        const bool visible = !needsOverflow || width <= remainingWidth;
+        action->setVisible(visible);
+        if (visible) {
+            remainingWidth -= width;
+        } else {
+            hiddenMenuFound = true;
+        }
+    }
+
+    menuOverflowAction->setVisible(hiddenMenuFound);
+}
+
+void LivoxViewerWindow::rebuildMenuOverflow()
+{
+    if (!menuBar || !menuOverflowMenu || !menuOverflowAction) {
+        return;
+    }
+
+    menuOverflowMenu->clear();
+    for (QAction* action : menuBar->actions()) {
+        if (action == menuOverflowAction || action->isVisible()) {
+            continue;
+        }
+
+        QMenu* sourceMenu = action->menu();
+        if (!sourceMenu) {
+            continue;
+        }
+
+        QMenu* overflowSubMenu = menuOverflowMenu->addMenu(sourceMenu->title());
+        for (QAction* sourceAction : sourceMenu->actions()) {
+            overflowSubMenu->addAction(sourceAction);
+        }
+    }
+}
+
 void LivoxViewerWindow::updateWindowControlButtons()
 {
     if (windowTitleLabel) {
@@ -456,7 +630,7 @@ void LivoxViewerWindow::updateCustomTitleBarInsets()
 
     customTitleBar->setFixedHeight(kTitleBarHeight + topInset);
     if (QLayout* layout = customTitleBar->layout()) {
-        layout->setContentsMargins(8, topInset, 0, 0);
+        layout->setContentsMargins(kTitleBarLeftMargin, topInset, 0, 0);
     }
 }
 
@@ -635,7 +809,11 @@ void LivoxViewerWindow::createMenusAndActions()
     actionResetView = new QAction("重置视图", this);
 
     // 菜单栏
-    menuBar = new QMenuBar(this);
+    CompactMenuBar* compactMenuBar = new CompactMenuBar(this);
+    compactMenuBar->compactLayoutRequested = [this]() {
+        updateMenuOverflow();
+    };
+    menuBar = compactMenuBar;
     menuBar->setStyleSheet(QStringLiteral(
         "QMenuBar {"
         "  background: transparent;"
@@ -659,6 +837,10 @@ void LivoxViewerWindow::createMenusAndActions()
     deviceMenu = menuBar->addMenu("设备");
     QMenu* toolsMenu = menuBar->addMenu("工具");
     helpMenu = menuBar->addMenu("帮助");
+    menuOverflowMenu = new QMenu(QStringLiteral("..."), menuBar);
+    menuOverflowAction = menuBar->addMenu(menuOverflowMenu);
+    menuOverflowAction->setVisible(false);
+    connect(menuOverflowMenu, &QMenu::aboutToShow, this, &LivoxViewerWindow::rebuildMenuOverflow);
 
     QWidget* panelControls = new QWidget(this);
     panelControls->setObjectName(QStringLiteral("PanelVisibilityControls"));
@@ -770,5 +952,6 @@ void LivoxViewerWindow::createMenusAndActions()
 
     createStatusBarAndTimers();
     createPlaybackActions(toolsMenu);
+    updateMenuOverflow();
 
 }
