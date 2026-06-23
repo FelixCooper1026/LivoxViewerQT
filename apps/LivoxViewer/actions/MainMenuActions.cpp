@@ -67,6 +67,7 @@ void LivoxViewerWindow::createMenusAndActions()
         "  border: none;"
         "  border-bottom: 1px solid palette(mid);"
         "  padding: 3px 0 0 0;"
+        "  spacing: 0px;"
         "}"
         "QMenuBar::item {"
         "  padding: 4px 12px 4px 12px;"
