@@ -97,7 +97,7 @@ public:
     QSize minimumSizeHint() const override
     {
         QSize hint = QMenuBar::minimumSizeHint();
-        hint.setWidth(0);
+        hint.setWidth(fullMenuWidth());
         return hint;
     }
 
@@ -470,7 +470,6 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     layout->addWidget(appIconLabel, 0, Qt::AlignVCenter);
 
     menuBar->setNativeMenuBar(false);
-    menuBar->setMinimumWidth(0);
     menuBar->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
     layout->addWidget(menuBar, 0, Qt::AlignVCenter);
     layout->addStretch(1);
