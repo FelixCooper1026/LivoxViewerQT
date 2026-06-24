@@ -904,11 +904,13 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             if (attrDock) {
                 attrDock->hide();
             }
+            activeRightDock = paramsDock;
             updateStatus();
         } else {
             if (attrDock) {
                 attrDock->show();
                 attrDock->raise();
+                activeRightDock = attrDock;
             }
             updateSelectionTableAndLog();
             statusLabelBar->setText("点云框选模式：按住Ctrl+左键拖动选择区域");

@@ -749,5 +749,6 @@ void LivoxViewerWindow::createParameterPanel()
     addDockWidget(Qt::RightDockWidgetArea, paramsDock);
     tabifyDockWidget(paramsDock, attrDock);
     paramsDock->raise();
+    activeRightDock = paramsDock;
     attrDock->hide();
 }

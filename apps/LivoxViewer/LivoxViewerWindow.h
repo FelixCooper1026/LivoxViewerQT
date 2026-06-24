@@ -271,6 +271,9 @@ private:
     QDockWidget* lvx2FileDock = nullptr;
     QDockWidget* logDock;
     QToolBar* mainToolBar;
+    QDockWidget* activeRightDock = nullptr;
+    bool restoreRightParamsDock = true;
+    bool restoreRightAttrDock = false;
     QAction* actionStartSdk;
     QAction* actionStopSdk;
     QAction* actionRefresh;

@@ -846,6 +846,7 @@ void LivoxViewerWindow::loadViewPreferences()
     pointCloudView->setGridConfig(config);
     applyPointCloudBackground();
     updatePointCloudLegend();
+    syncReflectivityColorScaleControls();
 }
 
 QString colorBarStyleSheet(const QVector<QColor>& colors)

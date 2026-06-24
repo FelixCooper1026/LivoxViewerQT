@@ -926,10 +926,26 @@ void LivoxViewerWindow::createMenusAndActions()
     connect(rightPanelButton, &QToolButton::clicked, this, [this, syncPanelButtons]() {
         const bool visible = (paramsDock && paramsDock->isVisible()) ||
                              (attrDock && attrDock->isVisible());
-        paramsDock->setVisible(!visible);
-        attrDock->setVisible(false);
-        if (!visible) {
-            paramsDock->raise();
+        if (visible) {
+            restoreRightParamsDock = paramsDock->isVisible();
+            restoreRightAttrDock = attrDock->isVisible();
+            if (activeRightDock != paramsDock && activeRightDock != attrDock) {
+                activeRightDock = restoreRightAttrDock ? attrDock : paramsDock;
+            }
+            paramsDock->hide();
+            attrDock->hide();
+        } else {
+            paramsDock->setVisible(restoreRightParamsDock);
+            attrDock->setVisible(restoreRightAttrDock);
+            if (activeRightDock == attrDock && restoreRightAttrDock) {
+                attrDock->raise();
+            } else if (restoreRightParamsDock) {
+                paramsDock->raise();
+                activeRightDock = paramsDock;
+            } else if (restoreRightAttrDock) {
+                attrDock->raise();
+                activeRightDock = attrDock;
+            }
         }
         syncPanelButtons();
     });
