@@ -624,6 +624,7 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     if (settings.value("layout/version", 0).toInt() == kDockStateVersion) {
         restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
     }
+    mainToolBar->show();
     if (lvx2FileDock) {
         lvx2FileDock->hide();
     }

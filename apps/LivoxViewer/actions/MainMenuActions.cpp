@@ -139,7 +139,7 @@ private:
     {
         int width = 0;
         for (QAction* action : actions()) {
-            if (action->text() == QStringLiteral("...")) {
+            if (!action->isVisible()) {
                 continue;
             }
             QString text = action->text();
@@ -523,48 +523,12 @@ void LivoxViewerWindow::updateMenuOverflow()
         return;
     }
 
-    const int availableWidth = menuBar->width();
-    if (availableWidth <= 0) {
-        return;
-    }
-
-    QVector<QAction*> menuActions;
     for (QAction* action : menuBar->actions()) {
         if (action != menuOverflowAction) {
-            menuActions.append(action);
+            action->setVisible(true);
         }
     }
-
-    auto actionWidth = [this](QAction* action) {
-        QString text = action->text();
-        text.replace(QStringLiteral("&&"), QStringLiteral("&"));
-        text.remove(QLatin1Char('&'));
-        return menuBar->fontMetrics().horizontalAdvance(text) + kMenuItemHorizontalPadding;
-    };
-
-    int totalWidth = 0;
-    for (QAction* action : menuActions) {
-        totalWidth += actionWidth(action);
-    }
-
-    const bool needsOverflow = totalWidth > availableWidth;
-    int remainingWidth = needsOverflow
-        ? std::max(0, availableWidth - kMenuOverflowTextWidth)
-        : availableWidth;
-    bool hiddenMenuFound = false;
-
-    for (QAction* action : menuActions) {
-        const int width = actionWidth(action);
-        const bool visible = !needsOverflow || width <= remainingWidth;
-        action->setVisible(visible);
-        if (visible) {
-            remainingWidth -= width;
-        } else {
-            hiddenMenuFound = true;
-        }
-    }
-
-    menuOverflowAction->setVisible(hiddenMenuFound);
+    menuOverflowAction->setVisible(false);
 }
 
 void LivoxViewerWindow::rebuildMenuOverflow()
@@ -594,8 +558,6 @@ void LivoxViewerWindow::rebuildMenuOverflow()
 QMenu* LivoxViewerWindow::createPopupMenu()
 {
     QMenu* menu = new QMenu(this);
-    menu->addAction(mainToolBar->toggleViewAction());
-    menu->addSeparator();
     menu->addAction(lidarDevicesDock->toggleViewAction());
     menu->addAction(paramsDock->toggleViewAction());
     menu->addAction(imuDock->toggleViewAction());
@@ -955,9 +917,7 @@ void LivoxViewerWindow::createMenusAndActions()
     createFileActions();
     createDeviceActions();
     createHelpActions();
-    // 视图菜单：显示/隐藏工具栏和 dock
-    viewMenu->addAction(mainToolBar->toggleViewAction());
-    viewMenu->addSeparator();
+    // 视图菜单：显示/隐藏 dock
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());
     viewMenu->addAction(paramsDock->toggleViewAction());
