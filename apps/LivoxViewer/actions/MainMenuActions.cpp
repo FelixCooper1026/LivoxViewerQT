@@ -478,8 +478,7 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     windowTitleLabel = new QLabel(titleBar);
     windowTitleLabel->setObjectName(QStringLiteral("WindowTitleLabel"));
     windowTitleLabel->setAlignment(Qt::AlignCenter);
-    windowTitleLabel->setMinimumWidth(0);
-    windowTitleLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    windowTitleLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     windowTitleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     layout->addWidget(windowTitleLabel, 0, Qt::AlignVCenter);
     layout->addStretch(1);
@@ -593,6 +592,20 @@ void LivoxViewerWindow::rebuildMenuOverflow()
     }
 }
 
+QMenu* LivoxViewerWindow::createPopupMenu()
+{
+    QMenu* menu = new QMenu(this);
+    menu->addAction(mainToolBar->toggleViewAction());
+    menu->addSeparator();
+    menu->addAction(lidarDevicesDock->toggleViewAction());
+    menu->addAction(paramsDock->toggleViewAction());
+    menu->addAction(imuDock->toggleViewAction());
+    menu->addAction(lvx2FileDock->toggleViewAction());
+    menu->addAction(logDock->toggleViewAction());
+    menu->addAction(attrDock->toggleViewAction());
+    return menu;
+}
+
 void LivoxViewerWindow::updateWindowControlButtons()
 {
     if (windowTitleLabel) {
@@ -600,6 +613,7 @@ void LivoxViewerWindow::updateWindowControlButtons()
             ? QApplication::applicationDisplayName()
             : windowTitle();
         windowTitleLabel->setText(title);
+        windowTitleLabel->setMinimumWidth(windowTitleLabel->fontMetrics().horizontalAdvance(title) + 24);
     }
     if (maximizeRestoreButton) {
 #ifdef Q_OS_WIN
@@ -942,7 +956,9 @@ void LivoxViewerWindow::createMenusAndActions()
     createFileActions();
     createDeviceActions();
     createHelpActions();
-    // 视图菜单：显示/隐藏 dock
+    // 视图菜单：显示/隐藏工具栏和 dock
+    viewMenu->addAction(mainToolBar->toggleViewAction());
+    viewMenu->addSeparator();
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());
     viewMenu->addAction(paramsDock->toggleViewAction());

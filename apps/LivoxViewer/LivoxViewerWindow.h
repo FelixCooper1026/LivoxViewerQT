@@ -571,6 +571,7 @@ private slots:
     void onLvx2PlaybackFileDropped(const QString& filePath);
 
 protected:
+    QMenu* createPopupMenu() override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent* event) override;
 #if defined(Q_OS_WIN)
