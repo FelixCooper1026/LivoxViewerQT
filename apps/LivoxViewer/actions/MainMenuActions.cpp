@@ -276,6 +276,7 @@ void enableNativeWindowBehavior(QMainWindow* window)
 {
     HWND hwnd = HWND(window->winId());
     const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+    // 保留 WS_CAPTION 以支持 Snap、系统标题栏拖拽等原生行为
     SetWindowLongPtrW(hwnd, GWL_STYLE,
                       style | WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
     disableDwmWindowBorder(hwnd);
@@ -322,26 +323,6 @@ int nativeFrameWidth(HWND hwnd)
 int nativeFrameHeight(HWND hwnd)
 {
     return systemMetricForWindow(hwnd, SM_CYFRAME) + systemMetricForWindow(hwnd, SM_CXPADDEDBORDER);
-}
-
-bool isMaximizedOuterFrameRect(const RECT& rect, const RECT& work, HWND hwnd)
-{
-    const int tolerance = 6;
-    const int frameX = nativeFrameWidth(hwnd);
-    const int frameY = nativeFrameHeight(hwnd);
-    return std::abs(rect.left - (work.left - frameX)) <= tolerance &&
-           std::abs(rect.top - (work.top - frameY)) <= tolerance &&
-           std::abs(rect.right - (work.right + frameX)) <= tolerance &&
-           std::abs(rect.bottom - (work.bottom + frameY)) <= tolerance;
-}
-
-bool rectCoversWorkArea(const RECT& rect, const RECT& work)
-{
-    const int tolerance = 6;
-    return rect.left <= work.left + tolerance &&
-           rect.top <= work.top + tolerance &&
-           rect.right >= work.right - tolerance &&
-           rect.bottom >= work.bottom - tolerance;
 }
 
 QString rectToDebugString(const RECT& rect)
@@ -678,7 +659,7 @@ void LivoxViewerWindow::updateCustomTitleBarInsets()
         return;
     }
 
-    // 优化：去掉最大化时额外的顶部内边距补偿，消除所有控件的垂直点击偏移
+    // 始终不为标题栏添加额外内边距，保持坐标一致
     const int topInset = 0;
 
     customTitleBar->setFixedHeight(kTitleBarHeight + topInset);
@@ -729,60 +710,34 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
         updateCustomTitleBarInsets();
     }
 
+    // 拦截 WM_GETMINMAXINFO，强制最大化时的窗口矩形等于当前监视器工作区
     if (msg->message == WM_GETMINMAXINFO) {
-        MINMAXINFO* info = reinterpret_cast<MINMAXINFO*>(msg->lParam);
-        MONITORINFO monitorInfo = {};
-        monitorInfo.cbSize = sizeof(monitorInfo);
-        GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-        const RECT work = monitorInfo.rcWork;
-        const RECT monitor = monitorInfo.rcMonitor;
-        const int frameX = nativeFrameWidth(msg->hwnd);
-        const int frameY = nativeFrameHeight(msg->hwnd);
-        info->ptMaxPosition.x = work.left - monitor.left - frameX;
-        info->ptMaxPosition.y = work.top - monitor.top - frameY;
-        info->ptMaxSize.x = work.right - work.left + frameX * 2;
-        info->ptMaxSize.y = work.bottom - work.top + frameY * 2;
-        const LONG_PTR style = GetWindowLongPtrW(msg->hwnd, GWL_STYLE);
-        qDebug().noquote()
-            << "[WindowFrame] WM_GETMINMAXINFO"
-            << "monitor" << rectToDebugString(monitorInfo.rcMonitor)
-            << "work" << rectToDebugString(monitorInfo.rcWork)
-            << "frame" << frameX << frameY
-            << "IsZoomed" << bool(IsZoomed(msg->hwnd))
-            << "WS_MAXIMIZE" << bool(style & WS_MAXIMIZE);
+        HMONITOR monitor = MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = { sizeof(mi) };
+        GetMonitorInfoW(monitor, &mi);
+
+        MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+        mmi->ptMaxPosition.x = mi.rcWork.left;
+        mmi->ptMaxPosition.y = mi.rcWork.top;
+        mmi->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
+        mmi->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
+
         *result = 0;
         return true;
     }
 
     if (msg->message == WM_NCCALCSIZE) {
-        // 优化：移除强制修改客户矩形，避免坐标偏移，完全交由系统根据 WM_GETMINMAXINFO 计算
         if (msg->wParam) {
-            // 仅保留调试日志，不再手动调整 rcWork 矩形
             NCCALCSIZE_PARAMS* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
+            // 由于 WM_GETMINMAXINFO 已将最大化时的窗口矩形锁定为工作区，
+            // 此处直接使用系统建议的窗口矩形作为客户区即可消除所有非客户区
             const RECT proposed = params->rgrc[0];
-            MONITORINFO monitorInfo = {};
-            monitorInfo.cbSize = sizeof(monitorInfo);
-            GetMonitorInfoW(MonitorFromRect(&proposed, MONITOR_DEFAULTTONEAREST), &monitorInfo);
-            const bool nativeMaximized = isWindowMaximizedNative(msg->hwnd);
-            const bool matchOuter = isMaximizedOuterFrameRect(proposed, monitorInfo.rcWork, msg->hwnd);
-            const bool coversWork = rectCoversWorkArea(proposed, monitorInfo.rcWork);
-            const LONG_PTR style = GetWindowLongPtrW(msg->hwnd, GWL_STYLE);
-            WINDOWPLACEMENT placement = {};
-            placement.length = sizeof(placement);
-            GetWindowPlacement(msg->hwnd, &placement);
+            params->rgrc[0] = proposed; // 保持 proposed 不变，即整个窗口矩形都是客户区
+
             qDebug().noquote()
                 << "[WindowFrame] WM_NCCALCSIZE"
-                << "monitor" << rectToDebugString(monitorInfo.rcMonitor)
-                << "work" << rectToDebugString(monitorInfo.rcWork)
                 << "proposed" << rectToDebugString(proposed)
-                << "frame" << nativeFrameWidth(msg->hwnd) << nativeFrameHeight(msg->hwnd)
-                << "IsZoomed" << bool(IsZoomed(msg->hwnd))
-                << "WS_MAXIMIZE" << bool(style & WS_MAXIMIZE)
-                << "showCmd" << placement.showCmd
-                << "matchOuter" << matchOuter
-                << "coversWork" << coversWork;
-            // 原始代码中以下赋值被移除，不再影响客户区大小
-            // params->rgrc[0] = ... 
+                << "client" << rectToDebugString(params->rgrc[0]);
         }
         *result = 0;
         return true;
@@ -1020,5 +975,4 @@ void LivoxViewerWindow::createMenusAndActions()
     createStatusBarAndTimers();
     createPlaybackActions(toolsMenu);
     updateMenuOverflow();
-
 }

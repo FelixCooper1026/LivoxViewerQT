@@ -264,6 +264,7 @@ public:
         titleLayout->addStretch();
 
         m_title = new QLabel(title, titleRow);
+        m_title->setObjectName("ViewerToolbarGroupTitle");
         QFont titleFont = m_title->font();
         titleFont.setPointSizeF(std::max(7.0, titleFont.pointSizeF() * 0.9));
         m_title->setFont(titleFont);
@@ -282,7 +283,7 @@ public:
             "#ViewerToolbarGroup[leadingSeparator=\"true\"] {"
             "  border-left: 1px solid palette(mid);"
             "}"
-            "#ViewerToolbarGroup QLabel { color: palette(window-text); }"
+            "#ViewerToolbarGroup QLabel#ViewerToolbarGroupTitle { color: palette(mid); }"
         );
     }
 
