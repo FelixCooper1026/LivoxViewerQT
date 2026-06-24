@@ -17,12 +17,14 @@
 #include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
+#include <QPainter>
 #include <QRadioButton>
 #include <QResizeEvent>
 #include <QShowEvent>
 #include <QStandardPaths>
 #include <QStyle>
 #include <QStyleOption>
+#include <QSvgRenderer>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
@@ -75,6 +77,60 @@ bool isInteractiveTitleBarChild(QWidget* child, QWidget* titleBar)
     }
     return false;
 }
+
+QPixmap svgPixmapWithColor(const QString& iconPath, const QSize& size, const QColor& color)
+{
+    QSvgRenderer renderer(iconPath);
+    const qreal dpr = ThemeIconUtils::devicePixelRatio();
+    const QSize physicalSize(qMax(1, qRound(size.width() * dpr)),
+                             qMax(1, qRound(size.height() * dpr)));
+    QPixmap pixmap(physicalSize);
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    renderer.render(&painter, QRectF(QPointF(0, 0), QSizeF(size)));
+    painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
+    painter.fillRect(QRectF(QPointF(0, 0), QSizeF(size)), color);
+    return pixmap;
+}
+
+QIcon svgIconWithColor(const QString& iconPath, const QColor& color)
+{
+    QIcon icon;
+    for (int size = 12; size <= 64; ++size) {
+        icon.addPixmap(svgPixmapWithColor(iconPath, QSize(size, size), color));
+    }
+    return icon;
+}
+
+class CloseButtonHoverIconFilter : public QObject
+{
+public:
+    explicit CloseButtonHoverIconFilter(QObject* parent = nullptr)
+        : QObject(parent)
+    {
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        QAbstractButton* button = qobject_cast<QAbstractButton*>(watched);
+        if (!button) {
+            return QObject::eventFilter(watched, event);
+        }
+
+        if (event->type() == QEvent::Enter) {
+            button->setIcon(svgIconWithColor(QStringLiteral(":/icons/window_close.svg"), Qt::white));
+        } else if (event->type() == QEvent::Leave) {
+            ThemeIconUtils::setThemedSvgIcon(button, QStringLiteral(":/icons/window_close.svg"));
+        }
+
+        return QObject::eventFilter(watched, event);
+    }
+};
 
 void positionWindowTitleLabel(QWidget* titleBar, QLabel* titleLabel)
 {
@@ -519,6 +575,7 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
         QStringLiteral(":/icons/window_close.svg"),
         QStringLiteral("Close"));
     closeButton->setObjectName(QStringLiteral("WindowCloseButton"));
+    closeButton->installEventFilter(new CloseButtonHoverIconFilter(closeButton));
 
     layout->addWidget(minimizeButton);
     layout->addWidget(maximizeRestoreButton);
@@ -621,13 +678,8 @@ void LivoxViewerWindow::updateCustomTitleBarInsets()
         return;
     }
 
-    int topInset = 0;
-#ifdef Q_OS_WIN
-    HWND hwnd = HWND(winId());
-    if (isWindowMaximizedNative(hwnd)) {
-        topInset = nativeFrameHeight(hwnd);
-    }
-#endif
+    // 优化：去掉最大化时额外的顶部内边距补偿，消除所有控件的垂直点击偏移
+    const int topInset = 0;
 
     customTitleBar->setFixedHeight(kTitleBarHeight + topInset);
     if (QLayout* layout = customTitleBar->layout()) {
@@ -703,7 +755,9 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
     }
 
     if (msg->message == WM_NCCALCSIZE) {
+        // 优化：移除强制修改客户矩形，避免坐标偏移，完全交由系统根据 WM_GETMINMAXINFO 计算
         if (msg->wParam) {
+            // 仅保留调试日志，不再手动调整 rcWork 矩形
             NCCALCSIZE_PARAMS* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
             const RECT proposed = params->rgrc[0];
             MONITORINFO monitorInfo = {};
@@ -727,12 +781,8 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
                 << "showCmd" << placement.showCmd
                 << "matchOuter" << matchOuter
                 << "coversWork" << coversWork;
-            if (nativeMaximized || matchOuter || coversWork) {
-                params->rgrc[0].left = monitorInfo.rcWork.left;
-                params->rgrc[0].top = monitorInfo.rcWork.top;
-                params->rgrc[0].right = monitorInfo.rcWork.right;
-                params->rgrc[0].bottom = monitorInfo.rcWork.bottom;
-            }
+            // 原始代码中以下赋值被移除，不再影响客户区大小
+            // params->rgrc[0] = ... 
         }
         *result = 0;
         return true;
