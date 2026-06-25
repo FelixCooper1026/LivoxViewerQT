@@ -5,7 +5,6 @@
 #include <QActionEvent>
 #include <QApplication>
 #include <QCursor>
-#include <QDebug>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -325,16 +324,26 @@ int nativeFrameHeight(HWND hwnd)
     return systemMetricForWindow(hwnd, SM_CYFRAME) + systemMetricForWindow(hwnd, SM_CXPADDEDBORDER);
 }
 
-QString rectToDebugString(const RECT& rect)
+bool isMaximizedOuterFrameRect(const RECT& rect, const RECT& work, HWND hwnd)
 {
-    return QStringLiteral("(%1,%2)-(%3,%4) %5x%6")
-        .arg(rect.left)
-        .arg(rect.top)
-        .arg(rect.right)
-        .arg(rect.bottom)
-        .arg(rect.right - rect.left)
-        .arg(rect.bottom - rect.top);
+    const int tolerance = 6;
+    const int frameX = nativeFrameWidth(hwnd);
+    const int frameY = nativeFrameHeight(hwnd);
+    return std::abs(rect.left - (work.left - frameX)) <= tolerance &&
+           std::abs(rect.top - (work.top - frameY)) <= tolerance &&
+           std::abs(rect.right - (work.right + frameX)) <= tolerance &&
+           std::abs(rect.bottom - (work.bottom + frameY)) <= tolerance;
 }
+
+bool rectCoversWorkArea(const RECT& rect, const RECT& work)
+{
+    const int tolerance = 6;
+    return rect.left <= work.left + tolerance &&
+           rect.top <= work.top + tolerance &&
+           rect.right >= work.right - tolerance &&
+           rect.bottom >= work.bottom - tolerance;
+}
+
 #endif
 
 class CustomTitleBar : public QFrame
@@ -710,18 +719,19 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
         updateCustomTitleBarInsets();
     }
 
-    // 拦截 WM_GETMINMAXINFO，强制最大化时的窗口矩形等于当前监视器工作区
     if (msg->message == WM_GETMINMAXINFO) {
-        HMONITOR monitor = MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST);
-        MONITORINFO mi = { sizeof(mi) };
-        GetMonitorInfoW(monitor, &mi);
-
-        MINMAXINFO* mmi = reinterpret_cast<MINMAXINFO*>(msg->lParam);
-        mmi->ptMaxPosition.x = mi.rcWork.left;
-        mmi->ptMaxPosition.y = mi.rcWork.top;
-        mmi->ptMaxSize.x = mi.rcWork.right - mi.rcWork.left;
-        mmi->ptMaxSize.y = mi.rcWork.bottom - mi.rcWork.top;
-
+        MINMAXINFO* info = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+        MONITORINFO monitorInfo = {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+        const RECT work = monitorInfo.rcWork;
+        const RECT monitor = monitorInfo.rcMonitor;
+        const int frameX = nativeFrameWidth(msg->hwnd);
+        const int frameY = nativeFrameHeight(msg->hwnd);
+        info->ptMaxPosition.x = work.left - monitor.left - frameX;
+        info->ptMaxPosition.y = work.top - monitor.top - frameY;
+        info->ptMaxSize.x = work.right - work.left + frameX * 2;
+        info->ptMaxSize.y = work.bottom - work.top + frameY * 2;
         *result = 0;
         return true;
     }
@@ -729,15 +739,19 @@ bool LivoxViewerWindow::nativeEvent(const QByteArray& eventType, void* message, 
     if (msg->message == WM_NCCALCSIZE) {
         if (msg->wParam) {
             NCCALCSIZE_PARAMS* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
-            // 由于 WM_GETMINMAXINFO 已将最大化时的窗口矩形锁定为工作区，
-            // 此处直接使用系统建议的窗口矩形作为客户区即可消除所有非客户区
             const RECT proposed = params->rgrc[0];
-            params->rgrc[0] = proposed; // 保持 proposed 不变，即整个窗口矩形都是客户区
-
-            qDebug().noquote()
-                << "[WindowFrame] WM_NCCALCSIZE"
-                << "proposed" << rectToDebugString(proposed)
-                << "client" << rectToDebugString(params->rgrc[0]);
+            MONITORINFO monitorInfo = {};
+            monitorInfo.cbSize = sizeof(monitorInfo);
+            GetMonitorInfoW(MonitorFromRect(&proposed, MONITOR_DEFAULTTONEAREST), &monitorInfo);
+            const bool nativeMaximized = isWindowMaximizedNative(msg->hwnd);
+            const bool matchOuter = isMaximizedOuterFrameRect(proposed, monitorInfo.rcWork, msg->hwnd);
+            const bool coversWork = rectCoversWorkArea(proposed, monitorInfo.rcWork);
+            if (nativeMaximized || matchOuter || coversWork) {
+                params->rgrc[0].left = monitorInfo.rcWork.left;
+                params->rgrc[0].top = monitorInfo.rcWork.top;
+                params->rgrc[0].right = monitorInfo.rcWork.right;
+                params->rgrc[0].bottom = monitorInfo.rcWork.bottom;
+            }
         }
         *result = 0;
         return true;
