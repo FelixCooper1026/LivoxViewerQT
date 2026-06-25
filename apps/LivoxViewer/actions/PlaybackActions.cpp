@@ -2,27 +2,11 @@
 
 #include <QShortcut>
 
-#include <algorithm>
 void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
 {
     // GPS 模拟定时器
     imuState.gpsTimer = new QTimer(this);
     connect(imuState.gpsTimer, &QTimer::timeout, this, &LivoxViewerWindow::onGpsTick);
-
-    auto showPreviousShortcutFrame = [this]() {
-        if (!playbackState.active || playbackState.frameCount <= 0) {
-            return;
-        }
-        setLvx2PlaybackPlaying(false);
-        showLvx2PlaybackFrame(std::max(0, playbackState.frame - 2));
-    };
-    auto showNextShortcutFrame = [this]() {
-        if (!playbackState.active || playbackState.frameCount <= 0) {
-            return;
-        }
-        setLvx2PlaybackPlaying(false);
-        showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 2));
-    };
 
     connect(playbackState.playPauseButton, &QPushButton::clicked, this, &LivoxViewerWindow::playbackToggle);
     connect(playbackState.firstFrameButton, &QPushButton::clicked, this, &LivoxViewerWindow::playbackShowFirstFrame);
@@ -36,8 +20,8 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
         connect(shortcut, &QShortcut::activated, this, callback);
     };
     bindPlaybackShortcut(Qt::Key_Space, [this]() { playbackToggle(); });
-    bindPlaybackShortcut(Qt::Key_Left, showPreviousShortcutFrame);
-    bindPlaybackShortcut(Qt::Key_Right, showNextShortcutFrame);
+    bindPlaybackShortcut(Qt::Key_Left, [this]() { playbackShortcutPreviousFrame(); });
+    bindPlaybackShortcut(Qt::Key_Right, [this]() { playbackShortcutNextFrame(); });
     bindPlaybackShortcut(Qt::CTRL | Qt::Key_Left, [this]() { playbackShowFirstFrame(); });
     bindPlaybackShortcut(Qt::CTRL | Qt::Key_Right, [this]() { playbackShowLastFrame(); });
 

@@ -149,6 +149,8 @@ public:
     void playbackShowPreviousFrame();
     void playbackShowNextFrame();
     void playbackShowLastFrame();
+    void playbackShortcutPreviousFrame();
+    void playbackShortcutNextFrame();
     void playbackSeekToDisplayFrame(int value);
     void playbackSetSpeedText(const QString& text);
     void playbackSetModeIndex(int index);

@@ -238,6 +238,24 @@ void LivoxViewerWindow::playbackShowNextFrame()
     showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 1));
 }
 
+void LivoxViewerWindow::playbackShortcutPreviousFrame()
+{
+    if (!playbackState.active || playbackState.frameCount <= 0) {
+        return;
+    }
+    setLvx2PlaybackPlaying(false);
+    showLvx2PlaybackFrame(std::max(0, playbackState.frame - 2));
+}
+
+void LivoxViewerWindow::playbackShortcutNextFrame()
+{
+    if (!playbackState.active || playbackState.frameCount <= 0) {
+        return;
+    }
+    setLvx2PlaybackPlaying(false);
+    showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 2));
+}
+
 void LivoxViewerWindow::playbackShowLastFrame()
 {
     if (!playbackState.active || playbackState.frameCount <= 0) {

@@ -23,6 +23,7 @@
 #include <QPen>
 #include <QPushButton>
 #include <QComboBox>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QStyle>
@@ -538,6 +539,17 @@ QWidget* ImuVisualizationDialog::createPlaybackControls()
             m_owner->playbackSetModeIndex(index);
         }
     });
+
+    auto bindPlaybackShortcut = [this](int key, const auto& callback) {
+        QShortcut* shortcut = new QShortcut(QKeySequence(key), this);
+        shortcut->setContext(Qt::WindowShortcut);
+        connect(shortcut, &QShortcut::activated, this, callback);
+    };
+    bindPlaybackShortcut(Qt::Key_Space, [this]() { m_owner->playbackToggle(); });
+    bindPlaybackShortcut(Qt::Key_Left, [this]() { m_owner->playbackShortcutPreviousFrame(); });
+    bindPlaybackShortcut(Qt::Key_Right, [this]() { m_owner->playbackShortcutNextFrame(); });
+    bindPlaybackShortcut(Qt::CTRL | Qt::Key_Left, [this]() { m_owner->playbackShowFirstFrame(); });
+    bindPlaybackShortcut(Qt::CTRL | Qt::Key_Right, [this]() { m_owner->playbackShowLastFrame(); });
 
     m_playbackBar->hide();
     return m_playbackBar;
