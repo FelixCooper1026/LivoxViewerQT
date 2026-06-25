@@ -2,6 +2,7 @@
 
 #include "dialogs/DialogWindowUtils.h"
 #include "LivoxViewerWindow.h"
+#include "ThemeIconUtils.h"
 #include "widgets/ImuOrientationView.h"
 #include "widgets/SwitchCheckBox.h"
 
@@ -21,9 +22,14 @@
 #include <QPaintEvent>
 #include <QPen>
 #include <QPushButton>
+#include <QComboBox>
 #include <QSignalBlocker>
+#include <QSlider>
 #include <QStyle>
+#include <QStyleOptionSlider>
+#include <QStringList>
 #include <QTimer>
+#include <QToolButton>
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -137,7 +143,7 @@ QString unitFromAxisTitle(const QString& title)
     if (left >= 0 && right > left) {
         return title.mid(left + 1, right - left - 1);
     }
-    return QString();
+    return title;
 }
 
 void configureAxis(QValueAxis* axis, const QString& title, double minValue, double maxValue)
@@ -172,11 +178,30 @@ QRect plotAreaInView(QChartView* view, QChart* chart)
     return QRect(topLeft, bottomRight).normalized();
 }
 
+QWidget* createInlineLegend(QWidget* parent,
+                            const QStringList& names,
+                            const std::array<QColor, 3>& colors)
+{
+    QWidget* legend = new QWidget(parent);
+    QHBoxLayout* layout = new QHBoxLayout(legend);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    for (int i = 0; i < 3; ++i) {
+        QLabel* item = new QLabel(QStringLiteral("<span style=\"color:%1;\">■</span> %2")
+                                      .arg(colorName(colors.at(static_cast<size_t>(i))), names.at(i).toHtmlEscaped()),
+                                  legend);
+        item->setTextFormat(Qt::RichText);
+        layout->addWidget(item);
+    }
+    return legend;
+}
+
 } // namespace
 
 ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner, bool embedded)
     : QDialog(owner)
     , m_owner(owner)
+    , m_embedded(embedded)
 {
     setObjectName(embedded ? QStringLiteral("ImuVisualizationWidget") : QStringLiteral("ImuVisualizationDialog"));
     if (embedded) {
@@ -185,23 +210,30 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner, bool em
     } else {
         DialogWindowUtils::enableTopLevelWindowControls(this);
         setWindowTitle(QStringLiteral("IMU数据可视化"));
-        setMinimumSize(980, 640);
+        setMinimumSize(1180, 700);
+        resize(1380, 780);
     }
 
     QVBoxLayout* root = new QVBoxLayout(this);
     root->setContentsMargins(10, 10, 10, 10);
     root->setSpacing(8);
     root->addWidget(createToolbar());
+    root->addWidget(createPlaybackControls());
 
     QWidget* content = new QWidget(this);
     QHBoxLayout* contentLayout = new QHBoxLayout(content);
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(8);
 
-    m_deviceList = new QListWidget(content);
+    QWidget* deviceColumn = new QWidget(content);
+    deviceColumn->setFixedWidth(m_embedded ? 220 : 260);
+    QVBoxLayout* deviceLayout = new QVBoxLayout(deviceColumn);
+    deviceLayout->setContentsMargins(0, 0, 0, 0);
+    deviceLayout->setSpacing(8);
+
+    m_deviceList = new QListWidget(deviceColumn);
     m_deviceList->setObjectName(QStringLiteral("ImuDeviceList"));
-    m_deviceList->setFixedWidth(220);
-    m_deviceList->setSpacing(6);
+    m_deviceList->setSpacing(8);
     m_deviceList->setFrameShape(QFrame::NoFrame);
     m_deviceList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_deviceList->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -216,7 +248,9 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner, bool em
         updateOrientationModel();
         refreshData(true);
     });
-    contentLayout->addWidget(m_deviceList);
+    deviceLayout->addWidget(m_deviceList, 1);
+    deviceLayout->addWidget(createRealtimeValuesPanel(), 1);
+    contentLayout->addWidget(deviceColumn);
 
     QWidget* visualizationArea = new QWidget(content);
     QGridLayout* grid = new QGridLayout(visualizationArea);
@@ -250,12 +284,15 @@ ImuVisualizationDialog::ImuVisualizationDialog(LivoxViewerWindow* owner, bool em
         if (!m_paused) {
             refreshData();
         }
+        refreshPlaybackControls();
     });
     m_refreshTimer->start();
 
     refreshTheme();
     refreshDeviceList();
+    updateRealtimeValues(nullptr);
     refreshData();
+    refreshPlaybackControls();
 }
 
 void ImuVisualizationDialog::changeEvent(QEvent* event)
@@ -273,6 +310,60 @@ void ImuVisualizationDialog::changeEvent(QEvent* event)
 
 bool ImuVisualizationDialog::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == m_progressSlider && m_progressSlider && m_progressSlider->isEnabled()) {
+        auto sliderValueAt = [this](const QPoint& pos) {
+            QStyleOptionSlider option;
+            option.initFrom(m_progressSlider);
+            option.orientation = m_progressSlider->orientation();
+            option.minimum = m_progressSlider->minimum();
+            option.maximum = m_progressSlider->maximum();
+            option.sliderPosition = m_progressSlider->sliderPosition();
+            option.sliderValue = m_progressSlider->value();
+            option.singleStep = m_progressSlider->singleStep();
+            option.pageStep = m_progressSlider->pageStep();
+            option.upsideDown = m_progressSlider->invertedAppearance();
+
+            return QStyle::sliderValueFromPosition(option.minimum,
+                                                   option.maximum,
+                                                   pos.x(),
+                                                   std::max(1, m_progressSlider->width()),
+                                                   option.upsideDown);
+        };
+
+        if (event->type() == QEvent::MouseButtonPress) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                m_progressSliderDragging = true;
+                m_progressSlider->setSliderDown(true);
+                m_progressSlider->grabMouse();
+                m_progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove && m_progressSliderDragging) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            m_progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
+            return true;
+        } else if (event->type() == QEvent::MouseButtonRelease && m_progressSliderDragging) {
+            QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                m_progressSlider->setValue(sliderValueAt(mouseEvent->pos()));
+                m_progressSlider->releaseMouse();
+                m_progressSlider->setSliderDown(false);
+                m_progressSliderDragging = false;
+                return true;
+            }
+        }
+    } else if (watched == m_progressSlider &&
+               event->type() == QEvent::MouseButtonRelease &&
+               m_progressSliderDragging) {
+        if (m_progressSlider) {
+            m_progressSlider->releaseMouse();
+            m_progressSlider->setSliderDown(false);
+        }
+        m_progressSliderDragging = false;
+        return true;
+    }
+
     if (ChartPanel* panel = chartPanelForViewport(watched)) {
         if (event->type() == QEvent::MouseMove) {
             const QMouseEvent* mouseEvent = static_cast<QMouseEvent*>(event);
@@ -302,22 +393,154 @@ QWidget* ImuVisualizationDialog::createToolbar()
     layout->setSpacing(8);
 
     QLabel* autoScaleLabel = new QLabel(QStringLiteral("自动缩放"), toolbar);
+    autoScaleLabel->setObjectName(QStringLiteral("ImuToolbarLabel"));
     m_autoScaleSwitch = new SwitchCheckBox(toolbar);
     m_autoScaleSwitch->setChecked(true);
     connect(m_autoScaleSwitch, &QCheckBox::toggled, this, [this]() { refreshData(true); });
     layout->addWidget(autoScaleLabel);
     layout->addWidget(m_autoScaleSwitch);
-    layout->addSpacing(8);
 
-    m_resetButton = new QPushButton(QStringLiteral("重置缩放"), toolbar);
-    m_pauseButton = new QPushButton(QStringLiteral("暂停"), toolbar);
-    connect(m_resetButton, &QPushButton::clicked, this, [this]() { resetZoom(); });
+    QPushButton* resetButton = new QPushButton(QStringLiteral("重置缩放"), toolbar);
+    connect(resetButton, &QPushButton::clicked, this, [this]() { resetZoom(); });
+    layout->addWidget(resetButton);
+
+    m_pauseButton = new QPushButton(QStringLiteral("冻结"), toolbar);
     connect(m_pauseButton, &QPushButton::clicked, this, [this]() { setPaused(!m_paused); });
-    layout->addWidget(m_resetButton);
     layout->addWidget(m_pauseButton);
     layout->addStretch();
 
+    m_pinButton = new QToolButton(toolbar);
+    m_pinButton->setObjectName(QStringLiteral("ImuPinButton"));
+    m_pinButton->setCheckable(true);
+    m_pinButton->setAutoRaise(false);
+    m_pinButton->setFixedSize(34, 30);
+    m_pinButton->setIconSize(QSize(18, 18));
+    ThemeIconUtils::setThemedSvgIcon(m_pinButton, QStringLiteral(":/icons/window_pin.svg"));
+    m_pinButton->setToolTip(QStringLiteral("保持 IMU 窗口在最前"));
+    m_pinButton->setVisible(!m_embedded);
+    connect(m_pinButton, &QToolButton::toggled, this, [this](bool checked) {
+        setPinned(checked);
+    });
+    layout->addWidget(m_pinButton);
+
     return toolbar;
+}
+
+QWidget* ImuVisualizationDialog::createPlaybackControls()
+{
+    m_playbackBar = new QFrame(this);
+    m_playbackBar->setObjectName(QStringLiteral("ImuPlaybackBar"));
+    m_playbackBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+    QVBoxLayout* root = new QVBoxLayout(m_playbackBar);
+    root->setContentsMargins(8, 6, 8, 6);
+    root->setSpacing(4);
+
+    QHBoxLayout* controls = new QHBoxLayout();
+    controls->setContentsMargins(0, 0, 0, 0);
+    controls->setSpacing(6);
+
+    auto addSeparator = [this, controls]() {
+        QFrame* separator = new QFrame(m_playbackBar);
+        separator->setObjectName(QStringLiteral("ImuToolbarSeparator"));
+        separator->setFrameShape(QFrame::VLine);
+        separator->setFixedHeight(32);
+        controls->addWidget(separator);
+    };
+
+    m_firstFrameButton = new QPushButton(m_playbackBar);
+    m_prevFrameButton = new QPushButton(m_playbackBar);
+    m_playPauseButton = new QPushButton(m_playbackBar);
+    m_nextFrameButton = new QPushButton(m_playbackBar);
+    m_lastFrameButton = new QPushButton(m_playbackBar);
+
+    const int iconSize = fontMetrics().height() + 4;
+    for (QPushButton* button : {m_firstFrameButton, m_prevFrameButton, m_playPauseButton, m_nextFrameButton, m_lastFrameButton}) {
+        button->setIconSize(QSize(iconSize, iconSize));
+        button->setFixedHeight(28);
+        button->setFocusPolicy(Qt::NoFocus);
+    }
+    ThemeIconUtils::setThemedSvgIcon(m_firstFrameButton, QStringLiteral(":/icons/playback_first.svg"));
+    ThemeIconUtils::setThemedSvgIcon(m_prevFrameButton, QStringLiteral(":/icons/playback_previous.svg"));
+    ThemeIconUtils::setThemedSvgIcon(m_playPauseButton, QStringLiteral(":/icons/playback_play.svg"));
+    ThemeIconUtils::setThemedSvgIcon(m_nextFrameButton, QStringLiteral(":/icons/playback_next.svg"));
+    ThemeIconUtils::setThemedSvgIcon(m_lastFrameButton, QStringLiteral(":/icons/playback_last.svg"));
+    m_firstFrameButton->setToolTip(QStringLiteral("首帧"));
+    m_prevFrameButton->setToolTip(QStringLiteral("上一帧"));
+    m_playPauseButton->setToolTip(QStringLiteral("播放/暂停"));
+    m_nextFrameButton->setToolTip(QStringLiteral("下一帧"));
+    m_lastFrameButton->setToolTip(QStringLiteral("尾帧"));
+
+    m_progressSlider = new QSlider(Qt::Horizontal, m_playbackBar);
+    m_progressSlider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_progressSlider->setMinimumWidth(180);
+    m_progressSlider->installEventFilter(this);
+
+    m_speedCombo = new QComboBox(m_playbackBar);
+    m_speedCombo->addItems({QStringLiteral("x0.1"), QStringLiteral("x0.5"), QStringLiteral("x1.0"),
+                            QStringLiteral("x2.0"), QStringLiteral("x4.0"), QStringLiteral("x8.0"),
+                            QStringLiteral("x16.0")});
+    m_modeCombo = new QComboBox(m_playbackBar);
+    m_modeCombo->addItems({QStringLiteral("逐帧播放"), QStringLiteral("滑窗播放")});
+
+    m_playbackFileLabel = new QLabel(m_playbackBar);
+    m_playbackFileLabel->setObjectName(QStringLiteral("ImuPlaybackInfo"));
+    m_playbackFileLabel->setMinimumWidth(0);
+    m_playbackFileLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_playbackFileLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_playbackTimeLabel = new QLabel(m_playbackBar);
+    m_playbackTimeLabel->setObjectName(QStringLiteral("ImuPlaybackInfo"));
+    m_playbackTimeLabel->setMinimumWidth(120);
+    m_playbackTimeLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_playbackFrameLabel = new QLabel(m_playbackBar);
+    m_playbackFrameLabel->setObjectName(QStringLiteral("ImuPlaybackInfo"));
+    m_playbackFrameLabel->setMinimumWidth(92);
+    m_playbackFrameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+    controls->addWidget(m_firstFrameButton);
+    controls->addWidget(m_prevFrameButton);
+    controls->addWidget(m_playPauseButton);
+    controls->addWidget(m_nextFrameButton);
+    controls->addWidget(m_lastFrameButton);
+    addSeparator();
+    controls->addWidget(m_progressSlider, 1);
+    controls->addWidget(m_speedCombo);
+    controls->addWidget(m_modeCombo);
+
+    QHBoxLayout* infoLayout = new QHBoxLayout();
+    infoLayout->setContentsMargins(0, 0, 0, 0);
+    infoLayout->setSpacing(16);
+    infoLayout->addWidget(m_playbackFileLabel, 1);
+    infoLayout->addWidget(m_playbackTimeLabel);
+    infoLayout->addWidget(m_playbackFrameLabel);
+    infoLayout->addStretch();
+
+    root->addLayout(controls);
+    root->addLayout(infoLayout);
+
+    connect(m_firstFrameButton, &QPushButton::clicked, m_owner, &LivoxViewerWindow::playbackShowFirstFrame);
+    connect(m_prevFrameButton, &QPushButton::clicked, m_owner, &LivoxViewerWindow::playbackShowPreviousFrame);
+    connect(m_playPauseButton, &QPushButton::clicked, m_owner, &LivoxViewerWindow::playbackToggle);
+    connect(m_nextFrameButton, &QPushButton::clicked, m_owner, &LivoxViewerWindow::playbackShowNextFrame);
+    connect(m_lastFrameButton, &QPushButton::clicked, m_owner, &LivoxViewerWindow::playbackShowLastFrame);
+    connect(m_progressSlider, &QSlider::valueChanged, this, [this](int value) {
+        if (!m_updatingPlaybackControls) {
+            m_owner->playbackSeekToDisplayFrame(value);
+        }
+    });
+    connect(m_speedCombo, &QComboBox::currentTextChanged, this, [this](const QString& text) {
+        if (!m_updatingPlaybackControls) {
+            m_owner->playbackSetSpeedText(text);
+        }
+    });
+    connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (!m_updatingPlaybackControls) {
+            m_owner->playbackSetModeIndex(index);
+        }
+    });
+
+    m_playbackBar->hide();
+    return m_playbackBar;
 }
 
 ImuVisualizationDialog::ChartPanel ImuVisualizationDialog::createChartPanel(const QString& title,
@@ -343,11 +566,14 @@ ImuVisualizationDialog::ChartPanel ImuVisualizationDialog::createChartPanel(cons
     titleLabel->setObjectName(QStringLiteral("ImuPanelTitle"));
     titleLayout->addWidget(titleLabel);
     titleLayout->addStretch();
+    const QStringList legendNames = title.contains(QStringLiteral("姿态角"))
+        ? QStringList{QStringLiteral("Roll"), QStringLiteral("Pitch"), QStringLiteral("Yaw")}
+        : QStringList{QStringLiteral("X"), QStringLiteral("Y"), QStringLiteral("Z")};
+    titleLayout->addWidget(createInlineLegend(titleRow, legendNames, {kAxisXColor, kAxisYColor, kAxisZColor}));
     layout->addWidget(titleRow);
 
     panel.chart = new QChart();
-    panel.chart->legend()->setVisible(true);
-    panel.chart->legend()->setAlignment(Qt::AlignTop);
+    panel.chart->legend()->setVisible(false);
     panel.chart->setMargins(QMargins(4, 0, 4, 4));
     panel.seriesX = new QLineSeries();
     panel.seriesY = new QLineSeries();
@@ -432,6 +658,170 @@ QWidget* ImuVisualizationDialog::createOrientationPanel()
     return frame;
 }
 
+QWidget* ImuVisualizationDialog::createRealtimeValuesPanel()
+{
+    QFrame* frame = new QFrame(this);
+    frame->setObjectName(QStringLiteral("ImuVisualizationPanel"));
+    frame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    QVBoxLayout* layout = new QVBoxLayout(frame);
+    layout->setContentsMargins(10, 10, 10, 10);
+    layout->setSpacing(8);
+
+    QLabel* titleLabel = new QLabel(QStringLiteral("实时数值"), frame);
+    titleLabel->setObjectName(QStringLiteral("ImuPanelTitle"));
+    layout->addWidget(titleLabel);
+
+    layout->addStretch();
+
+    auto addSeparator = [layout, frame]() {
+        QFrame* separator = new QFrame(frame);
+        separator->setObjectName(QStringLiteral("ImuMetricSeparator"));
+        separator->setFrameShape(QFrame::HLine);
+        layout->addWidget(separator);
+    };
+
+    auto addMetricSection = [this, layout, frame](const QString& title,
+                                                  int group,
+                                                  const QStringList& names,
+                                                  const std::array<QColor, 3>& colors) {
+        QLabel* sectionTitle = new QLabel(title, frame);
+        sectionTitle->setObjectName(QStringLiteral("ImuMetricSectionTitle"));
+        layout->addWidget(sectionTitle);
+
+        QWidget* row = new QWidget(frame);
+        QHBoxLayout* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(0);
+
+        for (int i = 0; i < 3; ++i) {
+            QWidget* cell = new QWidget(row);
+            QVBoxLayout* cellLayout = new QVBoxLayout(cell);
+            cellLayout->setContentsMargins(0, 0, 0, 0);
+            cellLayout->setSpacing(3);
+
+            QLabel* nameLabel = new QLabel(names.at(i), cell);
+            nameLabel->setObjectName(QStringLiteral("ImuMetricName"));
+            nameLabel->setAlignment(Qt::AlignCenter);
+            nameLabel->setStyleSheet(QStringLiteral("color: %1;").arg(colorName(colors.at(static_cast<size_t>(i)))));
+
+            QLabel* valueLabel = new QLabel(QStringLiteral("--"), cell);
+            valueLabel->setObjectName(QStringLiteral("ImuMetricValue"));
+            valueLabel->setAlignment(Qt::AlignCenter);
+            m_liveValueLabels[group][i] = valueLabel;
+
+            cellLayout->addWidget(nameLabel);
+            cellLayout->addWidget(valueLabel);
+            rowLayout->addWidget(cell, 1);
+
+            if (i < 2) {
+                QFrame* separator = new QFrame(row);
+                separator->setObjectName(QStringLiteral("ImuMetricVerticalSeparator"));
+                separator->setFrameShape(QFrame::VLine);
+                rowLayout->addWidget(separator);
+            }
+        }
+        layout->addWidget(row);
+    };
+
+    const std::array<QColor, 3> axisColors = {kAxisXColor, kAxisYColor, kAxisZColor};
+    addMetricSection(QStringLiteral("加速度 (g)"),
+                     0,
+                     {QStringLiteral("Acc X"), QStringLiteral("Acc Y"), QStringLiteral("Acc Z")},
+                     axisColors);
+    addSeparator();
+    addMetricSection(QStringLiteral("角速度 (rad/s)"),
+                     1,
+                     {QStringLiteral("Gyro X"), QStringLiteral("Gyro Y"), QStringLiteral("Gyro Z")},
+                     axisColors);
+    addSeparator();
+    addMetricSection(QStringLiteral("姿态角 (deg)"),
+                     2,
+                     {QStringLiteral("Roll"), QStringLiteral("Pitch"), QStringLiteral("Yaw")},
+                     axisColors);
+    layout->addStretch();
+    return frame;
+}
+
+void ImuVisualizationDialog::refreshPlaybackControls()
+{
+    if (!m_playbackBar || !m_owner) {
+        return;
+    }
+
+    const LivoxViewerWindow::PlaybackUiSnapshot snapshot = m_owner->playbackUiSnapshot();
+    m_playbackBar->setVisible(snapshot.available);
+    if (!snapshot.available) {
+        m_progressSliderDragging = false;
+        return;
+    }
+
+    m_updatingPlaybackControls = true;
+
+    const QString iconPath = snapshot.playing
+        ? QStringLiteral(":/icons/playback_pause.svg")
+        : QStringLiteral(":/icons/playback_play.svg");
+    if (m_playPauseButton->property(ThemeIconUtils::kSvgIconPathProperty).toString() != iconPath) {
+        ThemeIconUtils::setThemedSvgIcon(m_playPauseButton, iconPath);
+    }
+    m_playPauseButton->setToolTip(snapshot.playing ? QStringLiteral("暂停") : QStringLiteral("播放"));
+    m_playPauseButton->setEnabled(snapshot.canPlayPause);
+    m_firstFrameButton->setEnabled(snapshot.canFirst);
+    m_prevFrameButton->setEnabled(snapshot.canPrevious);
+    m_nextFrameButton->setEnabled(snapshot.canNext);
+    m_lastFrameButton->setEnabled(snapshot.canLast);
+
+    m_progressSlider->setRange(snapshot.sliderMinimum, snapshot.sliderMaximum);
+    m_progressSlider->setEnabled(snapshot.active && !snapshot.loading && snapshot.sliderMaximum > snapshot.sliderMinimum);
+    if (!m_progressSliderDragging) {
+        m_progressSlider->setValue(snapshot.sliderValue);
+    }
+
+    m_speedCombo->setEnabled(snapshot.active && !snapshot.loading);
+    m_speedCombo->setCurrentText(snapshot.speedText);
+    m_modeCombo->setEnabled(snapshot.active && !snapshot.loading);
+    m_modeCombo->setCurrentIndex(snapshot.modeIndex);
+
+    if (m_playbackFileLabel) {
+        m_playbackFileLabel->setToolTip(snapshot.pathText);
+        m_playbackFileLabel->setText(m_playbackFileLabel->fontMetrics()
+                                         .elidedText(snapshot.pathText, Qt::ElideMiddle, std::max(1, m_playbackFileLabel->width())));
+    }
+    if (m_playbackTimeLabel) {
+        m_playbackTimeLabel->setToolTip(snapshot.timeText);
+        m_playbackTimeLabel->setText(m_playbackTimeLabel->fontMetrics()
+                                         .elidedText(snapshot.timeText, Qt::ElideRight, std::max(1, m_playbackTimeLabel->width())));
+    }
+    if (m_playbackFrameLabel) {
+        m_playbackFrameLabel->setToolTip(snapshot.frameText);
+        m_playbackFrameLabel->setText(m_playbackFrameLabel->fontMetrics()
+                                          .elidedText(snapshot.frameText, Qt::ElideRight, std::max(1, m_playbackFrameLabel->width())));
+    }
+
+    m_updatingPlaybackControls = false;
+}
+
+void ImuVisualizationDialog::setPinned(bool pinned)
+{
+    if (m_embedded) {
+        return;
+    }
+
+    if (m_pinButton) {
+        ThemeIconUtils::setThemedSvgIcon(
+            m_pinButton,
+            pinned ? QStringLiteral(":/icons/window_pin_active.svg") : QStringLiteral(":/icons/window_pin.svg"));
+    }
+
+    const QRect previousGeometry = geometry();
+    setWindowFlag(Qt::WindowStaysOnTopHint, pinned);
+    setGeometry(previousGeometry);
+    show();
+    if (pinned) {
+        raise();
+        activateWindow();
+    }
+}
+
 QWidget* ImuVisualizationDialog::createDeviceCard(const ImuVisualizationDeviceDescriptor& device)
 {
     QWidget* card = new QWidget(m_deviceList);
@@ -506,7 +896,7 @@ void ImuVisualizationDialog::refreshDeviceList()
             m_devicesByHandle.insert(device.handle, device);
             QListWidgetItem* item = new QListWidgetItem();
             item->setData(Qt::UserRole, QVariant::fromValue(static_cast<quint32>(device.handle)));
-            item->setSizeHint(QSize(196, 92));
+            item->setSizeHint(QSize(m_embedded ? 190 : 236, 92));
             m_deviceList->addItem(item);
             m_deviceList->setItemWidget(item, createDeviceCard(device));
             if (m_haveCurrentHandle && device.handle == m_currentHandle) {
@@ -544,6 +934,34 @@ void ImuVisualizationDialog::updateOrientationModel()
     }
     const ImuVisualizationDeviceDescriptor device = m_devicesByHandle.value(m_currentHandle);
     m_orientationView->setDeviceModelName(device.modelDisplay);
+}
+
+void ImuVisualizationDialog::updateRealtimeValues(const ImuVisualizationSample* sample)
+{
+    auto setValue = [this](int group, int index, const QString& text) {
+        if (m_liveValueLabels[group][index]) {
+            m_liveValueLabels[group][index]->setText(text);
+        }
+    };
+
+    if (!sample) {
+        for (int group = 0; group < 3; ++group) {
+            for (int index = 0; index < 3; ++index) {
+                setValue(group, index, QStringLiteral("--"));
+            }
+        }
+        return;
+    }
+
+    setValue(0, 0, QString::number(sample->ax, 'f', 3));
+    setValue(0, 1, QString::number(sample->ay, 'f', 3));
+    setValue(0, 2, QString::number(sample->az, 'f', 3));
+    setValue(1, 0, QString::number(sample->gx, 'f', 3));
+    setValue(1, 1, QString::number(sample->gy, 'f', 3));
+    setValue(1, 2, QString::number(sample->gz, 'f', 3));
+    setValue(2, 0, QString::number(sample->rollDeg, 'f', 3));
+    setValue(2, 1, QString::number(sample->pitchDeg, 'f', 3));
+    setValue(2, 2, QString::number(sample->yawDeg, 'f', 3));
 }
 
 ImuVisualizationDialog::ChartPanel* ImuVisualizationDialog::chartPanelForViewport(QObject* watched)
@@ -719,6 +1137,7 @@ void ImuVisualizationDialog::refreshData(bool force)
             m_haveLastSampleSnapshot = false;
             m_lastSampleHandle = 0;
             m_lastSampleRevision = 0;
+            updateRealtimeValues(nullptr);
         }
         return;
     }
@@ -744,6 +1163,7 @@ void ImuVisualizationDialog::refreshData(bool force)
         if (m_orientationView) {
             m_orientationView->setHasData(false);
         }
+        updateRealtimeValues(nullptr);
         m_chartsCleared = true;
         return;
     }
@@ -751,6 +1171,7 @@ void ImuVisualizationDialog::refreshData(bool force)
     updateChart(m_accChart, samples, &ImuVisualizationSample::ax, &ImuVisualizationSample::ay, &ImuVisualizationSample::az);
     updateChart(m_gyroChart, samples, &ImuVisualizationSample::gx, &ImuVisualizationSample::gy, &ImuVisualizationSample::gz);
     updateChart(m_attitudeChart, samples, &ImuVisualizationSample::rollDeg, &ImuVisualizationSample::pitchDeg, &ImuVisualizationSample::yawDeg);
+    updateRealtimeValues(&samples.last());
     m_chartsCleared = false;
 
     if (m_orientationView) {
@@ -770,7 +1191,7 @@ void ImuVisualizationDialog::resetZoom()
 void ImuVisualizationDialog::setPaused(bool paused)
 {
     m_paused = paused;
-    m_pauseButton->setText(paused ? QStringLiteral("继续") : QStringLiteral("暂停"));
+    m_pauseButton->setText(paused ? QStringLiteral("继续") : QStringLiteral("冻结"));
 }
 
 void ImuVisualizationDialog::clearChart(ChartPanel& panel)
@@ -854,24 +1275,32 @@ void ImuVisualizationDialog::refreshTheme()
 
     const QString styleSheet = QStringLiteral(
         "QDialog#ImuVisualizationDialog, QDialog#ImuVisualizationWidget { background: %1; color: %2; }"
-        "QFrame#ImuToolbar, QFrame#ImuVisualizationPanel { background: %3; border: 1px solid %4; border-radius: 6px; }"
+        "QFrame#ImuToolbar, QFrame#ImuPlaybackBar, QFrame#ImuVisualizationPanel { background: %3; border: 1px solid %4; border-radius: 6px; }"
+        "QFrame#ImuToolbarSeparator, QFrame#ImuMetricSeparator, QFrame#ImuMetricVerticalSeparator { color: %4; background: %4; border: none; }"
+        "QFrame#ImuMetricSeparator { min-height: 1px; max-height: 1px; }"
+        "QFrame#ImuMetricVerticalSeparator { min-width: 1px; max-width: 1px; }"
         "QWidget#ImuChartEmptyOverlay { background: transparent; }"
         "QLabel#ImuPanelTitle, QLabel#ImuDeviceModel { color: %2; font-weight: 600; }"
-        "QLabel#ImuPanelHint { color: %5; }"
+        "QLabel#ImuPanelHint, QLabel#ImuMetricSectionTitle { color: %5; }"
         "QLabel#ImuDeviceSourceTag { color: %2; }"
+        "QLabel#ImuMetricName { font-weight: 600; }"
+        "QLabel#ImuMetricValue { color: %2; }"
         "QLabel#ImuChartHoverLabel { color: %2; background: %3; border: 1px solid %4; border-radius: 4px; padding: 6px 8px; }"
         "QListWidget#ImuDeviceList { background: transparent; border: none; outline: 0; }"
         "QListWidget#ImuDeviceList::item { border: none; padding: 0; background: transparent; }"
         "QWidget#ImuDeviceCard { background: %3; border: 1px solid %4; border-radius: 6px; }"
         "QWidget#ImuDeviceCard:hover { border-color: %6; }"
-        "QWidget#ImuDeviceCard[selected=\"true\"] { background: %7; border-color: %6; }")
-        .arg(colorName(window),
-             colorName(text),
-             colorName(base),
-             colorName(border),
-             colorName(hint),
-             colorName(hoverBorder),
-             colorName(selectedBg));
+        "QWidget#ImuDeviceCard[selected=\"true\"] { background: %7; border-color: %6; }"
+        "QToolButton#ImuPinButton { color: %2; background: transparent; border: 1px solid transparent; border-radius: 4px; }"
+        "QToolButton#ImuPinButton:hover { background: %7; border-color: %6; }"
+        "QToolButton#ImuPinButton:pressed, QToolButton#ImuPinButton:checked { background: %7; border-color: %6; }")
+        .arg(colorName(window))
+        .arg(colorName(text))
+        .arg(colorName(base))
+        .arg(colorName(border))
+        .arg(colorName(hint))
+        .arg(colorName(hoverBorder))
+        .arg(colorName(selectedBg));
     if (this->styleSheet() != styleSheet) {
         setStyleSheet(styleSheet);
     }
@@ -883,6 +1312,7 @@ void ImuVisualizationDialog::refreshTheme()
     if (m_orientationView) {
         m_orientationView->refreshTheme();
     }
+    ThemeIconUtils::refreshObject(this);
 }
 
 void ImuVisualizationDialog::refreshChartTheme(ChartPanel& panel)

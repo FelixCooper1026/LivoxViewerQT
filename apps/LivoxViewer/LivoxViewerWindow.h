@@ -122,6 +122,37 @@ public:
     QVector<ImuVisualizationDeviceDescriptor> imuVisualizationDevicesSnapshot();
     ImuVisualizationSamplesSnapshot imuVisualizationSamplesSnapshot(uint32_t handle, double visibleWindowSec);
 
+    struct PlaybackUiSnapshot {
+        bool available = false;
+        bool active = false;
+        bool loading = false;
+        bool playing = false;
+        bool canPlayPause = false;
+        bool canFirst = false;
+        bool canPrevious = false;
+        bool canNext = false;
+        bool canLast = false;
+        int sliderMinimum = 0;
+        int sliderMaximum = 0;
+        int sliderValue = 0;
+        QString speedText = QStringLiteral("x1.0");
+        int modeIndex = 1;
+        QString infoText;
+        QString pathText;
+        QString timeText;
+        QString frameText;
+    };
+
+    PlaybackUiSnapshot playbackUiSnapshot() const;
+    void playbackToggle();
+    void playbackShowFirstFrame();
+    void playbackShowPreviousFrame();
+    void playbackShowNextFrame();
+    void playbackShowLastFrame();
+    void playbackSeekToDisplayFrame(int value);
+    void playbackSetSpeedText(const QString& text);
+    void playbackSetModeIndex(int index);
+
 private:
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);

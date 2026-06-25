@@ -1,7 +1,5 @@
 #include "LivoxViewerWindow.h"
-
-#include <QIcon>
-#include <QStyle>
+#include "ThemeIconUtils.h"
 
 QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
 {
@@ -45,25 +43,17 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
     playbackState.modeCombo->addItems({"逐帧播放", "滑窗播放"});
     playbackState.modeCombo->setCurrentIndex(1);
 
-    auto themedSvgIcon = [this](const QString& themeName, QStyle::StandardPixmap fallback) {
-        QIcon icon = QIcon::fromTheme(themeName);
-        if (icon.isNull()) {
-            icon = style()->standardIcon(fallback);
-        }
-        return icon;
-    };
-
     const int playbackIconSize = fontMetrics().height() + 4;
     playbackState.playPauseButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
     playbackState.firstFrameButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
     playbackState.prevFrameButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
     playbackState.nextFrameButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
     playbackState.lastFrameButton->setIconSize(QSize(playbackIconSize, playbackIconSize));
-    playbackState.playPauseButton->setIcon(themedSvgIcon("media-playback-start", QStyle::SP_MediaPlay));
-    playbackState.firstFrameButton->setIcon(themedSvgIcon("go-first-view-page", QStyle::SP_MediaSkipBackward));
-    playbackState.prevFrameButton->setIcon(themedSvgIcon("media-seek-backward", QStyle::SP_MediaSeekBackward));
-    playbackState.nextFrameButton->setIcon(themedSvgIcon("media-seek-forward", QStyle::SP_MediaSeekForward));
-    playbackState.lastFrameButton->setIcon(themedSvgIcon("go-last-view-page", QStyle::SP_MediaSkipForward));
+    ThemeIconUtils::setThemedSvgIcon(playbackState.playPauseButton, QStringLiteral(":/icons/playback_play.svg"));
+    ThemeIconUtils::setThemedSvgIcon(playbackState.firstFrameButton, QStringLiteral(":/icons/playback_first.svg"));
+    ThemeIconUtils::setThemedSvgIcon(playbackState.prevFrameButton, QStringLiteral(":/icons/playback_previous.svg"));
+    ThemeIconUtils::setThemedSvgIcon(playbackState.nextFrameButton, QStringLiteral(":/icons/playback_next.svg"));
+    ThemeIconUtils::setThemedSvgIcon(playbackState.lastFrameButton, QStringLiteral(":/icons/playback_last.svg"));
     playbackState.playPauseButton->setToolTip("播放/暂停");
     playbackState.firstFrameButton->setToolTip("首帧");
     playbackState.prevFrameButton->setToolTip("上一帧");

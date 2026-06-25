@@ -61,6 +61,14 @@
     <file>layout_panel_bottom_active.svg</file>
     <file>layout_panel_right_active.svg</file>
     <file>settings.svg</file>
+    <file>playback_first.svg</file>
+    <file>playback_previous.svg</file>
+    <file>playback_play.svg</file>
+    <file>playback_pause.svg</file>
+    <file>playback_next.svg</file>
+    <file>playback_last.svg</file>
+    <file>window_pin.svg</file>
+    <file>window_pin_active.svg</file>
     <file>window_minimize.svg</file>
     <file>window_maximize.svg</file>
     <file>window_restore.svg</file>

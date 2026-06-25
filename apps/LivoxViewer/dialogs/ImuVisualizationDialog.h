@@ -15,12 +15,16 @@
 #include <cstdint>
 
 class ImuOrientationView;
+class QComboBox;
 class QLabel;
 class QEvent;
+class QFrame;
 class LivoxViewerWindow;
 class QListWidget;
 class QPushButton;
+class QSlider;
 class QTimer;
+class QToolButton;
 class SwitchCheckBox;
 class QWidget;
 
@@ -61,12 +65,17 @@ private:
     };
 
     QWidget* createToolbar();
+    QWidget* createPlaybackControls();
     ChartPanel createChartPanel(const QString& title, const QString& yTitle, double defaultMin, double defaultMax);
     QWidget* createOrientationPanel();
+    QWidget* createRealtimeValuesPanel();
     QWidget* createDeviceCard(const ImuVisualizationDeviceDescriptor& device);
+    void refreshPlaybackControls();
+    void setPinned(bool pinned);
     void refreshDeviceList();
     void updateDeviceCardSelection();
     void updateOrientationModel();
+    void updateRealtimeValues(const ImuVisualizationSample* sample);
     void refreshData(bool force = false);
     void resetZoom();
     void setPaused(bool paused);
@@ -84,10 +93,24 @@ private:
     void positionChartEmptyOverlays();
 
     LivoxViewerWindow* m_owner = nullptr;
+    bool m_embedded = false;
     QListWidget* m_deviceList = nullptr;
     SwitchCheckBox* m_autoScaleSwitch = nullptr;
-    QPushButton* m_resetButton = nullptr;
     QPushButton* m_pauseButton = nullptr;
+    QToolButton* m_pinButton = nullptr;
+    QFrame* m_playbackBar = nullptr;
+    QPushButton* m_playPauseButton = nullptr;
+    QPushButton* m_firstFrameButton = nullptr;
+    QPushButton* m_prevFrameButton = nullptr;
+    QPushButton* m_nextFrameButton = nullptr;
+    QPushButton* m_lastFrameButton = nullptr;
+    QSlider* m_progressSlider = nullptr;
+    QComboBox* m_speedCombo = nullptr;
+    QComboBox* m_modeCombo = nullptr;
+    QLabel* m_playbackFileLabel = nullptr;
+    QLabel* m_playbackTimeLabel = nullptr;
+    QLabel* m_playbackFrameLabel = nullptr;
+    QLabel* m_liveValueLabels[3][3] = {};
     QTimer* m_refreshTimer = nullptr;
     ChartPanel m_accChart;
     ChartPanel m_gyroChart;
@@ -102,6 +125,8 @@ private:
     bool m_haveLastSampleSnapshot = false;
     bool m_chartsCleared = false;
     bool m_paused = false;
+    bool m_updatingPlaybackControls = false;
+    bool m_progressSliderDragging = false;
 };
 
 #endif // LIVOXVIEWER_DIALOGS_IMUVISUALIZATIONDIALOG_H
