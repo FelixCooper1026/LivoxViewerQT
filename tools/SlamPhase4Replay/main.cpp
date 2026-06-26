@@ -159,8 +159,13 @@ int main(int argc, char* argv[])
     QCoreApplication app(argc, argv);
     QTextStream out(stdout);
 
-    const QString withImuPath = argc > 1 ? QString::fromLocal8Bit(argv[1]) : QStringLiteral("E:/Livox_ws/with_imu.pcap");
-    const QString noImuPath = argc > 2 ? QString::fromLocal8Bit(argv[2]) : QStringLiteral("E:/Livox_ws/no_imu.pcap");
+    if (argc != 3) {
+        out << "Usage: SlamPhase4Replay <with_imu.pcap> <no_imu.pcap>\n";
+        return 2;
+    }
+
+    const QString withImuPath = QString::fromLocal8Bit(argv[1]);
+    const QString noImuPath = QString::fromLocal8Bit(argv[2]);
 
     const ReplaySummary firstRun = runWithImuReplay(withImuPath);
     if (!firstRun.ok) {

@@ -9,12 +9,28 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <string>
+
+namespace {
+
+void addNpcapDllDirectory()
+{
+    wchar_t systemDirectory[MAX_PATH] = {};
+    const UINT length = GetSystemDirectoryW(systemDirectory, MAX_PATH);
+    if (length > 0 && length < MAX_PATH) {
+        std::wstring npcapDirectory(systemDirectory, length);
+        npcapDirectory += L"\\Npcap";
+        SetDllDirectoryW(npcapDirectory.c_str());
+    }
+}
+
+} // namespace
 #endif
 
 int main(int argc, char *argv[])
 {
 #ifdef _WIN32
-    SetDllDirectoryA("C:\\Windows\\System32\\Npcap");
+    addNpcapDllDirectory();
 #endif
 
     QSurfaceFormat glFormat = QSurfaceFormat::defaultFormat();

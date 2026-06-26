@@ -143,26 +143,24 @@ endif()
 
 set(SLAM_FAST_LIO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio")
 set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio_compat")
-find_path(SLAM_EIGEN_INCLUDE_DIR Eigen/Core
-    PATHS
-        "E:/Livox_ws/Livox-SDK2-1.2.4/samples/livox_lidar_quick_start/eigen-3.4.0"
-        "E:/Livox_ws/lvxtrans/lvx/include"
-)
-if(NOT SLAM_EIGEN_INCLUDE_DIR)
-    message(FATAL_ERROR "Eigen headers are required for FAST_LIO IKFoM port")
+set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
+set(SLAM_EIGEN_INCLUDE_DIR "${THIRD_PARTY_ROOT}/eigen-3.4.0")
+set(SLAM_BOOST_INCLUDE_DIR "${THIRD_PARTY_ROOT}/boost-1.82.0")
+
+if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
+    message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}")
 endif()
 
-find_path(SLAM_BOOST_INCLUDE_DIR boost/preprocessor/seq.hpp
-    PATHS
-        "E:/thirdparty/PCL 1.13.1/3rdParty/Boost/include/boost-1_82"
-)
-if(NOT SLAM_BOOST_INCLUDE_DIR)
-    message(FATAL_ERROR "Boost headers are required for FAST_LIO IKFoM port")
+if(NOT EXISTS "${SLAM_BOOST_INCLUDE_DIR}/boost/preprocessor/seq.hpp")
+    message(FATAL_ERROR "Boost headers are required at ${SLAM_BOOST_INCLUDE_DIR}")
 endif()
+
+find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
 message(STATUS "FAST_LIO Boost include: ${SLAM_BOOST_INCLUDE_DIR}")
+message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
 
 # 基础源文件
 set(SOURCES
@@ -390,7 +388,6 @@ target_compile_definitions(LivoxViewerQT PRIVATE
     LIVOX_VIEWER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     LIVOX_VIEWER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     LIVOX_VIEWER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
-    ROOT_DIR="${SLAM_FAST_LIO_ROOT}/"
 )
 
 # =============================================================================
@@ -504,6 +501,8 @@ else()
     message(WARNING "Livox SDK library not linked - application may not function properly")
 endif()
 
+target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX)
+
 # 平台特定的系统库
 if(IS_LINUX)
     target_link_libraries(LivoxViewerQT PRIVATE
@@ -556,10 +555,6 @@ set(SLAM_PHASE4_REPLAY_SOURCES
 
 add_executable(SlamPhase4Replay ${SLAM_PHASE4_REPLAY_SOURCES})
 
-target_compile_definitions(SlamPhase4Replay PRIVATE
-    ROOT_DIR="${SLAM_FAST_LIO_ROOT}/"
-)
-
 target_include_directories(SlamPhase4Replay PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
@@ -584,6 +579,8 @@ if(QT_VERSION_MAJOR EQUAL 6)
 else()
     target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core)
 endif()
+
+target_link_libraries(SlamPhase4Replay PRIVATE OpenMP::OpenMP_CXX)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(SlamPhase4Replay PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
