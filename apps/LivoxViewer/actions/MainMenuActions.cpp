@@ -978,6 +978,7 @@ void LivoxViewerWindow::createMenusAndActions()
     createFileActions();
     createDeviceActions();
     createHelpActions();
+    toolsMenu->addAction(QStringLiteral("SLAM..."), this, &LivoxViewerWindow::showSlamControlDialog);
     // 视图菜单：显示/隐藏 dock
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());

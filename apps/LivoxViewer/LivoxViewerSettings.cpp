@@ -694,6 +694,10 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
 
 LivoxViewerWindow::~LivoxViewerWindow()
 {
+    if (slamUiBridge || slamWorker.joinable()) {
+        stopSlamProcessing();
+    }
+
     // 保存窗口布局与几何
     QSettings settings("Livox", "LivoxViewerQT");
     if (lvx2FileDock) {

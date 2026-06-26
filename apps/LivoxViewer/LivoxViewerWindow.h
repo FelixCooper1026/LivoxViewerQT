@@ -78,6 +78,7 @@
 #include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
+#include "Slam/Core/SlamTypes.h"
 #include "Slam/Io/LiveLidarSlamSource.h"
 #include "state/CaptureSessionState.h"
 #include "state/ImuRuntimeState.h"
@@ -92,6 +93,8 @@ class QChart;
 class QDragEnterEvent;
 class QDropEvent;
 QT_END_NAMESPACE
+class SlamControlDialog;
+class SlamUiBridge;
 QT_BEGIN_NAMESPACE
 
 class LivoxViewerWindow : public QMainWindow
@@ -155,6 +158,14 @@ public:
     void playbackSeekToDisplayFrame(int value);
     void playbackSetSpeedText(const QString& text);
     void playbackSetModeIndex(int index);
+    void showSlamControlDialog();
+    void startSlamProcessing();
+    void pauseSlamProcessing();
+    void stopSlamProcessing();
+    void resetSlamProcessing();
+    void clearSlamDisplay();
+    void setSlamMapPreviewEnabled(bool enabled);
+    void submitSlamOutputForUi(const SlamOutput& output);
 
 private:
     void initializeUserInterface();
@@ -184,6 +195,8 @@ private:
     void createPlaybackActions(QMenu* toolsMenu);
     void createFileActions();
     void createStatusBarAndTimers();
+    SlamUiBridge* ensureSlamUiBridge();
+    void postSlamStatus(SlamStatusCode status, const QString& message);
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();
@@ -347,6 +360,14 @@ private:
     // 点云回调状态
     bool pointCloudCallbackEnabled;
     LiveLidarSlamSource liveSlamSource;
+    SlamUiBridge* slamUiBridge = nullptr;
+    QPointer<SlamControlDialog> slamControlDialog;
+    std::thread slamWorker;
+    std::atomic_bool slamWorkerActive{false};
+    std::atomic_bool slamWorkerCancel{false};
+    std::atomic_bool slamWorkerPaused{false};
+    std::atomic_bool slamMapPreviewEnabled{false};
+    bool slamRenderOverlayEnabled = false;
 
     // 工作模式状态
     bool isNormalMode;

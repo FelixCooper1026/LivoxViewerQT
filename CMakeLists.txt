@@ -174,6 +174,9 @@ set(SOURCES
     apps/LivoxViewer/panels/FileInfoPanel.cpp
     apps/LivoxViewer/panels/ImuPanel.cpp
     apps/LivoxViewer/panels/LogPanel.cpp
+    apps/LivoxViewer/slam/SlamControlDialog.cpp
+    apps/LivoxViewer/slam/SlamUiBridge.cpp
+    apps/LivoxViewer/slam/SlamWindowActions.cpp
     apps/LivoxViewer/actions/MainMenuActions.cpp
     apps/LivoxViewer/actions/DeviceActions.cpp
     apps/LivoxViewer/actions/HelpActions.cpp
@@ -249,6 +252,8 @@ set(SOURCES
      apps/LivoxViewer/widgets/SwitchCheckBox.h
      apps/LivoxViewer/widgets/ImuOrientationView.h
      apps/LivoxViewer/widgets/VisualizationWorkspace.h
+     apps/LivoxViewer/slam/SlamControlDialog.h
+     apps/LivoxViewer/slam/SlamUiBridge.h
      apps/LivoxViewer/dialogs/DialogWindowUtils.h
      apps/LivoxViewer/dialogs/ImuVisualizationDialog.h
      apps/LivoxViewer/imu/ImuAttitudeEstimator.h
@@ -292,6 +297,7 @@ set(SOURCES
     libs/Slam/include/Slam/Backends/FastLio/FastLioSlamBackend.h
     libs/Slam/include/Slam/Io/LiveLidarSlamSource.h
     libs/Slam/include/Slam/Io/PcapSlamSource.h
+    libs/Slam/include/Slam/Visualization/SlamRenderSnapshot.h
     libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
     libs/AppConfig/include/AppConfig/LidarConfigService.h

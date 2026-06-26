@@ -3,6 +3,7 @@
 
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudCrossSection.h"
+#include "Slam/Visualization/SlamRenderSnapshot.h"
 #include "plugins/StlModel/StlModelLoader.h"
 
 #include <QColor>
@@ -142,6 +143,8 @@ public:
     void setViewPreset(ViewPreset preset);
     void setProjectionMode(ProjectionMode mode);
     ProjectionMode projectionMode() const { return m_projectionMode; }
+    void setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot);
+    void clearSlamRenderOverlay();
 
 protected:
     void initializeGL() override;
@@ -170,6 +173,8 @@ private:
     void setupBuffers();
     void setupAxesBuffers();
     void setupCrossSectionBuffers();
+    void uploadSlamRenderOverlayIfNeeded();
+    void destroySlamRenderOverlay();
     QVector3D mapToArcball(const QPoint& p) const;
     bool pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius = 10);
     void uploadPointCloudPoints(QVector<PointCloudPoint>&& points);
@@ -209,6 +214,21 @@ private:
     QOpenGLBuffer m_axesVbo;
     QOpenGLVertexArrayObject m_axesVao;
     int m_axesVertexCount = 0;
+
+    QOpenGLBuffer m_slamTrajectoryVbo;
+    QOpenGLVertexArrayObject m_slamTrajectoryVao;
+    qsizetype m_slamTrajectoryBufferCapacityBytes = 0;
+    int m_slamTrajectoryVertexCount = 0;
+    QOpenGLBuffer m_slamPoseAxisVbo;
+    QOpenGLVertexArrayObject m_slamPoseAxisVao;
+    qsizetype m_slamPoseAxisBufferCapacityBytes = 0;
+    int m_slamPoseAxisVertexCount = 0;
+    QOpenGLBuffer m_slamMapPreviewVbo;
+    QOpenGLVertexArrayObject m_slamMapPreviewVao;
+    qsizetype m_slamMapPreviewBufferCapacityBytes = 0;
+    int m_slamMapPreviewPointCount = 0;
+    SlamRenderSnapshot m_slamRenderSnapshot;
+    bool m_slamRenderUploadPending = false;
 
     QOpenGLBuffer m_crossSectionVbo;
     QOpenGLVertexArrayObject m_crossSectionVao;

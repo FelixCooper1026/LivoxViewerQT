@@ -1470,3 +1470,64 @@ if ($closed) {
 - 2026-06-26：依赖硬编码路径审计：`tools/SlamPhase4Replay/main.cpp` 默认参数写死 `E:/Livox_ws/with_imu.pcap` 和 `E:/Livox_ws/no_imu.pcap`；这符合当前用户指定真实 PCAP 复验输入，但属于本机数据路径，工具在 CI 或其他机器运行时必须显式传参，不得把默认路径视为通用测试资源。
 - 2026-06-26：依赖硬编码路径审计：当前主工程没有直接链接 ROS/catkin/PCL runtime，`pcl/*` 由 `libs/Slam/third_party/fast_lio_compat/include` 兼容头提供；原 FAST_LIO 快照自己的 `CMakeLists.txt` 仍声明 `catkin`、`PythonLibs`、`Eigen3`、`PCL 1.8`、`pcl_ros` 等依赖，但该 CMake 当前未纳入主工程构建。后续若把 `preprocess.cpp`、`laserMapping.cpp` 或原 CMake 直接接入，必须先做依赖隔离审计，避免把 ROS/PCL runtime 意外引入主程序。
 - 2026-06-26：依赖硬编码路径审计：`FastLioSlamBackend.cpp` 直接包含 `<omp.h>` 并调用 `omp_get_wtime()`；当前 Windows/MSVC 构建可通过，但 `CMakeLists.txt` 没有为 `LivoxViewerQT` 和 `SlamPhase4Replay` 显式 `find_package(OpenMP)` 或链接 `OpenMP::OpenMP_CXX`。后续 Linux/Clang/GCC 构建复验前需要补齐 OpenMP 编译/链接规则，否则可能出现非 Windows 编译或链接失败。
+
+### 2026-06-27 Phase 5 / 旁路 UI 重做
+
+状态：已按旁路方案重新实现，旧的 dock/panel/tab 侵入式 Phase 5 方案废弃，不再继续沿 `slamDock`、`SlamPanel.cpp`、`createSlamPanel()`、dock state version 升级方向推进。
+
+实现原则：
+
+- 不新增 SLAM dock，不改 dock/tab 集合，不修改主窗口布局恢复版本。
+- 不在 `initializeUserInterface()` 中创建 SLAM QWidget。
+- 不把 SLAM 面板接入标题栏面板按钮、View 菜单或 dock 可见性同步逻辑。
+- 后端线程只通过 queued invoke 把 `SlamOutput` 投递到 UI 线程，不直接访问 `PointCloudView`。
+- 地图预览默认关闭，关闭时后台输出的 `newMapChunks` 在投递 UI 前清空，避免 UI 侧复制和上传地图数据。
+
+Phase 5.1 已完成：
+
+- 新增 `apps/LivoxViewer/slam/SlamUiBridge.h/cpp`。
+- `SlamUiBridge` 继承 `QObject`，不继承 `QWidget`。
+- `SlamUiBridge::receiveSlamOutput()` 缓存 `latestOutput`，维护轨迹和可选地图预览缓存。
+- `SlamUiBridge` 使用 100 ms `QTimer` 以 10 Hz 刷新状态文本、dialog display state 和 render snapshot。
+- 当前状态文本通过主窗口现有 status bar 显示；不创建 dock，不接入日志 dock，不接入 `PointCloudView` 初始化流程。
+
+Phase 5.2 已完成：
+
+- 新增 `apps/LivoxViewer/slam/SlamControlDialog.h/cpp`。
+- `SlamControlDialog` 是非模态浮动窗口，通过 `工具 -> SLAM...` 懒创建并显示。
+- 面板字段包括状态、模式、后端、IMU 状态、输入 FPS、后端耗时、丢帧数、当前位姿、轨迹点数、地图点数、错误信息。
+- 按钮包括启动、暂停、停止、重置、清空显示。
+- 按钮只调用 `LivoxViewerWindow` 公开接口：`startSlamProcessing()`、`pauseSlamProcessing()`、`stopSlamProcessing()`、`resetSlamProcessing()`、`clearSlamDisplay()`、`setSlamMapPreviewEnabled()`。
+- 新增 `apps/LivoxViewer/slam/SlamWindowActions.cpp`，承载旁路 PCAP SLAM worker 生命周期和 UI 投递逻辑。
+
+Phase 5.3 已完成：
+
+- 新增 `libs/Slam/include/Slam/Visualization/SlamRenderSnapshot.h`。
+- `PointCloudView` 只新增两个公开接口：
+  - `setSlamRenderSnapshot(const SlamRenderSnapshot&)`
+  - `clearSlamRenderOverlay()`
+- `setSlamRenderSnapshot()` 和 `clearSlamRenderOverlay()` 均断言在 UI 主线程调用。
+- `PointCloudView` 的 SLAM OpenGL VBO/VAO 只在 `paintGL()` 当前 context 有效时创建/上传；析构时在当前 context 下销毁。
+- 当前只绘制轨迹 `GL_LINE_STRIP` 和当前位姿坐标轴 `GL_LINES`。
+
+Phase 5.4 已完成基础版本：
+
+- 地图显示作为可选功能，默认关闭。
+- `SlamControlDialog` 提供“稀疏地图预览”开关。
+- 初始最大显示点数限制为 200000。
+- `SlamUiBridge` 对每个 map chunk 做 stride 抽样，每个 chunk 最多约 1000 点进入 pending。
+- `SlamUiBridge` 每个 10 Hz tick 最多 flush 5000 个 pending map points，避免一次 UI tick 上传完整地图。
+
+验证：
+
+- 按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 不打开 SLAM UI 时，`LivoxViewerQT.exe` 启动后进程保持运行；未复现 Phase 5 旧方案的启动崩溃。
+- Windows UI Automation 自动执行 `工具 -> SLAM...` 打开/关闭 20 次通过：`SLAM_DIALOG_OPEN_CLOSE_20_OK`。
+- 无 PCAP 源时点击“启动”触发 `SlamOutput` 错误状态刷新，进程保持运行：`SLAM_STATUS_REFRESH_OK`。
+- 源码审计未发现 `SlamDock`、`slamDock`、`createSlamPanel`、`SlamPanel`、`addDockWidget(...Slam...)`、`tabifyDockWidget(...Slam...)` 等旧侵入式接入点。
+- `git diff --check` 通过，仅有 Git 的 LF/CRLF 转换提示。
+
+验证缺口：
+
+- 本轮未使用真实 PCAP 在 UI 中启动完整 SLAM worker 跑完轨迹 overlay；Phase 4 的 `SlamPhase4Replay` 后端复验仍是后端正确性的主要依据。
+- Linux 编译仍未执行，延续 Phase 4 的环境缺口。

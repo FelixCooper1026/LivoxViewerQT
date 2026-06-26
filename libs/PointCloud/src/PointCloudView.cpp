@@ -7,12 +7,14 @@
 #include <QPainter>
 #include <QLinearGradient>
 #include <QMatrix3x3>
+#include <QCoreApplication>
 #include <QOpenGLFunctions>
 #include <QOpenGLContext>
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QPointer>
+#include <QThread>
 #include <QUrl>
 #include <QVector4D>
 #include <QtConcurrent/QtConcurrentRun>
@@ -137,6 +139,52 @@ bool uploadPointCloudBuffer(QOpenGLWidget* widget,
     vbo.release();
     vao.release();
     program->release();
+    return true;
+}
+
+bool uploadSlamRenderBuffer(QOpenGLWidget* widget,
+                            QOpenGLShaderProgram* program,
+                            const QVector<SlamRenderVertex>& vertices,
+                            QOpenGLBuffer& vbo,
+                            QOpenGLVertexArrayObject& vao,
+                            qsizetype& capacityBytes,
+                            int& vertexCount)
+{
+    vertexCount = vertices.size();
+    if (!program || !widget || !widget->context()) {
+        return false;
+    }
+    if (QOpenGLContext::currentContext() != widget->context()) {
+        return false;
+    }
+
+    if (!vao.isCreated()) {
+        vao.create();
+    }
+    vao.bind();
+    if (!vbo.isCreated()) {
+        vbo.create();
+        vbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    }
+    vbo.bind();
+
+    const qsizetype byteCount = vertices.size() * qsizetype(sizeof(SlamRenderVertex));
+    if (byteCount == 0) {
+        vbo.allocate(0);
+        capacityBytes = 0;
+    } else if (byteCount > capacityBytes) {
+        vbo.allocate(vertices.constData(), static_cast<int>(byteCount));
+        capacityBytes = byteCount;
+    } else {
+        vbo.write(0, vertices.constData(), static_cast<int>(byteCount));
+    }
+
+    program->enableAttributeArray(0);
+    program->setAttributeBuffer(0, GL_FLOAT, offsetof(SlamRenderVertex, x), 3, sizeof(SlamRenderVertex));
+    program->enableAttributeArray(1);
+    program->setAttributeBuffer(1, GL_FLOAT, offsetof(SlamRenderVertex, r), 3, sizeof(SlamRenderVertex));
+    vbo.release();
+    vao.release();
     return true;
 }
 
@@ -293,6 +341,7 @@ PointCloudView::~PointCloudView()
     m_crossSectionTriangleVao.destroy();
     m_crossSectionVbo.destroy();
     m_crossSectionVao.destroy();
+    destroySlamRenderOverlay();
     m_backgroundVbo.destroy();
     m_backgroundVao.destroy();
     m_gridVbo.destroy();
@@ -315,6 +364,24 @@ PointCloudView::~PointCloudView()
     if (hasContext) {
         doneCurrent();
     }
+}
+
+void PointCloudView::setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot)
+{
+    Q_ASSERT(qApp);
+    Q_ASSERT(QThread::currentThread() == qApp->thread());
+    m_slamRenderSnapshot = snapshot;
+    m_slamRenderUploadPending = true;
+    update();
+}
+
+void PointCloudView::clearSlamRenderOverlay()
+{
+    Q_ASSERT(qApp);
+    Q_ASSERT(QThread::currentThread() == qApp->thread());
+    m_slamRenderSnapshot = SlamRenderSnapshot();
+    m_slamRenderUploadPending = true;
+    update();
 }
 
 // 选点：在屏幕区域内找最近点（优先屏幕距离，其次视空间深度）
@@ -702,6 +769,53 @@ void PointCloudView::setupCrossSectionBuffers()
     m_crossSectionTriangleVbo.release();
 }
 
+void PointCloudView::uploadSlamRenderOverlayIfNeeded()
+{
+    if (!m_slamRenderUploadPending || !m_program || QOpenGLContext::currentContext() != context()) {
+        return;
+    }
+
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.trajectoryVertices,
+                           m_slamTrajectoryVbo,
+                           m_slamTrajectoryVao,
+                           m_slamTrajectoryBufferCapacityBytes,
+                           m_slamTrajectoryVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.poseAxisVertices,
+                           m_slamPoseAxisVbo,
+                           m_slamPoseAxisVao,
+                           m_slamPoseAxisBufferCapacityBytes,
+                           m_slamPoseAxisVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.mapPreviewEnabled ? m_slamRenderSnapshot.mapPreviewPoints
+                                                                  : QVector<SlamRenderVertex>(),
+                           m_slamMapPreviewVbo,
+                           m_slamMapPreviewVao,
+                           m_slamMapPreviewBufferCapacityBytes,
+                           m_slamMapPreviewPointCount);
+    m_slamRenderUploadPending = false;
+}
+
+void PointCloudView::destroySlamRenderOverlay()
+{
+    m_slamMapPreviewVbo.destroy();
+    m_slamMapPreviewVao.destroy();
+    m_slamPoseAxisVbo.destroy();
+    m_slamPoseAxisVao.destroy();
+    m_slamTrajectoryVbo.destroy();
+    m_slamTrajectoryVao.destroy();
+    m_slamTrajectoryBufferCapacityBytes = 0;
+    m_slamPoseAxisBufferCapacityBytes = 0;
+    m_slamMapPreviewBufferCapacityBytes = 0;
+    m_slamTrajectoryVertexCount = 0;
+    m_slamPoseAxisVertexCount = 0;
+    m_slamMapPreviewPointCount = 0;
+}
+
 void PointCloudView::setupStlModelBuffers()
 {
     m_stlModelVao.create();
@@ -1029,6 +1143,36 @@ void PointCloudView::paintGL()
         }
         glDepthFunc(GL_LESS);
         m_program->setUniformValue("uPointSize", m_pointSize);
+    }
+
+    uploadSlamRenderOverlayIfNeeded();
+    m_program->setUniformValue("uSelectionEnabled", 0);
+    m_program->setUniformValue("uPersistEnabled", 0);
+    m_program->setUniformValue("uModelLighting", 0);
+    if (m_slamMapPreviewPointCount > 0 && m_slamMapPreviewVao.isCreated()) {
+        m_program->setUniformValue("uPointSize", 2.0f);
+        m_slamMapPreviewVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamMapPreviewPointCount);
+        m_slamMapPreviewVao.release();
+        m_program->setUniformValue("uPointSize", m_pointSize);
+    }
+    if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(2.0f);
+        m_slamTrajectoryVao.bind();
+        glDrawArrays(GL_LINE_STRIP, 0, m_slamTrajectoryVertexCount);
+        m_slamTrajectoryVao.release();
+        glLineWidth(1.0f);
+        glEnable(GL_DEPTH_TEST);
+    }
+    if (m_slamPoseAxisVertexCount > 0 && m_slamPoseAxisVao.isCreated()) {
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(3.0f);
+        m_slamPoseAxisVao.bind();
+        glDrawArrays(GL_LINES, 0, m_slamPoseAxisVertexCount);
+        m_slamPoseAxisVao.release();
+        glLineWidth(1.0f);
+        glEnable(GL_DEPTH_TEST);
     }
 
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
