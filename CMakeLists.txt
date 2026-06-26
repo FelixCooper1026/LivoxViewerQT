@@ -146,13 +146,14 @@ set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(SLAM_EIGEN_INCLUDE_DIR "${THIRD_PARTY_ROOT}/eigen-3.4.0")
 set(SLAM_BOOST_INCLUDE_DIR "${THIRD_PARTY_ROOT}/boost-1.82.0")
+set(SETUP_THIRD_PARTY_COMMAND "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
 
 if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
-    message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}")
+    message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")
 endif()
 
 if(NOT EXISTS "${SLAM_BOOST_INCLUDE_DIR}/boost/preprocessor/seq.hpp")
-    message(FATAL_ERROR "Boost headers are required at ${SLAM_BOOST_INCLUDE_DIR}")
+    message(FATAL_ERROR "Boost headers are required at ${SLAM_BOOST_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")
 endif()
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)

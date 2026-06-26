@@ -77,7 +77,9 @@ CMakeLists.txt.user
 *_autogen/
 
 # build scripts
-scripts/
+scripts/*
+!scripts/
+!scripts/setup_third_party.ps1
 
 # distribution files
 dist/
@@ -90,6 +92,11 @@ lidar_log/
 docs/
 testdata/
 agent.md
+
+# Downloaded third-party headers
+third-party/.downloads/
+third-party/eigen-3.4.0/
+third-party/boost-1.82.0/
 
 # System files
 .DS_Store
