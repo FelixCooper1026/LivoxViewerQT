@@ -228,6 +228,7 @@ set(SOURCES
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
     libs/Slam/src/Io/LiveLidarSlamSource.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Export/src/PointCloudExport.cpp
@@ -539,6 +540,69 @@ elseif(IS_WINDOWS)
         endif()
     else()
         message(WARNING "Npcap SDK not found at ${NPCAP_SDK_DIR}; Pcap playback will not build on Windows")
+    endif()
+endif()
+
+set(SLAM_PHASE4_REPLAY_SOURCES
+    tools/SlamPhase4Replay/main.cpp
+    libs/Pcap/src/ImuParser.cpp
+    libs/Pcap/src/PcapUdpPacket.cpp
+    libs/Pcap/src/PointParser.cpp
+    libs/Pcap/src/PushMsgParser.cpp
+    libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    libs/Slam/src/Io/PcapSlamSource.cpp
+    libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
+)
+
+add_executable(SlamPhase4Replay ${SLAM_PHASE4_REPLAY_SOURCES})
+
+target_compile_definitions(SlamPhase4Replay PRIVATE
+    ROOT_DIR="${SLAM_FAST_LIO_ROOT}/"
+)
+
+target_include_directories(SlamPhase4Replay PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
+    ${SLAM_FAST_LIO_COMPAT_ROOT}/include
+    ${SLAM_FAST_LIO_ROOT}/include
+    ${SLAM_FAST_LIO_ROOT}/src
+    ${SLAM_EIGEN_INCLUDE_DIR}
+    ${SLAM_BOOST_INCLUDE_DIR}
+)
+
+if(LIVOX_SDK_AVAILABLE AND EXISTS "${LIVOX_INCLUDE_PATH}")
+    target_include_directories(SlamPhase4Replay PRIVATE "${LIVOX_INCLUDE_PATH}")
+endif()
+
+if(QT_VERSION_MAJOR EQUAL 6)
+    target_link_libraries(SlamPhase4Replay PRIVATE Qt6::Core)
+else()
+    target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(SlamPhase4Replay PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
+    target_compile_definitions(SlamPhase4Replay PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
+if(IS_LINUX)
+    target_link_libraries(SlamPhase4Replay PRIVATE pthread dl m)
+    if(PCAP_LIBRARY)
+        target_link_libraries(SlamPhase4Replay PRIVATE ${PCAP_LIBRARY})
+    endif()
+elseif(IS_WINDOWS)
+    target_link_libraries(SlamPhase4Replay PRIVATE ws2_32 winmm)
+    if(EXISTS "${NPCAP_SDK_DIR}/Include/pcap.h")
+        target_include_directories(SlamPhase4Replay PRIVATE "${NPCAP_SDK_DIR}/Include")
+        target_link_libraries(SlamPhase4Replay PRIVATE
+            "${NPCAP_SDK_DIR}/Lib/x64/wpcap.lib"
+            "${NPCAP_SDK_DIR}/Lib/x64/Packet.lib"
+        )
     endif()
 endif()
 

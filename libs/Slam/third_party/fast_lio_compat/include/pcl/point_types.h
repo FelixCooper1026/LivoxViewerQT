@@ -14,6 +14,11 @@
 
 namespace pcl {
 
+struct PointXYZ {
+    PCL_ADD_POINT4D;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+};
+
 struct PointXYZI {
     PCL_ADD_POINT4D;
     float intensity = 0.0f;
