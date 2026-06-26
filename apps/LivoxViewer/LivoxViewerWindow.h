@@ -78,6 +78,7 @@
 #include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
+#include "Slam/Io/LiveLidarSlamSource.h"
 #include "state/CaptureSessionState.h"
 #include "state/ImuRuntimeState.h"
 #include "state/ParameterUiState.h"
@@ -345,6 +346,7 @@ private:
 
     // 点云回调状态
     bool pointCloudCallbackEnabled;
+    LiveLidarSlamSource liveSlamSource;
 
     // 工作模式状态
     bool isNormalMode;

@@ -141,6 +141,29 @@ endif()
 # 源文件收集
 # =============================================================================
 
+set(SLAM_FAST_LIO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio")
+set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio_compat")
+find_path(SLAM_EIGEN_INCLUDE_DIR Eigen/Core
+    PATHS
+        "E:/Livox_ws/Livox-SDK2-1.2.4/samples/livox_lidar_quick_start/eigen-3.4.0"
+        "E:/Livox_ws/lvxtrans/lvx/include"
+)
+if(NOT SLAM_EIGEN_INCLUDE_DIR)
+    message(FATAL_ERROR "Eigen headers are required for FAST_LIO IKFoM port")
+endif()
+
+find_path(SLAM_BOOST_INCLUDE_DIR boost/preprocessor/seq.hpp
+    PATHS
+        "E:/thirdparty/PCL 1.13.1/3rdParty/Boost/include/boost-1_82"
+)
+if(NOT SLAM_BOOST_INCLUDE_DIR)
+    message(FATAL_ERROR "Boost headers are required for FAST_LIO IKFoM port")
+endif()
+
+message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
+message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
+message(STATUS "FAST_LIO Boost include: ${SLAM_BOOST_INCLUDE_DIR}")
+
 # 基础源文件
 set(SOURCES
     apps/LivoxViewer/main.cpp
@@ -201,6 +224,12 @@ set(SOURCES
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
+    libs/Slam/src/Core/ISlamBackend.cpp
+    libs/Slam/src/Core/SlamInputQueue.cpp
+    libs/Slam/src/Core/SlamRuntimeConfig.cpp
+    libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    libs/Slam/src/Io/LiveLidarSlamSource.cpp
+    libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Export/src/PointCloudExport.cpp
     libs/AppConfig/src/AppSettings.cpp
     libs/AppConfig/src/LidarConfigService.cpp
@@ -256,6 +285,13 @@ set(SOURCES
     libs/Pcap/include/Pcap/PointParser.h
     libs/Pcap/include/Pcap/PushMsgParser.h
     libs/Pcap/include/Pcap/PcapPlaybackController.h
+    libs/Slam/include/Slam/Core/ISlamBackend.h
+    libs/Slam/include/Slam/Core/SlamInputQueue.h
+    libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
+    libs/Slam/include/Slam/Core/SlamTypes.h
+    libs/Slam/include/Slam/Backends/FastLio/FastLioSlamBackend.h
+    libs/Slam/include/Slam/Io/LiveLidarSlamSource.h
+    libs/Slam/include/Slam/Io/PcapSlamSource.h
     libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
     libs/AppConfig/include/AppConfig/LidarConfigService.h
@@ -353,6 +389,7 @@ target_compile_definitions(LivoxViewerQT PRIVATE
     LIVOX_VIEWER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     LIVOX_VIEWER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
     LIVOX_VIEWER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+    ROOT_DIR="${SLAM_FAST_LIO_ROOT}/"
 )
 
 # =============================================================================
@@ -367,6 +404,12 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
+    ${SLAM_FAST_LIO_COMPAT_ROOT}/include
+    ${SLAM_FAST_LIO_ROOT}/include
+    ${SLAM_FAST_LIO_ROOT}/src
+    ${SLAM_EIGEN_INCLUDE_DIR}
+    ${SLAM_BOOST_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Export/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/AppConfig/include
     ${CMAKE_CURRENT_BINARY_DIR}

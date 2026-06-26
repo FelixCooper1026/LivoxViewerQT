@@ -294,6 +294,7 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             
             // 处理点云数据
             window->registerPointCloudDeviceIfNeeded(handle, dev_type);
+            window->liveSlamSource.appendPointPacket(handle, dev_type, packet_copy, QStringLiteral("live"));
             window->decodePointCloudPacket(handle, dev_type, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入
@@ -373,6 +374,7 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
             
             // 解析IMU数据
             if (packet_copy->data_type == kLivoxLidarImuData && packet_copy->dot_num > 0) {
+                window->liveSlamSource.appendImuPacket(handle, packet_copy);
                 LivoxLidarImuRawPoint* p_imu_data = (LivoxLidarImuRawPoint*)packet_copy->data;
                 const quint64 ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                 const double timestampSec = static_cast<double>(ts) * 1.0e-9;
