@@ -9,6 +9,7 @@
 #include <QMetaObject>
 #include <QStatusBar>
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 
@@ -33,6 +34,15 @@ const PlaybackControllerState* activePlaybackState(const LivoxViewerWindow* wind
         return bound;
     }
     return mirror && mirror->active ? mirror : nullptr;
+}
+
+qint64 replayTargetMs(int64_t firstFrameStartNs, int64_t frameStartNs)
+{
+    const int64_t elapsedNs = frameStartNs - firstFrameStartNs;
+    if (elapsedNs <= 0) {
+        return 0;
+    }
+    return qint64(elapsedNs / 1000000);
 }
 
 } // namespace
@@ -75,7 +85,7 @@ void LivoxViewerWindow::showSlamControlDialog()
 void LivoxViewerWindow::startSlamProcessing()
 {
     SlamUiBridge* bridge = ensureSlamUiBridge();
-    bridge->setModeAndBackend(QStringLiteral("PCAP"), QStringLiteral("FAST_LIO"));
+    bridge->setModeAndBackend(QStringLiteral("PCAP 原始时间"), QStringLiteral("FAST_LIO"));
 
     if (slamWorker.joinable() && !slamWorkerActive.load()) {
         slamWorker.join();
@@ -104,7 +114,7 @@ void LivoxViewerWindow::startSlamProcessing()
     slamWorkerActive.store(true);
     slamRenderOverlayEnabled = true;
     bridge->clearDisplay();
-    postSlamStatus(SlamStatusCode::Starting, QStringLiteral("正在启动 PCAP SLAM。"));
+    postSlamStatus(SlamStatusCode::Starting, QStringLiteral("正在启动 PCAP SLAM 原始时间回放。"));
 
     slamWorker = std::thread([this, pcapPath]() {
         auto postOutput = [this](SlamOutput output) {
@@ -136,15 +146,54 @@ void LivoxViewerWindow::startSlamProcessing()
         elapsed.start();
         int processedFrames = 0;
         int droppedFrames = 0;
+        int64_t firstFrameStartNs = 0;
+        bool hasFirstFrameStart = false;
+        qint64 pausedReplayMs = 0;
+        QElapsedTimer replayClock;
+        SlamOutput lastOutput;
+        bool hasLastOutput = false;
+
+        auto waitUntilRunning = [this, &pausedReplayMs]() {
+            if (!slamWorkerPaused.load()) {
+                return !slamWorkerCancel.load();
+            }
+            QElapsedTimer pauseTimer;
+            pauseTimer.start();
+            while (slamWorkerPaused.load() && !slamWorkerCancel.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+            pausedReplayMs += pauseTimer.elapsed();
+            return !slamWorkerCancel.load();
+        };
+
+        auto waitForReplayTarget = [this, &waitUntilRunning, &pausedReplayMs, &replayClock](qint64 targetMs) {
+            while (!slamWorkerCancel.load()) {
+                if (!waitUntilRunning()) {
+                    return false;
+                }
+                const qint64 remainingMs = targetMs - (replayClock.elapsed() - pausedReplayMs);
+                if (remainingMs <= 0) {
+                    return true;
+                }
+                const qint64 sleepMs = std::min<qint64>(remainingMs, 10);
+                std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+            }
+            return false;
+        };
 
         for (const SlamInputFrame& frame : source.frames()) {
             if (slamWorkerCancel.load()) {
                 break;
             }
-            while (slamWorkerPaused.load() && !slamWorkerCancel.load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (!hasFirstFrameStart) {
+                firstFrameStartNs = frame.frameStartNs;
+                hasFirstFrameStart = true;
+                replayClock.start();
             }
-            if (slamWorkerCancel.load()) {
+            if (!waitForReplayTarget(replayTargetMs(firstFrameStartNs, frame.frameStartNs))) {
+                break;
+            }
+            if (!waitUntilRunning()) {
                 break;
             }
             if (!frame.hasCompleteImuCoverage) {
@@ -162,6 +211,8 @@ void LivoxViewerWindow::startSlamProcessing()
             if (!error.isEmpty() && output.message.isEmpty()) {
                 output.message = error;
             }
+            lastOutput = output;
+            hasLastOutput = true;
             postOutput(output);
 
             if (!accepted &&
@@ -172,10 +223,18 @@ void LivoxViewerWindow::startSlamProcessing()
         }
 
         backend.stop();
-        postOutput(statusOutput(slamWorkerCancel.load() ? SlamStatusCode::Stopped : SlamStatusCode::Stopped,
-                                slamWorkerCancel.load()
-                                    ? QStringLiteral("SLAM 已停止。")
-                                    : QStringLiteral("PCAP SLAM 已完成。")));
+        const bool cancelled = slamWorkerCancel.load();
+        SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
+        finalOutput.status = SlamStatusCode::Stopped;
+        finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("PCAP SLAM 已完成。");
+        finalOutput.droppedFrameCount = droppedFrames;
+        if (processedFrames > 0) {
+            const double elapsedSec = qMax(0.001, double(elapsed.elapsed()) / 1000.0);
+            finalOutput.inputFps = double(processedFrames) / elapsedSec;
+        }
+        finalOutput.newTrajectoryPoints.clear();
+        finalOutput.newMapChunks.clear();
+        postOutput(finalOutput);
         slamWorkerActive.store(false);
     });
 }

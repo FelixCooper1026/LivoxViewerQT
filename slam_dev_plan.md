@@ -1526,8 +1526,15 @@ Phase 5.4 已完成基础版本：
 - 无 PCAP 源时点击“启动”触发 `SlamOutput` 错误状态刷新，进程保持运行：`SLAM_STATUS_REFRESH_OK`。
 - 源码审计未发现 `SlamDock`、`slamDock`、`createSlamPanel`、`SlamPanel`、`addDockWidget(...Slam...)`、`tabifyDockWidget(...Slam...)` 等旧侵入式接入点。
 - `git diff --check` 通过，仅有 Git 的 LF/CRLF 转换提示。
+- 2026-06-27：用户提供 `F:\slam_test.pcap`，文件大小 243747960 bytes。
+- 2026-06-27：使用 `SlamPhase4Replay.exe F:\slam_test.pcap F:\slam_test.pcap` 复验后端 with-IMU 路径：`sourceFrames=1607`，跳过 IMU 覆盖不完整帧 3 帧，处理 1604 帧，其中 IMU 初始化 2 帧、Running 1602 帧，输出轨迹点 1602 个、map chunk 1463 个，最终地图点数 5903，最终位姿 `[0.0459704, 0.235623, 0.00553603]`；第二次重复运行结果一致。该命令的 no-IMU 分支因传入同一个含 IMU 文件而不适用，失败原因为首帧 IMU 覆盖不足返回 `TimeSyncError`，不是 `MissingImu`。
+- 2026-06-27：分析用户手测“速度快了约 10 倍”的原因：旁路 UI worker 直接遍历 `PcapSlamSource::frames()` 并调用 `FastLioSlamBackend::processFrame()`，未按 PCAP/Livox 帧时间戳节流，因此实际是 fastest replay。
+- 2026-06-27：`SlamWindowActions.cpp` 已将旁路 PCAP worker 改为 `PCAP 原始时间` 模式：以首帧 `frameStartNs` 为零点，用当前帧 `frameStartNs` 计算目标回放时间，10 ms 分片等待，并统计暂停耗时以避免暂停/恢复后追帧；最终 `Stopped` 输出保留最后一次 pose、FPS、丢帧数和 mapPointCount。
+- 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 重新编译通过。
+- 2026-06-27：新版本由用户手动加载 `F:\slam_test.pcap` 后，通过 Windows UI Automation 打开 `工具 -> SLAM...` 并点击“启动”；3 秒后状态为 `Running`，模式 `PCAP 原始时间`，输入 FPS `19.8`，后端耗时 `4.21 ms`，丢帧数 `1`，轨迹点数 `37`，进程响应正常。
+- 2026-06-27：真实 UI worker 完整跑完 `F:\slam_test.pcap`，最终状态 `Stopped`，输入 FPS `19.8`，后端耗时 `5.92 ms`，丢帧数 `3`，轨迹点数 `1602`，地图点数 `5903`，进程响应正常；地图预览保持默认关闭，`地图点数` 字段显示的是后端 `mapPointCount`，不是 overlay 上传的地图预览点。
+- 2026-06-27：启用轨迹 overlay 并完整跑完后，正常关闭主窗口成功：`CLOSE_MAIN_WINDOW closed=True exited=True`，未出现 queued signal 或 OpenGL context 崩溃。
 
 验证缺口：
 
-- 本轮未使用真实 PCAP 在 UI 中启动完整 SLAM worker 跑完轨迹 overlay；Phase 4 的 `SlamPhase4Replay` 后端复验仍是后端正确性的主要依据。
 - Linux 编译仍未执行，延续 Phase 4 的环境缺口。
