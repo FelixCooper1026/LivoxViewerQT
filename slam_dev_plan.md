@@ -1564,7 +1564,37 @@ Phase 5.4 已完成基础版本：
 - 2026-06-27：第二次接入外参配置校验和地图导出后，重新按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-27：启动 smoke 通过，`LivoxViewerQT.exe` 进程响应正常，主窗口标题为 `LivoxViewerQT`，关闭后进程退出。
 - 2026-06-27：Windows UI Automation 可打开 `工具` 菜单并找到 `SLAM...` action；本轮自动化脚本未能稳定触发 Qt 弹出菜单 action，因此 Phase 6 新增导出按钮的点击路径尚未完成自动化复验。
+- 2026-06-27：用户手动运行 `F:\slam_test.pcap` 完整 UI worker 导出实测通过，CSV/TUM/PCD/LAS 文件内容复验符合预期。
 - 2026-06-27：`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示。
+
+### 2026-06-27 Phase 6 / 地图预览模式调整
+
+状态：已按“全局稀疏 / 全局稠密”方案完成第一版实现；不引入局部稠密作为主方案，不修改 dock/tab 创建流程，不把 SLAM 面板改成 dock。
+
+已完成：
+
+- 新增 `SlamMapPreviewMode`：`Off`、`GlobalSparse`、`GlobalDense`。
+- 新增 `SlamMapPreviewConfig`，通过 `QSettings` 保存/加载：
+  - `globalSparseMaxPoints` 默认 2000000。
+  - `globalSparseVoxelSizeM` 默认 0.10。
+  - `globalSparseUploadPointsPerTick` 默认 20000。
+  - `globalDenseMaxPoints` 默认 20000000。
+  - `globalDenseVoxelSizeM` 默认 0.05。
+  - `globalDenseUploadPointsPerTick` 默认 20000。
+- 旧配置迁移：没有新 `slam/mapPreview/mode` 时，旧 `slam/ui/mapPreviewDefaultEnabled=true` 映射为 `GlobalSparse`，否则为 `Off`。
+- SLAM 设置页已将“稀疏地图预览”开关替换为“地图预览模式”下拉框，选项为“关闭 / 全局稀疏 / 全局稠密”；模式参数面板按当前模式显示最大点数、体素大小和每 tick 上传点数。
+- 新增 `GlobalMapPreviewStore`，使用全局 voxel hash 去重；不按最近 N 秒或最近 N 个 chunk 淘汰。
+- `GlobalSparse` 和 `GlobalDense` 共用同一个 store，仅配置不同；切换模式或参数会清空旧预览并重新累计，避免稀疏/稠密数据混合。
+- 地图预览关闭时，worker 投递 UI 前清空 `newMapChunks`，`SlamUiBridge` / `GlobalMapPreviewStore` 不继续累计预览地图缓存。
+- `SlamUiBridge` 已新增预览模式、预览点数、点数上限、体素大小、pending 上传点数、是否达到上限状态字段。
+- `PointCloudView::setSlamRenderSnapshot()` 仍是唯一 SLAM overlay 公开入口；地图预览改为 reset + append/update 增量上传，不再每个 UI tick 重建完整地图 VBO。
+- 当前预览地图导出按钮文案改为“导出当前预览地图 PCD/LAS”；日志明确写出当前预览模式和导出点数。
+- “完整全局地图导出”仍保留为后续独立功能，数据源不能使用 UI 预览缓存。
+
+验证：
+
+- 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-27：不打开 SLAM UI 的启动/关闭 smoke 通过，`LivoxViewerQT.exe` 启动后响应正常，主窗口标题 `LivoxViewerQT`，关闭后进程退出。
 
 验证缺口：
 

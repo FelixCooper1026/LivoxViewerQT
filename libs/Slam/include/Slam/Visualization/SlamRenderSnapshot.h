@@ -13,12 +13,20 @@ struct SlamRenderVertex {
     float b = 1.0f;
 };
 
+struct SlamRenderPointUpdate {
+    int index = -1;
+    SlamRenderVertex vertex;
+};
+
 struct SlamRenderSnapshot {
     QVector<SlamRenderVertex> trajectoryVertices;
     QVector<SlamRenderVertex> poseAxisVertices;
-    QVector<SlamRenderVertex> mapPreviewPoints;
+    QVector<SlamRenderVertex> mapPreviewAppendPoints;
+    QVector<SlamRenderPointUpdate> mapPreviewPointUpdates;
     bool mapPreviewEnabled = false;
-    int maxMapPreviewPoints = 200000;
+    bool mapPreviewReset = false;
+    int maxMapPreviewPoints = 0;
+    int mapPreviewPointCount = 0;
 };
 
 Q_DECLARE_METATYPE(SlamRenderSnapshot)

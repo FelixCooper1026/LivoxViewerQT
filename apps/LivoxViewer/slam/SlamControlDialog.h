@@ -5,7 +5,6 @@
 #include <QMap>
 
 class QLabel;
-class QCheckBox;
 class QFormLayout;
 class LivoxViewerWindow;
 class SlamUiBridge;
@@ -24,7 +23,6 @@ private:
     LivoxViewerWindow* m_window = nullptr;
     SlamUiBridge* m_bridge = nullptr;
     QMap<QString, QLabel*> m_fields;
-    QCheckBox* m_mapPreviewCheck = nullptr;
 };
 
 #endif // LIVOXVIEWER_SLAMCONTROLDIALOG_H

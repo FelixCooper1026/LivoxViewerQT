@@ -805,10 +805,8 @@ void LivoxViewerWindow::loadViewPreferences()
 
     QSettings settings("Livox", "LivoxViewerQT");
     slamRuntimeConfig = loadSlamRuntimeConfig(settings, QStringLiteral("slam/runtime"));
-    slamMapPreviewDefaultEnabled = settings.value(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), false).toBool();
-    slamMapPreviewMaxPoints = std::max(1000, settings.value(QStringLiteral("slam/ui/mapPreviewMaxPoints"),
-                                                            slamMapPreviewMaxPoints).toInt());
-    slamMapPreviewEnabled.store(slamMapPreviewDefaultEnabled);
+    slamMapPreviewConfig = loadSlamMapPreviewConfig(settings, QStringLiteral("slam/mapPreview"));
+    slamMapPreviewModeValue.store(int(slamMapPreviewConfig.mode));
     autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
@@ -921,8 +919,7 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("theme/mode", themeMode);
     settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
     saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
-    settings.setValue(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), slamMapPreviewDefaultEnabled);
-    settings.setValue(QStringLiteral("slam/ui/mapPreviewMaxPoints"), slamMapPreviewMaxPoints);
+    saveSlamMapPreviewConfig(settings, slamMapPreviewConfig, QStringLiteral("slam/mapPreview"));
 }
 
 void LivoxViewerWindow::showPreferencesDialog()
@@ -1179,14 +1176,75 @@ void LivoxViewerWindow::showPreferencesDialog()
     };
     QDoubleSpinBox* slamFilterSurfSpin = createSlamVoxelSpin(slamRuntimeConfig.filterSizeSurfM);
     QDoubleSpinBox* slamFilterMapSpin = createSlamVoxelSpin(slamRuntimeConfig.filterSizeMapM);
-    QSpinBox* slamMapPreviewMaxSpin = new QSpinBox(&dlg);
-    slamMapPreviewMaxSpin->setRange(1000, 200000);
-    slamMapPreviewMaxSpin->setSingleStep(1000);
-    slamMapPreviewMaxSpin->setValue(std::clamp(slamMapPreviewMaxPoints, 1000, 200000));
-    slamMapPreviewMaxSpin->setFixedWidth(kPreferenceSpinBoxWidth);
-    usePreferenceControlColumn(slamMapPreviewMaxSpin);
-    SwitchCheckBox* slamMapPreviewDefaultCheck = new SwitchCheckBox(slamTab);
-    slamMapPreviewDefaultCheck->setChecked(slamMapPreviewDefaultEnabled);
+
+    QComboBox* slamMapPreviewModeCombo = new QComboBox(&dlg);
+    slamMapPreviewModeCombo->addItem(QStringLiteral("关闭"), int(SlamMapPreviewMode::Off));
+    slamMapPreviewModeCombo->addItem(QStringLiteral("全局稀疏"), int(SlamMapPreviewMode::GlobalSparse));
+    slamMapPreviewModeCombo->addItem(QStringLiteral("全局稠密"), int(SlamMapPreviewMode::GlobalDense));
+    const int previewModeIndex = slamMapPreviewModeCombo->findData(int(slamMapPreviewConfig.mode));
+    slamMapPreviewModeCombo->setCurrentIndex(previewModeIndex >= 0 ? previewModeIndex : 0);
+    slamMapPreviewModeCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    usePreferenceControlColumn(slamMapPreviewModeCombo, kPreferenceComboBoxWidth);
+
+    auto createPreviewMaxSpin = [&dlg](int value) {
+        QSpinBox* spin = new QSpinBox(&dlg);
+        spin->setRange(1000, 20000000);
+        spin->setSingleStep(100000);
+        spin->setValue(std::clamp(value, 1000, 20000000));
+        spin->setFixedWidth(132);
+        return spin;
+    };
+    auto createPreviewVoxelSpin = [&dlg](double value) {
+        QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
+        spin->setRange(0.01, 5.0);
+        spin->setDecimals(3);
+        spin->setSingleStep(0.01);
+        spin->setSuffix(QStringLiteral(" m"));
+        spin->setValue(value);
+        spin->setFixedWidth(132);
+        return spin;
+    };
+    auto createPreviewUploadSpin = [&dlg](int value) {
+        QSpinBox* spin = new QSpinBox(&dlg);
+        spin->setRange(1000, 1000000);
+        spin->setSingleStep(1000);
+        spin->setValue(std::clamp(value, 1000, 1000000));
+        spin->setFixedWidth(132);
+        return spin;
+    };
+    QSpinBox* slamSparseMaxSpin = createPreviewMaxSpin(slamMapPreviewConfig.globalSparseMaxPoints);
+    QDoubleSpinBox* slamSparseVoxelSpin = createPreviewVoxelSpin(slamMapPreviewConfig.globalSparseVoxelSizeM);
+    QSpinBox* slamSparseUploadSpin = createPreviewUploadSpin(slamMapPreviewConfig.globalSparseUploadPointsPerTick);
+    QSpinBox* slamDenseMaxSpin = createPreviewMaxSpin(slamMapPreviewConfig.globalDenseMaxPoints);
+    QDoubleSpinBox* slamDenseVoxelSpin = createPreviewVoxelSpin(slamMapPreviewConfig.globalDenseVoxelSizeM);
+    QSpinBox* slamDenseUploadSpin = createPreviewUploadSpin(slamMapPreviewConfig.globalDenseUploadPointsPerTick);
+
+    QStackedWidget* slamPreviewConfigStack = new QStackedWidget(&dlg);
+    usePreferenceControlColumn(slamPreviewConfigStack, 360);
+    QLabel* slamPreviewOffLabel = createPreferenceDescription(QStringLiteral("关闭时不累计预览地图缓存。"), slamPreviewConfigStack);
+    slamPreviewConfigStack->addWidget(slamPreviewOffLabel);
+    auto createPreviewConfigPage = [&dlg](QSpinBox* maxSpin, QDoubleSpinBox* voxelSpin, QSpinBox* uploadSpin) {
+        QWidget* page = new QWidget(&dlg);
+        QFormLayout* form = new QFormLayout(page);
+        form->setContentsMargins(0, 0, 0, 0);
+        form->setHorizontalSpacing(8);
+        form->setVerticalSpacing(6);
+        form->addRow(QStringLiteral("最大点数:"), maxSpin);
+        form->addRow(QStringLiteral("体素大小:"), voxelSpin);
+        form->addRow(QStringLiteral("每 tick 上传:"), uploadSpin);
+        return page;
+    };
+    slamPreviewConfigStack->addWidget(createPreviewConfigPage(slamSparseMaxSpin, slamSparseVoxelSpin, slamSparseUploadSpin));
+    slamPreviewConfigStack->addWidget(createPreviewConfigPage(slamDenseMaxSpin, slamDenseVoxelSpin, slamDenseUploadSpin));
+    auto syncSlamPreviewConfigStack = [slamMapPreviewModeCombo, slamPreviewConfigStack]() {
+        const SlamMapPreviewMode mode = slamMapPreviewModeFromInt(slamMapPreviewModeCombo->currentData().toInt());
+        slamPreviewConfigStack->setCurrentIndex(mode == SlamMapPreviewMode::GlobalSparse
+            ? 1
+            : mode == SlamMapPreviewMode::GlobalDense ? 2 : 0);
+    };
+    connect(slamMapPreviewModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
+            [syncSlamPreviewConfigStack](int) { syncSlamPreviewConfigStack(); });
+    syncSlamPreviewConfigStack();
 
     QWidget* solidColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(solidColorRow);
@@ -1361,13 +1419,13 @@ void LivoxViewerWindow::showPreferencesDialog()
     addPreferenceSectionTitle(slamLayout, "显示与导出");
     QFrame* slamDisplaySection = createPreferenceSection(slamTab);
     addPreferenceRow(slamDisplaySection,
-                     "稀疏地图预览",
-                     "保存启动 SLAM 面板时的地图预览开关状态。",
-                     slamMapPreviewDefaultCheck);
+                     "地图预览模式",
+                     "选择是否累计全局预览地图，以及使用稀疏或稠密预览质量。",
+                     slamMapPreviewModeCombo);
     addPreferenceRow(slamDisplaySection,
-                     "预览点数上限",
-                     "限制稀疏地图预览在 OpenGL overlay 中保留的最大点数。",
-                     slamMapPreviewMaxSpin);
+                     "模式参数",
+                     "全局预览覆盖完整建图范围；这里限制 UI 预览点数、体素大小和每 tick 上传量。",
+                     slamPreviewConfigStack);
     slamLayout->addWidget(slamDisplaySection);
     slamLayout->addStretch();
 
@@ -1423,15 +1481,19 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
-    const bool previousSlamMapPreviewDefaultEnabled = slamMapPreviewDefaultEnabled;
-    const int previousSlamMapPreviewMaxPoints = slamMapPreviewMaxPoints;
+    const SlamMapPreviewConfig previousSlamMapPreviewConfig = slamMapPreviewConfig;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
-    setSlamMapPreviewMaxPoints(slamMapPreviewMaxSpin->value());
-    if (slamMapPreviewDefaultEnabled != slamMapPreviewDefaultCheck->isChecked()) {
-        setSlamMapPreviewEnabled(slamMapPreviewDefaultCheck->isChecked());
-    }
+    SlamMapPreviewConfig updatedPreviewConfig;
+    updatedPreviewConfig.mode = slamMapPreviewModeFromInt(slamMapPreviewModeCombo->currentData().toInt());
+    updatedPreviewConfig.globalSparseMaxPoints = slamSparseMaxSpin->value();
+    updatedPreviewConfig.globalSparseVoxelSizeM = slamSparseVoxelSpin->value();
+    updatedPreviewConfig.globalSparseUploadPointsPerTick = slamSparseUploadSpin->value();
+    updatedPreviewConfig.globalDenseMaxPoints = slamDenseMaxSpin->value();
+    updatedPreviewConfig.globalDenseVoxelSizeM = slamDenseVoxelSpin->value();
+    updatedPreviewConfig.globalDenseUploadPointsPerTick = slamDenseUploadSpin->value();
+    setSlamMapPreviewConfig(updatedPreviewConfig);
 
     syncReflectivityColorScaleControls();
     pointCloudView->setGridConfig(config);
@@ -1447,8 +1509,13 @@ void LivoxViewerWindow::showPreferencesDialog()
     }
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
-        slamMapPreviewDefaultEnabled != previousSlamMapPreviewDefaultEnabled ||
-        slamMapPreviewMaxPoints != previousSlamMapPreviewMaxPoints) {
+        slamMapPreviewConfig.mode != previousSlamMapPreviewConfig.mode ||
+        slamMapPreviewConfig.globalSparseMaxPoints != previousSlamMapPreviewConfig.globalSparseMaxPoints ||
+        slamMapPreviewConfig.globalSparseVoxelSizeM != previousSlamMapPreviewConfig.globalSparseVoxelSizeM ||
+        slamMapPreviewConfig.globalSparseUploadPointsPerTick != previousSlamMapPreviewConfig.globalSparseUploadPointsPerTick ||
+        slamMapPreviewConfig.globalDenseMaxPoints != previousSlamMapPreviewConfig.globalDenseMaxPoints ||
+        slamMapPreviewConfig.globalDenseVoxelSizeM != previousSlamMapPreviewConfig.globalDenseVoxelSizeM ||
+        slamMapPreviewConfig.globalDenseUploadPointsPerTick != previousSlamMapPreviewConfig.globalDenseUploadPointsPerTick) {
         logMessage(QStringLiteral("[SLAM] 设置已更新"));
     }
 }

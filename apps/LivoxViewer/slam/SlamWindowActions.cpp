@@ -122,8 +122,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
 
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
     slamUiBridge = new SlamUiBridge(this);
-    slamUiBridge->setMapPreviewMaxPoints(slamMapPreviewMaxPoints);
-    slamUiBridge->setMapPreviewEnabled(slamMapPreviewEnabled.load());
+    slamUiBridge->setMapPreviewConfig(slamMapPreviewConfig);
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {
             statusBar()->showMessage(text, 2000);
@@ -188,7 +187,7 @@ void LivoxViewerWindow::startSlamProcessing()
 
     slamWorker = std::thread([this, pcapPath, config]() {
         auto postOutput = [this](SlamOutput output) {
-            if (!slamMapPreviewEnabled.load()) {
+            if (slamMapPreviewModeValue.load() == int(SlamMapPreviewMode::Off)) {
                 output.newMapChunks.clear();
             }
             QMetaObject::invokeMethod(this, [this, output = std::move(output)]() mutable {
@@ -350,24 +349,21 @@ void LivoxViewerWindow::clearSlamDisplay()
     });
 }
 
-void LivoxViewerWindow::setSlamMapPreviewEnabled(bool enabled)
+void LivoxViewerWindow::setSlamMapPreviewMode(SlamMapPreviewMode mode)
 {
-    slamMapPreviewEnabled.store(enabled);
-    slamMapPreviewDefaultEnabled = enabled;
-    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
-    settings.setValue(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), enabled);
-    if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
-        bridge->setMapPreviewEnabled(enabled);
-    }
+    SlamMapPreviewConfig config = slamMapPreviewConfig;
+    config.mode = mode;
+    setSlamMapPreviewConfig(config);
 }
 
-void LivoxViewerWindow::setSlamMapPreviewMaxPoints(int maxPoints)
+void LivoxViewerWindow::setSlamMapPreviewConfig(const SlamMapPreviewConfig& config)
 {
-    slamMapPreviewMaxPoints = std::max(1000, maxPoints);
+    slamMapPreviewConfig = config;
+    slamMapPreviewModeValue.store(int(config.mode));
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
-    settings.setValue(QStringLiteral("slam/ui/mapPreviewMaxPoints"), slamMapPreviewMaxPoints);
+    saveSlamMapPreviewConfig(settings, slamMapPreviewConfig, QStringLiteral("slam/mapPreview"));
     if (SlamUiBridge* bridge = slamUiBridge) {
-        bridge->setMapPreviewMaxPoints(slamMapPreviewMaxPoints);
+        bridge->setMapPreviewConfig(slamMapPreviewConfig);
     }
 }
 
@@ -454,7 +450,7 @@ void LivoxViewerWindow::exportSlamMapPreview(bool lasFormat)
     const QVector<SlamRenderVertex> vertices = bridge->mapPreviewSnapshot();
     if (vertices.isEmpty()) {
         const QString message =
-            QStringLiteral("当前没有可导出的 SLAM 稀疏地图预览。请先启用稀疏地图预览并运行 SLAM。");
+            QStringLiteral("当前没有可导出的 SLAM 预览地图。请先选择全局稀疏或全局稠密预览并运行 SLAM。");
         bridge->setErrorMessage(message);
         logMessage(QStringLiteral("[SLAM] %1").arg(message));
         if (statusBar()) {
@@ -471,12 +467,12 @@ void LivoxViewerWindow::exportSlamMapPreview(bool lasFormat)
     }
 
     const QString extension = mapExportExtension(lasFormat);
-    const QString defaultName = QStringLiteral("slam_sparse_map_%1.%2")
+    const QString defaultName = QStringLiteral("slam_preview_map_%1.%2")
                                     .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")),
                                          extension);
     QFileDialog dialog(this);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
-    dialog.setWindowTitle(QStringLiteral("导出 SLAM 稀疏地图"));
+    dialog.setWindowTitle(QStringLiteral("导出 SLAM 当前预览地图"));
     dialog.setDirectory(lastDir);
     dialog.selectFile(defaultName);
     dialog.setAcceptMode(QFileDialog::AcceptSave);
@@ -490,7 +486,7 @@ void LivoxViewerWindow::exportSlamMapPreview(bool lasFormat)
     const QString filePath = dialog.selectedFiles().first();
     const QVector<PointCloudPoint> points = toPointCloudPoints(vertices);
     if (!saveMapPreview(filePath, points, lasFormat)) {
-        const QString message = QStringLiteral("SLAM 稀疏地图导出失败。");
+        const QString message = QStringLiteral("SLAM 当前预览地图导出失败。");
         bridge->setErrorMessage(message);
         logMessage(QStringLiteral("[SLAM] %1").arg(message));
         if (statusBar()) {
@@ -501,9 +497,12 @@ void LivoxViewerWindow::exportSlamMapPreview(bool lasFormat)
 
     settings.setValue(QStringLiteral("slam/lastMapExportDir"), QFileInfo(filePath).absolutePath());
     bridge->clearErrorMessage();
-    logMessage(QStringLiteral("[SLAM] 稀疏地图导出完成: %1").arg(QDir::toNativeSeparators(filePath)));
+    logMessage(QStringLiteral("[SLAM] 当前预览地图导出完成: mode=%1, points=%2, file=%3")
+                   .arg(slamMapPreviewModeLogName(bridge->mapPreviewMode()),
+                        QString::number(vertices.size()),
+                        QDir::toNativeSeparators(filePath)));
     if (statusBar()) {
-        statusBar()->showMessage(QStringLiteral("SLAM 稀疏地图已导出"), 3000);
+        statusBar()->showMessage(QStringLiteral("SLAM 当前预览地图已导出"), 3000);
     }
 }
 

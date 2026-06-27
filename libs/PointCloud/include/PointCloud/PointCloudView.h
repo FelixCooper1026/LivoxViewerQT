@@ -167,6 +167,10 @@ signals:
 
 private:
     struct PointCloudSegment;
+    struct SlamMapPreviewAppendRange {
+        int startIndex = 0;
+        QVector<SlamRenderVertex> vertices;
+    };
 
     void setupShaders();
     void setupBackgroundBuffers();
@@ -174,6 +178,7 @@ private:
     void setupAxesBuffers();
     void setupCrossSectionBuffers();
     void uploadSlamRenderOverlayIfNeeded();
+    void uploadSlamMapPreviewBufferIfNeeded();
     void destroySlamRenderOverlay();
     QVector3D mapToArcball(const QPoint& p) const;
     bool pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QPoint& outScreen, int pixelRadius = 10);
@@ -226,7 +231,12 @@ private:
     QOpenGLBuffer m_slamMapPreviewVbo;
     QOpenGLVertexArrayObject m_slamMapPreviewVao;
     qsizetype m_slamMapPreviewBufferCapacityBytes = 0;
+    int m_slamMapPreviewGpuPointCount = 0;
     int m_slamMapPreviewPointCount = 0;
+    QVector<SlamRenderVertex> m_slamMapPreviewVertices;
+    QVector<SlamMapPreviewAppendRange> m_pendingSlamMapPreviewAppendRanges;
+    QVector<SlamRenderPointUpdate> m_pendingSlamMapPreviewUpdates;
+    bool m_slamMapPreviewResetPending = false;
     SlamRenderSnapshot m_slamRenderSnapshot;
     bool m_slamRenderUploadPending = false;
 

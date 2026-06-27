@@ -3,7 +3,6 @@
 #include "LivoxViewerWindow.h"
 #include "slam/SlamUiBridge.h"
 
-#include <QCheckBox>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -18,7 +17,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     setWindowTitle(QStringLiteral("SLAM"));
     setModal(false);
     setAttribute(Qt::WA_DeleteOnClose, false);
-    resize(560, 450);
+    resize(640, 560);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(16, 14, 16, 14);
@@ -40,12 +39,14 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
     addField(form, QStringLiteral("地图点数"));
+    addField(form, QStringLiteral("预览模式"));
+    addField(form, QStringLiteral("预览点数"));
+    addField(form, QStringLiteral("预览上限"));
+    addField(form, QStringLiteral("预览体素"));
+    addField(form, QStringLiteral("待上传点数"));
+    addField(form, QStringLiteral("达到上限"));
     addField(form, QStringLiteral("错误信息"));
     layout->addLayout(form, 1);
-
-    m_mapPreviewCheck = new QCheckBox(QStringLiteral("稀疏地图预览"), this);
-    m_mapPreviewCheck->setChecked(m_bridge && m_bridge->mapPreviewEnabled());
-    layout->addWidget(m_mapPreviewCheck);
 
     QHBoxLayout* controlButtonLayout = new QHBoxLayout();
     controlButtonLayout->setContentsMargins(0, 0, 0, 0);
@@ -68,8 +69,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     exportButtonLayout->setSpacing(8);
     QPushButton* exportCsvButton = new QPushButton(QStringLiteral("导出 CSV"), this);
     QPushButton* exportTumButton = new QPushButton(QStringLiteral("导出 TUM"), this);
-    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出地图 PCD"), this);
-    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出地图 LAS"), this);
+    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出当前预览地图 PCD"), this);
+    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出当前预览地图 LAS"), this);
     exportCsvButton->setObjectName(QStringLiteral("exportSlamCsvButton"));
     exportTumButton->setObjectName(QStringLiteral("exportSlamTumButton"));
     exportPcdButton->setObjectName(QStringLiteral("exportSlamMapPcdButton"));
@@ -90,7 +91,6 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     connect(exportTumButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryTum);
     connect(exportPcdButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapPcd);
     connect(exportLasButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapLas);
-    connect(m_mapPreviewCheck, &QCheckBox::toggled, m_window, &LivoxViewerWindow::setSlamMapPreviewEnabled);
     if (m_bridge) {
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshFields);
     }
@@ -115,6 +115,12 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
     m_fields.value(QStringLiteral("地图点数"))->setText(state.mapPoints);
+    m_fields.value(QStringLiteral("预览模式"))->setText(state.mapPreviewMode);
+    m_fields.value(QStringLiteral("预览点数"))->setText(state.mapPreviewPoints);
+    m_fields.value(QStringLiteral("预览上限"))->setText(state.mapPreviewLimit);
+    m_fields.value(QStringLiteral("预览体素"))->setText(state.mapPreviewVoxelSize);
+    m_fields.value(QStringLiteral("待上传点数"))->setText(state.mapPreviewPendingPoints);
+    m_fields.value(QStringLiteral("达到上限"))->setText(state.mapPreviewLimitReached);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);
 }
 

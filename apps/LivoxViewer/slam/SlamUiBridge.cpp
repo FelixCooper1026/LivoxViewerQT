@@ -10,8 +10,6 @@
 namespace {
 
 constexpr int kMaxTrajectoryPoints = 200000;
-constexpr int kMaxMapPointsPerChunk = 1000;
-constexpr int kMaxMapPointsPerTick = 5000;
 
 QString statusName(SlamStatusCode status)
 {
@@ -118,29 +116,34 @@ void SlamUiBridge::setModeAndBackend(const QString& mode, const QString& backend
     refreshStatus();
 }
 
-void SlamUiBridge::setMapPreviewEnabled(bool enabled)
+void SlamUiBridge::setMapPreviewConfig(const SlamMapPreviewConfig& config)
 {
-    if (m_mapPreviewEnabled == enabled) {
-        return;
-    }
-    m_mapPreviewEnabled = enabled;
-    if (!enabled) {
-        m_mapPreviewPoints.clear();
-        m_pendingMapPreviewPoints.clear();
+    const bool changed = config.mode != m_mapPreviewConfig.mode ||
+                         config.globalSparseMaxPoints != m_mapPreviewConfig.globalSparseMaxPoints ||
+                         config.globalSparseVoxelSizeM != m_mapPreviewConfig.globalSparseVoxelSizeM ||
+                         config.globalSparseUploadPointsPerTick != m_mapPreviewConfig.globalSparseUploadPointsPerTick ||
+                         config.globalDenseMaxPoints != m_mapPreviewConfig.globalDenseMaxPoints ||
+                         config.globalDenseVoxelSizeM != m_mapPreviewConfig.globalDenseVoxelSizeM ||
+                         config.globalDenseUploadPointsPerTick != m_mapPreviewConfig.globalDenseUploadPointsPerTick;
+    m_mapPreviewConfig = config;
+    m_mapPreviewStore.configure(config);
+    if (changed) {
+        m_mapPreviewResetPending = true;
     }
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
 }
 
-void SlamUiBridge::setMapPreviewMaxPoints(int maxPoints)
+void SlamUiBridge::setMapPreviewMode(SlamMapPreviewMode mode)
 {
-    m_maxMapPreviewPoints = std::max(1000, maxPoints);
-    if (m_mapPreviewPoints.size() > m_maxMapPreviewPoints) {
-        m_mapPreviewPoints.erase(m_mapPreviewPoints.begin(),
-                                 m_mapPreviewPoints.begin() + (m_mapPreviewPoints.size() - m_maxMapPreviewPoints));
-    }
-    emit renderSnapshotReady(buildRenderSnapshot());
-    refreshStatus();
+    SlamMapPreviewConfig config = m_mapPreviewConfig;
+    config.mode = mode;
+    setMapPreviewConfig(config);
+}
+
+void SlamUiBridge::setMapPreviewEnabled(bool enabled)
+{
+    setMapPreviewMode(enabled ? SlamMapPreviewMode::GlobalSparse : SlamMapPreviewMode::Off);
 }
 
 void SlamUiBridge::setErrorMessage(const QString& message)
@@ -161,8 +164,8 @@ void SlamUiBridge::clearErrorMessage()
 void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
-    m_mapPreviewPoints.clear();
-    m_pendingMapPreviewPoints.clear();
+    m_mapPreviewStore.clear();
+    m_mapPreviewResetPending = true;
     m_errorMessage.clear();
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
@@ -170,8 +173,7 @@ void SlamUiBridge::clearDisplay()
 
 void SlamUiBridge::refreshStatus()
 {
-    flushPendingMapPreview();
-
+    SlamRenderSnapshot snapshot = buildRenderSnapshot();
     m_displayState.status = statusName(m_latestOutput.status);
     m_displayState.mode = m_mode;
     m_displayState.backend = m_backend;
@@ -181,8 +183,18 @@ void SlamUiBridge::refreshStatus()
     m_displayState.droppedFrames = QString::number(m_latestOutput.droppedFrameCount);
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
-    m_displayState.mapPoints = QString::number(m_mapPreviewEnabled ? m_mapPreviewPoints.size()
-                                                                    : m_latestOutput.mapPointCount);
+    m_displayState.mapPoints = QString::number(mapPreviewEnabled() ? m_mapPreviewStore.previewPointCount()
+                                                                   : m_latestOutput.mapPointCount);
+    m_displayState.mapPreviewMode = slamMapPreviewModeName(m_mapPreviewConfig.mode);
+    m_displayState.mapPreviewPoints = QString::number(m_mapPreviewStore.previewPointCount());
+    m_displayState.mapPreviewLimit = QString::number(m_mapPreviewStore.maxPreviewPoints());
+    m_displayState.mapPreviewVoxelSize = m_mapPreviewStore.enabled()
+        ? QStringLiteral("%1 m").arg(m_mapPreviewStore.voxelSizeM(), 0, 'f', 3)
+        : QStringLiteral("-");
+    m_displayState.mapPreviewPendingPoints = QString::number(m_mapPreviewStore.pendingPointCount());
+    m_displayState.mapPreviewLimitReached = m_mapPreviewStore.reachedPointLimit()
+        ? QStringLiteral("是")
+        : QStringLiteral("否");
     m_displayState.error = m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
@@ -192,14 +204,16 @@ void SlamUiBridge::refreshStatus()
                                         m_displayState.backendMs);
     emit statusTextReady(statusText);
     emit displayStateChanged();
-    emit renderSnapshotReady(buildRenderSnapshot());
+    emit renderSnapshotReady(snapshot);
 }
 
 SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
 {
     SlamRenderSnapshot snapshot;
-    snapshot.mapPreviewEnabled = m_mapPreviewEnabled;
-    snapshot.maxMapPreviewPoints = m_maxMapPreviewPoints;
+    snapshot.mapPreviewEnabled = mapPreviewEnabled();
+    snapshot.mapPreviewReset = m_mapPreviewResetPending;
+    snapshot.maxMapPreviewPoints = m_mapPreviewStore.maxPreviewPoints();
+    snapshot.mapPreviewPointCount = m_mapPreviewStore.previewPointCount();
     snapshot.trajectoryVertices.reserve(m_trajectory.size());
     for (const SlamTrajectoryPoint& point : m_trajectory) {
         snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), 0.1f, 0.75f, 1.0f));
@@ -219,9 +233,13 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
     snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
 
-    if (m_mapPreviewEnabled) {
-        snapshot.mapPreviewPoints = m_mapPreviewPoints;
+    if (snapshot.mapPreviewEnabled) {
+        const GlobalMapPreviewStore::PendingUpload upload =
+            m_mapPreviewStore.takePendingUploadPoints(m_mapPreviewStore.uploadPointsPerTick());
+        snapshot.mapPreviewAppendPoints = upload.appendedPoints;
+        snapshot.mapPreviewPointUpdates = upload.updatedPoints;
     }
+    m_mapPreviewResetPending = false;
     return snapshot;
 }
 
@@ -237,38 +255,11 @@ void SlamUiBridge::appendTrajectory(const SlamOutput& output)
 
 void SlamUiBridge::appendMapPreview(const SlamOutput& output)
 {
-    if (!m_mapPreviewEnabled) {
+    if (!mapPreviewEnabled()) {
         return;
     }
 
     for (const SlamMapChunk& chunk : output.newMapChunks) {
-        const int pointCount = int(chunk.pointsWorld.size());
-        const int stride = std::max(1, pointCount / kMaxMapPointsPerChunk);
-        for (int i = 0; i < pointCount; i += stride) {
-            const SlamPoint& point = chunk.pointsWorld.at(i);
-            m_pendingMapPreviewPoints.push_back({point.x, point.y, point.z, 0.72f, 0.72f, 0.72f});
-        }
-    }
-}
-
-void SlamUiBridge::flushPendingMapPreview()
-{
-    if (!m_mapPreviewEnabled || m_pendingMapPreviewPoints.isEmpty()) {
-        return;
-    }
-
-    const int pendingCount = int(m_pendingMapPreviewPoints.size());
-    const int currentCount = int(m_mapPreviewPoints.size());
-    const int flushCount = std::min(kMaxMapPointsPerTick, pendingCount);
-    m_mapPreviewPoints.reserve(std::min(m_maxMapPreviewPoints, currentCount + flushCount));
-    for (int i = 0; i < flushCount; ++i) {
-        m_mapPreviewPoints.push_back(m_pendingMapPreviewPoints.at(i));
-    }
-    m_pendingMapPreviewPoints.erase(m_pendingMapPreviewPoints.begin(),
-                                    m_pendingMapPreviewPoints.begin() + flushCount);
-
-    if (m_mapPreviewPoints.size() > m_maxMapPreviewPoints) {
-        m_mapPreviewPoints.erase(m_mapPreviewPoints.begin(),
-                                 m_mapPreviewPoints.begin() + (m_mapPreviewPoints.size() - m_maxMapPreviewPoints));
+        m_mapPreviewStore.appendMapChunk(chunk);
     }
 }

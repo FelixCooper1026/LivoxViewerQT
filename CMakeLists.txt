@@ -228,9 +228,11 @@ set(SOURCES
     libs/Pcap/src/PushMsgParser.cpp
     libs/Slam/src/Core/ISlamBackend.cpp
     libs/Slam/src/Core/SlamInputQueue.cpp
+    libs/Slam/src/Core/SlamMapPreviewConfig.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     libs/Slam/src/Export/SlamTrajectoryExport.cpp
+    libs/Slam/src/Visualization/GlobalMapPreviewStore.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
     libs/Slam/src/Io/LiveLidarSlamSource.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
@@ -293,12 +295,14 @@ set(SOURCES
     libs/Pcap/include/Pcap/PcapPlaybackController.h
     libs/Slam/include/Slam/Core/ISlamBackend.h
     libs/Slam/include/Slam/Core/SlamInputQueue.h
+    libs/Slam/include/Slam/Core/SlamMapPreviewConfig.h
     libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
     libs/Slam/include/Slam/Core/SlamTypes.h
     libs/Slam/include/Slam/Backends/FastLio/FastLioSlamBackend.h
     libs/Slam/include/Slam/Export/SlamTrajectoryExport.h
     libs/Slam/include/Slam/Io/LiveLidarSlamSource.h
     libs/Slam/include/Slam/Io/PcapSlamSource.h
+    libs/Slam/include/Slam/Visualization/GlobalMapPreviewStore.h
     libs/Slam/include/Slam/Visualization/SlamRenderSnapshot.h
     libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
