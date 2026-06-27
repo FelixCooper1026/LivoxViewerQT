@@ -185,6 +185,7 @@ private:
     void createParameterPanel();
     void createImuPanel();
     void createFileInfoPanel();
+    void createSlamInfoPanel();
     void createLogPanel();
     void createMenusAndActions();
     QWidget* createCustomTitleBar(QWidget* panelControls);
@@ -212,6 +213,12 @@ private:
     void appendSlamWorldFramePoints(const SlamOutput& output);
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
+    void showSlamInfoPanel();
+    void setSlamWorldFrameVisible(bool visible);
+    void setSlamBodyFrameVisible(bool visible);
+    void setSlamTrajectoryVisible(bool visible);
+    void setSlamPoseAxisVisible(bool visible);
+    void syncSlamRenderLayerVisibility();
     void exportSlamTrajectory(SlamTrajectoryExport::Format format);
     void exportSlamGlobalMap(bool lasFormat);
     void initializeLivoxSdk();
@@ -333,6 +340,7 @@ private:
     QDockWidget* paramsDock;
     QDockWidget* imuDock = nullptr;
     QDockWidget* lvx2FileDock = nullptr;
+    QDockWidget* slamInfoDock = nullptr;
     QDockWidget* logDock;
     QToolBar* mainToolBar;
     QDockWidget* activeRightDock = nullptr;
@@ -403,6 +411,10 @@ private:
     int slamWorldDisplayedSegmentStart = 0;
     int slamWorldDisplayedSegmentEnd = 0;
     QColor slamBodyFrameColor = QColor(255, 140, 26);
+    bool slamWorldFrameVisible = true;
+    bool slamBodyFrameVisible = true;
+    bool slamTrajectoryVisible = true;
+    bool slamPoseAxisVisible = true;
 
     // 工作模式状态
     bool isNormalMode;

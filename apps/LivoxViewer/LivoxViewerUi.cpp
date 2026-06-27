@@ -226,6 +226,7 @@ void LivoxViewerWindow::initializeUserInterface()
     createParameterPanel();
     createImuPanel();
     createFileInfoPanel();
+    createSlamInfoPanel();
     createLogPanel();
 
     setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
@@ -237,6 +238,7 @@ void LivoxViewerWindow::initializeUserInterface()
     lidarDevicesDock->setMinimumWidth(kDevicesDockMinWidth);
     imuDock->setMinimumWidth(kDevicesDockMinWidth);
     lvx2FileDock->setMinimumWidth(kDevicesDockMinWidth);
+    slamInfoDock->setMinimumWidth(kDevicesDockMinWidth);
     paramsDock->setMinimumWidth(kParamsDockMinWidth);
     attrDock->setMinimumWidth(kParamsDockMinWidth);
 

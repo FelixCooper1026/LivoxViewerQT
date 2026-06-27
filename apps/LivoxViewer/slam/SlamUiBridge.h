@@ -40,6 +40,7 @@ public:
 public slots:
     void receiveSlamOutput(const SlamOutput& output);
     void setBodyFrameColor(const QColor& color);
+    void setRenderLayerVisibility(bool trajectoryVisible, bool poseAxisVisible, bool bodyFrameVisible);
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
@@ -65,6 +66,9 @@ private:
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");
     QColor m_bodyFrameColor = QColor(255, 140, 26);
+    bool m_trajectoryVisible = true;
+    bool m_poseAxisVisible = true;
+    bool m_bodyFrameVisible = true;
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

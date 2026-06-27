@@ -103,6 +103,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
     slamUiBridge = new SlamUiBridge(this);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+    syncSlamRenderLayerVisibility();
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {
             statusBar()->showMessage(text, 2000);
@@ -256,6 +257,7 @@ void LivoxViewerWindow::startSlamProcessing()
 
     if (slamInputMode == SlamInputMode::Online) {
         ensureSlamVisualizationTab(QStringLiteral("online"));
+        showSlamInfoPanel();
         postSlamStatus(SlamStatusCode::Failed, QStringLiteral("在线 SLAM worker 尚未接入。请切换到离线 SLAM 或等待实时 worker 接入。"));
         return;
     }
@@ -274,6 +276,7 @@ void LivoxViewerWindow::startSlamProcessing()
     bridge->clearDisplay();
     clearSlamWorldPointCloud();
     ensureSlamVisualizationTab(pcapPath);
+    showSlamInfoPanel();
     postSlamStatus(SlamStatusCode::Starting,
                    QStringLiteral("正在启动离线 SLAM：%1 Hz / %2 ms。")
                        .arg(config.preprocessScanRateHz, 0, 'f', 1)
@@ -476,12 +479,20 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
         slamWorldDisplayedSegmentEnd = std::max(slamWorldDisplayedSegmentStart,
                                                 slamWorldDisplayedSegmentEnd - removedHistorySegmentCount);
     }
-    refreshSlamWorldPointCloud();
+    if (slamWorldFrameVisible) {
+        refreshSlamWorldPointCloud();
+    }
 }
 
 void LivoxViewerWindow::refreshSlamWorldPointCloud()
 {
     if (!slamPointCloudView) {
+        return;
+    }
+    if (!slamWorldFrameVisible) {
+        slamPointCloudView->clearPointCloudSegments();
+        slamWorldDisplayedSegmentStart = 0;
+        slamWorldDisplayedSegmentEnd = 0;
         return;
     }
     if (slamWorldPointSegments.isEmpty()) {
@@ -514,6 +525,9 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
     const bool needsRebuild =
         slamWorldDisplayedSegmentStart > slamWorldDisplayedSegmentEnd ||
         slamWorldDisplayedSegmentEnd > slamWorldPointSegments.size() ||
+        (slamWorldDisplayedSegmentStart == 0 &&
+         slamWorldDisplayedSegmentEnd == 0 &&
+         targetStart > 0) ||
         targetStart < slamWorldDisplayedSegmentStart ||
         targetEnd < slamWorldDisplayedSegmentEnd;
     if (needsRebuild) {
@@ -540,6 +554,58 @@ void LivoxViewerWindow::clearSlamWorldPointCloud()
     if (slamPointCloudView) {
         slamPointCloudView->clearPointCloudSegments();
     }
+}
+
+void LivoxViewerWindow::setSlamWorldFrameVisible(bool visible)
+{
+    if (slamWorldFrameVisible == visible) {
+        return;
+    }
+    slamWorldFrameVisible = visible;
+    if (!visible && slamPointCloudView) {
+        slamPointCloudView->clearPointCloudSegments();
+        slamWorldDisplayedSegmentStart = 0;
+        slamWorldDisplayedSegmentEnd = 0;
+        return;
+    }
+    refreshSlamWorldPointCloud();
+}
+
+void LivoxViewerWindow::setSlamBodyFrameVisible(bool visible)
+{
+    if (slamBodyFrameVisible == visible) {
+        return;
+    }
+    slamBodyFrameVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamTrajectoryVisible(bool visible)
+{
+    if (slamTrajectoryVisible == visible) {
+        return;
+    }
+    slamTrajectoryVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamPoseAxisVisible(bool visible)
+{
+    if (slamPoseAxisVisible == visible) {
+        return;
+    }
+    slamPoseAxisVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::syncSlamRenderLayerVisibility()
+{
+    if (!slamUiBridge) {
+        return;
+    }
+    slamUiBridge->setRenderLayerVisibility(slamTrajectoryVisible,
+                                           slamPoseAxisVisible,
+                                           slamBodyFrameVisible);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryCsv()

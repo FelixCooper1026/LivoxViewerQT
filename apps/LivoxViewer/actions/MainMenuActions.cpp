@@ -900,7 +900,8 @@ void LivoxViewerWindow::createMenusAndActions()
         const bool leftVisible = (networkDock && networkDock->isVisible()) ||
                                  (lidarDevicesDock && lidarDevicesDock->isVisible()) ||
                                  (imuDock && imuDock->isVisible()) ||
-                                 (lvx2FileDock && lvx2FileDock->isVisible());
+                                 (lvx2FileDock && lvx2FileDock->isVisible()) ||
+                                 (slamInfoDock && slamInfoDock->isVisible());
         const bool bottomVisible = logDock && logDock->isVisible();
         const bool rightVisible = (paramsDock && paramsDock->isVisible()) ||
                                   (attrDock && attrDock->isVisible());
@@ -922,15 +923,21 @@ void LivoxViewerWindow::createMenusAndActions()
         const bool visible = (networkDock && networkDock->isVisible()) ||
                              (lidarDevicesDock && lidarDevicesDock->isVisible()) ||
                              (imuDock && imuDock->isVisible()) ||
-                             (lvx2FileDock && lvx2FileDock->isVisible());
+                             (lvx2FileDock && lvx2FileDock->isVisible()) ||
+                             (slamInfoDock && slamInfoDock->isVisible());
         networkDock->setVisible(!visible);
         lidarDevicesDock->setVisible(!visible);
         imuDock->setVisible(!visible);
         if (lvx2FileDock) {
             lvx2FileDock->setVisible(!visible && playbackState.active);
         }
+        if (slamInfoDock) {
+            slamInfoDock->setVisible(!visible && slamVisualizationTabId >= 0);
+        }
         if (!visible) {
-            if (lvx2FileDock && playbackState.active) {
+            if (slamInfoDock && slamVisualizationTabId >= 0) {
+                slamInfoDock->raise();
+            } else if (lvx2FileDock && playbackState.active) {
                 lvx2FileDock->raise();
             } else {
                 lidarDevicesDock->raise();
@@ -970,7 +977,7 @@ void LivoxViewerWindow::createMenusAndActions()
     });
     connect(settingsButton, &QToolButton::clicked, this, &LivoxViewerWindow::showPreferencesDialog);
 
-    for (QDockWidget* dock : {networkDock, lidarDevicesDock, imuDock, lvx2FileDock, logDock, paramsDock, attrDock}) {
+    for (QDockWidget* dock : {networkDock, lidarDevicesDock, imuDock, lvx2FileDock, slamInfoDock, logDock, paramsDock, attrDock}) {
         connect(dock, &QDockWidget::visibilityChanged, panelControls, syncPanelButtons);
     }
     syncPanelButtons();
@@ -982,6 +989,7 @@ void LivoxViewerWindow::createMenusAndActions()
     // 视图菜单：显示/隐藏 dock
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());
+    viewMenu->addAction(slamInfoDock->toggleViewAction());
     viewMenu->addAction(paramsDock->toggleViewAction());
     viewMenu->addAction(attrDock->toggleViewAction());
     viewMenu->addAction(imuDock->toggleViewAction());

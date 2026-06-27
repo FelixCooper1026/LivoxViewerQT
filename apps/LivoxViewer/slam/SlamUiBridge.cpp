@@ -124,6 +124,19 @@ void SlamUiBridge::setBodyFrameColor(const QColor& color)
     refreshStatus();
 }
 
+void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible, bool poseAxisVisible, bool bodyFrameVisible)
+{
+    if (m_trajectoryVisible == trajectoryVisible &&
+        m_poseAxisVisible == poseAxisVisible &&
+        m_bodyFrameVisible == bodyFrameVisible) {
+        return;
+    }
+    m_trajectoryVisible = trajectoryVisible;
+    m_poseAxisVisible = poseAxisVisible;
+    m_bodyFrameVisible = bodyFrameVisible;
+    refreshStatus();
+}
+
 void SlamUiBridge::setModeAndBackend(const QString& mode, const QString& backend)
 {
     m_mode = mode;
@@ -190,28 +203,34 @@ void SlamUiBridge::refreshStatus()
 SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
 {
     SlamRenderSnapshot snapshot;
-    snapshot.trajectoryVertices.reserve(m_trajectory.size());
-    for (const SlamTrajectoryPoint& point : m_trajectory) {
-        snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), 0.1f, 0.75f, 1.0f));
+    if (m_trajectoryVisible) {
+        snapshot.trajectoryVertices.reserve(m_trajectory.size());
+        for (const SlamTrajectoryPoint& point : m_trajectory) {
+            snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), 0.1f, 0.75f, 1.0f));
+        }
     }
 
-    const QVector3D origin = posePosition(m_latestOutput.currentPose);
-    const QQuaternion rotation(float(m_latestOutput.currentPose.qw),
-                               float(m_latestOutput.currentPose.qx),
-                               float(m_latestOutput.currentPose.qy),
-                               float(m_latestOutput.currentPose.qz));
-    constexpr float kAxisLength = 0.8f;
-    snapshot.poseAxisVertices.reserve(6);
-    snapshot.poseAxisVertices.push_back(renderVertex(origin, 1.0f, 0.05f, 0.05f));
-    snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(kAxisLength, 0.0f, 0.0f)), 1.0f, 0.05f, 0.05f));
-    snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.05f, 1.0f, 0.05f));
-    snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, kAxisLength, 0.0f)), 0.05f, 1.0f, 0.05f));
-    snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
-    snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
+    if (m_poseAxisVisible) {
+        const QVector3D origin = posePosition(m_latestOutput.currentPose);
+        const QQuaternion rotation(float(m_latestOutput.currentPose.qw),
+                                   float(m_latestOutput.currentPose.qx),
+                                   float(m_latestOutput.currentPose.qy),
+                                   float(m_latestOutput.currentPose.qz));
+        constexpr float kAxisLength = 0.8f;
+        snapshot.poseAxisVertices.reserve(6);
+        snapshot.poseAxisVertices.push_back(renderVertex(origin, 1.0f, 0.05f, 0.05f));
+        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(kAxisLength, 0.0f, 0.0f)), 1.0f, 0.05f, 0.05f));
+        snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.05f, 1.0f, 0.05f));
+        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, kAxisLength, 0.0f)), 0.05f, 1.0f, 0.05f));
+        snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
+        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
+    }
 
-    snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
-    for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
-        snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point, m_bodyFrameColor));
+    if (m_bodyFrameVisible) {
+        snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
+        for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
+            snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point, m_bodyFrameColor));
+        }
     }
     return snapshot;
 }
