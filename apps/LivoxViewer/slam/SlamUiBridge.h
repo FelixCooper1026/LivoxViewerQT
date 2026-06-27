@@ -4,6 +4,7 @@
 #include "Slam/Core/SlamTypes.h"
 #include "Slam/Visualization/SlamRenderSnapshot.h"
 
+#include <QColor>
 #include <QObject>
 #include <QTimer>
 
@@ -38,6 +39,7 @@ public:
 
 public slots:
     void receiveSlamOutput(const SlamOutput& output);
+    void setBodyFrameColor(const QColor& color);
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
@@ -62,6 +64,7 @@ private:
     QTimer m_refreshTimer;
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");
+    QColor m_bodyFrameColor = QColor(255, 140, 26);
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

@@ -65,7 +65,7 @@
   - 当 `pcd_save_en=true` 时，即使 `scan_pub_en=false`，仍在 `publish_frame_world()` 中把 `feats_undistort` 转到 world frame 并追加到 `pcl_wait_save`。
   - `interval=-1` 时最终写一个 `PCD/scans.pcd`。
 
-当前项目没有 ROS topic，因此“发布”迁移为 `SlamOutput` 中的当前帧点云输出，并由 `PointCloudView` 作为旁路 overlay 显示。
+当前项目没有 ROS topic，因此“发布”迁移为 `SlamOutput` 中的点云输出。世界系点云进入 SLAM 专属 `PointCloudView` 主点云流，按工具栏积分时间显示；IMU 机体系点云仍作为固定颜色 overlay 显示。
 
 ## 4. 原版参数配置与当前迁移状态
 
@@ -142,6 +142,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 
 - `SlamUiBridge` 是 QObject，不是 QWidget。
 - `SlamControlDialog` 是非模态浮动窗口，通过“工具 -> SLAM...”懒创建。
+- SLAM 面板先选择“离线 SLAM / 在线 SLAM”；离线 SLAM 在面板内加载 PCAP，不再要求先通过“文件 -> 播放 PCAP 文件”创建离线播放 tab。
+- 离线 PCAP 加载后创建独立的 `SLAM` OpenGL tab，不复用离线播放 tab，也不显示离线播放控制条。
 - 不修改现有 dock/tab 创建流程。
 - 后端线程不直接访问 `PointCloudView`。
 - worker 通过 `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` 把 `SlamOutput` 投递到 UI 线程。
@@ -150,8 +152,9 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 
 - 轨迹线顶点。
 - 当前位姿坐标轴顶点。
-- 世界系当前帧点云顶点。
 - 机体系当前帧点云顶点。
+
+世界系点云不再作为 SLAM overlay 绘制，而是转换为 `PointCloudFrame` 后进入 SLAM tab 主点云缓存。工具栏的积分时间、点大小、着色模式和反射率色标直接作用于该主点云。
 
 `PointCloudView::setSlamRenderSnapshot()` 和 `clearSlamRenderOverlay()` 仍断言必须在 UI 主线程调用。OpenGL VBO/VAO 创建、写入和销毁只在当前 context 有效时执行。
 
@@ -183,8 +186,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 | `filterSizeMapM` | `0.5` | 是 | IKD-tree 地图增量体素；影响后端地图点数 |
 | `preprocessScanRateHz` | `10.0` | 是 | 对齐原版 `preprocess/scan_rate` 默认语义；用于推导 SLAM 输入聚帧周期 |
 | `inputFrameDurationMs` | `100` | 是 | PCAP/Live SLAM 输入源切分当前帧的周期；实际帧结束时间仍取帧内最后点时间 |
-| `publishWorldFrameCloud` | `true` | 是 | 输出/显示世界系当前帧点云 |
-| `publishDenseFrameCloud` | `true` | 是 | 世界系当前帧使用 dense 去畸变点云；false 使用降采样点云 |
+| `publishWorldFrameCloud` | `true` | 是 | 输出/显示世界系点云 |
+| `publishDenseFrameCloud` | `true` | 是 | 世界系点云使用 dense 去畸变点云；false 使用降采样点云 |
 | `publishBodyFrameCloud` | `true` | 是 | 在世界系发布开启时输出/显示 IMU 机体系当前帧点云 |
 | `mapVoxelSizeM` | `0.1` | 否 | 占位 |
 | `maxMapPoints` | `2,000,000` | 否 | 占位；当前不限制完整地图导出点数 |
@@ -203,7 +206,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - 当前位姿、轨迹 overlay 已接入 `PointCloudView`。
 - 原版 `scan_publish_en`、`dense_publish_en`、`scan_bodyframe_pub_en` 已迁移为用户可配置项。
 - 原版 `preprocess/scan_rate` 已迁移为用户可配置扫描频率，并同步控制 PCAP/Live SLAM 输入聚帧周期。
-- 世界系当前帧 dense/降采样点云和机体系当前帧 dense 点云已作为 SLAM overlay 输出。
+- 世界系 dense/降采样点云已作为 SLAM tab 主点云输出，可复用工具栏积分时间、点大小、着色模式和色标。
+- 机体系当前帧 dense 点云仍作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置。
 - 旧地图预览配置、store、增量预览 VBO 和预览导出已移除。
 - 原版 `pcd_save` 的 dense world-frame 累计语义已迁移为完整全局地图缓存。
 - 新增完整全局地图 PCD/LAS 导出，数据源不是 UI 预览缓存，也不是 OpenGL VBO。

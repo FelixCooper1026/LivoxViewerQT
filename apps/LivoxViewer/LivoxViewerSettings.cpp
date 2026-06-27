@@ -1,6 +1,7 @@
 #include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 #include "dialogs/ImuVisualizationDialog.h"
+#include "slam/SlamUiBridge.h"
 #include "widgets/SwitchCheckBox.h"
 
 #include "PointCloud/PointCloudColorizer.h"
@@ -810,6 +811,10 @@ void LivoxViewerWindow::loadViewPreferences()
     QSettings settings("Livox", "LivoxViewerQT");
     slamRuntimeConfig = loadSlamRuntimeConfig(settings, QStringLiteral("slam/runtime"));
     liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
+    slamBodyFrameColor = settings.value(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor).value<QColor>();
+    if (!slamBodyFrameColor.isValid()) {
+        slamBodyFrameColor = QColor(255, 140, 26);
+    }
     autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
@@ -921,6 +926,7 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("color/lineColors", storedLineColors);
     settings.setValue("theme/mode", themeMode);
     settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
+    settings.setValue(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor);
     saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
 }
 
@@ -938,6 +944,7 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     PointCloudView::GridConfig config = pointCloudView->gridConfig();
     QColor selectedColor = config.color;
+    QColor selectedSlamBodyFrameColor = slamBodyFrameColor;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -1222,6 +1229,28 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
+    QWidget* slamBodyColorRow = new QWidget(&dlg);
+    usePreferenceControlColumn(slamBodyColorRow);
+    QHBoxLayout* slamBodyColorLayout = new QHBoxLayout(slamBodyColorRow);
+    slamBodyColorLayout->setContentsMargins(0, 0, 0, 0);
+    slamBodyColorLayout->setSpacing(8);
+    QFrame* slamBodyColorPreview = new QFrame(slamBodyColorRow);
+    slamBodyColorPreview->setFixedSize(28, 20);
+    slamBodyColorPreview->setFrameShape(QFrame::Box);
+    slamBodyColorPreview->setLineWidth(1);
+    slamBodyColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamBodyFrameColor.name()));
+    QPushButton* slamBodyColorButton = new QPushButton(QStringLiteral("选择颜色"), slamBodyColorRow);
+    slamBodyColorLayout->addWidget(slamBodyColorPreview);
+    slamBodyColorLayout->addWidget(slamBodyColorButton);
+    slamBodyColorLayout->addStretch();
+    connect(slamBodyColorButton, &QPushButton::clicked, &dlg, [&dlg, &selectedSlamBodyFrameColor, slamBodyColorPreview]() {
+        QColor color = QColorDialog::getColor(selectedSlamBodyFrameColor, &dlg, QStringLiteral("选择 IMU 机体系点云颜色"));
+        if (!color.isValid()) {
+            return;
+        }
+        selectedSlamBodyFrameColor = color;
+        slamBodyColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamBodyFrameColor.name()));
+    });
     auto syncSlamPublishControls = [slamPublishWorldCheck, slamPublishDenseCheck, slamPublishBodyCheck]() {
         const bool enabled = slamPublishWorldCheck->isChecked();
         slamPublishDenseCheck->setEnabled(enabled);
@@ -1413,16 +1442,20 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamPublishSection = createPreferenceSection(slamTab);
     addPreferenceRow(slamPublishSection,
                      "发布世界系点云",
-                     "按原版 scan_publish_en 语义输出当前帧世界系点云并在视图中显示。",
+                     "按原版 scan_publish_en 语义输出世界系点云，在 SLAM tab 中按积分时间显示。",
                      slamPublishWorldCheck);
     addPreferenceRow(slamPublishSection,
-                     "当前帧 dense",
-                     "按原版 dense_publish_en 语义选择世界系当前帧使用去畸变 dense 点云，否则使用降采样点云。",
+                     "世界系点云 dense",
+                     "按原版 dense_publish_en 语义选择世界系点云使用去畸变 dense 点云，否则使用降采样点云。",
                      slamPublishDenseCheck);
     addPreferenceRow(slamPublishSection,
                      "发布机体系点云",
                      "按原版 scan_bodyframe_pub_en 语义输出当前帧 IMU 机体系点云。",
                      slamPublishBodyCheck);
+    addPreferenceRow(slamPublishSection,
+                     "机体系点云颜色",
+                     "设置 IMU 机体系当前帧点云 overlay 的固定颜色。",
+                     slamBodyColorRow);
     addPreferenceRow(slamPublishSection,
                      "保存完整全局地图",
                      "按原版 pcd_save 语义累计去畸变 dense 帧到世界系，供完整全局地图 PCD/LAS 导出。",
@@ -1488,6 +1521,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
     const bool previousSlamSaveMap = slamRuntimeConfig.saveMap;
+    const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
@@ -1497,6 +1531,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
+    slamBodyFrameColor = selectedSlamBodyFrameColor;
+    if (slamUiBridge) {
+        slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+    }
 
     syncReflectivityColorScaleControls();
     pointCloudView->setGridConfig(config);
@@ -1517,7 +1555,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
-        slamRuntimeConfig.saveMap != previousSlamSaveMap) {
+        slamRuntimeConfig.saveMap != previousSlamSaveMap ||
+        slamBodyFrameColor != previousSlamBodyFrameColor) {
         liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
         logMessage(QStringLiteral("[SLAM] 设置已更新"));
     }

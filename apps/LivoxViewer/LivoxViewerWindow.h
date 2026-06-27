@@ -161,6 +161,11 @@ public:
     void playbackSetSpeedText(const QString& text);
     void playbackSetModeIndex(int index);
     void showSlamControlDialog();
+    void setSlamInputModeOffline();
+    void setSlamInputModeOnline();
+    void loadOfflineSlamPcap();
+    bool isOfflineSlamMode() const;
+    QString offlineSlamPcapPath() const;
     void startSlamProcessing();
     void pauseSlamProcessing();
     void stopSlamProcessing();
@@ -202,6 +207,11 @@ private:
     void createStatusBarAndTimers();
     SlamUiBridge* ensureSlamUiBridge();
     void postSlamStatus(SlamStatusCode status, const QString& message);
+    int ensureSlamVisualizationTab(const QString& sourcePath = QString());
+    bool isSlamPointCloudTab(int tabId) const;
+    void appendSlamWorldFramePoints(const SlamOutput& output);
+    void refreshSlamWorldPointCloud();
+    void clearSlamWorldPointCloud();
     void exportSlamTrajectory(SlamTrajectoryExport::Format format);
     void exportSlamGlobalMap(bool lasFormat);
     void initializeLivoxSdk();
@@ -377,6 +387,20 @@ private:
     std::atomic_bool slamMapExportActive{false};
     SlamRuntimeConfig slamRuntimeConfig;
     bool slamRenderOverlayEnabled = false;
+    enum class SlamInputMode {
+        Offline,
+        Online
+    };
+    struct SlamWorldPointSegment {
+        int64_t timestampNs = 0;
+        QVector<PointCloudPoint> points;
+    };
+    SlamInputMode slamInputMode = SlamInputMode::Offline;
+    QString slamOfflinePcapPath;
+    PointCloudView* slamPointCloudView = nullptr;
+    int slamVisualizationTabId = -1;
+    QVector<SlamWorldPointSegment> slamWorldPointSegments;
+    QColor slamBodyFrameColor = QColor(255, 140, 26);
 
     // 工作模式状态
     bool isNormalMode;

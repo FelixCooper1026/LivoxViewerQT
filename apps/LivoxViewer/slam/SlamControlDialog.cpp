@@ -3,10 +3,13 @@
 #include "LivoxViewerWindow.h"
 #include "slam/SlamUiBridge.h"
 
+#include <QComboBox>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* bridge, QWidget* parent)
@@ -22,6 +25,29 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(16, 14, 16, 14);
     layout->setSpacing(12);
+
+    QFormLayout* inputForm = new QFormLayout();
+    inputForm->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    inputForm->setHorizontalSpacing(14);
+    inputForm->setVerticalSpacing(8);
+    m_inputModeCombo = new QComboBox(this);
+    m_inputModeCombo->addItem(QStringLiteral("离线 SLAM"), 0);
+    m_inputModeCombo->addItem(QStringLiteral("在线 SLAM"), 1);
+    m_inputModeCombo->setCurrentIndex(m_window && m_window->isOfflineSlamMode() ? 0 : 1);
+    inputForm->addRow(QStringLiteral("输入模式:"), m_inputModeCombo);
+
+    m_offlineSourceWidget = new QWidget(this);
+    QHBoxLayout* offlineSourceLayout = new QHBoxLayout(m_offlineSourceWidget);
+    offlineSourceLayout->setContentsMargins(0, 0, 0, 0);
+    offlineSourceLayout->setSpacing(8);
+    m_offlinePathLabel = new QLabel(QStringLiteral("未加载 PCAP"), m_offlineSourceWidget);
+    m_offlinePathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_offlinePathLabel->setWordWrap(true);
+    QPushButton* loadPcapButton = new QPushButton(QStringLiteral("加载 PCAP..."), m_offlineSourceWidget);
+    offlineSourceLayout->addWidget(m_offlinePathLabel, 1);
+    offlineSourceLayout->addWidget(loadPcapButton);
+    inputForm->addRow(QStringLiteral("离线数据:"), m_offlineSourceWidget);
+    layout->addLayout(inputForm);
 
     QFormLayout* form = new QFormLayout();
     form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -39,7 +65,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
     addField(form, QStringLiteral("后端地图点数"));
-    addField(form, QStringLiteral("世界系当前帧点数"));
+    addField(form, QStringLiteral("世界系点云点数"));
     addField(form, QStringLiteral("机体系当前帧点数"));
     addField(form, QStringLiteral("完整全局地图点数"));
     addField(form, QStringLiteral("错误信息"));
@@ -79,6 +105,23 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     exportButtonLayout->addStretch();
     layout->addLayout(exportButtonLayout);
 
+    connect(m_inputModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (!m_window) {
+            return;
+        }
+        if (index == 0) {
+            m_window->setSlamInputModeOffline();
+        } else {
+            m_window->setSlamInputModeOnline();
+        }
+        refreshInputControls();
+    });
+    connect(loadPcapButton, &QPushButton::clicked, this, [this]() {
+        if (m_window) {
+            m_window->loadOfflineSlamPcap();
+        }
+        refreshInputControls();
+    });
     connect(startButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::startSlamProcessing);
     connect(pauseButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::pauseSlamProcessing);
     connect(stopButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::stopSlamProcessing);
@@ -90,9 +133,11 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     connect(exportLasButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapLas);
     if (m_bridge) {
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshFields);
+        connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshInputControls);
     }
 
     refreshFields();
+    refreshInputControls();
 }
 
 void SlamControlDialog::refreshFields()
@@ -112,10 +157,32 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
     m_fields.value(QStringLiteral("后端地图点数"))->setText(state.mapPoints);
-    m_fields.value(QStringLiteral("世界系当前帧点数"))->setText(state.worldFramePoints);
+    m_fields.value(QStringLiteral("世界系点云点数"))->setText(state.worldFramePoints);
     m_fields.value(QStringLiteral("机体系当前帧点数"))->setText(state.bodyFramePoints);
     m_fields.value(QStringLiteral("完整全局地图点数"))->setText(state.globalMapPoints);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);
+}
+
+void SlamControlDialog::refreshInputControls()
+{
+    if (!m_window) {
+        return;
+    }
+    const bool offline = m_window->isOfflineSlamMode();
+    if (m_inputModeCombo) {
+        const QSignalBlocker blocker(m_inputModeCombo);
+        m_inputModeCombo->setCurrentIndex(offline ? 0 : 1);
+    }
+    if (m_offlineSourceWidget) {
+        m_offlineSourceWidget->setVisible(offline);
+    }
+    if (m_offlinePathLabel) {
+        const QString path = m_window->offlineSlamPcapPath();
+        m_offlinePathLabel->setText(path.isEmpty()
+                                        ? QStringLiteral("未加载 PCAP")
+                                        : QFileInfo(path).fileName());
+        m_offlinePathLabel->setToolTip(path);
+    }
 }
 
 QLabel* SlamControlDialog::addField(QFormLayout* form, const QString& name)

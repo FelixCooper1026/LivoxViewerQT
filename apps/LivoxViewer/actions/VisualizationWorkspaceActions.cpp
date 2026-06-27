@@ -225,7 +225,14 @@ void LivoxViewerWindow::closeVisualizationTab(int tabId)
         return;
     }
 
-    if (isOfflinePointCloudTab(tabId)) {
+    if (isSlamPointCloudTab(tabId)) {
+        stopSlamProcessing();
+        clearSlamDisplay();
+        pointCloudViewsByTab.remove(tabId);
+        slamPointCloudView = nullptr;
+        slamVisualizationTabId = -1;
+        slamOfflinePcapPath.clear();
+    } else if (isOfflinePointCloudTab(tabId)) {
         const int tabNumber = offlinePointCloudTabNumbersByTab.value(tabId, 0);
         if (tabNumber > 0) {
             reusableOfflinePointCloudTabNumbers.insert(tabNumber);
@@ -268,6 +275,11 @@ void LivoxViewerWindow::onVisualizationFocusedTabChanged(int tabId)
         if (playbackState.playing) {
             setLvx2PlaybackPlaying(true);
         } else if (playbackState.timer) {
+            playbackState.timer->stop();
+        }
+    } else if (isSlamPointCloudTab(tabId)) {
+        clearPlaybackStateMirror();
+        if (playbackState.timer) {
             playbackState.timer->stop();
         }
     } else if (isPointCloudTab(tabId)) {

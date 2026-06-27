@@ -19,7 +19,8 @@ class VisualizationWorkspace : public QWidget
 public:
     enum class TabKind {
         RealtimePointCloud,
-        OfflinePointCloud
+        OfflinePointCloud,
+        SlamPointCloud
     };
 
     enum class SplitMode {

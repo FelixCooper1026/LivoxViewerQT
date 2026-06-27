@@ -42,6 +42,7 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
             updateLvx2PlaybackUi();
         }
     }
+    refreshSlamWorldPointCloud();
 }
 
 void LivoxViewerWindow::onPointSizeChanged(int px)

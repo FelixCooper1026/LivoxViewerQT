@@ -23,6 +23,8 @@
 
 namespace {
 
+constexpr int64_t kSlamWorldHistoryRetentionNs = 60000LL * 1000000LL;
+
 SlamOutput statusOutput(SlamStatusCode status, const QString& message)
 {
     SlamOutput output;
@@ -40,15 +42,23 @@ bool isSlamErrorStatus(SlamStatusCode status)
            status == SlamStatusCode::TimeSyncError;
 }
 
-const PlaybackControllerState* activePlaybackState(const LivoxViewerWindow* window,
-                                                   const PlaybackControllerState* mirror,
-                                                   const PlaybackControllerState* bound)
+PointCloudPoint toPointCloudPoint(const SlamPoint& point)
 {
-    Q_UNUSED(window);
-    if (bound && bound->active) {
-        return bound;
-    }
-    return mirror && mirror->active ? mirror : nullptr;
+    PointCloudPoint result;
+    result.x = point.x;
+    result.y = point.y;
+    result.z = point.z;
+    result.r = 1.0f;
+    result.g = 1.0f;
+    result.b = 1.0f;
+    result.reflectivity = point.reflectivity;
+    result.tag = point.tag;
+    result.line = point.line;
+    result.spherical = false;
+    result.theta = 0.0f;
+    result.phi = 0.0f;
+    result.depth = 0.0f;
+    return result;
 }
 
 qint64 replayTargetMs(int64_t firstFrameStartNs, int64_t frameStartNs)
@@ -92,6 +102,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
 
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
     slamUiBridge = new SlamUiBridge(this);
+    slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {
             statusBar()->showMessage(text, 2000);
@@ -101,8 +112,8 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
         if (!slamRenderOverlayEnabled) {
             return;
         }
-        if (PointCloudView* view = currentPointCloudView()) {
-            view->setSlamRenderSnapshot(snapshot);
+        if (slamPointCloudView) {
+            slamPointCloudView->setSlamRenderSnapshot(snapshot);
         }
     });
     return slamUiBridge;
@@ -119,10 +130,115 @@ void LivoxViewerWindow::showSlamControlDialog()
     slamControlDialog->activateWindow();
 }
 
+void LivoxViewerWindow::setSlamInputModeOffline()
+{
+    slamInputMode = SlamInputMode::Offline;
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
+}
+
+void LivoxViewerWindow::setSlamInputModeOnline()
+{
+    slamInputMode = SlamInputMode::Online;
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("在线 SLAM"), QStringLiteral("FAST_LIO"));
+}
+
+bool LivoxViewerWindow::isOfflineSlamMode() const
+{
+    return slamInputMode == SlamInputMode::Offline;
+}
+
+QString LivoxViewerWindow::offlineSlamPcapPath() const
+{
+    return slamOfflinePcapPath;
+}
+
+void LivoxViewerWindow::loadOfflineSlamPcap()
+{
+    setSlamInputModeOffline();
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(QStringLiteral("slam/lastOfflinePcapDir"),
+                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("加载离线 SLAM PCAP"));
+    dialog.setDirectory(lastDir);
+    dialog.setFileMode(QFileDialog::ExistingFile);
+    dialog.setNameFilter(QStringLiteral("PCAP 文件 (*.pcap *.pcapng);;所有文件 (*.*)"));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const QString filePath = dialog.selectedFiles().first();
+    if (slamWorker.joinable()) {
+        stopSlamProcessing();
+    }
+    slamOfflinePcapPath = filePath;
+    settings.setValue(QStringLiteral("slam/lastOfflinePcapDir"), QFileInfo(filePath).absolutePath());
+    ensureSlamVisualizationTab(filePath);
+    clearSlamDisplay();
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
+    logMessage(QStringLiteral("[SLAM] 已加载离线 PCAP: %1").arg(QDir::toNativeSeparators(filePath)));
+    if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("离线 SLAM PCAP 已加载"), 3000);
+    }
+}
+
+int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
+{
+    if (slamVisualizationTabId >= 0 && slamPointCloudView) {
+        if (!sourcePath.isEmpty()) {
+            visualizationWorkspace->setTabToolTip(slamVisualizationTabId, QDir::toNativeSeparators(sourcePath));
+        }
+        visualizationWorkspace->activateTab(slamVisualizationTabId);
+        return slamVisualizationTabId;
+    }
+
+    slamPointCloudView = new PointCloudView(visualizationWorkspace);
+    slamPointCloudView->installEventFilter(this);
+    slamPointCloudView->setMinimumSize(200, 200);
+    slamPointCloudView->setPointSize(pointSizePx);
+    slamPointCloudView->setMeasurementModeEnabled(measurementModeActive);
+    slamPointCloudView->setSelectionModeEnabled(selectionRealtimeEnabled);
+    connect(slamPointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
+    connect(slamPointCloudView, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
+    connect(slamPointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
+        if (crossSectionModeActive && statusLabelBar) {
+            statusLabelBar->setText(QString("Cross Section: %1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
+        }
+    });
+
+    slamVisualizationTabId = visualizationWorkspace->addTab(
+        VisualizationWorkspace::TabKind::SlamPointCloud,
+        QStringLiteral("SLAM"),
+        slamPointCloudView,
+        true);
+    if (!sourcePath.isEmpty()) {
+        visualizationWorkspace->setTabToolTip(slamVisualizationTabId, QDir::toNativeSeparators(sourcePath));
+    }
+    pointCloudViewsByTab.insert(slamVisualizationTabId, slamPointCloudView);
+    applyPointCloudBackground();
+    updatePointCloudLegend();
+    visualizationWorkspace->activateTab(slamVisualizationTabId);
+    return slamVisualizationTabId;
+}
+
+bool LivoxViewerWindow::isSlamPointCloudTab(int tabId) const
+{
+    return visualizationWorkspace &&
+           tabId >= 0 &&
+           tabId == slamVisualizationTabId &&
+           visualizationWorkspace->tabKind(tabId) == VisualizationWorkspace::TabKind::SlamPointCloud;
+}
+
 void LivoxViewerWindow::startSlamProcessing()
 {
     SlamUiBridge* bridge = ensureSlamUiBridge();
-    bridge->setModeAndBackend(QStringLiteral("PCAP 原始时间"), QStringLiteral("FAST_LIO"));
+    bridge->setModeAndBackend(isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM"),
+                              QStringLiteral("FAST_LIO"));
 
     if (slamWorker.joinable() && !slamWorkerActive.load()) {
         slamWorker.join();
@@ -138,22 +254,28 @@ void LivoxViewerWindow::startSlamProcessing()
         return;
     }
 
-    const PlaybackControllerState* boundState = playbackStateForTab(boundPlaybackTabId);
-    const PlaybackControllerState* state = activePlaybackState(this, &playbackState, boundState);
-    if (!state || !state->source || state->source->kind() != Playback::SourceKind::Pcap || state->path.isEmpty()) {
-        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先打开并激活一个 PCAP 播放源。"));
+    if (slamInputMode == SlamInputMode::Online) {
+        ensureSlamVisualizationTab(QStringLiteral("online"));
+        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("在线 SLAM worker 尚未接入。请切换到离线 SLAM 或等待实时 worker 接入。"));
         return;
     }
 
-    const QString pcapPath = state->path;
+    if (slamOfflinePcapPath.isEmpty()) {
+        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先在 SLAM 面板加载离线 PCAP 文件。"));
+        return;
+    }
+
+    const QString pcapPath = slamOfflinePcapPath;
     const SlamRuntimeConfig config = slamRuntimeConfig;
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
     slamWorkerActive.store(true);
     slamRenderOverlayEnabled = true;
     bridge->clearDisplay();
+    clearSlamWorldPointCloud();
+    ensureSlamVisualizationTab(pcapPath);
     postSlamStatus(SlamStatusCode::Starting,
-                   QStringLiteral("正在启动 PCAP SLAM 原始时间回放：%1 Hz / %2 ms。")
+                   QStringLiteral("正在启动离线 SLAM：%1 Hz / %2 ms。")
                        .arg(config.preprocessScanRateHz, 0, 'f', 1)
                        .arg(config.inputFrameDurationMs));
 
@@ -311,11 +433,72 @@ void LivoxViewerWindow::clearSlamDisplay()
     if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
         bridge->clearDisplay();
     }
+    clearSlamWorldPointCloud();
     forEachPointCloudView([](PointCloudView* view) {
         if (view) {
             view->clearSlamRenderOverlay();
         }
     });
+}
+
+void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
+{
+    if (output.publishedWorldFramePoints.isEmpty() || !slamPointCloudView) {
+        return;
+    }
+
+    SlamWorldPointSegment segment;
+    segment.timestampNs = output.currentPose.timestampNs;
+    if (segment.timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
+        segment.timestampNs = slamWorldPointSegments.back().timestampNs + int64_t(slamRuntimeConfig.inputFrameDurationMs) * 1000000LL;
+    }
+    segment.points.reserve(output.publishedWorldFramePoints.size());
+    for (const SlamPoint& point : output.publishedWorldFramePoints) {
+        segment.points.push_back(toPointCloudPoint(point));
+    }
+    slamWorldPointSegments.push_back(std::move(segment));
+
+    const int64_t latestTimestampNs = slamWorldPointSegments.back().timestampNs;
+    while (!slamWorldPointSegments.isEmpty() &&
+           slamWorldPointSegments.front().timestampNs < latestTimestampNs - kSlamWorldHistoryRetentionNs) {
+        slamWorldPointSegments.remove(0);
+    }
+    refreshSlamWorldPointCloud();
+}
+
+void LivoxViewerWindow::refreshSlamWorldPointCloud()
+{
+    if (!slamPointCloudView) {
+        return;
+    }
+    if (slamWorldPointSegments.isEmpty()) {
+        slamPointCloudView->clearPointCloud();
+        return;
+    }
+
+    const int64_t latestTimestampNs = slamWorldPointSegments.back().timestampNs;
+    const int64_t windowNs = int64_t(std::max<uint64_t>(1, frameIntervalMs)) * 1000000LL;
+    const int64_t windowStartNs = latestTimestampNs > windowNs ? latestTimestampNs - windowNs : 0;
+
+    PointCloudFrame frame;
+    frame.timestamp = uint64_t(std::max<int64_t>(0, latestTimestampNs));
+    frame.device_handle = 0;
+    for (const SlamWorldPointSegment& segment : slamWorldPointSegments) {
+        if (segment.timestampNs >= windowStartNs) {
+            frame.points += segment.points;
+        }
+    }
+
+    applyPointCloudPipeline(frame, slamPointCloudView);
+    slamPointCloudView->updatePointCloud(std::move(frame));
+}
+
+void LivoxViewerWindow::clearSlamWorldPointCloud()
+{
+    slamWorldPointSegments.clear();
+    if (slamPointCloudView) {
+        slamPointCloudView->clearPointCloud();
+    }
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryCsv()
@@ -490,6 +673,7 @@ void LivoxViewerWindow::submitSlamOutputForUi(const SlamOutput& output)
     if (isSlamErrorStatus(output.status) && !output.message.isEmpty()) {
         logMessage(QStringLiteral("[SLAM] %1").arg(output.message));
     }
+    appendSlamWorldFramePoints(output);
     ensureSlamUiBridge()->receiveSlamOutput(output);
 }
 

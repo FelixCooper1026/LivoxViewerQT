@@ -34,17 +34,9 @@ SlamRenderVertex renderVertex(const QVector3D& point, float r, float g, float b)
     return {point.x(), point.y(), point.z(), r, g, b};
 }
 
-SlamRenderVertex renderWorldFramePoint(const SlamPoint& point)
+SlamRenderVertex renderBodyFramePoint(const SlamPoint& point, const QColor& color)
 {
-    const float intensity = float(point.reflectivity) / 255.0f;
-    const float c = 0.35f + 0.55f * intensity;
-    return {point.x, point.y, point.z, c, c, c};
-}
-
-SlamRenderVertex renderBodyFramePoint(const SlamPoint& point)
-{
-    const float intensity = float(point.reflectivity) / 255.0f;
-    return {point.x, point.y, point.z, 1.0f, 0.55f + 0.35f * intensity, 0.1f};
+    return {point.x, point.y, point.z, color.redF(), color.greenF(), color.blueF()};
 }
 
 QVector3D posePosition(const SlamPose& pose)
@@ -121,6 +113,15 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     appendTrajectory(output);
     appendGlobalMap(output);
     m_latestOutput.newGlobalMapPoints.clear();
+}
+
+void SlamUiBridge::setBodyFrameColor(const QColor& color)
+{
+    if (!color.isValid() || m_bodyFrameColor == color) {
+        return;
+    }
+    m_bodyFrameColor = color;
+    refreshStatus();
 }
 
 void SlamUiBridge::setModeAndBackend(const QString& mode, const QString& backend)
@@ -208,13 +209,9 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
     snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
 
-    snapshot.worldFrameVertices.reserve(m_latestOutput.publishedWorldFramePoints.size());
-    for (const SlamPoint& point : m_latestOutput.publishedWorldFramePoints) {
-        snapshot.worldFrameVertices.push_back(renderWorldFramePoint(point));
-    }
     snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
     for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
-        snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point));
+        snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point, m_bodyFrameColor));
     }
     return snapshot;
 }
