@@ -32,6 +32,50 @@ constexpr int kDefaultMaxIterations = 4;
 constexpr float kMoveThreshold = 1.5f;
 constexpr int kMinMapInitPoints = 5;
 
+void assignError(QString* error, const QString& message);
+
+bool isFiniteArray(const double* values, int count)
+{
+    for (int i = 0; i < count; ++i) {
+        if (!std::isfinite(values[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isUsableRotationMatrix(const double* values)
+{
+    if (!isFiniteArray(values, 9)) {
+        return false;
+    }
+    for (int row = 0; row < 3; ++row) {
+        const double x = values[row * 3 + 0];
+        const double y = values[row * 3 + 1];
+        const double z = values[row * 3 + 2];
+        if ((x * x + y * y + z * z) <= 1.0e-9) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
+{
+    if (!std::isfinite(config.filterSizeSurfM) || config.filterSizeSurfM <= 0.0 ||
+        !std::isfinite(config.filterSizeMapM) || config.filterSizeMapM <= 0.0) {
+        assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 滤波体素尺寸必须大于 0。"));
+        return false;
+    }
+    if (!isFiniteArray(config.extrinsicT_L_I, 3) ||
+        !isUsableRotationMatrix(config.extrinsicR_L_I)) {
+        assignError(error, QStringLiteral("SLAM 外参配置无效：LiDAR-IMU 平移或旋转矩阵缺失/非法。"));
+        return false;
+    }
+    assignError(error, QString());
+    return true;
+}
+
 struct FastLioAlgorithmState {
     explicit FastLioAlgorithmState(const SlamRuntimeConfig& runtimeConfig)
         : config(runtimeConfig),
@@ -499,6 +543,13 @@ FastLioSlamBackend::~FastLioSlamBackend() = default;
 bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
 {
     config_ = config;
+    QString configError;
+    if (!validateRuntimeConfig(config_, &configError)) {
+        message_ = configError;
+        status_ = SlamStatusCode::Failed;
+        assignError(error, message_);
+        return false;
+    }
     if (!config_.imuEnabled) {
         message_ = QStringLiteral("FAST_LIO requires IMU input.");
         status_ = SlamStatusCode::MissingImu;

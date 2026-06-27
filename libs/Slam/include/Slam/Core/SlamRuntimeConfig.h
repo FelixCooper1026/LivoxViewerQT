@@ -2,6 +2,7 @@
 #define SLAM_CORE_SLAMRUNTIMECONFIG_H
 
 #include <QString>
+#include <QSettings>
 
 #include <cstdint>
 
@@ -24,5 +25,8 @@ struct SlamRuntimeConfig {
     bool saveMap = false;
     QString logLevel = "info";
 };
+
+SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix);
+void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix);
 
 #endif // SLAM_CORE_SLAMRUNTIMECONFIG_H

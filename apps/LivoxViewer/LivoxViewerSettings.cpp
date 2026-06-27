@@ -34,6 +34,7 @@
 #include <QSize>
 #include <QSizePolicy>
 #include <QScrollArea>
+#include <QSpinBox>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
@@ -46,6 +47,8 @@
 #include <QVariant>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <algorithm>
 
 namespace {
 
@@ -801,6 +804,11 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     QSettings settings("Livox", "LivoxViewerQT");
+    slamRuntimeConfig = loadSlamRuntimeConfig(settings, QStringLiteral("slam/runtime"));
+    slamMapPreviewDefaultEnabled = settings.value(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), false).toBool();
+    slamMapPreviewMaxPoints = std::max(1000, settings.value(QStringLiteral("slam/ui/mapPreviewMaxPoints"),
+                                                            slamMapPreviewMaxPoints).toInt());
+    slamMapPreviewEnabled.store(slamMapPreviewDefaultEnabled);
     autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
@@ -912,6 +920,9 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("color/lineColors", storedLineColors);
     settings.setValue("theme/mode", themeMode);
     settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
+    saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
+    settings.setValue(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), slamMapPreviewDefaultEnabled);
+    settings.setValue(QStringLiteral("slam/ui/mapPreviewMaxPoints"), slamMapPreviewMaxPoints);
 }
 
 void LivoxViewerWindow::showPreferencesDialog()
@@ -990,6 +1001,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* legendTab = createSettingsPage("图例", "设置距离和高度着色图例的数值范围。");
     QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
     QWidget* backgroundTab = createSettingsPage("背景", "设置 OpenGL 点云视图的背景颜色。");
+    QWidget* slamTab = createSettingsPage("SLAM", "设置旁路 SLAM 后端和轨迹显示参数。");
 
     QVBoxLayout* themeLayout = qobject_cast<QVBoxLayout*>(themeTab->layout());
     QVBoxLayout* connectionLayout = qobject_cast<QVBoxLayout*>(connectionTab->layout());
@@ -997,6 +1009,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QVBoxLayout* legendLayout = qobject_cast<QVBoxLayout*>(legendTab->layout());
     QVBoxLayout* colorPageLayout = qobject_cast<QVBoxLayout*>(colorTab->layout());
     QVBoxLayout* backgroundLayout = qobject_cast<QVBoxLayout*>(backgroundTab->layout());
+    QVBoxLayout* slamLayout = qobject_cast<QVBoxLayout*>(slamTab->layout());
     QColor selectedSolidColor = solidColor;
     QVector<QColor> selectedLineColors = lineColors;
     int selectedReflectivityColorScale = reflectivityColorScale;
@@ -1153,6 +1166,27 @@ void LivoxViewerWindow::showPreferencesDialog()
                 const QPair<QColor, QColor> colors = backgroundPresetColors(selectedBackgroundPreset);
                 backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(colors.first, colors.second));
             });
+
+    auto createSlamVoxelSpin = [&dlg](double value) {
+        QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
+        spin->setRange(0.05, 5.0);
+        spin->setDecimals(2);
+        spin->setSingleStep(0.05);
+        spin->setSuffix(QStringLiteral(" m"));
+        spin->setValue(value);
+        preparePreferenceSpinBox(spin);
+        return spin;
+    };
+    QDoubleSpinBox* slamFilterSurfSpin = createSlamVoxelSpin(slamRuntimeConfig.filterSizeSurfM);
+    QDoubleSpinBox* slamFilterMapSpin = createSlamVoxelSpin(slamRuntimeConfig.filterSizeMapM);
+    QSpinBox* slamMapPreviewMaxSpin = new QSpinBox(&dlg);
+    slamMapPreviewMaxSpin->setRange(1000, 200000);
+    slamMapPreviewMaxSpin->setSingleStep(1000);
+    slamMapPreviewMaxSpin->setValue(std::clamp(slamMapPreviewMaxPoints, 1000, 200000));
+    slamMapPreviewMaxSpin->setFixedWidth(kPreferenceSpinBoxWidth);
+    usePreferenceControlColumn(slamMapPreviewMaxSpin);
+    SwitchCheckBox* slamMapPreviewDefaultCheck = new SwitchCheckBox(slamTab);
+    slamMapPreviewDefaultCheck->setChecked(slamMapPreviewDefaultEnabled);
 
     QWidget* solidColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(solidColorRow);
@@ -1312,14 +1346,40 @@ void LivoxViewerWindow::showPreferencesDialog()
     backgroundLayout->addWidget(backgroundPresetPreview);
     backgroundLayout->addStretch();
 
-    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景"};
+    addPreferenceSectionTitle(slamLayout, "FAST_LIO 后端");
+    QFrame* slamBackendSection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamBackendSection,
+                     "表面滤波体素",
+                     "设置 FAST_LIO 输入特征降采样体素尺寸。",
+                     slamFilterSurfSpin);
+    addPreferenceRow(slamBackendSection,
+                     "地图滤波体素",
+                     "设置 FAST_LIO 地图增量降采样体素尺寸。",
+                     slamFilterMapSpin);
+    slamLayout->addWidget(slamBackendSection);
+
+    addPreferenceSectionTitle(slamLayout, "显示与导出");
+    QFrame* slamDisplaySection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamDisplaySection,
+                     "稀疏地图预览",
+                     "保存启动 SLAM 面板时的地图预览开关状态。",
+                     slamMapPreviewDefaultCheck);
+    addPreferenceRow(slamDisplaySection,
+                     "预览点数上限",
+                     "限制稀疏地图预览在 OpenGL overlay 中保留的最大点数。",
+                     slamMapPreviewMaxSpin);
+    slamLayout->addWidget(slamDisplaySection);
+    slamLayout->addStretch();
+
+    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景", "SLAM"};
     const QStringList navigationIcons = {
         ":/icons/settings_theme.svg",
         ":/icons/settings_connection.svg",
         ":/icons/settings_grid.svg",
         ":/icons/settings_legend.svg",
         ":/icons/settings_color.svg",
-        ":/icons/settings_background.svg"
+        ":/icons/settings_background.svg",
+        ":/icons/settings.svg"
     };
     for (int i = 0; i < navigationNames.size(); ++i) {
         QPushButton* button = createPreferenceNavButton(navigationNames.at(i), navigationIcons.at(i), navigation);
@@ -1361,7 +1421,17 @@ void LivoxViewerWindow::showPreferencesDialog()
     pointCloudBackgroundPreset = selectedBackgroundPreset;
     themeMode = themeGroup->checkedId();
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
+    const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
+    const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
+    const bool previousSlamMapPreviewDefaultEnabled = slamMapPreviewDefaultEnabled;
+    const int previousSlamMapPreviewMaxPoints = slamMapPreviewMaxPoints;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
+    slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
+    slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
+    setSlamMapPreviewMaxPoints(slamMapPreviewMaxSpin->value());
+    if (slamMapPreviewDefaultEnabled != slamMapPreviewDefaultCheck->isChecked()) {
+        setSlamMapPreviewEnabled(slamMapPreviewDefaultCheck->isChecked());
+    }
 
     syncReflectivityColorScaleControls();
     pointCloudView->setGridConfig(config);
@@ -1374,5 +1444,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     saveViewPreferences();
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
         logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));
+    }
+    if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
+        slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
+        slamMapPreviewDefaultEnabled != previousSlamMapPreviewDefaultEnabled ||
+        slamMapPreviewMaxPoints != previousSlamMapPreviewMaxPoints) {
+        logMessage(QStringLiteral("[SLAM] 设置已更新"));
     }
 }

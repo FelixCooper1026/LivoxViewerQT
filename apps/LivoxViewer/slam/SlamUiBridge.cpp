@@ -60,6 +60,29 @@ bool isErrorStatus(SlamStatusCode status)
            status == SlamStatusCode::TimeSyncError;
 }
 
+QString appendDetail(const QString& hint, const QString& detail)
+{
+    return detail.isEmpty() ? hint : hint + QStringLiteral(" 详细信息: ") + detail;
+}
+
+QString errorDisplayMessage(const SlamOutput& output)
+{
+    switch (output.status) {
+    case SlamStatusCode::MissingImu:
+        return appendDetail(QStringLiteral("缺少 IMU 数据或 IMU 覆盖不完整。请确认 PCAP 包含 Livox IMU payload，并且点云帧时间范围内有连续 IMU 样本。"),
+                            output.message);
+    case SlamStatusCode::TimeSyncError:
+        return appendDetail(QStringLiteral("点云与 IMU 时间戳不同步，或缺少可用的点内/包内采样时间。请确认使用原始时间戳录制，且 IMU 与点云时间范围重叠。"),
+                            output.message);
+    case SlamStatusCode::Failed:
+        return output.message.isEmpty()
+            ? QStringLiteral("SLAM 后端启动或处理失败。请检查输入数据、IMU、时间戳和 LiDAR-IMU 外参配置。")
+            : output.message;
+    default:
+        return output.message;
+    }
+}
+
 } // namespace
 
 SlamUiBridge::SlamUiBridge(QObject* parent)
@@ -76,6 +99,14 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_latestOutput = output;
+    if (isErrorStatus(output.status)) {
+        m_errorMessage = errorDisplayMessage(output);
+    } else if (output.status == SlamStatusCode::Starting ||
+               output.status == SlamStatusCode::Running ||
+               output.status == SlamStatusCode::Stopped ||
+               output.status == SlamStatusCode::Idle) {
+        m_errorMessage.clear();
+    }
     appendTrajectory(output);
     appendMapPreview(output);
 }
@@ -101,11 +132,38 @@ void SlamUiBridge::setMapPreviewEnabled(bool enabled)
     refreshStatus();
 }
 
+void SlamUiBridge::setMapPreviewMaxPoints(int maxPoints)
+{
+    m_maxMapPreviewPoints = std::max(1000, maxPoints);
+    if (m_mapPreviewPoints.size() > m_maxMapPreviewPoints) {
+        m_mapPreviewPoints.erase(m_mapPreviewPoints.begin(),
+                                 m_mapPreviewPoints.begin() + (m_mapPreviewPoints.size() - m_maxMapPreviewPoints));
+    }
+    emit renderSnapshotReady(buildRenderSnapshot());
+    refreshStatus();
+}
+
+void SlamUiBridge::setErrorMessage(const QString& message)
+{
+    m_errorMessage = message;
+    refreshStatus();
+}
+
+void SlamUiBridge::clearErrorMessage()
+{
+    if (m_errorMessage.isEmpty()) {
+        return;
+    }
+    m_errorMessage.clear();
+    refreshStatus();
+}
+
 void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
     m_mapPreviewPoints.clear();
     m_pendingMapPreviewPoints.clear();
+    m_errorMessage.clear();
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
 }
@@ -125,7 +183,7 @@ void SlamUiBridge::refreshStatus()
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
     m_displayState.mapPoints = QString::number(m_mapPreviewEnabled ? m_mapPreviewPoints.size()
                                                                     : m_latestOutput.mapPointCount);
-    m_displayState.error = isErrorStatus(m_latestOutput.status) ? m_latestOutput.message : QString();
+    m_displayState.error = m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
                                    .arg(m_displayState.status,

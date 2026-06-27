@@ -18,7 +18,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     setWindowTitle(QStringLiteral("SLAM"));
     setModal(false);
     setAttribute(Qt::WA_DeleteOnClose, false);
-    resize(520, 420);
+    resize(560, 450);
 
     QVBoxLayout* layout = new QVBoxLayout(this);
     layout->setContentsMargins(16, 14, 16, 14);
@@ -44,30 +44,52 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     layout->addLayout(form, 1);
 
     m_mapPreviewCheck = new QCheckBox(QStringLiteral("稀疏地图预览"), this);
-    m_mapPreviewCheck->setChecked(false);
+    m_mapPreviewCheck->setChecked(m_bridge && m_bridge->mapPreviewEnabled());
     layout->addWidget(m_mapPreviewCheck);
 
-    QHBoxLayout* buttonLayout = new QHBoxLayout();
-    buttonLayout->setContentsMargins(0, 0, 0, 0);
-    buttonLayout->setSpacing(8);
+    QHBoxLayout* controlButtonLayout = new QHBoxLayout();
+    controlButtonLayout->setContentsMargins(0, 0, 0, 0);
+    controlButtonLayout->setSpacing(8);
     QPushButton* startButton = new QPushButton(QStringLiteral("启动"), this);
     QPushButton* pauseButton = new QPushButton(QStringLiteral("暂停"), this);
     QPushButton* stopButton = new QPushButton(QStringLiteral("停止"), this);
     QPushButton* resetButton = new QPushButton(QStringLiteral("重置"), this);
     QPushButton* clearButton = new QPushButton(QStringLiteral("清空显示"), this);
-    buttonLayout->addWidget(startButton);
-    buttonLayout->addWidget(pauseButton);
-    buttonLayout->addWidget(stopButton);
-    buttonLayout->addWidget(resetButton);
-    buttonLayout->addWidget(clearButton);
-    buttonLayout->addStretch();
-    layout->addLayout(buttonLayout);
+    controlButtonLayout->addWidget(startButton);
+    controlButtonLayout->addWidget(pauseButton);
+    controlButtonLayout->addWidget(stopButton);
+    controlButtonLayout->addWidget(resetButton);
+    controlButtonLayout->addWidget(clearButton);
+    controlButtonLayout->addStretch();
+    layout->addLayout(controlButtonLayout);
+
+    QHBoxLayout* exportButtonLayout = new QHBoxLayout();
+    exportButtonLayout->setContentsMargins(0, 0, 0, 0);
+    exportButtonLayout->setSpacing(8);
+    QPushButton* exportCsvButton = new QPushButton(QStringLiteral("导出 CSV"), this);
+    QPushButton* exportTumButton = new QPushButton(QStringLiteral("导出 TUM"), this);
+    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出地图 PCD"), this);
+    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出地图 LAS"), this);
+    exportCsvButton->setObjectName(QStringLiteral("exportSlamCsvButton"));
+    exportTumButton->setObjectName(QStringLiteral("exportSlamTumButton"));
+    exportPcdButton->setObjectName(QStringLiteral("exportSlamMapPcdButton"));
+    exportLasButton->setObjectName(QStringLiteral("exportSlamMapLasButton"));
+    exportButtonLayout->addWidget(exportCsvButton);
+    exportButtonLayout->addWidget(exportTumButton);
+    exportButtonLayout->addWidget(exportPcdButton);
+    exportButtonLayout->addWidget(exportLasButton);
+    exportButtonLayout->addStretch();
+    layout->addLayout(exportButtonLayout);
 
     connect(startButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::startSlamProcessing);
     connect(pauseButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::pauseSlamProcessing);
     connect(stopButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::stopSlamProcessing);
     connect(resetButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::resetSlamProcessing);
     connect(clearButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::clearSlamDisplay);
+    connect(exportCsvButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryCsv);
+    connect(exportTumButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryTum);
+    connect(exportPcdButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapPcd);
+    connect(exportLasButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapLas);
     connect(m_mapPreviewCheck, &QCheckBox::toggled, m_window, &LivoxViewerWindow::setSlamMapPreviewEnabled);
     if (m_bridge) {
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshFields);

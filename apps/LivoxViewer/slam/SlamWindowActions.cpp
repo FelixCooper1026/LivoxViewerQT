@@ -1,13 +1,21 @@
 #include "LivoxViewerWindow.h"
 
+#include "Export/PointCloudExport.h"
 #include "Slam/Backends/FastLio/FastLioSlamBackend.h"
+#include "Slam/Export/SlamTrajectoryExport.h"
 #include "Slam/Io/PcapSlamSource.h"
 #include "slam/SlamControlDialog.h"
 #include "slam/SlamUiBridge.h"
 
+#include <QDateTime>
+#include <QDir>
 #include <QElapsedTimer>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QMetaObject>
+#include <QSettings>
 #include <QStatusBar>
+#include <QStandardPaths>
 
 #include <algorithm>
 #include <chrono>
@@ -23,6 +31,13 @@ SlamOutput statusOutput(SlamStatusCode status, const QString& message)
     output.imuHealthy = status == SlamStatusCode::Running ||
                         status == SlamStatusCode::InitializingImu;
     return output;
+}
+
+bool isSlamErrorStatus(SlamStatusCode status)
+{
+    return status == SlamStatusCode::Failed ||
+           status == SlamStatusCode::MissingImu ||
+           status == SlamStatusCode::TimeSyncError;
 }
 
 const PlaybackControllerState* activePlaybackState(const LivoxViewerWindow* window,
@@ -45,6 +60,58 @@ qint64 replayTargetMs(int64_t firstFrameStartNs, int64_t frameStartNs)
     return qint64(elapsedNs / 1000000);
 }
 
+QString trajectoryExportExtension(SlamTrajectoryExport::Format format)
+{
+    return format == SlamTrajectoryExport::Format::Csv ? QStringLiteral("csv") : QStringLiteral("tum");
+}
+
+QString trajectoryExportFilter(SlamTrajectoryExport::Format format)
+{
+    return format == SlamTrajectoryExport::Format::Csv
+        ? QStringLiteral("CSV 轨迹 (*.csv)")
+        : QStringLiteral("TUM 轨迹 (*.tum *.txt)");
+}
+
+QString mapExportExtension(bool lasFormat)
+{
+    return lasFormat ? QStringLiteral("las") : QStringLiteral("pcd");
+}
+
+QString mapExportFilter(bool lasFormat)
+{
+    return lasFormat ? QStringLiteral("LAS 点云 (*.las)") : QStringLiteral("PCD 点云 (*.pcd)");
+}
+
+QVector<PointCloudPoint> toPointCloudPoints(const QVector<SlamRenderVertex>& vertices)
+{
+    QVector<PointCloudPoint> points;
+    points.reserve(vertices.size());
+    for (const SlamRenderVertex& vertex : vertices) {
+        PointCloudPoint point{};
+        point.x = vertex.x;
+        point.y = vertex.y;
+        point.z = vertex.z;
+        point.r = vertex.r;
+        point.g = vertex.g;
+        point.b = vertex.b;
+        point.reflectivity = uint8_t(std::clamp(int((vertex.r + vertex.g + vertex.b) * 85.0f), 0, 255));
+        point.tag = 0;
+        point.line = 0;
+        point.spherical = false;
+        point.theta = 0.0f;
+        point.phi = 0.0f;
+        point.depth = 0.0f;
+        points.append(point);
+    }
+    return points;
+}
+
+bool saveMapPreview(const QString& filePath, const QVector<PointCloudPoint>& points, bool lasFormat)
+{
+    return lasFormat ? PointCloudExport::saveAsLAS(filePath, points)
+                     : PointCloudExport::saveAsPCD(filePath, points);
+}
+
 } // namespace
 
 SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
@@ -55,6 +122,8 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
 
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
     slamUiBridge = new SlamUiBridge(this);
+    slamUiBridge->setMapPreviewMaxPoints(slamMapPreviewMaxPoints);
+    slamUiBridge->setMapPreviewEnabled(slamMapPreviewEnabled.load());
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {
             statusBar()->showMessage(text, 2000);
@@ -109,6 +178,7 @@ void LivoxViewerWindow::startSlamProcessing()
     }
 
     const QString pcapPath = state->path;
+    const SlamRuntimeConfig config = slamRuntimeConfig;
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
     slamWorkerActive.store(true);
@@ -116,7 +186,7 @@ void LivoxViewerWindow::startSlamProcessing()
     bridge->clearDisplay();
     postSlamStatus(SlamStatusCode::Starting, QStringLiteral("正在启动 PCAP SLAM 原始时间回放。"));
 
-    slamWorker = std::thread([this, pcapPath]() {
+    slamWorker = std::thread([this, pcapPath, config]() {
         auto postOutput = [this](SlamOutput output) {
             if (!slamMapPreviewEnabled.load()) {
                 output.newMapChunks.clear();
@@ -135,7 +205,6 @@ void LivoxViewerWindow::startSlamProcessing()
         }
 
         FastLioSlamBackend backend;
-        SlamRuntimeConfig config;
         if (!backend.start(config, &error)) {
             postOutput(statusOutput(SlamStatusCode::Failed, error));
             slamWorkerActive.store(false);
@@ -284,13 +353,165 @@ void LivoxViewerWindow::clearSlamDisplay()
 void LivoxViewerWindow::setSlamMapPreviewEnabled(bool enabled)
 {
     slamMapPreviewEnabled.store(enabled);
+    slamMapPreviewDefaultEnabled = enabled;
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    settings.setValue(QStringLiteral("slam/ui/mapPreviewDefaultEnabled"), enabled);
     if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
         bridge->setMapPreviewEnabled(enabled);
     }
 }
 
+void LivoxViewerWindow::setSlamMapPreviewMaxPoints(int maxPoints)
+{
+    slamMapPreviewMaxPoints = std::max(1000, maxPoints);
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    settings.setValue(QStringLiteral("slam/ui/mapPreviewMaxPoints"), slamMapPreviewMaxPoints);
+    if (SlamUiBridge* bridge = slamUiBridge) {
+        bridge->setMapPreviewMaxPoints(slamMapPreviewMaxPoints);
+    }
+}
+
+void LivoxViewerWindow::exportSlamTrajectoryCsv()
+{
+    exportSlamTrajectory(SlamTrajectoryExport::Format::Csv);
+}
+
+void LivoxViewerWindow::exportSlamTrajectoryTum()
+{
+    exportSlamTrajectory(SlamTrajectoryExport::Format::Tum);
+}
+
+void LivoxViewerWindow::exportSlamMapPcd()
+{
+    exportSlamMapPreview(false);
+}
+
+void LivoxViewerWindow::exportSlamMapLas()
+{
+    exportSlamMapPreview(true);
+}
+
+void LivoxViewerWindow::exportSlamTrajectory(SlamTrajectoryExport::Format format)
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    const QVector<SlamTrajectoryPoint> trajectory = bridge->trajectorySnapshot();
+    if (trajectory.isEmpty()) {
+        const QString message = QStringLiteral("当前没有可导出的 SLAM 轨迹。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(QStringLiteral("slam/lastTrajectoryExportDir"),
+                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    const QString extension = trajectoryExportExtension(format);
+    const QString defaultName = QStringLiteral("slam_trajectory_%1.%2")
+                                    .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")),
+                                         extension);
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("导出 SLAM 轨迹"));
+    dialog.setDirectory(lastDir);
+    dialog.selectFile(defaultName);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDefaultSuffix(extension);
+    dialog.setNameFilter(trajectoryExportFilter(format));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const QString filePath = dialog.selectedFiles().first();
+    QString error;
+    if (!SlamTrajectoryExport::save(filePath, trajectory, format, &error)) {
+        bridge->setErrorMessage(error);
+        logMessage(QStringLiteral("[SLAM] 轨迹导出失败: %1").arg(error));
+        if (statusBar()) {
+            statusBar()->showMessage(error, 3000);
+        }
+        return;
+    }
+
+    settings.setValue(QStringLiteral("slam/lastTrajectoryExportDir"), QFileInfo(filePath).absolutePath());
+    bridge->clearErrorMessage();
+    logMessage(QStringLiteral("[SLAM] 轨迹导出完成: %1").arg(QDir::toNativeSeparators(filePath)));
+    if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("SLAM 轨迹已导出"), 3000);
+    }
+}
+
+void LivoxViewerWindow::exportSlamMapPreview(bool lasFormat)
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    const QVector<SlamRenderVertex> vertices = bridge->mapPreviewSnapshot();
+    if (vertices.isEmpty()) {
+        const QString message =
+            QStringLiteral("当前没有可导出的 SLAM 稀疏地图预览。请先启用稀疏地图预览并运行 SLAM。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(QStringLiteral("slam/lastMapExportDir"),
+                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    const QString extension = mapExportExtension(lasFormat);
+    const QString defaultName = QStringLiteral("slam_sparse_map_%1.%2")
+                                    .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")),
+                                         extension);
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("导出 SLAM 稀疏地图"));
+    dialog.setDirectory(lastDir);
+    dialog.selectFile(defaultName);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDefaultSuffix(extension);
+    dialog.setNameFilter(mapExportFilter(lasFormat));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const QString filePath = dialog.selectedFiles().first();
+    const QVector<PointCloudPoint> points = toPointCloudPoints(vertices);
+    if (!saveMapPreview(filePath, points, lasFormat)) {
+        const QString message = QStringLiteral("SLAM 稀疏地图导出失败。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    settings.setValue(QStringLiteral("slam/lastMapExportDir"), QFileInfo(filePath).absolutePath());
+    bridge->clearErrorMessage();
+    logMessage(QStringLiteral("[SLAM] 稀疏地图导出完成: %1").arg(QDir::toNativeSeparators(filePath)));
+    if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("SLAM 稀疏地图已导出"), 3000);
+    }
+}
+
 void LivoxViewerWindow::submitSlamOutputForUi(const SlamOutput& output)
 {
+    if (isSlamErrorStatus(output.status) && !output.message.isEmpty()) {
+        logMessage(QStringLiteral("[SLAM] %1").arg(output.message));
+    }
     ensureSlamUiBridge()->receiveSlamOutput(output);
 }
 

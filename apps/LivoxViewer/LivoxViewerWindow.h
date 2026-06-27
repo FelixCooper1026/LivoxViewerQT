@@ -78,7 +78,9 @@
 #include "Playback/PlaybackSource.h"
 #include "PointCloud/PointCloudFrame.h"
 #include "PointCloud/PointCloudView.h"
+#include "Slam/Core/SlamRuntimeConfig.h"
 #include "Slam/Core/SlamTypes.h"
+#include "Slam/Export/SlamTrajectoryExport.h"
 #include "Slam/Io/LiveLidarSlamSource.h"
 #include "state/CaptureSessionState.h"
 #include "state/ImuRuntimeState.h"
@@ -165,6 +167,10 @@ public:
     void resetSlamProcessing();
     void clearSlamDisplay();
     void setSlamMapPreviewEnabled(bool enabled);
+    void exportSlamTrajectoryCsv();
+    void exportSlamTrajectoryTum();
+    void exportSlamMapPcd();
+    void exportSlamMapLas();
     void submitSlamOutputForUi(const SlamOutput& output);
 
 private:
@@ -197,6 +203,9 @@ private:
     void createStatusBarAndTimers();
     SlamUiBridge* ensureSlamUiBridge();
     void postSlamStatus(SlamStatusCode status, const QString& message);
+    void setSlamMapPreviewMaxPoints(int maxPoints);
+    void exportSlamTrajectory(SlamTrajectoryExport::Format format);
+    void exportSlamMapPreview(bool lasFormat);
     void initializeLivoxSdk();
     void shutdownLivoxSdk();
     bool showConfigGeneratorDialog();
@@ -367,6 +376,9 @@ private:
     std::atomic_bool slamWorkerCancel{false};
     std::atomic_bool slamWorkerPaused{false};
     std::atomic_bool slamMapPreviewEnabled{false};
+    SlamRuntimeConfig slamRuntimeConfig;
+    bool slamMapPreviewDefaultEnabled = false;
+    int slamMapPreviewMaxPoints = 200000;
     bool slamRenderOverlayEnabled = false;
 
     // 工作模式状态

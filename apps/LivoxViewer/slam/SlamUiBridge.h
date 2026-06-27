@@ -31,11 +31,17 @@ public:
     const SlamOutput& latestOutput() const { return m_latestOutput; }
     DisplayState displayState() const { return m_displayState; }
     bool mapPreviewEnabled() const { return m_mapPreviewEnabled; }
+    int mapPreviewMaxPoints() const { return m_maxMapPreviewPoints; }
+    QVector<SlamTrajectoryPoint> trajectorySnapshot() const { return m_trajectory; }
+    QVector<SlamRenderVertex> mapPreviewSnapshot() const { return m_mapPreviewPoints; }
 
 public slots:
     void receiveSlamOutput(const SlamOutput& output);
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setMapPreviewEnabled(bool enabled);
+    void setMapPreviewMaxPoints(int maxPoints);
+    void setErrorMessage(const QString& message);
+    void clearErrorMessage();
     void clearDisplay();
 
 signals:
@@ -55,6 +61,7 @@ private:
     QVector<SlamTrajectoryPoint> m_trajectory;
     QVector<SlamRenderVertex> m_mapPreviewPoints;
     QVector<SlamRenderVertex> m_pendingMapPreviewPoints;
+    QString m_errorMessage;
     QTimer m_refreshTimer;
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");

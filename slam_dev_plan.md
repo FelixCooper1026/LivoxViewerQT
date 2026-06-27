@@ -1538,3 +1538,36 @@ Phase 5.4 已完成基础版本：
 验证缺口：
 
 - Linux 编译仍未执行，延续 Phase 4 的环境缺口。
+
+### 2026-06-27 Phase 6 / 配置、导出、日志、异常处理
+
+状态：已完成第一版实现，保持 Phase 5 旁路 UI 接入原则；不新增 dock，不改 tab/dock 布局，不让后端线程直接访问 `PointCloudView`。
+
+已完成：
+
+- `SlamRuntimeConfig` 已新增 `QSettings` 保存/加载接口：`loadSlamRuntimeConfig()`、`saveSlamRuntimeConfig()`，覆盖 backend、IMU、时间偏移、LiDAR-IMU 外参、滤波体素、地图/轨迹上限和日志级别等字段。
+- 主窗口启动时加载 SLAM runtime 配置和 UI 侧地图预览配置；关闭/保存首选项时写回配置。
+- `工具 -> 首选项` 新增 `SLAM` 设置页，当前提供 FAST_LIO 表面滤波体素、地图滤波体素、稀疏地图预览默认开关、预览点数上限配置。
+- 旁路 PCAP SLAM worker 启动前捕获当前 `slamRuntimeConfig`，并传入 `FastLioSlamBackend::start(config, ...)`，不再在 worker 内部使用临时默认配置。
+- 新增 `libs/Slam/include/Slam/Export/SlamTrajectoryExport.h` 和 `libs/Slam/src/Export/SlamTrajectoryExport.cpp`，支持 CSV 和 TUM 轨迹导出。
+- `SlamControlDialog` 增加导出按钮：`导出 CSV`、`导出 TUM`、`导出地图 PCD`、`导出地图 LAS`。
+- 轨迹导出只通过 `LivoxViewerWindow` 公开接口读取 `SlamUiBridge` 中的 UI 线程轨迹快照；空轨迹时在错误字段、日志和状态栏给出明确提示。
+- 稀疏地图 PCD/LAS 导出复用 Phase 5.4 的地图预览缓存 `SlamUiBridge::mapPreviewSnapshot()`，并调用现有 `PointCloudExport::saveAsPCD()` / `saveAsLAS()`；地图预览关闭或缓存为空时不会触碰后端内部地图，只提示用户先启用稀疏地图预览并运行 SLAM。
+- `SlamUiBridge` 已新增错误缓存接口 `setErrorMessage()` / `clearErrorMessage()`，并在 10 Hz 状态刷新中稳定输出错误字段。
+- 缺 IMU、时间同步/时间戳错误在 UI bridge 层增加中文原因和处理方向提示，同时保留后端原始消息作为详细信息。
+- `FastLioSlamBackend::start()` 新增运行配置校验：滤波体素必须大于 0，LiDAR-IMU 外参平移/旋转矩阵必须是有效有限数；外参损坏时返回明确中文错误，不继续初始化后端状态。
+- `SlamWindowActions.cpp` 对 SLAM 错误状态统一写入 `[SLAM]` 日志前缀；导出成功/失败也写入同一日志前缀。
+
+验证：
+
+- 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-27：第二次接入外参配置校验和地图导出后，重新按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-27：启动 smoke 通过，`LivoxViewerQT.exe` 进程响应正常，主窗口标题为 `LivoxViewerQT`，关闭后进程退出。
+- 2026-06-27：Windows UI Automation 可打开 `工具` 菜单并找到 `SLAM...` action；本轮自动化脚本未能稳定触发 Qt 弹出菜单 action，因此 Phase 6 新增导出按钮的点击路径尚未完成自动化复验。
+- 2026-06-27：`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示。
+
+验证缺口：
+
+- Linux 编译仍未执行，延续 Phase 4 的环境缺口。
+- 本轮未重新跑 `F:\slam_test.pcap` 的完整 UI worker 导出实测；轨迹/地图导出路径已编译通过，但还需要在真实轨迹产生后手动或自动选择保存路径，复验 CSV/TUM/PCD/LAS 文件内容。
+- 当前地图导出是稀疏地图预览缓存导出，不是后端完整全局地图导出；这是 Phase 5.4 “地图显示默认关闭、只显示稀疏地图预览、限频分批上传”约束下的第一版实现。
