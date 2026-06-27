@@ -183,8 +183,7 @@ void SlamUiBridge::refreshStatus()
     m_displayState.droppedFrames = QString::number(m_latestOutput.droppedFrameCount);
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
-    m_displayState.mapPoints = QString::number(mapPreviewEnabled() ? m_mapPreviewStore.previewPointCount()
-                                                                   : m_latestOutput.mapPointCount);
+    m_displayState.mapPoints = QString::number(m_latestOutput.mapPointCount);
     m_displayState.mapPreviewMode = slamMapPreviewModeName(m_mapPreviewConfig.mode);
     m_displayState.mapPreviewPoints = QString::number(m_mapPreviewStore.previewPointCount());
     m_displayState.mapPreviewLimit = QString::number(m_mapPreviewStore.maxPreviewPoints());

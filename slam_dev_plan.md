@@ -1595,6 +1595,7 @@ Phase 5.4 已完成基础版本：
 
 - 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-27：不打开 SLAM UI 的启动/关闭 smoke 通过，`LivoxViewerQT.exe` 启动后响应正常，主窗口标题 `LivoxViewerQT`，关闭后进程退出。
+- 2026-06-27：修正 SLAM 面板地图计数字段语义：`后端地图点数` 始终显示后端 `SlamOutput::mapPointCount`，`预览点数` 单独显示 `GlobalMapPreviewStore::previewPointCount()`，避免预览开启时两个字段都显示 UI 预览点数。
 
 验证缺口：
 

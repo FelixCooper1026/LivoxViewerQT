@@ -1166,9 +1166,9 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     auto createSlamVoxelSpin = [&dlg](double value) {
         QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
-        spin->setRange(0.05, 5.0);
+        spin->setRange(0.01, 5.0);
         spin->setDecimals(2);
-        spin->setSingleStep(0.05);
+        spin->setSingleStep(0.01);
         spin->setSuffix(QStringLiteral(" m"));
         spin->setValue(value);
         preparePreferenceSpinBox(spin);

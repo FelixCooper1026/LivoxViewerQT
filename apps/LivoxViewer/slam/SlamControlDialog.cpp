@@ -38,7 +38,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
-    addField(form, QStringLiteral("地图点数"));
+    addField(form, QStringLiteral("后端地图点数"));
     addField(form, QStringLiteral("预览模式"));
     addField(form, QStringLiteral("预览点数"));
     addField(form, QStringLiteral("预览上限"));
@@ -114,7 +114,7 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
-    m_fields.value(QStringLiteral("地图点数"))->setText(state.mapPoints);
+    m_fields.value(QStringLiteral("后端地图点数"))->setText(state.mapPoints);
     m_fields.value(QStringLiteral("预览模式"))->setText(state.mapPreviewMode);
     m_fields.value(QStringLiteral("预览点数"))->setText(state.mapPreviewPoints);
     m_fields.value(QStringLiteral("预览上限"))->setText(state.mapPreviewLimit);
