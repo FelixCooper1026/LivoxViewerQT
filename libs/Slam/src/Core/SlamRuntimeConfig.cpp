@@ -7,6 +7,11 @@
 
 namespace {
 
+constexpr double kMid360ExtrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
+constexpr double kIdentityExtrinsicR_L_I[9] = {1.0, 0.0, 0.0,
+                                               0.0, 1.0, 0.0,
+                                               0.0, 0.0, 1.0};
+
 QString key(const QString& prefix, const QString& name)
 {
     return prefix + QLatin1Char('/') + name;
@@ -32,6 +37,36 @@ int validFrameDurationMs(int value, int fallback)
     return value > 0 ? value : fallback;
 }
 
+bool isZeroTranslation(const double* values)
+{
+    for (int i = 0; i < 3; ++i) {
+        if (std::abs(values[i]) > 1.0e-12) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isIdentityRotation(const double* values)
+{
+    for (int i = 0; i < 9; ++i) {
+        if (std::abs(values[i] - kIdentityExtrinsicR_L_I[i]) > 1.0e-12) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void assignMid360DefaultExtrinsic(SlamRuntimeConfig& config)
+{
+    for (int i = 0; i < 3; ++i) {
+        config.extrinsicT_L_I[i] = kMid360ExtrinsicT_L_I[i];
+    }
+    for (int i = 0; i < 9; ++i) {
+        config.extrinsicR_L_I[i] = kIdentityExtrinsicR_L_I[i];
+    }
+}
+
 } // namespace
 
 SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix)
@@ -49,8 +84,16 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
                                                   config.extrinsicT_L_I[i]).toDouble();
     }
     for (int i = 0; i < 9; ++i) {
-    config.extrinsicR_L_I[i] = settings.value(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)),
+        config.extrinsicR_L_I[i] = settings.value(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)),
                                                   config.extrinsicR_L_I[i]).toDouble();
+    }
+    const bool hasExtrinsicEstimation = settings.contains(key(prefix, QStringLiteral("extrinsicEstimationEnabled")));
+    config.extrinsicEstimationEnabled = settings.value(key(prefix, QStringLiteral("extrinsicEstimationEnabled")),
+                                                       config.extrinsicEstimationEnabled).toBool();
+    if (!hasExtrinsicEstimation &&
+        isZeroTranslation(config.extrinsicT_L_I) &&
+        isIdentityRotation(config.extrinsicR_L_I)) {
+        assignMid360DefaultExtrinsic(config);
     }
     config.filterSizeSurfM = settings.value(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM).toDouble();
     config.filterSizeMapM = settings.value(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM).toDouble();
@@ -101,6 +144,7 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     for (int i = 0; i < 9; ++i) {
         settings.setValue(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)), config.extrinsicR_L_I[i]);
     }
+    settings.setValue(key(prefix, QStringLiteral("extrinsicEstimationEnabled")), config.extrinsicEstimationEnabled);
     settings.setValue(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM);
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
     settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);

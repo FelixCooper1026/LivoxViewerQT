@@ -400,6 +400,8 @@ private:
     PointCloudView* slamPointCloudView = nullptr;
     int slamVisualizationTabId = -1;
     QVector<SlamWorldPointSegment> slamWorldPointSegments;
+    int slamWorldDisplayedSegmentStart = 0;
+    int slamWorldDisplayedSegmentEnd = 0;
     QColor slamBodyFrameColor = QColor(255, 140, 26);
 
     // 工作模式状态

@@ -20,9 +20,11 @@
 #include <QFile>
 #include <QFont>
 #include <QFrame>
+#include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QLabel>
 #include <QPalette>
 #include <QPair>
 #include <QPointer>
@@ -50,6 +52,7 @@
 #include <QWidget>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace {
@@ -153,6 +156,30 @@ private:
             view->scrollTo(firstIndex, QAbstractItemView::PositionAtTop);
             view->viewport()->update();
         });
+    }
+};
+
+class TrimmedDoubleSpinBox : public QDoubleSpinBox
+{
+public:
+    explicit TrimmedDoubleSpinBox(QWidget* parent = nullptr)
+        : QDoubleSpinBox(parent)
+    {}
+
+protected:
+    QString textFromValue(double value) const override
+    {
+        QString text = locale().toString(value, 'f', decimals());
+        const QString decimalPoint = locale().decimalPoint();
+        if (text.contains(decimalPoint)) {
+            while (text.endsWith(QLatin1Char('0'))) {
+                text.chop(1);
+            }
+            if (text.endsWith(decimalPoint)) {
+                text.chop(1);
+            }
+        }
+        return text == QStringLiteral("-0") ? QStringLiteral("0") : text;
     }
 };
 
@@ -1225,6 +1252,57 @@ void LivoxViewerWindow::showPreferencesDialog()
         usePreferenceControlColumn(check);
         return check;
     };
+    SwitchCheckBox* slamExtrinsicEstimationCheck = createSlamSwitch(slamRuntimeConfig.extrinsicEstimationEnabled);
+    auto createSlamExtrinsicSpin = [&dlg](double value,
+                                          double minValue,
+                                          double maxValue,
+                                          int decimals,
+                                          double step,
+                                          const QString& suffix,
+                                          bool trimTrailingZeros = false) {
+        QDoubleSpinBox* spin = trimTrailingZeros
+            ? static_cast<QDoubleSpinBox*>(new TrimmedDoubleSpinBox(&dlg))
+            : new QDoubleSpinBox(&dlg);
+        spin->setRange(minValue, maxValue);
+        spin->setDecimals(decimals);
+        spin->setSingleStep(step);
+        spin->setValue(value);
+        spin->setFixedWidth(92);
+        if (!suffix.isEmpty()) {
+            spin->setSuffix(suffix);
+        }
+        return spin;
+    };
+    std::array<QDoubleSpinBox*, 3> slamExtrinsicTSpins = {};
+    QWidget* slamExtrinsicTRow = new QWidget(&dlg);
+    usePreferenceControlColumn(slamExtrinsicTRow, 360);
+    QHBoxLayout* slamExtrinsicTLayout = new QHBoxLayout(slamExtrinsicTRow);
+    slamExtrinsicTLayout->setContentsMargins(0, 0, 0, 0);
+    slamExtrinsicTLayout->setSpacing(6);
+    const QStringList slamExtrinsicTLabels = {QStringLiteral("X"), QStringLiteral("Y"), QStringLiteral("Z")};
+    for (int i = 0; i < 3; ++i) {
+        QLabel* label = new QLabel(slamExtrinsicTLabels.at(i), slamExtrinsicTRow);
+        slamExtrinsicTSpins[static_cast<std::size_t>(i)] =
+            createSlamExtrinsicSpin(slamRuntimeConfig.extrinsicT_L_I[i], -10.0, 10.0, 5, 0.001, QStringLiteral(" m"));
+        slamExtrinsicTLayout->addWidget(label);
+        slamExtrinsicTLayout->addWidget(slamExtrinsicTSpins[static_cast<std::size_t>(i)]);
+    }
+    slamExtrinsicTLayout->addStretch();
+    std::array<QDoubleSpinBox*, 9> slamExtrinsicRSpins = {};
+    QWidget* slamExtrinsicRGrid = new QWidget(&dlg);
+    usePreferenceControlColumn(slamExtrinsicRGrid, 360);
+    QGridLayout* slamExtrinsicRLayout = new QGridLayout(slamExtrinsicRGrid);
+    slamExtrinsicRLayout->setContentsMargins(0, 0, 0, 0);
+    slamExtrinsicRLayout->setHorizontalSpacing(6);
+    slamExtrinsicRLayout->setVerticalSpacing(6);
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            const int index = row * 3 + col;
+            slamExtrinsicRSpins[static_cast<std::size_t>(index)] =
+                createSlamExtrinsicSpin(slamRuntimeConfig.extrinsicR_L_I[index], -1.0, 1.0, 6, 0.001, QString(), true);
+            slamExtrinsicRLayout->addWidget(slamExtrinsicRSpins[static_cast<std::size_t>(index)], row, col);
+        }
+    }
     SwitchCheckBox* slamPublishWorldCheck = createSlamSwitch(slamRuntimeConfig.publishWorldFrameCloud);
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
@@ -1438,6 +1516,22 @@ void LivoxViewerWindow::showPreferencesDialog()
                      slamFilterMapSpin);
     slamLayout->addWidget(slamBackendSection);
 
+    addPreferenceSectionTitle(slamLayout, "LiDAR-IMU 外参");
+    QFrame* slamExtrinsicSection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamExtrinsicSection,
+                     "在线估计外参",
+                     "对应原版 mapping/extrinsic_est_en；关闭时外参固定，并将外参雅可比列置零。",
+                     slamExtrinsicEstimationCheck);
+    addPreferenceRow(slamExtrinsicSection,
+                     "外参平移 T",
+                     "LiDAR 到 IMU 平移 [x,y,z]，单位 m；MID360 默认 [-0.011, -0.02329, 0.04412]。",
+                     slamExtrinsicTRow);
+    addPreferenceRow(slamExtrinsicSection,
+                     "外参旋转 R",
+                     "LiDAR 到 IMU 旋转矩阵，按行优先填写 3x3；MID360 默认 identity。",
+                     slamExtrinsicRGrid);
+    slamLayout->addWidget(slamExtrinsicSection);
+
     addPreferenceSectionTitle(slamLayout, "发布与导出");
     QFrame* slamPublishSection = createPreferenceSection(slamTab);
     addPreferenceRow(slamPublishSection,
@@ -1521,12 +1615,36 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
     const bool previousSlamSaveMap = slamRuntimeConfig.saveMap;
+    const bool previousSlamExtrinsicEstimationEnabled = slamRuntimeConfig.extrinsicEstimationEnabled;
+    const std::array<double, 3> previousSlamExtrinsicT = {
+        slamRuntimeConfig.extrinsicT_L_I[0],
+        slamRuntimeConfig.extrinsicT_L_I[1],
+        slamRuntimeConfig.extrinsicT_L_I[2]
+    };
+    const std::array<double, 9> previousSlamExtrinsicR = {
+        slamRuntimeConfig.extrinsicR_L_I[0],
+        slamRuntimeConfig.extrinsicR_L_I[1],
+        slamRuntimeConfig.extrinsicR_L_I[2],
+        slamRuntimeConfig.extrinsicR_L_I[3],
+        slamRuntimeConfig.extrinsicR_L_I[4],
+        slamRuntimeConfig.extrinsicR_L_I[5],
+        slamRuntimeConfig.extrinsicR_L_I[6],
+        slamRuntimeConfig.extrinsicR_L_I[7],
+        slamRuntimeConfig.extrinsicR_L_I[8]
+    };
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
     slamRuntimeConfig.preprocessScanRateHz = slamScanRateSpin->value();
     slamRuntimeConfig.inputFrameDurationMs = slamFrameDurationSpin->value();
+    slamRuntimeConfig.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
+    for (int i = 0; i < 3; ++i) {
+        slamRuntimeConfig.extrinsicT_L_I[i] = slamExtrinsicTSpins[static_cast<std::size_t>(i)]->value();
+    }
+    for (int i = 0; i < 9; ++i) {
+        slamRuntimeConfig.extrinsicR_L_I[i] = slamExtrinsicRSpins[static_cast<std::size_t>(i)]->value();
+    }
     slamRuntimeConfig.publishWorldFrameCloud = slamPublishWorldCheck->isChecked();
     slamRuntimeConfig.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
@@ -1548,10 +1666,27 @@ void LivoxViewerWindow::showPreferencesDialog()
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
         logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));
     }
+    const bool slamExtrinsicChanged = [&]() {
+        if (slamRuntimeConfig.extrinsicEstimationEnabled != previousSlamExtrinsicEstimationEnabled) {
+            return true;
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (slamRuntimeConfig.extrinsicT_L_I[i] != previousSlamExtrinsicT[static_cast<std::size_t>(i)]) {
+                return true;
+            }
+        }
+        for (int i = 0; i < 9; ++i) {
+            if (slamRuntimeConfig.extrinsicR_L_I[i] != previousSlamExtrinsicR[static_cast<std::size_t>(i)]) {
+                return true;
+            }
+        }
+        return false;
+    }();
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
         slamRuntimeConfig.preprocessScanRateHz != previousSlamScanRateHz ||
         slamRuntimeConfig.inputFrameDurationMs != previousSlamFrameDurationMs ||
+        slamExtrinsicChanged ||
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||

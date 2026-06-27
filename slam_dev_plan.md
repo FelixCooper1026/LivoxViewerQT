@@ -493,8 +493,9 @@ struct SlamRuntimeConfig {
     bool allowPureLidar = false;
     int64_t lidarToImuTimeOffsetNs = 0;
     double gravityNorm = 9.81;
-    double extrinsicT_L_I[3] = {};
+    double extrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
     double extrinsicR_L_I[9] = {1,0,0, 0,1,0, 0,0,1};
+    bool extrinsicEstimationEnabled = false;
     double filterSizeSurfM = 0.5;
     double filterSizeMapM = 0.5;
     double mapVoxelSizeM = 0.1;
@@ -1652,6 +1653,8 @@ Phase 5.4 已完成基础版本：
 - 2026-06-27：移除 SLAM PCAP/Live 输入源固定 50 ms 聚帧，改为读取 `SlamRuntimeConfig::inputFrameDurationMs`；默认 10 Hz / 100 ms。
 - 2026-06-27：重做 SLAM 加载入口：`工具 -> SLAM...` 先进入 SLAM 面板，面板内切换“离线 SLAM / 在线 SLAM”；离线 SLAM 通过“加载 PCAP...”选择文件并创建独立 `SLAM` OpenGL tab，不再依赖离线播放 tab 或播放控制条。
 - 2026-06-27：世界系当前帧点云对外改名为“世界系点云”，显示路径改为 SLAM tab 主点云；IMU 机体系点云保留固定颜色 overlay，颜色可在首选项 SLAM 页配置。
+- 2026-06-28：修复 SLAM 世界系点云在积分时间 60000 ms 时几乎卡死的问题。原因是此前每次收到 SLAM 输出都会把积分窗口内所有历史世界系点云段拼成单个大 `PointCloudFrame`，重新着色/滤波并整块上传 VBO；离线播放不会卡顿是因为它使用分段滑窗增量 append/remove。当前 SLAM 世界系点云已改为分段增量滑窗：新帧只处理新增段，窗口滑动只移除过期段，只有积分时间增大并需要恢复更早历史段时才重建当前窗口。
+- 2026-06-28：迁移原版 `mapping/extrinsic_est_en` 为 `SlamRuntimeConfig::extrinsicEstimationEnabled`，默认 false；关闭时 FAST_LIO 量测雅可比的外参 6 列按原版置零。MID360 默认外参改为原版 `[-0.011, -0.02329, 0.04412] + identity`，并在首选项 SLAM 页暴露在线估计开关、平移 T 和旋转矩阵 R。
 
 验证：
 

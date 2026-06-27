@@ -467,8 +467,12 @@ void FastLioAlgorithmState::hShareModel(state_ikfom& s, esekfom::dyn_share_datas
 
         V3D C(s.rot.conjugate() * normVec);
         V3D A(pointCrossmat * C);
-        V3D B(pointBeCrossmat * s.offset_R_L_I.conjugate() * C);
-        ekfomData.h_x.block<1, 12>(i, 0) << normP.x, normP.y, normP.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        if (state.config.extrinsicEstimationEnabled) {
+            V3D B(pointBeCrossmat * s.offset_R_L_I.conjugate() * C);
+            ekfomData.h_x.block<1, 12>(i, 0) << normP.x, normP.y, normP.z, VEC_FROM_ARRAY(A), VEC_FROM_ARRAY(B), VEC_FROM_ARRAY(C);
+        } else {
+            ekfomData.h_x.block<1, 12>(i, 0) << normP.x, normP.y, normP.z, VEC_FROM_ARRAY(A), 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+        }
         ekfomData.h(i) = -normP.intensity;
     }
 }

@@ -459,9 +459,22 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
     slamWorldPointSegments.push_back(std::move(segment));
 
     const int64_t latestTimestampNs = slamWorldPointSegments.back().timestampNs;
+    int removedHistorySegmentCount = 0;
     while (!slamWorldPointSegments.isEmpty() &&
            slamWorldPointSegments.front().timestampNs < latestTimestampNs - kSlamWorldHistoryRetentionNs) {
+        ++removedHistorySegmentCount;
         slamWorldPointSegments.remove(0);
+    }
+    if (removedHistorySegmentCount > 0) {
+        const int displayedSegmentCount = std::max(0, slamWorldDisplayedSegmentEnd - slamWorldDisplayedSegmentStart);
+        const int displayedRemovedCount =
+            std::clamp(removedHistorySegmentCount - slamWorldDisplayedSegmentStart, 0, displayedSegmentCount);
+        for (int i = 0; i < displayedRemovedCount && slamPointCloudView; ++i) {
+            slamPointCloudView->removeFirstPointCloudSegment();
+        }
+        slamWorldDisplayedSegmentStart = std::max(0, slamWorldDisplayedSegmentStart - removedHistorySegmentCount);
+        slamWorldDisplayedSegmentEnd = std::max(slamWorldDisplayedSegmentStart,
+                                                slamWorldDisplayedSegmentEnd - removedHistorySegmentCount);
     }
     refreshSlamWorldPointCloud();
 }
@@ -472,7 +485,9 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
         return;
     }
     if (slamWorldPointSegments.isEmpty()) {
-        slamPointCloudView->clearPointCloud();
+        slamPointCloudView->clearPointCloudSegments();
+        slamWorldDisplayedSegmentStart = 0;
+        slamWorldDisplayedSegmentEnd = 0;
         return;
     }
 
@@ -480,24 +495,50 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
     const int64_t windowNs = int64_t(std::max<uint64_t>(1, frameIntervalMs)) * 1000000LL;
     const int64_t windowStartNs = latestTimestampNs > windowNs ? latestTimestampNs - windowNs : 0;
 
-    PointCloudFrame frame;
-    frame.timestamp = uint64_t(std::max<int64_t>(0, latestTimestampNs));
-    frame.device_handle = 0;
-    for (const SlamWorldPointSegment& segment : slamWorldPointSegments) {
-        if (segment.timestampNs >= windowStartNs) {
-            frame.points += segment.points;
-        }
+    int targetStart = 0;
+    while (targetStart < slamWorldPointSegments.size() &&
+           slamWorldPointSegments.at(targetStart).timestampNs < windowStartNs) {
+        ++targetStart;
+    }
+    const int targetEnd = slamWorldPointSegments.size();
+
+    auto appendDisplayedSegment = [this](const SlamWorldPointSegment& segment) {
+        PointCloudFrame frame;
+        frame.timestamp = uint64_t(std::max<int64_t>(0, segment.timestampNs));
+        frame.device_handle = 0;
+        frame.points = segment.points;
+        applyPointCloudPipeline(frame, slamPointCloudView);
+        slamPointCloudView->appendPointCloudSegment(std::move(frame.points));
+    };
+
+    const bool needsRebuild =
+        slamWorldDisplayedSegmentStart > slamWorldDisplayedSegmentEnd ||
+        slamWorldDisplayedSegmentEnd > slamWorldPointSegments.size() ||
+        targetStart < slamWorldDisplayedSegmentStart ||
+        targetEnd < slamWorldDisplayedSegmentEnd;
+    if (needsRebuild) {
+        slamPointCloudView->clearPointCloudSegments();
+        slamWorldDisplayedSegmentStart = targetStart;
+        slamWorldDisplayedSegmentEnd = targetStart;
     }
 
-    applyPointCloudPipeline(frame, slamPointCloudView);
-    slamPointCloudView->updatePointCloud(std::move(frame));
+    while (slamWorldDisplayedSegmentStart < targetStart) {
+        slamPointCloudView->removeFirstPointCloudSegment();
+        ++slamWorldDisplayedSegmentStart;
+    }
+    while (slamWorldDisplayedSegmentEnd < targetEnd) {
+        appendDisplayedSegment(slamWorldPointSegments.at(slamWorldDisplayedSegmentEnd));
+        ++slamWorldDisplayedSegmentEnd;
+    }
 }
 
 void LivoxViewerWindow::clearSlamWorldPointCloud()
 {
     slamWorldPointSegments.clear();
+    slamWorldDisplayedSegmentStart = 0;
+    slamWorldDisplayedSegmentEnd = 0;
     if (slamPointCloudView) {
-        slamPointCloudView->clearPointCloud();
+        slamPointCloudView->clearPointCloudSegments();
     }
 }
 
