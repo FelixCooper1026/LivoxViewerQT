@@ -36,6 +36,8 @@ public:
     LiveLidarSlamSource();
 
     void reset();
+    void setFrameDurationMs(int frameDurationMs);
+    int frameDurationMs() const;
     void setQueueCapacity(int capacity);
     bool appendPointPacket(uint32_t handle,
                            uint8_t deviceType,
@@ -61,6 +63,7 @@ private:
     bool hasLastPointPacketTimestamp_ = false;
     LiveLidarSlamSourceStats stats_;
     QElapsedTimer statsTimer_;
+    int64_t frameDurationNs_ = 100000000;
 };
 
 #endif // SLAM_IO_LIVELIDARSLAMSOURCE_H

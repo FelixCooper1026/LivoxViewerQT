@@ -39,12 +39,9 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
     addField(form, QStringLiteral("后端地图点数"));
-    addField(form, QStringLiteral("预览模式"));
-    addField(form, QStringLiteral("预览点数"));
-    addField(form, QStringLiteral("预览上限"));
-    addField(form, QStringLiteral("预览体素"));
-    addField(form, QStringLiteral("待上传点数"));
-    addField(form, QStringLiteral("达到上限"));
+    addField(form, QStringLiteral("世界系当前帧点数"));
+    addField(form, QStringLiteral("机体系当前帧点数"));
+    addField(form, QStringLiteral("完整全局地图点数"));
     addField(form, QStringLiteral("错误信息"));
     layout->addLayout(form, 1);
 
@@ -69,8 +66,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     exportButtonLayout->setSpacing(8);
     QPushButton* exportCsvButton = new QPushButton(QStringLiteral("导出 CSV"), this);
     QPushButton* exportTumButton = new QPushButton(QStringLiteral("导出 TUM"), this);
-    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出当前预览地图 PCD"), this);
-    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出当前预览地图 LAS"), this);
+    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出完整全局地图 PCD"), this);
+    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出完整全局地图 LAS"), this);
     exportCsvButton->setObjectName(QStringLiteral("exportSlamCsvButton"));
     exportTumButton->setObjectName(QStringLiteral("exportSlamTumButton"));
     exportPcdButton->setObjectName(QStringLiteral("exportSlamMapPcdButton"));
@@ -115,12 +112,9 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
     m_fields.value(QStringLiteral("后端地图点数"))->setText(state.mapPoints);
-    m_fields.value(QStringLiteral("预览模式"))->setText(state.mapPreviewMode);
-    m_fields.value(QStringLiteral("预览点数"))->setText(state.mapPreviewPoints);
-    m_fields.value(QStringLiteral("预览上限"))->setText(state.mapPreviewLimit);
-    m_fields.value(QStringLiteral("预览体素"))->setText(state.mapPreviewVoxelSize);
-    m_fields.value(QStringLiteral("待上传点数"))->setText(state.mapPreviewPendingPoints);
-    m_fields.value(QStringLiteral("达到上限"))->setText(state.mapPreviewLimitReached);
+    m_fields.value(QStringLiteral("世界系当前帧点数"))->setText(state.worldFramePoints);
+    m_fields.value(QStringLiteral("机体系当前帧点数"))->setText(state.bodyFramePoints);
+    m_fields.value(QStringLiteral("完整全局地图点数"))->setText(state.globalMapPoints);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);
 }
 

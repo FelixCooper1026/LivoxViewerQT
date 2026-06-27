@@ -372,29 +372,6 @@ void PointCloudView::setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot)
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_slamRenderSnapshot = snapshot;
-    if (!snapshot.mapPreviewEnabled || snapshot.mapPreviewReset) {
-        m_slamMapPreviewVertices.clear();
-        m_pendingSlamMapPreviewAppendRanges.clear();
-        m_pendingSlamMapPreviewUpdates.clear();
-        m_slamMapPreviewResetPending = true;
-    }
-    if (snapshot.mapPreviewEnabled && !snapshot.mapPreviewAppendPoints.isEmpty()) {
-        SlamMapPreviewAppendRange range;
-        range.startIndex = m_slamMapPreviewVertices.size();
-        range.vertices = snapshot.mapPreviewAppendPoints;
-        m_slamMapPreviewVertices += snapshot.mapPreviewAppendPoints;
-        m_pendingSlamMapPreviewAppendRanges.push_back(std::move(range));
-    }
-    if (snapshot.mapPreviewEnabled && !snapshot.mapPreviewPointUpdates.isEmpty()) {
-        for (const SlamRenderPointUpdate& update : snapshot.mapPreviewPointUpdates) {
-            if (update.index < 0 || update.index >= m_slamMapPreviewVertices.size()) {
-                continue;
-            }
-            m_slamMapPreviewVertices[update.index] = update.vertex;
-            m_pendingSlamMapPreviewUpdates.push_back(update);
-        }
-    }
-    m_slamMapPreviewPointCount = m_slamMapPreviewVertices.size();
     m_slamRenderUploadPending = true;
     update();
 }
@@ -404,11 +381,6 @@ void PointCloudView::clearSlamRenderOverlay()
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_slamRenderSnapshot = SlamRenderSnapshot();
-    m_slamMapPreviewVertices.clear();
-    m_pendingSlamMapPreviewAppendRanges.clear();
-    m_pendingSlamMapPreviewUpdates.clear();
-    m_slamMapPreviewPointCount = 0;
-    m_slamMapPreviewResetPending = true;
     m_slamRenderUploadPending = true;
     update();
 }
@@ -818,98 +790,41 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamPoseAxisVao,
                            m_slamPoseAxisBufferCapacityBytes,
                            m_slamPoseAxisVertexCount);
-    uploadSlamMapPreviewBufferIfNeeded();
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.worldFrameVertices,
+                           m_slamWorldFrameVbo,
+                           m_slamWorldFrameVao,
+                           m_slamWorldFrameBufferCapacityBytes,
+                           m_slamWorldFrameVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.bodyFrameVertices,
+                           m_slamBodyFrameVbo,
+                           m_slamBodyFrameVao,
+                           m_slamBodyFrameBufferCapacityBytes,
+                           m_slamBodyFrameVertexCount);
     m_slamRenderUploadPending = false;
-}
-
-void PointCloudView::uploadSlamMapPreviewBufferIfNeeded()
-{
-    if (!m_program || QOpenGLContext::currentContext() != context()) {
-        return;
-    }
-
-    if (!m_slamMapPreviewVao.isCreated()) {
-        m_slamMapPreviewVao.create();
-    }
-    m_slamMapPreviewVao.bind();
-    if (!m_slamMapPreviewVbo.isCreated()) {
-        m_slamMapPreviewVbo.create();
-        m_slamMapPreviewVbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
-        m_slamMapPreviewResetPending = true;
-    }
-    m_slamMapPreviewVbo.bind();
-
-    m_slamMapPreviewPointCount = m_slamMapPreviewVertices.size();
-    const qsizetype byteCount = m_slamMapPreviewVertices.size() * qsizetype(sizeof(SlamRenderVertex));
-    const bool needsFullUpload = m_slamMapPreviewResetPending ||
-                                 m_slamMapPreviewGpuPointCount > m_slamMapPreviewPointCount ||
-                                 byteCount > m_slamMapPreviewBufferCapacityBytes;
-    if (needsFullUpload) {
-        if (byteCount == 0) {
-            m_slamMapPreviewVbo.allocate(0);
-            m_slamMapPreviewBufferCapacityBytes = 0;
-        } else {
-            const qsizetype doubledCapacity = m_slamMapPreviewBufferCapacityBytes > 0
-                ? m_slamMapPreviewBufferCapacityBytes * 2
-                : byteCount;
-            m_slamMapPreviewBufferCapacityBytes = std::max(byteCount, doubledCapacity);
-            m_slamMapPreviewVbo.allocate(static_cast<int>(m_slamMapPreviewBufferCapacityBytes));
-            m_slamMapPreviewVbo.write(0,
-                                      m_slamMapPreviewVertices.constData(),
-                                      static_cast<int>(byteCount));
-        }
-        m_slamMapPreviewGpuPointCount = m_slamMapPreviewPointCount;
-    } else {
-        for (const SlamMapPreviewAppendRange& range : m_pendingSlamMapPreviewAppendRanges) {
-            if (range.vertices.isEmpty()) {
-                continue;
-            }
-            m_slamMapPreviewVbo.write(range.startIndex * int(sizeof(SlamRenderVertex)),
-                                      range.vertices.constData(),
-                                      static_cast<int>(range.vertices.size() * qsizetype(sizeof(SlamRenderVertex))));
-        }
-        for (const SlamRenderPointUpdate& update : m_pendingSlamMapPreviewUpdates) {
-            if (update.index < 0 || update.index >= m_slamMapPreviewPointCount) {
-                continue;
-            }
-            m_slamMapPreviewVbo.write(update.index * int(sizeof(SlamRenderVertex)),
-                                      &update.vertex,
-                                      int(sizeof(SlamRenderVertex)));
-        }
-        m_slamMapPreviewGpuPointCount = m_slamMapPreviewPointCount;
-    }
-
-    m_program->enableAttributeArray(0);
-    m_program->setAttributeBuffer(0, GL_FLOAT, offsetof(SlamRenderVertex, x), 3, sizeof(SlamRenderVertex));
-    m_program->enableAttributeArray(1);
-    m_program->setAttributeBuffer(1, GL_FLOAT, offsetof(SlamRenderVertex, r), 3, sizeof(SlamRenderVertex));
-
-    m_pendingSlamMapPreviewAppendRanges.clear();
-    m_pendingSlamMapPreviewUpdates.clear();
-    m_slamMapPreviewResetPending = false;
-    m_slamMapPreviewVbo.release();
-    m_slamMapPreviewVao.release();
 }
 
 void PointCloudView::destroySlamRenderOverlay()
 {
-    m_slamMapPreviewVbo.destroy();
-    m_slamMapPreviewVao.destroy();
+    m_slamWorldFrameVbo.destroy();
+    m_slamWorldFrameVao.destroy();
+    m_slamBodyFrameVbo.destroy();
+    m_slamBodyFrameVao.destroy();
     m_slamPoseAxisVbo.destroy();
     m_slamPoseAxisVao.destroy();
     m_slamTrajectoryVbo.destroy();
     m_slamTrajectoryVao.destroy();
     m_slamTrajectoryBufferCapacityBytes = 0;
     m_slamPoseAxisBufferCapacityBytes = 0;
-    m_slamMapPreviewBufferCapacityBytes = 0;
-    m_slamMapPreviewGpuPointCount = 0;
+    m_slamWorldFrameBufferCapacityBytes = 0;
+    m_slamBodyFrameBufferCapacityBytes = 0;
     m_slamTrajectoryVertexCount = 0;
     m_slamPoseAxisVertexCount = 0;
-    m_slamMapPreviewPointCount = 0;
-    m_slamMapPreviewVertices.clear();
-    m_pendingSlamMapPreviewAppendRanges.clear();
-    m_pendingSlamMapPreviewUpdates.clear();
-    m_slamMapPreviewResetPending = false;
+    m_slamWorldFrameVertexCount = 0;
+    m_slamBodyFrameVertexCount = 0;
 }
 
 void PointCloudView::setupStlModelBuffers()
@@ -1245,11 +1160,18 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("uSelectionEnabled", 0);
     m_program->setUniformValue("uPersistEnabled", 0);
     m_program->setUniformValue("uModelLighting", 0);
-    if (m_slamMapPreviewPointCount > 0 && m_slamMapPreviewVao.isCreated()) {
+    if (m_slamWorldFrameVertexCount > 0 && m_slamWorldFrameVao.isCreated()) {
         m_program->setUniformValue("uPointSize", 2.0f);
-        m_slamMapPreviewVao.bind();
-        glDrawArrays(GL_POINTS, 0, m_slamMapPreviewPointCount);
-        m_slamMapPreviewVao.release();
+        m_slamWorldFrameVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamWorldFrameVertexCount);
+        m_slamWorldFrameVao.release();
+        m_program->setUniformValue("uPointSize", m_pointSize);
+    }
+    if (m_slamBodyFrameVertexCount > 0 && m_slamBodyFrameVao.isCreated()) {
+        m_program->setUniformValue("uPointSize", 2.5f);
+        m_slamBodyFrameVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamBodyFrameVertexCount);
+        m_slamBodyFrameVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
     if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {

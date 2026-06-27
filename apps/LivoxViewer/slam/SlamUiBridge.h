@@ -1,9 +1,7 @@
 #ifndef LIVOXVIEWER_SLAMUIBRIDGE_H
 #define LIVOXVIEWER_SLAMUIBRIDGE_H
 
-#include "Slam/Core/SlamMapPreviewConfig.h"
 #include "Slam/Core/SlamTypes.h"
-#include "Slam/Visualization/GlobalMapPreviewStore.h"
 #include "Slam/Visualization/SlamRenderSnapshot.h"
 
 #include <QObject>
@@ -25,12 +23,9 @@ public:
         QString currentPose;
         QString trajectoryPoints;
         QString mapPoints;
-        QString mapPreviewMode;
-        QString mapPreviewPoints;
-        QString mapPreviewLimit;
-        QString mapPreviewVoxelSize;
-        QString mapPreviewPendingPoints;
-        QString mapPreviewLimitReached;
+        QString worldFramePoints;
+        QString bodyFramePoints;
+        QString globalMapPoints;
         QString error;
     };
 
@@ -38,18 +33,12 @@ public:
 
     const SlamOutput& latestOutput() const { return m_latestOutput; }
     DisplayState displayState() const { return m_displayState; }
-    bool mapPreviewEnabled() const { return m_mapPreviewConfig.mode != SlamMapPreviewMode::Off; }
-    SlamMapPreviewMode mapPreviewMode() const { return m_mapPreviewConfig.mode; }
-    SlamMapPreviewConfig mapPreviewConfig() const { return m_mapPreviewConfig; }
     QVector<SlamTrajectoryPoint> trajectorySnapshot() const { return m_trajectory; }
-    QVector<SlamRenderVertex> mapPreviewSnapshot() const { return m_mapPreviewStore.pointsSnapshot(); }
+    QVector<SlamPoint> globalMapSnapshot() const { return m_globalMapPoints; }
 
 public slots:
     void receiveSlamOutput(const SlamOutput& output);
     void setModeAndBackend(const QString& mode, const QString& backend);
-    void setMapPreviewConfig(const SlamMapPreviewConfig& config);
-    void setMapPreviewMode(SlamMapPreviewMode mode);
-    void setMapPreviewEnabled(bool enabled);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
     void clearDisplay();
@@ -63,14 +52,12 @@ private:
     void refreshStatus();
     SlamRenderSnapshot buildRenderSnapshot();
     void appendTrajectory(const SlamOutput& output);
-    void appendMapPreview(const SlamOutput& output);
+    void appendGlobalMap(const SlamOutput& output);
 
     SlamOutput m_latestOutput;
     DisplayState m_displayState;
     QVector<SlamTrajectoryPoint> m_trajectory;
-    GlobalMapPreviewStore m_mapPreviewStore;
-    SlamMapPreviewConfig m_mapPreviewConfig;
-    bool m_mapPreviewResetPending = false;
+    QVector<SlamPoint> m_globalMapPoints;
     QString m_errorMessage;
     QTimer m_refreshTimer;
     QString m_mode = QStringLiteral("Idle");

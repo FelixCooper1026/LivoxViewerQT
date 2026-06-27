@@ -38,6 +38,10 @@ struct PcapSlamSourceSummary {
 
 class PcapSlamSource {
 public:
+    explicit PcapSlamSource(int frameDurationMs = 100);
+
+    void setFrameDurationMs(int frameDurationMs);
+    int frameDurationMs() const;
     bool load(const QString& filePath, QString* error);
     void clear();
 
@@ -52,6 +56,7 @@ private:
     QVector<SlamInputFrame> frames_;
     PcapSlamSourceSummary summary_;
     QString errorMessage_;
+    int64_t frameDurationNs_ = 100000000;
 };
 
 #endif // SLAM_IO_PCAPSLAMSOURCE_H

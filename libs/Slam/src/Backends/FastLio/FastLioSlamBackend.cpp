@@ -67,6 +67,11 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
         assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 滤波体素尺寸必须大于 0。"));
         return false;
     }
+    if (!std::isfinite(config.preprocessScanRateHz) || config.preprocessScanRateHz <= 0.0 ||
+        config.inputFrameDurationMs <= 0) {
+        assignError(error, QStringLiteral("SLAM 配置无效：扫描频率和聚帧周期必须大于 0。"));
+        return false;
+    }
     if (!isFiniteArray(config.extrinsicT_L_I, 3) ||
         !isUsableRotationMatrix(config.extrinsicR_L_I)) {
         assignError(error, QStringLiteral("SLAM 外参配置无效：LiDAR-IMU 平移或旋转矩阵缺失/非法。"));
@@ -137,8 +142,8 @@ struct FastLioAlgorithmState {
     bool localMapInitialized = false;
     int effectiveFeatureNum = 0;
     int featsDownSize = 0;
-    uint64_t nextChunkId = 1;
     int trajectoryPointCount = 0;
+    int globalMapPointCount = 0;
 
     PointCloudXYZI::Ptr featsFromMap;
     PointCloudXYZI::Ptr featsUndistort;
@@ -241,6 +246,17 @@ void pointBodyToWorld(const PointType* pi, PointType* po, const state_ikfom& sta
     po->intensity = pi->intensity;
 }
 
+void pointBodyLidarToImu(const PointType* pi, PointType* po, const state_ikfom& state)
+{
+    V3D pBodyLidar(pi->x, pi->y, pi->z);
+    V3D pBodyImu(state.offset_R_L_I * pBodyLidar + state.offset_T_L_I);
+
+    po->x = static_cast<float>(pBodyImu(0));
+    po->y = static_cast<float>(pBodyImu(1));
+    po->z = static_cast<float>(pBodyImu(2));
+    po->intensity = pi->intensity;
+}
+
 template<typename T>
 void pointBodyToWorld(const Eigen::Matrix<T, 3, 1>& pi, Eigen::Matrix<T, 3, 1>& po, const state_ikfom& state)
 {
@@ -250,6 +266,17 @@ void pointBodyToWorld(const Eigen::Matrix<T, 3, 1>& pi, Eigen::Matrix<T, 3, 1>& 
     po[0] = static_cast<T>(pGlobal(0));
     po[1] = static_cast<T>(pGlobal(1));
     po[2] = static_cast<T>(pGlobal(2));
+}
+
+SlamPoint toSlamPoint(const PointType& sourcePoint)
+{
+    SlamPoint targetPoint;
+    targetPoint.x = sourcePoint.x;
+    targetPoint.y = sourcePoint.y;
+    targetPoint.z = sourcePoint.z;
+    targetPoint.reflectivity = static_cast<uint8_t>(std::clamp(sourcePoint.intensity, 0.0f, 255.0f));
+    targetPoint.hasOffsetTime = false;
+    return targetPoint;
 }
 
 void collectRemovedPoints(FastLioAlgorithmState& state)
@@ -489,28 +516,50 @@ void appendTrajectoryOutput(FastLioAlgorithmState& state, SlamOutput* output, in
     output->trajectoryPointCount = state.trajectoryPointCount;
 }
 
-void appendMapChunkOutput(FastLioAlgorithmState& state, SlamOutput* output, const PointVector& points, int64_t timestampNs)
+void appendPublishedWorldFrameOutput(FastLioAlgorithmState& state, SlamOutput* output)
 {
-    if (output == nullptr || points.empty()) {
+    if (output == nullptr || !state.config.publishWorldFrameCloud) {
         return;
     }
 
-    SlamMapChunk chunk;
-    chunk.chunkId = state.nextChunkId++;
-    chunk.timestampNs = timestampNs;
-    chunk.voxelSizeM = state.filterSizeMap;
-    chunk.isLocal = true;
-    chunk.pointsWorld.reserve(static_cast<int>(points.size()));
-    for (const PointType& sourcePoint : points) {
-        SlamPoint targetPoint;
-        targetPoint.x = sourcePoint.x;
-        targetPoint.y = sourcePoint.y;
-        targetPoint.z = sourcePoint.z;
-        targetPoint.reflectivity = static_cast<uint8_t>(std::clamp(sourcePoint.intensity, 0.0f, 255.0f));
-        targetPoint.hasOffsetTime = false;
-        chunk.pointsWorld.push_back(targetPoint);
+    const PointCloudXYZI::Ptr& sourceCloud = state.config.publishDenseFrameCloud
+        ? state.featsUndistort
+        : state.featsDownBody;
+    output->publishedWorldFramePoints.reserve(static_cast<int>(sourceCloud->points.size()));
+    PointType worldPoint;
+    for (const PointType& bodyPoint : sourceCloud->points) {
+        pointBodyToWorld(&bodyPoint, &worldPoint, state.statePoint);
+        output->publishedWorldFramePoints.push_back(toSlamPoint(worldPoint));
     }
-    output->newMapChunks.push_back(chunk);
+}
+
+void appendPublishedBodyFrameOutput(FastLioAlgorithmState& state, SlamOutput* output)
+{
+    if (output == nullptr || !state.config.publishWorldFrameCloud || !state.config.publishBodyFrameCloud) {
+        return;
+    }
+
+    output->publishedBodyFramePoints.reserve(static_cast<int>(state.featsUndistort->points.size()));
+    PointType bodyImuPoint;
+    for (const PointType& bodyLidarPoint : state.featsUndistort->points) {
+        pointBodyLidarToImu(&bodyLidarPoint, &bodyImuPoint, state.statePoint);
+        output->publishedBodyFramePoints.push_back(toSlamPoint(bodyImuPoint));
+    }
+}
+
+void appendGlobalMapOutput(FastLioAlgorithmState& state, SlamOutput* output)
+{
+    if (output == nullptr || !state.config.saveMap) {
+        return;
+    }
+
+    output->newGlobalMapPoints.reserve(static_cast<int>(state.featsUndistort->points.size()));
+    PointType worldPoint;
+    for (const PointType& bodyPoint : state.featsUndistort->points) {
+        pointBodyToWorld(&bodyPoint, &worldPoint, state.statePoint);
+        output->newGlobalMapPoints.push_back(toSlamPoint(worldPoint));
+    }
+    state.globalMapPointCount += output->newGlobalMapPoints.size();
 }
 
 void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t timestampNs, double backendMs)
@@ -523,6 +572,7 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
     output->imuHealthy = true;
     output->backendMs = backendMs;
     output->mapPointCount = state.ikdtree.validnum();
+    output->globalMapPointCount = state.globalMapPointCount;
     output->trajectoryPointCount = state.trajectoryPointCount;
     output->currentPose = toSlamPose(state, timestampNs);
 }
@@ -657,7 +707,6 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
                                  state.statePoint);
             }
             state.ikdtree.Build(state.featsDownWorld->points);
-            appendMapChunkOutput(state, output, state.featsDownWorld->points, frame.frameEndNs);
         }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
@@ -693,7 +742,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     mapIncremental(state, addedPoints);
 
     appendTrajectoryOutput(state, output, frame.frameEndNs);
-    appendMapChunkOutput(state, output, addedPoints, frame.frameEndNs);
+    appendPublishedWorldFrameOutput(state, output);
+    appendPublishedBodyFrameOutput(state, output);
+    appendGlobalMapOutput(state, output);
     fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
     status_ = SlamStatusCode::Running;
     assignError(error, QString());

@@ -12,7 +12,7 @@
 namespace {
 
 constexpr int64_t kLivoxTimeIntervalUnitNs = 100;
-constexpr int64_t kFrameDurationNs = 50000000;
+constexpr int64_t kNsPerMs = 1000000;
 constexpr int64_t kImuRetentionNs = 5000000000;
 constexpr double kLivoxPi = 3.14159265358979323846;
 
@@ -169,6 +169,18 @@ void LiveLidarSlamSource::reset()
     statsTimer_.restart();
 }
 
+void LiveLidarSlamSource::setFrameDurationMs(int frameDurationMs)
+{
+    QMutexLocker locker(&mutex_);
+    frameDurationNs_ = int64_t(std::max(1, frameDurationMs)) * kNsPerMs;
+}
+
+int LiveLidarSlamSource::frameDurationMs() const
+{
+    QMutexLocker locker(&mutex_);
+    return int(frameDurationNs_ / kNsPerMs);
+}
+
 void LiveLidarSlamSource::setQueueCapacity(int capacity)
 {
     queue_.setCapacity(capacity);
@@ -205,7 +217,7 @@ bool LiveLidarSlamSource::appendPointPacket(uint32_t handle,
         currentFrame_.hasPointOffsetTime = true;
         currentFrame_.sourceName = sourceName;
         hasCurrentFrame_ = true;
-    } else if (packetTimestampNs - currentFrame_.frameStartNs >= kFrameDurationNs) {
+    } else if (packetTimestampNs - currentFrame_.frameStartNs >= frameDurationNs_) {
         flushCurrentFrameLocked();
         currentFrame_ = SlamInputFrame();
         currentFrame_.sequence = nextSequence_++;

@@ -46,7 +46,8 @@ struct ReplaySummary {
     int initializingFrames = 0;
     int runningFrames = 0;
     int trajectoryPoints = 0;
-    int mapChunks = 0;
+    int mapFrames = 0;
+    int globalMapPoints = 0;
     int mapPoints = 0;
     SlamPose finalPose;
 };
@@ -92,12 +93,15 @@ ReplaySummary runWithImuReplay(const QString& pcapPath)
             ++result.runningFrames;
         }
         result.trajectoryPoints += output.newTrajectoryPoints.size();
-        result.mapChunks += output.newMapChunks.size();
+        if (!output.newGlobalMapPoints.isEmpty()) {
+            ++result.mapFrames;
+            result.globalMapPoints += output.newGlobalMapPoints.size();
+        }
         result.mapPoints = output.mapPointCount;
         result.finalPose = output.currentPose;
     }
 
-    if (result.runningFrames == 0 || result.trajectoryPoints == 0 || result.mapChunks == 0) {
+    if (result.runningFrames == 0 || result.trajectoryPoints == 0 || result.globalMapPoints == 0) {
         result.error = QStringLiteral("FAST_LIO replay did not produce running pose/trajectory/map output");
         return result;
     }
@@ -180,7 +184,8 @@ int main(int argc, char* argv[])
         << " initializing=" << firstRun.initializingFrames
         << " running=" << firstRun.runningFrames
         << " trajectory=" << firstRun.trajectoryPoints
-        << " mapChunks=" << firstRun.mapChunks
+        << " mapFrames=" << firstRun.mapFrames
+        << " globalMapPoints=" << firstRun.globalMapPoints
         << " mapPoints=" << firstRun.mapPoints
         << " finalPose=[" << firstRun.finalPose.tx << "," << firstRun.finalPose.ty << "," << firstRun.finalPose.tz << "]\n";
 
@@ -193,7 +198,8 @@ int main(int argc, char* argv[])
     const bool deterministic = firstRun.processedFrames == secondRun.processedFrames &&
                                firstRun.runningFrames == secondRun.runningFrames &&
                                firstRun.trajectoryPoints == secondRun.trajectoryPoints &&
-                               firstRun.mapChunks == secondRun.mapChunks &&
+                               firstRun.mapFrames == secondRun.mapFrames &&
+                               firstRun.globalMapPoints == secondRun.globalMapPoints &&
                                sameFinalPose(firstRun.finalPose, secondRun.finalPose);
     if (!deterministic) {
         out << "WITH_IMU_REPEAT_MISMATCH\n";
@@ -204,7 +210,8 @@ int main(int argc, char* argv[])
         << " processed=" << secondRun.processedFrames
         << " running=" << secondRun.runningFrames
         << " trajectory=" << secondRun.trajectoryPoints
-        << " mapChunks=" << secondRun.mapChunks << "\n";
+        << " mapFrames=" << secondRun.mapFrames
+        << " globalMapPoints=" << secondRun.globalMapPoints << "\n";
 
     if (!verifyNoImuReplay(noImuPath, out)) {
         return 1;

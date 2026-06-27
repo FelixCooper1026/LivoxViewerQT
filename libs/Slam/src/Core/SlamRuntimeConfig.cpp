@@ -2,11 +2,34 @@
 
 #include <QVariant>
 
+#include <algorithm>
+#include <cmath>
+
 namespace {
 
 QString key(const QString& prefix, const QString& name)
 {
     return prefix + QLatin1Char('/') + name;
+}
+
+int frameDurationMsFromScanRate(double scanRateHz)
+{
+    return std::clamp(static_cast<int>(std::lround(1000.0 / scanRateHz)), 1, 10000);
+}
+
+double scanRateFromFrameDurationMs(int frameDurationMs)
+{
+    return 1000.0 / double(frameDurationMs);
+}
+
+double validScanRateHz(double value, double fallback)
+{
+    return std::isfinite(value) && value > 0.0 ? value : fallback;
+}
+
+int validFrameDurationMs(int value, int fallback)
+{
+    return value > 0 ? value : fallback;
 }
 
 } // namespace
@@ -26,17 +49,40 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
                                                   config.extrinsicT_L_I[i]).toDouble();
     }
     for (int i = 0; i < 9; ++i) {
-        config.extrinsicR_L_I[i] = settings.value(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)),
+    config.extrinsicR_L_I[i] = settings.value(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)),
                                                   config.extrinsicR_L_I[i]).toDouble();
     }
     config.filterSizeSurfM = settings.value(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM).toDouble();
     config.filterSizeMapM = settings.value(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM).toDouble();
+    const bool hasScanRate = settings.contains(key(prefix, QStringLiteral("preprocessScanRateHz")));
+    const bool hasFrameDuration = settings.contains(key(prefix, QStringLiteral("inputFrameDurationMs")));
+    config.preprocessScanRateHz = validScanRateHz(
+        settings.value(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz).toDouble(),
+        config.preprocessScanRateHz);
+    config.inputFrameDurationMs = validFrameDurationMs(
+        settings.value(key(prefix, QStringLiteral("inputFrameDurationMs")), config.inputFrameDurationMs).toInt(),
+        config.inputFrameDurationMs);
+    if (hasScanRate && !hasFrameDuration) {
+        config.inputFrameDurationMs = frameDurationMsFromScanRate(config.preprocessScanRateHz);
+    } else if (!hasScanRate && hasFrameDuration) {
+        config.preprocessScanRateHz = scanRateFromFrameDurationMs(config.inputFrameDurationMs);
+    }
+    const bool hasPublishConfig = settings.contains(key(prefix, QStringLiteral("publishWorldFrameCloud")));
+    config.publishWorldFrameCloud = settings.value(key(prefix, QStringLiteral("publishWorldFrameCloud")),
+                                                   config.publishWorldFrameCloud).toBool();
+    config.publishDenseFrameCloud = settings.value(key(prefix, QStringLiteral("publishDenseFrameCloud")),
+                                                   config.publishDenseFrameCloud).toBool();
+    config.publishBodyFrameCloud = settings.value(key(prefix, QStringLiteral("publishBodyFrameCloud")),
+                                                  config.publishBodyFrameCloud).toBool();
     config.mapVoxelSizeM = settings.value(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM).toDouble();
     config.maxMapPoints = settings.value(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints).toInt();
     config.maxTrajectoryPoints = settings.value(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints).toInt();
     config.maxInputQueueFrames = settings.value(key(prefix, QStringLiteral("maxInputQueueFrames")), config.maxInputQueueFrames).toInt();
     config.saveTrajectory = settings.value(key(prefix, QStringLiteral("saveTrajectory")), config.saveTrajectory).toBool();
     config.saveMap = settings.value(key(prefix, QStringLiteral("saveMap")), config.saveMap).toBool();
+    if (!hasPublishConfig) {
+        config.saveMap = true;
+    }
     config.logLevel = settings.value(key(prefix, QStringLiteral("logLevel")), config.logLevel).toString();
     return config;
 }
@@ -57,6 +103,11 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     }
     settings.setValue(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM);
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
+    settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);
+    settings.setValue(key(prefix, QStringLiteral("inputFrameDurationMs")), config.inputFrameDurationMs);
+    settings.setValue(key(prefix, QStringLiteral("publishWorldFrameCloud")), config.publishWorldFrameCloud);
+    settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
+    settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints);
     settings.setValue(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints);

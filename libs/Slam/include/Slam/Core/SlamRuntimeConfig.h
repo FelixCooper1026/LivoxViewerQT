@@ -17,12 +17,17 @@ struct SlamRuntimeConfig {
     double extrinsicR_L_I[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
     double filterSizeSurfM = 0.5;
     double filterSizeMapM = 0.5;
+    double preprocessScanRateHz = 10.0;
+    int inputFrameDurationMs = 100;
+    bool publishWorldFrameCloud = true;
+    bool publishDenseFrameCloud = true;
+    bool publishBodyFrameCloud = true;
     double mapVoxelSizeM = 0.1;
     int maxMapPoints = 2000000;
     int maxTrajectoryPoints = 200000;
     int maxInputQueueFrames = 8;
     bool saveTrajectory = false;
-    bool saveMap = false;
+    bool saveMap = true;
     QString logLevel = "info";
 };
 

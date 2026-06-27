@@ -65,14 +65,6 @@ struct SlamTrajectoryPoint {
     double quality = 1.0;
 };
 
-struct SlamMapChunk {
-    uint64_t chunkId = 0;
-    int64_t timestampNs = 0;
-    QVector<SlamPoint> pointsWorld;
-    double voxelSizeM = 0.1;
-    bool isLocal = false;
-};
-
 enum class SlamStatusCode {
     Idle,
     Starting,
@@ -91,12 +83,15 @@ struct SlamOutput {
     SlamStatusCode status = SlamStatusCode::Idle;
     SlamPose currentPose;
     QVector<SlamTrajectoryPoint> newTrajectoryPoints;
-    QVector<SlamMapChunk> newMapChunks;
+    QVector<SlamPoint> publishedWorldFramePoints;
+    QVector<SlamPoint> publishedBodyFramePoints;
+    QVector<SlamPoint> newGlobalMapPoints;
     QString message;
     double inputFps = 0.0;
     double backendMs = 0.0;
     int droppedFrameCount = 0;
     int mapPointCount = 0;
+    int globalMapPointCount = 0;
     int trajectoryPointCount = 0;
     bool imuHealthy = false;
 };

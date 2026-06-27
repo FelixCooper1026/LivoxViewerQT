@@ -34,6 +34,19 @@ SlamRenderVertex renderVertex(const QVector3D& point, float r, float g, float b)
     return {point.x(), point.y(), point.z(), r, g, b};
 }
 
+SlamRenderVertex renderWorldFramePoint(const SlamPoint& point)
+{
+    const float intensity = float(point.reflectivity) / 255.0f;
+    const float c = 0.35f + 0.55f * intensity;
+    return {point.x, point.y, point.z, c, c, c};
+}
+
+SlamRenderVertex renderBodyFramePoint(const SlamPoint& point)
+{
+    const float intensity = float(point.reflectivity) / 255.0f;
+    return {point.x, point.y, point.z, 1.0f, 0.55f + 0.35f * intensity, 0.1f};
+}
+
 QVector3D posePosition(const SlamPose& pose)
 {
     return QVector3D(float(pose.tx), float(pose.ty), float(pose.tz));
@@ -106,7 +119,8 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
         m_errorMessage.clear();
     }
     appendTrajectory(output);
-    appendMapPreview(output);
+    appendGlobalMap(output);
+    m_latestOutput.newGlobalMapPoints.clear();
 }
 
 void SlamUiBridge::setModeAndBackend(const QString& mode, const QString& backend)
@@ -114,36 +128,6 @@ void SlamUiBridge::setModeAndBackend(const QString& mode, const QString& backend
     m_mode = mode;
     m_backend = backend;
     refreshStatus();
-}
-
-void SlamUiBridge::setMapPreviewConfig(const SlamMapPreviewConfig& config)
-{
-    const bool changed = config.mode != m_mapPreviewConfig.mode ||
-                         config.globalSparseMaxPoints != m_mapPreviewConfig.globalSparseMaxPoints ||
-                         config.globalSparseVoxelSizeM != m_mapPreviewConfig.globalSparseVoxelSizeM ||
-                         config.globalSparseUploadPointsPerTick != m_mapPreviewConfig.globalSparseUploadPointsPerTick ||
-                         config.globalDenseMaxPoints != m_mapPreviewConfig.globalDenseMaxPoints ||
-                         config.globalDenseVoxelSizeM != m_mapPreviewConfig.globalDenseVoxelSizeM ||
-                         config.globalDenseUploadPointsPerTick != m_mapPreviewConfig.globalDenseUploadPointsPerTick;
-    m_mapPreviewConfig = config;
-    m_mapPreviewStore.configure(config);
-    if (changed) {
-        m_mapPreviewResetPending = true;
-    }
-    emit renderSnapshotReady(buildRenderSnapshot());
-    refreshStatus();
-}
-
-void SlamUiBridge::setMapPreviewMode(SlamMapPreviewMode mode)
-{
-    SlamMapPreviewConfig config = m_mapPreviewConfig;
-    config.mode = mode;
-    setMapPreviewConfig(config);
-}
-
-void SlamUiBridge::setMapPreviewEnabled(bool enabled)
-{
-    setMapPreviewMode(enabled ? SlamMapPreviewMode::GlobalSparse : SlamMapPreviewMode::Off);
 }
 
 void SlamUiBridge::setErrorMessage(const QString& message)
@@ -164,8 +148,11 @@ void SlamUiBridge::clearErrorMessage()
 void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
-    m_mapPreviewStore.clear();
-    m_mapPreviewResetPending = true;
+    m_globalMapPoints.clear();
+    m_latestOutput.publishedWorldFramePoints.clear();
+    m_latestOutput.publishedBodyFramePoints.clear();
+    m_latestOutput.newGlobalMapPoints.clear();
+    m_latestOutput.globalMapPointCount = 0;
     m_errorMessage.clear();
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
@@ -184,16 +171,9 @@ void SlamUiBridge::refreshStatus()
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
     m_displayState.mapPoints = QString::number(m_latestOutput.mapPointCount);
-    m_displayState.mapPreviewMode = slamMapPreviewModeName(m_mapPreviewConfig.mode);
-    m_displayState.mapPreviewPoints = QString::number(m_mapPreviewStore.previewPointCount());
-    m_displayState.mapPreviewLimit = QString::number(m_mapPreviewStore.maxPreviewPoints());
-    m_displayState.mapPreviewVoxelSize = m_mapPreviewStore.enabled()
-        ? QStringLiteral("%1 m").arg(m_mapPreviewStore.voxelSizeM(), 0, 'f', 3)
-        : QStringLiteral("-");
-    m_displayState.mapPreviewPendingPoints = QString::number(m_mapPreviewStore.pendingPointCount());
-    m_displayState.mapPreviewLimitReached = m_mapPreviewStore.reachedPointLimit()
-        ? QStringLiteral("是")
-        : QStringLiteral("否");
+    m_displayState.worldFramePoints = QString::number(m_latestOutput.publishedWorldFramePoints.size());
+    m_displayState.bodyFramePoints = QString::number(m_latestOutput.publishedBodyFramePoints.size());
+    m_displayState.globalMapPoints = QString::number(m_globalMapPoints.size());
     m_displayState.error = m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
@@ -209,10 +189,6 @@ void SlamUiBridge::refreshStatus()
 SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
 {
     SlamRenderSnapshot snapshot;
-    snapshot.mapPreviewEnabled = mapPreviewEnabled();
-    snapshot.mapPreviewReset = m_mapPreviewResetPending;
-    snapshot.maxMapPreviewPoints = m_mapPreviewStore.maxPreviewPoints();
-    snapshot.mapPreviewPointCount = m_mapPreviewStore.previewPointCount();
     snapshot.trajectoryVertices.reserve(m_trajectory.size());
     for (const SlamTrajectoryPoint& point : m_trajectory) {
         snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), 0.1f, 0.75f, 1.0f));
@@ -232,13 +208,14 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
     snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
 
-    if (snapshot.mapPreviewEnabled) {
-        const GlobalMapPreviewStore::PendingUpload upload =
-            m_mapPreviewStore.takePendingUploadPoints(m_mapPreviewStore.uploadPointsPerTick());
-        snapshot.mapPreviewAppendPoints = upload.appendedPoints;
-        snapshot.mapPreviewPointUpdates = upload.updatedPoints;
+    snapshot.worldFrameVertices.reserve(m_latestOutput.publishedWorldFramePoints.size());
+    for (const SlamPoint& point : m_latestOutput.publishedWorldFramePoints) {
+        snapshot.worldFrameVertices.push_back(renderWorldFramePoint(point));
     }
-    m_mapPreviewResetPending = false;
+    snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
+    for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
+        snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point));
+    }
     return snapshot;
 }
 
@@ -252,13 +229,10 @@ void SlamUiBridge::appendTrajectory(const SlamOutput& output)
     }
 }
 
-void SlamUiBridge::appendMapPreview(const SlamOutput& output)
+void SlamUiBridge::appendGlobalMap(const SlamOutput& output)
 {
-    if (!mapPreviewEnabled()) {
+    if (output.newGlobalMapPoints.isEmpty()) {
         return;
     }
-
-    for (const SlamMapChunk& chunk : output.newMapChunks) {
-        m_mapPreviewStore.appendMapChunk(chunk);
-    }
+    m_globalMapPoints += output.newGlobalMapPoints;
 }

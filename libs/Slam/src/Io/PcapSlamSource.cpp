@@ -22,7 +22,7 @@ namespace {
 
 constexpr size_t kLivoxPayloadHeaderSize = 36;
 constexpr int64_t kLivoxTimeIntervalUnitNs = 100;
-constexpr int64_t kFrameDurationNs = 50000000;
+constexpr int64_t kNsPerMs = 1000000;
 constexpr double kLivoxPi = 3.14159265358979323846;
 
 struct PcapMetadata {
@@ -489,6 +489,21 @@ void finalizeSummary(QVector<SlamInputFrame>& frames,
 
 } // namespace
 
+PcapSlamSource::PcapSlamSource(int frameDurationMs)
+{
+    setFrameDurationMs(frameDurationMs);
+}
+
+void PcapSlamSource::setFrameDurationMs(int frameDurationMs)
+{
+    frameDurationNs_ = int64_t(std::max(1, frameDurationMs)) * kNsPerMs;
+}
+
+int PcapSlamSource::frameDurationMs() const
+{
+    return int(frameDurationNs_ / kNsPerMs);
+}
+
 bool PcapSlamSource::load(const QString& filePath, QString* error)
 {
     clear();
@@ -583,7 +598,7 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
                        header.timestampNs,
                        filePath);
             hasFrame = true;
-        } else if (header.timestampNs - currentFrame.frameStartNs >= kFrameDurationNs) {
+        } else if (header.timestampNs - currentFrame.frameStartNs >= frameDurationNs_) {
             flushFrame(frames_, currentFrame, hasFrame);
             resetFrame(currentFrame,
                        nextSequence++,

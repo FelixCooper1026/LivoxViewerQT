@@ -1602,3 +1602,60 @@ Phase 5.4 已完成基础版本：
 - Linux 编译仍未执行，延续 Phase 4 的环境缺口。
 - 本轮未重新跑 `F:\slam_test.pcap` 的完整 UI worker 导出实测；轨迹/地图导出路径已编译通过，但还需要在真实轨迹产生后手动或自动选择保存路径，复验 CSV/TUM/PCD/LAS 文件内容。
 - 当前地图导出是稀疏地图预览缓存导出，不是后端完整全局地图导出；这是 Phase 5.4 “地图显示默认关闭、只显示稀疏地图预览、限频分批上传”约束下的第一版实现。
+
+### 2026-06-27 Phase 6 / 原版发布语义与完整地图导出迁移
+
+状态：已完成第一版实现。本节取代上方“地图预览模式调整”作为当前代码状态；旧全局稀疏/全局稠密地图预览方案已移除。
+
+已完成：
+
+- 移除地图预览配置和缓存模块：
+  - 删除 `SlamMapPreviewConfig`。
+  - 删除 `GlobalMapPreviewStore`。
+  - 移除 `newMapChunks` / `SlamMapChunk` 输出字段。
+  - 移除 `PointCloudView` 中地图预览 reset/append/update 增量 VBO 逻辑。
+- `SlamRuntimeConfig` 新增并持久化原版发布/保存语义开关：
+  - `preprocessScanRateHz` 对应原版 `preprocess/scan_rate`，默认 `10.0`。
+  - `inputFrameDurationMs` 是 PCAP/Live SLAM 输入聚帧周期，默认由 10 Hz 对应为 `100 ms`。
+  - `publishWorldFrameCloud` 对应原版 `publish/scan_publish_en`，默认 `true`。
+  - `publishDenseFrameCloud` 对应原版 `publish/dense_publish_en`，默认 `true`。
+  - `publishBodyFrameCloud` 对应原版 `publish/scan_bodyframe_pub_en`，默认 `true`。
+  - `saveMap` 对应原版 `pcd_save/pcd_save_en`，默认 `true`。
+- SLAM 设置页改为“发布与导出”：
+  - FAST_LIO 后端区新增扫描频率 Hz / 聚帧周期 ms；两者联动，修改后影响下一次 SLAM worker 启动。
+  - 发布世界系点云。
+  - 当前帧 dense。
+  - 发布机体系点云。
+  - 保存完整全局地图。
+- `FastLioSlamBackend` 按原版语义输出：
+  - 世界系当前帧点云：`publishDenseFrameCloud=true` 使用 `feats_undistort`，否则使用 `feats_down_body`，再转 world frame。
+  - 机体系当前帧点云：使用 `feats_undistort`，只做 LiDAR body 到 IMU body 外参变换。
+  - 完整全局地图增量：当 `saveMap=true` 时，使用 dense `feats_undistort` 转 world frame 后输出 `newGlobalMapPoints`。
+- `SlamUiBridge` 不再维护预览 store；现在缓存轨迹、当前帧发布点云、完整全局地图点集，并在状态面板显示：
+  - 世界系当前帧点数。
+  - 机体系当前帧点数。
+  - 完整全局地图点数。
+- `SlamRenderSnapshot` 改为携带：
+  - 轨迹 overlay。
+  - 当前位姿 axis overlay。
+  - 世界系当前帧点云 overlay。
+  - 机体系当前帧点云 overlay。
+- `PointCloudView` 继续只允许 UI 主线程调用 `setSlamRenderSnapshot()` / `clearSlamRenderOverlay()`；当前帧点云 VBO 在有效 OpenGL context 下上传/销毁。
+- 新增 `SlamMapExport`，直接从后端完整地图点集 `QVector<SlamPoint>` 流式写 PCD/LAS，不从 OpenGL VBO 读取，也不使用旧预览缓存。
+- `SlamControlDialog` 导出按钮改为：
+  - `导出完整全局地图 PCD`
+  - `导出完整全局地图 LAS`
+- 完整全局地图导出在后台线程执行，避免 UI 线程执行大文件写出。
+- `SlamPhase4Replay` 工具更新为校验 `newGlobalMapPoints`，不再依赖旧 `newMapChunks`。
+- `fastlio_migration_audit.md` 已更新为当前迁移状态。
+- 2026-06-27：移除 SLAM PCAP/Live 输入源固定 50 ms 聚帧，改为读取 `SlamRuntimeConfig::inputFrameDurationMs`；默认 10 Hz / 100 ms。
+
+验证：
+
+- 2026-06-27：`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示。
+- 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+
+验证缺口：
+
+- 本轮尚未重新用 `F:\slam_test.pcap` 完整跑 UI worker 并导出完整全局地图 PCD/LAS。
+- Linux 编译仍未执行，延续 Phase 4 的环境缺口。
