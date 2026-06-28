@@ -237,6 +237,40 @@ void preparePreferenceSpinBox(QDoubleSpinBox* spin)
     usePreferenceControlColumn(spin);
 }
 
+QString colorSwatchStyleSheet(const QColor& color)
+{
+    return QStringLiteral(
+               "QPushButton {"
+               "  background-color: %1;"
+               "  border: 1px solid palette(mid);"
+               "  border-radius: 3px;"
+               "  padding: 0;"
+               "}"
+               "QPushButton:hover {"
+               "  border-color: palette(highlight);"
+               "}")
+        .arg(color.name(QColor::HexRgb));
+}
+
+void updateColorSwatchButton(QPushButton* button, const QColor& color)
+{
+    if (!button) {
+        return;
+    }
+    button->setStyleSheet(colorSwatchStyleSheet(color));
+    button->setToolTip(QStringLiteral("点击选择颜色：%1").arg(color.name(QColor::HexRgb).toUpper()));
+}
+
+QPushButton* createColorSwatchButton(QWidget* parent, const QColor& color)
+{
+    QPushButton* button = new QPushButton(parent);
+    button->setFixedSize(28, 20);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setFocusPolicy(Qt::StrongFocus);
+    updateColorSwatchButton(button, color);
+    return button;
+}
+
 void refreshWidgetStyle(QWidget* widget)
 {
     if (!widget) {
@@ -877,6 +911,10 @@ void LivoxViewerWindow::loadViewPreferences()
         settings.value(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx).toFloat(),
         1.0f,
         10.0f);
+    slamTrajectoryColor = settings.value(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor).value<QColor>();
+    if (!slamTrajectoryColor.isValid()) {
+        slamTrajectoryColor = QColor(26, 191, 255);
+    }
     slamTrajectoryLineWidthPx = std::clamp(
         settings.value(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx).toFloat(),
         1.0f,
@@ -1006,6 +1044,7 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx);
     settings.setValue(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor);
     settings.setValue(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx);
+    settings.setValue(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor);
     settings.setValue(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx);
     settings.setValue(QStringLiteral("slam/poseAxisLengthM"), slamPoseAxisLengthM);
     settings.setValue(QStringLiteral("slam/poseAxisLineWidthPx"), slamPoseAxisLineWidthPx);
@@ -1028,6 +1067,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QColor selectedColor = config.color;
     QColor selectedSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     QColor selectedSlamBodyFrameColor = slamBodyFrameColor;
+    QColor selectedSlamTrajectoryColor = slamTrajectoryColor;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -1153,22 +1193,16 @@ void LivoxViewerWindow::showPreferencesDialog()
     QHBoxLayout* colorLayout = new QHBoxLayout(colorRow);
     colorLayout->setContentsMargins(0, 0, 0, 0);
     colorLayout->setSpacing(8);
-    QFrame* colorPreview = new QFrame(colorRow);
-    colorPreview->setFixedSize(28, 20);
-    colorPreview->setFrameShape(QFrame::Box);
-    colorPreview->setLineWidth(1);
-    colorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedColor.name()));
-    QPushButton* colorButton = new QPushButton("选择颜色", colorRow);
+    QPushButton* colorPreview = createColorSwatchButton(colorRow, selectedColor);
     colorLayout->addWidget(colorPreview);
-    colorLayout->addWidget(colorButton);
     colorLayout->addStretch();
-    connect(colorButton, &QPushButton::clicked, &dlg, [&dlg, &selectedColor, colorPreview]() {
+    connect(colorPreview, &QPushButton::clicked, &dlg, [&dlg, &selectedColor, colorPreview]() {
         QColor color = QColorDialog::getColor(selectedColor, &dlg, "选择网格颜色");
         if (!color.isValid()) {
             return;
         }
         selectedColor = color;
-        colorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedColor.name()));
+        updateColorSwatchButton(colorPreview, selectedColor);
     });
 
     QComboBox* gridTypeCombo = new QComboBox(&dlg);
@@ -1426,16 +1460,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
     slamWorldCurrentFrameColorLayout->setContentsMargins(0, 0, 0, 0);
     slamWorldCurrentFrameColorLayout->setSpacing(8);
-    QFrame* slamWorldCurrentFrameColorPreview = new QFrame(slamWorldCurrentFrameColorRow);
-    slamWorldCurrentFrameColorPreview->setFixedSize(28, 20);
-    slamWorldCurrentFrameColorPreview->setFrameShape(QFrame::Box);
-    slamWorldCurrentFrameColorPreview->setLineWidth(1);
-    slamWorldCurrentFrameColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamWorldCurrentFrameColor.name()));
-    QPushButton* slamWorldCurrentFrameColorButton = new QPushButton(QStringLiteral("选择颜色"), slamWorldCurrentFrameColorRow);
+    QPushButton* slamWorldCurrentFrameColorPreview =
+        createColorSwatchButton(slamWorldCurrentFrameColorRow, selectedSlamWorldCurrentFrameColor);
     slamWorldCurrentFrameColorLayout->addWidget(slamWorldCurrentFrameColorPreview);
-    slamWorldCurrentFrameColorLayout->addWidget(slamWorldCurrentFrameColorButton);
     slamWorldCurrentFrameColorLayout->addStretch();
-    connect(slamWorldCurrentFrameColorButton,
+    connect(slamWorldCurrentFrameColorPreview,
             &QPushButton::clicked,
             &dlg,
             [&dlg, &selectedSlamWorldCurrentFrameColor, slamWorldCurrentFrameColorPreview]() {
@@ -1446,8 +1475,7 @@ void LivoxViewerWindow::showPreferencesDialog()
                     return;
                 }
                 selectedSlamWorldCurrentFrameColor = color;
-                slamWorldCurrentFrameColorPreview->setStyleSheet(
-                    QString("background-color: %1;").arg(selectedSlamWorldCurrentFrameColor.name()));
+                updateColorSwatchButton(slamWorldCurrentFrameColorPreview, selectedSlamWorldCurrentFrameColor);
             });
     QDoubleSpinBox* slamWorldCurrentFramePointSizeSpin =
         createSlamDoubleSpin(slamWorldCurrentFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
@@ -1456,25 +1484,38 @@ void LivoxViewerWindow::showPreferencesDialog()
     QHBoxLayout* slamBodyColorLayout = new QHBoxLayout(slamBodyColorRow);
     slamBodyColorLayout->setContentsMargins(0, 0, 0, 0);
     slamBodyColorLayout->setSpacing(8);
-    QFrame* slamBodyColorPreview = new QFrame(slamBodyColorRow);
-    slamBodyColorPreview->setFixedSize(28, 20);
-    slamBodyColorPreview->setFrameShape(QFrame::Box);
-    slamBodyColorPreview->setLineWidth(1);
-    slamBodyColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamBodyFrameColor.name()));
-    QPushButton* slamBodyColorButton = new QPushButton(QStringLiteral("选择颜色"), slamBodyColorRow);
+    QPushButton* slamBodyColorPreview = createColorSwatchButton(slamBodyColorRow, selectedSlamBodyFrameColor);
     slamBodyColorLayout->addWidget(slamBodyColorPreview);
-    slamBodyColorLayout->addWidget(slamBodyColorButton);
     slamBodyColorLayout->addStretch();
-    connect(slamBodyColorButton, &QPushButton::clicked, &dlg, [&dlg, &selectedSlamBodyFrameColor, slamBodyColorPreview]() {
+    connect(slamBodyColorPreview, &QPushButton::clicked, &dlg, [&dlg, &selectedSlamBodyFrameColor, slamBodyColorPreview]() {
         QColor color = QColorDialog::getColor(selectedSlamBodyFrameColor, &dlg, QStringLiteral("选择 IMU 机体系点云颜色"));
         if (!color.isValid()) {
             return;
         }
         selectedSlamBodyFrameColor = color;
-        slamBodyColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamBodyFrameColor.name()));
+        updateColorSwatchButton(slamBodyColorPreview, selectedSlamBodyFrameColor);
     });
     QDoubleSpinBox* slamBodyFramePointSizeSpin =
         createSlamDoubleSpin(slamBodyFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QWidget* slamTrajectoryColorRow = new QWidget(&dlg);
+    usePreferenceControlColumn(slamTrajectoryColorRow);
+    QHBoxLayout* slamTrajectoryColorLayout = new QHBoxLayout(slamTrajectoryColorRow);
+    slamTrajectoryColorLayout->setContentsMargins(0, 0, 0, 0);
+    slamTrajectoryColorLayout->setSpacing(8);
+    QPushButton* slamTrajectoryColorPreview = createColorSwatchButton(slamTrajectoryColorRow, selectedSlamTrajectoryColor);
+    slamTrajectoryColorLayout->addWidget(slamTrajectoryColorPreview);
+    slamTrajectoryColorLayout->addStretch();
+    connect(slamTrajectoryColorPreview,
+            &QPushButton::clicked,
+            &dlg,
+            [&dlg, &selectedSlamTrajectoryColor, slamTrajectoryColorPreview]() {
+                QColor color = QColorDialog::getColor(selectedSlamTrajectoryColor, &dlg, QStringLiteral("选择 SLAM 轨迹颜色"));
+                if (!color.isValid()) {
+                    return;
+                }
+                selectedSlamTrajectoryColor = color;
+                updateColorSwatchButton(slamTrajectoryColorPreview, selectedSlamTrajectoryColor);
+            });
     QDoubleSpinBox* slamTrajectoryLineWidthSpin =
         createSlamDoubleSpin(slamTrajectoryLineWidthPx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     QDoubleSpinBox* slamPoseAxisLengthSpin =
@@ -1590,22 +1631,16 @@ void LivoxViewerWindow::showPreferencesDialog()
     QHBoxLayout* solidColorLayout = new QHBoxLayout(solidColorRow);
     solidColorLayout->setContentsMargins(0, 0, 0, 0);
     solidColorLayout->setSpacing(8);
-    QFrame* solidColorPreview = new QFrame(solidColorRow);
-    solidColorPreview->setFixedSize(28, 20);
-    solidColorPreview->setFrameShape(QFrame::Box);
-    solidColorPreview->setLineWidth(1);
-    solidColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSolidColor.name()));
-    QPushButton* solidColorButton = new QPushButton("选择颜色", solidColorRow);
+    QPushButton* solidColorPreview = createColorSwatchButton(solidColorRow, selectedSolidColor);
     solidColorLayout->addWidget(solidColorPreview);
-    solidColorLayout->addWidget(solidColorButton);
     solidColorLayout->addStretch();
-    connect(solidColorButton, &QPushButton::clicked, &dlg, [&dlg, &selectedSolidColor, solidColorPreview]() {
+    connect(solidColorPreview, &QPushButton::clicked, &dlg, [&dlg, &selectedSolidColor, solidColorPreview]() {
         QColor color = QColorDialog::getColor(selectedSolidColor, &dlg, "选择纯色点云颜色");
         if (!color.isValid()) {
             return;
         }
         selectedSolidColor = color;
-        solidColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSolidColor.name()));
+        updateColorSwatchButton(solidColorPreview, selectedSolidColor);
     });
 
     QVector<QWidget*> lineColorRows;
@@ -1616,14 +1651,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         QHBoxLayout* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(0, 0, 0, 0);
         rowLayout->setSpacing(8);
-        QFrame* preview = new QFrame(row);
-        preview->setFixedSize(28, 20);
-        preview->setFrameShape(QFrame::Box);
-        preview->setLineWidth(1);
-        preview->setStyleSheet(QString("background-color: %1;").arg(selectedLineColors.at(i).name()));
-        QPushButton* button = new QPushButton("选择颜色", row);
+        QPushButton* preview = createColorSwatchButton(row, selectedLineColors.at(i));
         rowLayout->addWidget(preview);
-        rowLayout->addWidget(button);
         rowLayout->addStretch();
         QWidget* legendRow = new QWidget(&dlg);
         QHBoxLayout* legendRowLayout = new QHBoxLayout(legendRow);
@@ -1638,13 +1667,13 @@ void LivoxViewerWindow::showPreferencesDialog()
         legendRowLayout->addWidget(legendPreview);
         legendRowLayout->addWidget(legendColorLabel);
         legendRowLayout->addStretch();
-        connect(button, &QPushButton::clicked, &dlg, [&dlg, &selectedLineColors, preview, legendPreview, legendColorLabel, i]() {
+        connect(preview, &QPushButton::clicked, &dlg, [&dlg, &selectedLineColors, preview, legendPreview, legendColorLabel, i]() {
             QColor color = QColorDialog::getColor(selectedLineColors.at(i), &dlg, QString("选择 Line %1 点云颜色").arg(i));
             if (!color.isValid()) {
                 return;
             }
             selectedLineColors[i] = color;
-            preview->setStyleSheet(QString("background-color: %1;").arg(color.name()));
+            updateColorSwatchButton(preview, color);
             legendPreview->setStyleSheet(QString("background-color: %1;").arg(color.name()));
             legendColorLabel->setText(color.name(QColor::HexRgb).toUpper());
         });
@@ -1916,6 +1945,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "设置 IMU 机体系当前帧点云 overlay 的 OpenGL 像素点大小。",
                      slamBodyFramePointSizeSpin);
     addPreferenceRow(slamVisualSection,
+                     "轨迹颜色",
+                     "设置 SLAM 位姿轨迹 overlay 的固定颜色。",
+                     slamTrajectoryColorRow);
+    addPreferenceRow(slamVisualSection,
                      "轨迹线宽",
                      "设置 SLAM 位姿轨迹 overlay 的 OpenGL 线宽。",
                      slamTrajectoryLineWidthSpin);
@@ -2021,6 +2054,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     };
     const QColor previousSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
+    const QColor previousSlamTrajectoryColor = slamTrajectoryColor;
     const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
     const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
     const float previousSlamTrajectoryLineWidthPx = slamTrajectoryLineWidthPx;
@@ -2057,6 +2091,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
+    slamTrajectoryColor = selectedSlamTrajectoryColor;
     slamWorldCurrentFramePointSizePx = static_cast<float>(slamWorldCurrentFramePointSizeSpin->value());
     slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
     slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
@@ -2072,6 +2107,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     if (slamUiBridge) {
         slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
         slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+        slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
         slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
@@ -2132,6 +2168,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.saveMap != previousSlamSaveMap ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
+        slamTrajectoryColor != previousSlamTrajectoryColor ||
         slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
         slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx ||
         slamTrajectoryLineWidthPx != previousSlamTrajectoryLineWidthPx ||

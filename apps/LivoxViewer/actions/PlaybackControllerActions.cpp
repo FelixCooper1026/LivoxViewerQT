@@ -911,8 +911,21 @@ void LivoxViewerWindow::updateSlamControlBarUi()
     if (slamExportMapButton) {
         slamExportMapButton->setEnabled(!slamMapExportActive.load());
     }
+    if (slamProgressBar) {
+        if (slamProgressIndeterminate && active) {
+            slamProgressBar->setRange(0, 0);
+        } else {
+            const int maximum = std::max(1, slamProgressMaximum);
+            slamProgressBar->setRange(0, maximum);
+            slamProgressBar->setValue(std::clamp(slamProgressValue, 0, maximum));
+        }
+        slamProgressBar->setEnabled(active || hasWorker || slamProgressValue > 0);
+        slamProgressBar->setToolTip(slamProgressMaximum > 0
+                                        ? QStringLiteral("%1 / %2").arg(slamProgressValue).arg(slamProgressMaximum)
+                                        : QStringLiteral("SLAM 进度"));
+    }
     if (slamControlLabel) {
-        const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM");
+        const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线SLAM") : QStringLiteral("在线SLAM");
         const QString stateText = active
             ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
             : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));

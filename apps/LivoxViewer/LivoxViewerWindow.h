@@ -52,6 +52,7 @@
 #include <QFrame>
 #include <QTableView>
 #include <QFile>
+#include <QProgressBar>
 #include <QSlider>
 #include <atomic>
 #include <thread>
@@ -437,6 +438,7 @@ private:
     int slamWorldDisplayedSegmentEnd = 0;
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
     QColor slamBodyFrameColor = QColor(255, 140, 26);
+    QColor slamTrajectoryColor = QColor(26, 191, 255);
     float slamWorldCurrentFramePointSizePx = 2.0f;
     float slamBodyFramePointSizePx = 2.5f;
     float slamTrajectoryLineWidthPx = 2.0f;
@@ -455,7 +457,11 @@ private:
     QPushButton* slamClearButton = nullptr;
     QPushButton* slamExportTrajectoryButton = nullptr;
     QPushButton* slamExportMapButton = nullptr;
+    QProgressBar* slamProgressBar = nullptr;
     QLabel* slamControlLabel = nullptr;
+    int slamProgressValue = 0;
+    int slamProgressMaximum = 0;
+    bool slamProgressIndeterminate = false;
     QMap<QString, QLabel*> slamStatusFields;
 
     // 工作模式状态
@@ -480,6 +486,7 @@ private:
     QAction* aboutAction;
 
     // 点云可视化控制（UI控件指针与状态）
+    QSpinBox* frameIntervalSpin = nullptr;
     QSpinBox* pointSizeSpin = nullptr;
     QComboBox* colorModeCombo = nullptr;
     QComboBox* reflectivityScaleCombo = nullptr;

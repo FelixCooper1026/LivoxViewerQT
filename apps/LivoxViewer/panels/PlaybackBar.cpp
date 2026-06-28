@@ -98,9 +98,13 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
         "  background: transparent;"
         "}"));
 
-    QHBoxLayout* layout = new QHBoxLayout(slamControlBar);
-    layout->setContentsMargins(8, 4, 8, 4);
-    layout->setSpacing(6);
+    QVBoxLayout* rootLayout = new QVBoxLayout(slamControlBar);
+    rootLayout->setContentsMargins(8, 4, 8, 4);
+    rootLayout->setSpacing(2);
+
+    QHBoxLayout* controlsLayout = new QHBoxLayout();
+    controlsLayout->setContentsMargins(0, 0, 0, 0);
+    controlsLayout->setSpacing(6);
 
     slamStartButton = new QPushButton(QStringLiteral("启动"), slamControlBar);
     slamPauseButton = new QPushButton(QStringLiteral("暂停"), slamControlBar);
@@ -109,19 +113,26 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
     slamClearButton = new QPushButton(QStringLiteral("清空显示"), slamControlBar);
     slamExportTrajectoryButton = new QPushButton(QStringLiteral("保存轨迹..."), slamControlBar);
     slamExportMapButton = new QPushButton(QStringLiteral("保存全局点云地图..."), slamControlBar);
+    slamProgressBar = new QProgressBar(slamControlBar);
+    slamProgressBar->setRange(0, 1);
+    slamProgressBar->setValue(0);
+    slamProgressBar->setTextVisible(false);
+    slamProgressBar->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     slamControlLabel = new QLabel(QStringLiteral("SLAM"), slamControlBar);
     slamControlLabel->setMinimumWidth(0);
     slamControlLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     slamControlLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
 
-    layout->addWidget(slamStartButton);
-    layout->addWidget(slamPauseButton);
-    layout->addWidget(slamStopButton);
-    layout->addWidget(slamResetButton);
-    layout->addWidget(slamClearButton);
-    layout->addWidget(slamExportTrajectoryButton);
-    layout->addWidget(slamExportMapButton);
-    layout->addWidget(slamControlLabel, 1);
+    controlsLayout->addWidget(slamStartButton);
+    controlsLayout->addWidget(slamPauseButton);
+    controlsLayout->addWidget(slamStopButton);
+    controlsLayout->addWidget(slamResetButton);
+    controlsLayout->addWidget(slamClearButton);
+    controlsLayout->addWidget(slamProgressBar, 1);
+    controlsLayout->addWidget(slamExportTrajectoryButton);
+    controlsLayout->addWidget(slamExportMapButton);
+    rootLayout->addLayout(controlsLayout);
+    rootLayout->addWidget(slamControlLabel);
 
     connect(slamStartButton, &QPushButton::clicked, this, &LivoxViewerWindow::startSlamProcessing);
     connect(slamPauseButton, &QPushButton::clicked, this, &LivoxViewerWindow::pauseSlamProcessing);

@@ -696,14 +696,14 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     displayGroup->addPrimaryWidget(createIconButton(stlModelAction, displayGroup, toolbarIconSize));
 
-    QSpinBox* spinFrameIntervalTop = new QSpinBox(displayGroup);
-    spinFrameIntervalTop->setRange(100, 60000);
-    spinFrameIntervalTop->setSingleStep(100);
-    spinFrameIntervalTop->setSuffix(" ms");
-    spinFrameIntervalTop->setValue(static_cast<int>(frameIntervalMs));
-    spinFrameIntervalTop->setToolTip("点云积分时间/帧间隔");
-    connect(spinFrameIntervalTop, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
-    QWidget* frameIntervalRow = createIconLabeledWidget(":/icons/integration_time.svg", "积分时间", spinFrameIntervalTop, displayGroup, toolbarIconSize);
+    frameIntervalSpin = new QSpinBox(displayGroup);
+    frameIntervalSpin->setRange(100, 600000);
+    frameIntervalSpin->setSingleStep(100);
+    frameIntervalSpin->setSuffix(" ms");
+    frameIntervalSpin->setValue(static_cast<int>(frameIntervalMs));
+    frameIntervalSpin->setToolTip("点云积分时间/帧间隔");
+    connect(frameIntervalSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
+    QWidget* frameIntervalRow = createIconLabeledWidget(":/icons/integration_time.svg", "积分时间", frameIntervalSpin, displayGroup, toolbarIconSize);
     displayGroup->addPrimaryWidget(frameIntervalRow);
 
     pointSizeSpin = new QSpinBox(displayGroup);
@@ -733,7 +733,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->moreMenu()->addAction(gridAction);
     displayGroup->moreMenu()->addAction(actionPointCloudVisualization);
     displayGroup->moreMenu()->addAction(stlModelAction);
-    addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(spinFrameIntervalTop, displayGroup->moreMenu()));
+    addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(frameIntervalSpin, displayGroup->moreMenu()));
     addWidgetAction(displayGroup->moreMenu(), "点大小", cloneSpinBox(pointSizeSpin, displayGroup->moreMenu()));
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
     overflowColorMode->addItems({"反射率", "距离", "高度", "纯色", "线号"});

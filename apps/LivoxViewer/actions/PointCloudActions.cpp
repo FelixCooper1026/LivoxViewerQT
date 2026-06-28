@@ -11,6 +11,7 @@
 void LivoxViewerWindow::onFrameIntervalChanged(int ms)
 {
     if (ms < 50) ms = 50;
+    if (ms > 600000) ms = 600000;
     const uint64_t previousFrameIntervalMs = frameIntervalMs;
     const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame,
                                                         playbackState.mode,

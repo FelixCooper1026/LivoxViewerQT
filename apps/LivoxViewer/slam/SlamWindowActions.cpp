@@ -25,7 +25,7 @@
 
 namespace {
 
-constexpr int64_t kSlamWorldHistoryRetentionNs = 60000LL * 1000000LL;
+constexpr int64_t kSlamWorldHistoryRetentionNs = 600000LL * 1000000LL;
 
 SlamOutput statusOutput(SlamStatusCode status, const QString& message)
 {
@@ -227,6 +227,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge = new SlamUiBridge(this);
     slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+    slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
     slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
     slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
@@ -266,6 +267,11 @@ void LivoxViewerWindow::showSlamControlDialog()
 void LivoxViewerWindow::startOnlineSlamFromMenu()
 {
     setSlamInputModeOnline();
+    if (frameIntervalSpin) {
+        frameIntervalSpin->setValue(600000);
+    } else {
+        onFrameIntervalChanged(600000);
+    }
     ensureSlamVisualizationTab(QStringLiteral("online"));
     showSlamInfoPanel();
     showSlamStatusPanel();
@@ -278,6 +284,11 @@ void LivoxViewerWindow::startOnlineSlamFromMenu()
 void LivoxViewerWindow::startOfflineSlamFromMenu()
 {
     setSlamInputModeOffline();
+    if (frameIntervalSpin) {
+        frameIntervalSpin->setValue(600000);
+    } else {
+        onFrameIntervalChanged(600000);
+    }
     if (!loadOfflineSlamSource()) {
         return;
     }
@@ -455,6 +466,9 @@ void LivoxViewerWindow::startSlamProcessing()
         slamWorkerCancel.store(false);
         slamWorkerPaused.store(false);
         slamWorkerActive.store(true);
+        slamProgressValue = 0;
+        slamProgressMaximum = 0;
+        slamProgressIndeterminate = true;
         slamRenderOverlayEnabled = true;
         ensureSlamVisualizationTab(QStringLiteral("online"));
         bridge->clearDisplay();
@@ -583,6 +597,9 @@ void LivoxViewerWindow::startSlamProcessing()
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
     slamWorkerActive.store(true);
+    slamProgressValue = 0;
+    slamProgressMaximum = 0;
+    slamProgressIndeterminate = true;
     slamRenderOverlayEnabled = true;
     bridge->clearDisplay();
     clearSlamWorldPointCloud();
@@ -606,6 +623,14 @@ void LivoxViewerWindow::startSlamProcessing()
         auto postLog = [this](QString message) {
             QMetaObject::invokeMethod(this, [this, message = std::move(message)]() {
                 logMessage(message);
+            }, Qt::QueuedConnection);
+        };
+        auto postProgress = [this](int value, int maximum, bool indeterminate) {
+            QMetaObject::invokeMethod(this, [this, value, maximum, indeterminate]() {
+                slamProgressValue = value;
+                slamProgressMaximum = maximum;
+                slamProgressIndeterminate = indeterminate;
+                updateSlamControlBarUi();
             }, Qt::QueuedConnection);
         };
 
@@ -641,6 +666,7 @@ void LivoxViewerWindow::startSlamProcessing()
             return;
         }
         postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
+        postProgress(0, frames.size(), false);
 
         FastLioSlamBackend backend;
         if (!backend.start(config, &error)) {
@@ -659,6 +685,7 @@ void LivoxViewerWindow::startSlamProcessing()
         QElapsedTimer replayClock;
         SlamOutput lastOutput;
         bool hasLastOutput = false;
+        int progressFrames = 0;
 
         auto waitUntilRunning = [this, &pausedReplayMs]() {
             if (!slamWorkerPaused.load()) {
@@ -692,6 +719,7 @@ void LivoxViewerWindow::startSlamProcessing()
             if (slamWorkerCancel.load()) {
                 break;
             }
+            ++progressFrames;
             if (!hasFirstFrameStart) {
                 firstFrameStartNs = frame.frameStartNs;
                 hasFirstFrameStart = true;
@@ -705,6 +733,7 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             if (!frame.hasCompleteImuCoverage) {
                 ++droppedFrames;
+                postProgress(progressFrames, frames.size(), false);
                 continue;
             }
 
@@ -721,6 +750,7 @@ void LivoxViewerWindow::startSlamProcessing()
             lastOutput = output;
             hasLastOutput = true;
             postOutput(output);
+            postProgress(progressFrames, frames.size(), false);
 
             if (!accepted &&
                 output.status != SlamStatusCode::InitializingImu &&
@@ -741,6 +771,7 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         finalOutput.newTrajectoryPoints.clear();
         finalOutput.newGlobalMapPoints.clear();
+        postProgress(cancelled ? progressFrames : frames.size(), frames.size(), false);
         postOutput(finalOutput);
         slamWorkerActive.store(false);
     });
@@ -782,6 +813,9 @@ void LivoxViewerWindow::resetSlamProcessing()
 
 void LivoxViewerWindow::clearSlamDisplay()
 {
+    slamProgressValue = 0;
+    slamProgressMaximum = 0;
+    slamProgressIndeterminate = false;
     if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
         bridge->clearDisplay();
     }
@@ -791,6 +825,7 @@ void LivoxViewerWindow::clearSlamDisplay()
             view->clearSlamRenderOverlay();
         }
     });
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)

@@ -138,10 +138,7 @@ void appendPoseAxisMesh(QVector<SlamRenderVertex>& vertices,
     const QVector3D u = QVector3D::crossProduct(axis, reference).normalized();
     const QVector3D v = QVector3D::crossProduct(axis, u).normalized();
     const float radius = diameter * 0.5f;
-    const float coneLength = std::min(cylinderLength * 0.35f,
-                                      std::max(diameter * 2.5f, cylinderLength * 0.12f));
     const QVector3D cylinderEnd = origin + axis * cylinderLength;
-    const QVector3D coneTip = cylinderEnd + axis * coneLength;
 
     for (int i = 0; i < kSegments; ++i) {
         const float a0 = 2.0f * kPi * float(i) / float(kSegments);
@@ -155,7 +152,6 @@ void appendPoseAxisMesh(QVector<SlamRenderVertex>& vertices,
 
         appendTriangle(vertices, base0, end0, base1, r, g, b);
         appendTriangle(vertices, base1, end0, end1, r, g, b);
-        appendTriangle(vertices, end0, coneTip, end1, r, g, b);
     }
 }
 
@@ -206,6 +202,15 @@ void SlamUiBridge::setBodyFrameColor(const QColor& color)
         return;
     }
     m_bodyFrameColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setTrajectoryColor(const QColor& color)
+{
+    if (!color.isValid() || m_trajectoryColor == color) {
+        return;
+    }
+    m_trajectoryColor = color;
     refreshStatus();
 }
 
@@ -352,8 +357,11 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
 
     if (m_trajectoryVisible) {
         snapshot.trajectoryVertices.reserve(m_trajectory.size());
+        const float r = float(m_trajectoryColor.redF());
+        const float g = float(m_trajectoryColor.greenF());
+        const float b = float(m_trajectoryColor.blueF());
         for (const SlamTrajectoryPoint& point : m_trajectory) {
-            snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), 0.1f, 0.75f, 1.0f));
+            snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), r, g, b));
         }
     }
 
@@ -364,7 +372,7 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
                                    float(m_latestOutput.currentPose.qy),
                                    float(m_latestOutput.currentPose.qz));
         const float diameter = poseAxisDiameterFromLineWidth(m_poseAxisLineWidthPx);
-        snapshot.poseAxisVertices.reserve(432);
+        snapshot.poseAxisVertices.reserve(288);
         appendPoseAxisMesh(snapshot.poseAxisVertices,
                            origin,
                            rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
