@@ -142,8 +142,10 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 旁路 UI 原则保持不变：
 
 - `SlamUiBridge` 是 QObject，不是 QWidget。
-- `SlamControlDialog` 是非模态浮动窗口，通过“工具 -> SLAM...”懒创建。
-- SLAM 面板先选择“离线 SLAM / 在线 SLAM”；离线 SLAM 在面板内加载 PCAP，不再要求先通过“文件 -> 播放 PCAP 文件”创建离线播放 tab。
+- 工具菜单提供 `SLAM（在线）` / `SLAM（离线）` 两个入口；在线入口启动实时 SLAM worker，离线入口自动弹出 PCAP 文件选择框并使用当前 PCAP SLAM source。
+- `SlamControlDialog` 类仍保留为过渡实现，但不再作为工具菜单主入口。
+- SLAM 状态字段迁移到底部 `SLAM状态` dock，并与日志 dock tabify；状态布局为横向字段条，适配底部 dock。
+- SLAM 控制按钮迁移到 `SLAM` 点云可视化 tab 上方浮动控制条。
 - 离线 PCAP 加载后创建独立的 `SLAM` OpenGL tab，不复用离线播放 tab，也不显示离线播放控制条。
 - 不修改现有 dock/tab 创建流程。
 - 后端线程不直接访问 `PointCloudView`。
@@ -159,6 +161,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 世界系点云主显示不走 SLAM overlay，而是转换为 `PointCloudFrame` 后进入 SLAM tab 主点云缓存。工具栏的积分时间、点大小、着色模式和反射率色标直接作用于该主点云，对应原版 RViz 中 `currPoints` 通过客户端长 Decay 叠加 `/cloud_registered` 的显示语义。
 
 世界系当前帧点云使用同一份 `publishedWorldFramePoints` 数据源生成固定颜色 overlay，只保留最新一帧，对应原版 RViz 中 `surround` 订阅 `/cloud_registered` 且 Decay Time = 0 的显示语义。
+
+状态字段中的 `局部 ikd-tree 有效点数` 对应 `SlamOutput::mapPointCount`，来源为 FAST_LIO 后端 `ikdtree.validnum()`；`世界系点云总数` 是 UI bridge 累计收到的世界系发布点云总数，不等同于局部 ikd-tree 点数。
 
 `PointCloudView::setSlamRenderSnapshot()` 和 `clearSlamRenderOverlay()` 仍断言必须在 UI 主线程调用。OpenGL VBO/VAO 创建、写入和销毁只在当前 context 有效时执行。
 

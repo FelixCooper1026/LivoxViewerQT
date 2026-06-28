@@ -14,6 +14,8 @@ struct SlamRenderVertex {
 };
 
 struct SlamRenderSnapshot {
+    float worldFramePointSizePx = 2.0f;
+    float bodyFramePointSizePx = 2.5f;
     QVector<SlamRenderVertex> trajectoryVertices;
     QVector<SlamRenderVertex> poseAxisVertices;
     QVector<SlamRenderVertex> worldFrameVertices;

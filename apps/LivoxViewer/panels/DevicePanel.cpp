@@ -228,11 +228,11 @@ void LivoxViewerWindow::createSlamInfoPanel()
                  slamWorldFrameVisible,
                  [this](bool visible) { setSlamWorldFrameVisible(visible); });
     addLayerCard(QStringLiteral("世界系当前帧点云"),
-                 QStringLiteral("当前扫描帧世界系 overlay，使用首选项中的固定颜色。"),
+                 QStringLiteral("当前扫描帧世界系 overlay，颜色和点大小由首选项控制。"),
                  slamWorldCurrentFrameVisible,
                  [this](bool visible) { setSlamWorldCurrentFrameVisible(visible); });
     addLayerCard(QStringLiteral("机体系点云"),
-                 QStringLiteral("IMU 机体系当前帧 overlay，使用首选项中的固定颜色。"),
+                 QStringLiteral("IMU 机体系当前帧 overlay，颜色和点大小由首选项控制。"),
                  slamBodyFrameVisible,
                  [this](bool visible) { setSlamBodyFrameVisible(visible); });
     addLayerCard(QStringLiteral("轨迹"),

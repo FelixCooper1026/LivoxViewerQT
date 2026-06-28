@@ -201,6 +201,7 @@ void LivoxViewerWindow::initializeUserInterface()
     addToolBar(Qt::TopToolBarArea, mainToolBar);
 
     createPlaybackBar(visualizationWorkspace);
+    createSlamControlBar(visualizationWorkspace);
 
     centralLayout->addWidget(visualizationWorkspace, 1);
     setCentralWidget(centralContainer);
@@ -228,6 +229,7 @@ void LivoxViewerWindow::initializeUserInterface()
     createFileInfoPanel();
     createSlamInfoPanel();
     createLogPanel();
+    createSlamStatusPanel();
 
     setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::North);
     setTabPosition(Qt::RightDockWidgetArea, QTabWidget::North);

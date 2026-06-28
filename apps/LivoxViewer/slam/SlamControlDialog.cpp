@@ -64,8 +64,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
-    addField(form, QStringLiteral("后端地图点数"));
-    addField(form, QStringLiteral("世界系点云点数"));
+    addField(form, QStringLiteral("局部 ikd-tree 有效点数"));
+    addField(form, QStringLiteral("世界系点云总数"));
     addField(form, QStringLiteral("机体系当前帧点数"));
     addField(form, QStringLiteral("完整全局地图点数"));
     addField(form, QStringLiteral("错误信息"));
@@ -156,8 +156,8 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
-    m_fields.value(QStringLiteral("后端地图点数"))->setText(state.mapPoints);
-    m_fields.value(QStringLiteral("世界系点云点数"))->setText(state.worldFramePoints);
+    m_fields.value(QStringLiteral("局部 ikd-tree 有效点数"))->setText(state.mapPoints);
+    m_fields.value(QStringLiteral("世界系点云总数"))->setText(state.worldFramePoints);
     m_fields.value(QStringLiteral("机体系当前帧点数"))->setText(state.bodyFramePoints);
     m_fields.value(QStringLiteral("完整全局地图点数"))->setText(state.globalMapPoints);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);

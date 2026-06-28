@@ -161,9 +161,11 @@ public:
     void playbackSetSpeedText(const QString& text);
     void playbackSetModeIndex(int index);
     void showSlamControlDialog();
+    void startOnlineSlamFromMenu();
+    void startOfflineSlamFromMenu();
     void setSlamInputModeOffline();
     void setSlamInputModeOnline();
-    void loadOfflineSlamPcap();
+    bool loadOfflineSlamPcap();
     bool isOfflineSlamMode() const;
     QString offlineSlamPcapPath() const;
     void startSlamProcessing();
@@ -181,12 +183,14 @@ private:
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);
     QWidget* createPlaybackBar(QWidget* parent);
+    QWidget* createSlamControlBar(QWidget* parent);
     void createDevicePanel();
     void createParameterPanel();
     void createImuPanel();
     void createFileInfoPanel();
     void createSlamInfoPanel();
     void createLogPanel();
+    void createSlamStatusPanel();
     void createMenusAndActions();
     QWidget* createCustomTitleBar(QWidget* panelControls);
     void updateWindowControlButtons();
@@ -214,6 +218,9 @@ private:
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
     void showSlamInfoPanel();
+    void showSlamStatusPanel();
+    void tabifySlamStatusPanel();
+    void updateSlamStatusPanel();
     void setSlamWorldFrameVisible(bool visible);
     void setSlamWorldCurrentFrameVisible(bool visible);
     void setSlamBodyFrameVisible(bool visible);
@@ -253,6 +260,8 @@ private:
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();
     void updatePlaybackBarGeometry();
+    void updateSlamControlBarUi();
+    void updateSlamControlBarGeometry();
     void setLvx2PlaybackPlaying(bool playing);
     void finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source);
     int playbackRawEndIndexForFrame(int playbackFrameIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
@@ -343,6 +352,7 @@ private:
     QDockWidget* lvx2FileDock = nullptr;
     QDockWidget* slamInfoDock = nullptr;
     QDockWidget* logDock;
+    QDockWidget* slamStatusDock = nullptr;
     QToolBar* mainToolBar;
     QDockWidget* activeRightDock = nullptr;
     bool restoreRightParamsDock = true;
@@ -413,11 +423,21 @@ private:
     int slamWorldDisplayedSegmentEnd = 0;
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
     QColor slamBodyFrameColor = QColor(0, 255, 0);
+    float slamWorldCurrentFramePointSizePx = 2.0f;
+    float slamBodyFramePointSizePx = 2.5f;
     bool slamWorldFrameVisible = true;
     bool slamWorldCurrentFrameVisible = true;
     bool slamBodyFrameVisible = true;
     bool slamTrajectoryVisible = true;
     bool slamPoseAxisVisible = true;
+    QWidget* slamControlBar = nullptr;
+    QPushButton* slamStartButton = nullptr;
+    QPushButton* slamPauseButton = nullptr;
+    QPushButton* slamStopButton = nullptr;
+    QPushButton* slamResetButton = nullptr;
+    QPushButton* slamClearButton = nullptr;
+    QLabel* slamControlLabel = nullptr;
+    QMap<QString, QLabel*> slamStatusFields;
 
     // 工作模式状态
     bool isNormalMode;

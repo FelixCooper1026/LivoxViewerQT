@@ -232,6 +232,7 @@ void LivoxViewerWindow::closeVisualizationTab(int tabId)
         slamPointCloudView = nullptr;
         slamVisualizationTabId = -1;
         slamOfflinePcapPath.clear();
+        updateSlamControlBarUi();
     } else if (isOfflinePointCloudTab(tabId)) {
         const int tabNumber = offlinePointCloudTabNumbersByTab.value(tabId, 0);
         if (tabNumber > 0) {
@@ -300,6 +301,7 @@ void LivoxViewerWindow::onVisualizationFocusedTabChanged(int tabId)
     syncPointCloudToolActions();
     rebuildLvx2DeviceTab();
     updateLvx2PlaybackUi();
+    updateSlamControlBarUi();
 
     if (isOfflinePointCloudTab(tabId) && playbackState.active && playbackState.frame < 0) {
         showLvx2PlaybackFrame(0);

@@ -86,6 +86,11 @@ QString errorDisplayMessage(const SlamOutput& output)
     }
 }
 
+float clampOverlayPointSize(float sizePx)
+{
+    return std::clamp(sizePx, 1.0f, 10.0f);
+}
+
 } // namespace
 
 SlamUiBridge::SlamUiBridge(QObject* parent)
@@ -112,6 +117,9 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     }
     appendTrajectory(output);
     appendGlobalMap(output);
+    if (output.status == SlamStatusCode::Running) {
+        m_worldFramePointTotal += quint64(output.publishedWorldFramePoints.size());
+    }
     m_latestOutput.newGlobalMapPoints.clear();
 }
 
@@ -130,6 +138,26 @@ void SlamUiBridge::setBodyFrameColor(const QColor& color)
         return;
     }
     m_bodyFrameColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setWorldFramePointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_worldFramePointSizePx == clampedSize) {
+        return;
+    }
+    m_worldFramePointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setBodyFramePointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_bodyFramePointSizePx == clampedSize) {
+        return;
+    }
+    m_bodyFramePointSizePx = clampedSize;
     refreshStatus();
 }
 
@@ -177,6 +205,7 @@ void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
     m_globalMapPoints.clear();
+    m_worldFramePointTotal = 0;
     m_latestOutput.publishedWorldFramePoints.clear();
     m_latestOutput.publishedBodyFramePoints.clear();
     m_latestOutput.newGlobalMapPoints.clear();
@@ -199,7 +228,7 @@ void SlamUiBridge::refreshStatus()
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
     m_displayState.mapPoints = QString::number(m_latestOutput.mapPointCount);
-    m_displayState.worldFramePoints = QString::number(m_latestOutput.publishedWorldFramePoints.size());
+    m_displayState.worldFramePoints = QString::number(m_worldFramePointTotal);
     m_displayState.bodyFramePoints = QString::number(m_latestOutput.publishedBodyFramePoints.size());
     m_displayState.globalMapPoints = QString::number(m_globalMapPoints.size());
     m_displayState.error = m_errorMessage;
@@ -217,6 +246,9 @@ void SlamUiBridge::refreshStatus()
 SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
 {
     SlamRenderSnapshot snapshot;
+    snapshot.worldFramePointSizePx = m_worldFramePointSizePx;
+    snapshot.bodyFramePointSizePx = m_bodyFramePointSizePx;
+
     if (m_trajectoryVisible) {
         snapshot.trajectoryVertices.reserve(m_trajectory.size());
         for (const SlamTrajectoryPoint& point : m_trajectory) {

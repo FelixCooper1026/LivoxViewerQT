@@ -41,6 +41,8 @@ public slots:
     void receiveSlamOutput(const SlamOutput& output);
     void setWorldFrameColor(const QColor& color);
     void setBodyFrameColor(const QColor& color);
+    void setWorldFramePointSize(float sizePx);
+    void setBodyFramePointSize(float sizePx);
     void setRenderLayerVisibility(bool trajectoryVisible,
                                   bool poseAxisVisible,
                                   bool worldFrameVisible,
@@ -65,12 +67,15 @@ private:
     DisplayState m_displayState;
     QVector<SlamTrajectoryPoint> m_trajectory;
     QVector<SlamPoint> m_globalMapPoints;
+    quint64 m_worldFramePointTotal = 0;
     QString m_errorMessage;
     QTimer m_refreshTimer;
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");
     QColor m_worldFrameColor = QColor(255, 255, 255);
     QColor m_bodyFrameColor = QColor(0, 255, 0);
+    float m_worldFramePointSizePx = 2.0f;
+    float m_bodyFramePointSizePx = 2.5f;
     bool m_trajectoryVisible = true;
     bool m_poseAxisVisible = true;
     bool m_worldFrameVisible = true;

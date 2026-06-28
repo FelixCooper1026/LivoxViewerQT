@@ -1161,14 +1161,14 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("uPersistEnabled", 0);
     m_program->setUniformValue("uModelLighting", 0);
     if (m_slamWorldFrameVertexCount > 0 && m_slamWorldFrameVao.isCreated()) {
-        m_program->setUniformValue("uPointSize", 2.0f);
+        m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.worldFramePointSizePx);
         m_slamWorldFrameVao.bind();
         glDrawArrays(GL_POINTS, 0, m_slamWorldFrameVertexCount);
         m_slamWorldFrameVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
     if (m_slamBodyFrameVertexCount > 0 && m_slamBodyFrameVao.isCreated()) {
-        m_program->setUniformValue("uPointSize", 2.5f);
+        m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.bodyFramePointSizePx);
         m_slamBodyFrameVao.bind();
         glDrawArrays(GL_POINTS, 0, m_slamBodyFrameVertexCount);
         m_slamBodyFrameVao.release();

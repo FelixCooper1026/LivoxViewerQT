@@ -80,3 +80,51 @@ QWidget* LivoxViewerWindow::createPlaybackBar(QWidget* parent)
     playbackState.bar->setVisible(false);
     return playbackState.bar;
 }
+
+QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
+{
+    slamControlBar = new QWidget(parent);
+    slamControlBar->setObjectName(QStringLiteral("SlamOverlayBar"));
+    slamControlBar->setAttribute(Qt::WA_StyledBackground, true);
+    slamControlBar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    slamControlBar->setStyleSheet(QStringLiteral(
+        "QWidget#SlamOverlayBar {"
+        "  background: palette(window);"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 6px;"
+        "}"
+        "QWidget#SlamOverlayBar QLabel {"
+        "  color: palette(window-text);"
+        "  background: transparent;"
+        "}"));
+
+    QHBoxLayout* layout = new QHBoxLayout(slamControlBar);
+    layout->setContentsMargins(8, 4, 8, 4);
+    layout->setSpacing(6);
+
+    slamStartButton = new QPushButton(QStringLiteral("启动"), slamControlBar);
+    slamPauseButton = new QPushButton(QStringLiteral("暂停"), slamControlBar);
+    slamStopButton = new QPushButton(QStringLiteral("停止"), slamControlBar);
+    slamResetButton = new QPushButton(QStringLiteral("重置"), slamControlBar);
+    slamClearButton = new QPushButton(QStringLiteral("清空显示"), slamControlBar);
+    slamControlLabel = new QLabel(QStringLiteral("SLAM"), slamControlBar);
+    slamControlLabel->setMinimumWidth(0);
+    slamControlLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    slamControlLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    layout->addWidget(slamStartButton);
+    layout->addWidget(slamPauseButton);
+    layout->addWidget(slamStopButton);
+    layout->addWidget(slamResetButton);
+    layout->addWidget(slamClearButton);
+    layout->addWidget(slamControlLabel, 1);
+
+    connect(slamStartButton, &QPushButton::clicked, this, &LivoxViewerWindow::startSlamProcessing);
+    connect(slamPauseButton, &QPushButton::clicked, this, &LivoxViewerWindow::pauseSlamProcessing);
+    connect(slamStopButton, &QPushButton::clicked, this, &LivoxViewerWindow::stopSlamProcessing);
+    connect(slamResetButton, &QPushButton::clicked, this, &LivoxViewerWindow::resetSlamProcessing);
+    connect(slamClearButton, &QPushButton::clicked, this, &LivoxViewerWindow::clearSlamDisplay);
+
+    slamControlBar->setVisible(false);
+    return slamControlBar;
+}

@@ -902,7 +902,8 @@ void LivoxViewerWindow::createMenusAndActions()
                                  (imuDock && imuDock->isVisible()) ||
                                  (lvx2FileDock && lvx2FileDock->isVisible()) ||
                                  (slamInfoDock && slamInfoDock->isVisible());
-        const bool bottomVisible = logDock && logDock->isVisible();
+        const bool bottomVisible = (logDock && logDock->isVisible()) ||
+                                   (slamStatusDock && slamStatusDock->isVisible());
         const bool rightVisible = (paramsDock && paramsDock->isVisible()) ||
                                   (attrDock && attrDock->isVisible());
         leftPanelButton->setChecked(leftVisible);
@@ -946,7 +947,17 @@ void LivoxViewerWindow::createMenusAndActions()
         syncPanelButtons();
     });
     connect(bottomPanelButton, &QToolButton::clicked, this, [this, syncPanelButtons]() {
-        logDock->setVisible(!logDock->isVisible());
+        const bool visible = (logDock && logDock->isVisible()) ||
+                             (slamStatusDock && slamStatusDock->isVisible());
+        if (logDock) {
+            logDock->setVisible(!visible);
+        }
+        if (slamStatusDock) {
+            slamStatusDock->setVisible(!visible && slamUiBridge);
+            if (!visible && slamStatusDock->isVisible()) {
+                slamStatusDock->raise();
+            }
+        }
         syncPanelButtons();
     });
     connect(rightPanelButton, &QToolButton::clicked, this, [this, syncPanelButtons]() {
@@ -977,7 +988,7 @@ void LivoxViewerWindow::createMenusAndActions()
     });
     connect(settingsButton, &QToolButton::clicked, this, &LivoxViewerWindow::showPreferencesDialog);
 
-    for (QDockWidget* dock : {networkDock, lidarDevicesDock, imuDock, lvx2FileDock, slamInfoDock, logDock, paramsDock, attrDock}) {
+    for (QDockWidget* dock : {networkDock, lidarDevicesDock, imuDock, lvx2FileDock, slamInfoDock, logDock, slamStatusDock, paramsDock, attrDock}) {
         connect(dock, &QDockWidget::visibilityChanged, panelControls, syncPanelButtons);
     }
     syncPanelButtons();
@@ -985,7 +996,8 @@ void LivoxViewerWindow::createMenusAndActions()
     createFileActions();
     createDeviceActions();
     createHelpActions();
-    toolsMenu->addAction(QStringLiteral("SLAM..."), this, &LivoxViewerWindow::showSlamControlDialog);
+    toolsMenu->addAction(QStringLiteral("SLAM（在线）"), this, &LivoxViewerWindow::startOnlineSlamFromMenu);
+    toolsMenu->addAction(QStringLiteral("SLAM（离线）"), this, &LivoxViewerWindow::startOfflineSlamFromMenu);
     // 视图菜单：显示/隐藏 dock
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());
@@ -994,6 +1006,7 @@ void LivoxViewerWindow::createMenusAndActions()
     viewMenu->addAction(attrDock->toggleViewAction());
     viewMenu->addAction(imuDock->toggleViewAction());
     viewMenu->addAction(logDock->toggleViewAction());
+    viewMenu->addAction(slamStatusDock->toggleViewAction());
 
     createStatusBarAndTimers();
     createPlaybackActions(toolsMenu);

@@ -663,11 +663,16 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     if (attrDock) {
         attrDock->hide();
     }
+    if (slamStatusDock && !slamUiBridge) {
+        slamStatusDock->hide();
+    }
 
     QTimer::singleShot(0, this, [this]() {
+        tabifySlamStatusPanel();
         for (QTabBar* tabBar : findChildren<QTabBar*>()) {
             bool isDeviceDockTabs = false;
             bool isParameterDockTabs = false;
+            bool isBottomDockTabs = false;
             for (int index = 0; index < tabBar->count(); ++index) {
                 const QString text = tabBar->tabText(index);
                 if (text == QStringLiteral("设备") ||
@@ -677,15 +682,20 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
                 } else if (text == QStringLiteral("参数") ||
                            text == QStringLiteral("点属性")) {
                     isParameterDockTabs = true;
+                } else if (text == QStringLiteral("日志") ||
+                           text == QStringLiteral("SLAM状态")) {
+                    isBottomDockTabs = true;
                 }
             }
-            if (!isDeviceDockTabs && !isParameterDockTabs) {
+            if (!isDeviceDockTabs && !isParameterDockTabs && !isBottomDockTabs) {
                 continue;
             }
 
             tabBar->setObjectName(isDeviceDockTabs
                 ? QStringLiteral("DeviceDockTabBar")
-                : QStringLiteral("ParameterDockTabBar"));
+                : (isParameterDockTabs
+                    ? QStringLiteral("ParameterDockTabBar")
+                    : QStringLiteral("BottomDockTabBar")));
             tabBar->setDocumentMode(true);
             tabBar->setDrawBase(false);
             tabBar->setExpanding(false);
@@ -693,7 +703,9 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
             tabBar->setUsesScrollButtons(false);
             const QString objectSelector = isDeviceDockTabs
                 ? QStringLiteral("QTabBar#DeviceDockTabBar")
-                : QStringLiteral("QTabBar#ParameterDockTabBar");
+                : (isParameterDockTabs
+                    ? QStringLiteral("QTabBar#ParameterDockTabBar")
+                    : QStringLiteral("QTabBar#BottomDockTabBar"));
             tabBar->setStyleSheet(QStringLiteral(
                 "%1 {"
                 "  qproperty-drawBase: false;"
@@ -842,10 +854,18 @@ void LivoxViewerWindow::loadViewPreferences()
     if (!slamWorldCurrentFrameColor.isValid()) {
         slamWorldCurrentFrameColor = QColor(255, 255, 255);
     }
+    slamWorldCurrentFramePointSizePx = std::clamp(
+        settings.value(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx).toFloat(),
+        1.0f,
+        10.0f);
     slamBodyFrameColor = settings.value(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor).value<QColor>();
     if (!slamBodyFrameColor.isValid() || slamBodyFrameColor == QColor(255, 140, 26)) {
         slamBodyFrameColor = QColor(0, 255, 0);
     }
+    slamBodyFramePointSizePx = std::clamp(
+        settings.value(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx).toFloat(),
+        1.0f,
+        10.0f);
     autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
@@ -958,7 +978,9 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("theme/mode", themeMode);
     settings.setValue("network/autoConfigHostIp", autoConfigHostIpEnabled);
     settings.setValue(QStringLiteral("slam/worldCurrentFrameColor"), slamWorldCurrentFrameColor);
+    settings.setValue(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx);
     settings.setValue(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor);
+    settings.setValue(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx);
     saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
 }
 
@@ -1379,6 +1401,8 @@ void LivoxViewerWindow::showPreferencesDialog()
                 slamWorldCurrentFrameColorPreview->setStyleSheet(
                     QString("background-color: %1;").arg(selectedSlamWorldCurrentFrameColor.name()));
             });
+    QDoubleSpinBox* slamWorldCurrentFramePointSizeSpin =
+        createSlamDoubleSpin(slamWorldCurrentFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     QWidget* slamBodyColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamBodyColorRow);
     QHBoxLayout* slamBodyColorLayout = new QHBoxLayout(slamBodyColorRow);
@@ -1401,6 +1425,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         selectedSlamBodyFrameColor = color;
         slamBodyColorPreview->setStyleSheet(QString("background-color: %1;").arg(selectedSlamBodyFrameColor.name()));
     });
+    QDoubleSpinBox* slamBodyFramePointSizeSpin =
+        createSlamDoubleSpin(slamBodyFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     auto syncSlamPublishControls = [slamPublishWorldCheck, slamPublishDenseCheck, slamPublishBodyCheck]() {
         const bool enabled = slamPublishWorldCheck->isChecked();
         slamPublishDenseCheck->setEnabled(enabled);
@@ -1659,6 +1685,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "设置世界系当前扫描帧 overlay 的固定颜色。",
                      slamWorldCurrentFrameColorRow);
     addPreferenceRow(slamPublishSection,
+                     "世界系当前帧点大小",
+                     "设置世界系当前扫描帧 overlay 的 OpenGL 像素点大小。",
+                     slamWorldCurrentFramePointSizeSpin);
+    addPreferenceRow(slamPublishSection,
                      "发布机体系点云",
                      "按原版 scan_bodyframe_pub_en 语义输出当前帧 IMU 机体系点云。",
                      slamPublishBodyCheck);
@@ -1666,6 +1696,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "机体系点云颜色",
                      "设置 IMU 机体系当前帧点云 overlay 的固定颜色。",
                      slamBodyColorRow);
+    addPreferenceRow(slamPublishSection,
+                     "机体系点云点大小",
+                     "设置 IMU 机体系当前帧点云 overlay 的 OpenGL 像素点大小。",
+                     slamBodyFramePointSizeSpin);
     addPreferenceRow(slamPublishSection,
                      "保存完整全局地图",
                      "按原版 pcd_save 语义累计去畸变 dense 帧到世界系，供完整全局地图 PCD/LAS 导出。",
@@ -1759,6 +1793,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     };
     const QColor previousSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
+    const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
+    const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
@@ -1786,9 +1822,13 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
+    slamWorldCurrentFramePointSizePx = static_cast<float>(slamWorldCurrentFramePointSizeSpin->value());
+    slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
     if (slamUiBridge) {
         slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
         slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+        slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
+        slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     }
 
     syncReflectivityColorScaleControls();
@@ -1838,7 +1878,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
         slamRuntimeConfig.saveMap != previousSlamSaveMap ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
-        slamBodyFrameColor != previousSlamBodyFrameColor) {
+        slamBodyFrameColor != previousSlamBodyFrameColor ||
+        slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
+        slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx) {
         liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
         logMessage(QStringLiteral("[SLAM] 设置已更新"));
     }

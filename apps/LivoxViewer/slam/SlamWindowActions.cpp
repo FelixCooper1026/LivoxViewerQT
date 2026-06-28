@@ -104,6 +104,8 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge = new SlamUiBridge(this);
     slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+    slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
+    slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     syncSlamRenderLayerVisibility();
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {
@@ -118,6 +120,9 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
             slamPointCloudView->setSlamRenderSnapshot(snapshot);
         }
     });
+    connect(slamUiBridge, &SlamUiBridge::displayStateChanged, this, &LivoxViewerWindow::updateSlamStatusPanel);
+    showSlamStatusPanel();
+    updateSlamStatusPanel();
     return slamUiBridge;
 }
 
@@ -132,16 +137,38 @@ void LivoxViewerWindow::showSlamControlDialog()
     slamControlDialog->activateWindow();
 }
 
+void LivoxViewerWindow::startOnlineSlamFromMenu()
+{
+    setSlamInputModeOnline();
+    ensureSlamVisualizationTab(QStringLiteral("online"));
+    showSlamInfoPanel();
+    showSlamStatusPanel();
+    startSlamProcessing();
+}
+
+void LivoxViewerWindow::startOfflineSlamFromMenu()
+{
+    setSlamInputModeOffline();
+    if (!loadOfflineSlamPcap()) {
+        return;
+    }
+    showSlamInfoPanel();
+    showSlamStatusPanel();
+    startSlamProcessing();
+}
+
 void LivoxViewerWindow::setSlamInputModeOffline()
 {
     slamInputMode = SlamInputMode::Offline;
     ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::setSlamInputModeOnline()
 {
     slamInputMode = SlamInputMode::Online;
     ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("在线 SLAM"), QStringLiteral("FAST_LIO"));
+    updateSlamControlBarUi();
 }
 
 bool LivoxViewerWindow::isOfflineSlamMode() const
@@ -154,7 +181,7 @@ QString LivoxViewerWindow::offlineSlamPcapPath() const
     return slamOfflinePcapPath;
 }
 
-void LivoxViewerWindow::loadOfflineSlamPcap()
+bool LivoxViewerWindow::loadOfflineSlamPcap()
 {
     setSlamInputModeOffline();
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
@@ -171,7 +198,7 @@ void LivoxViewerWindow::loadOfflineSlamPcap()
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setNameFilter(QStringLiteral("PCAP 文件 (*.pcap *.pcapng);;所有文件 (*.*)"));
     if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
-        return;
+        return false;
     }
 
     const QString filePath = dialog.selectedFiles().first();
@@ -187,6 +214,8 @@ void LivoxViewerWindow::loadOfflineSlamPcap()
     if (statusBar()) {
         statusBar()->showMessage(QStringLiteral("离线 SLAM PCAP 已加载"), 3000);
     }
+    updateSlamControlBarUi();
+    return true;
 }
 
 int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
@@ -196,6 +225,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
             visualizationWorkspace->setTabToolTip(slamVisualizationTabId, QDir::toNativeSeparators(sourcePath));
         }
         visualizationWorkspace->activateTab(slamVisualizationTabId);
+        updateSlamControlBarUi();
         return slamVisualizationTabId;
     }
 
@@ -225,6 +255,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     applyPointCloudBackground();
     updatePointCloudLegend();
     visualizationWorkspace->activateTab(slamVisualizationTabId);
+    updateSlamControlBarUi();
     return slamVisualizationTabId;
 }
 
@@ -253,13 +284,108 @@ void LivoxViewerWindow::startSlamProcessing()
         } else {
             postSlamStatus(SlamStatusCode::Running, QStringLiteral("SLAM 已在运行。"));
         }
+        updateSlamControlBarUi();
         return;
     }
 
     if (slamInputMode == SlamInputMode::Online) {
+        const SlamRuntimeConfig config = slamRuntimeConfig;
+        liveSlamSource.reset();
+        liveSlamSource.setFrameDurationMs(config.inputFrameDurationMs);
+        liveSlamSource.setQueueCapacity(config.maxInputQueueFrames);
+        slamWorkerCancel.store(false);
+        slamWorkerPaused.store(false);
+        slamWorkerActive.store(true);
+        slamRenderOverlayEnabled = true;
         ensureSlamVisualizationTab(QStringLiteral("online"));
+        bridge->clearDisplay();
+        clearSlamWorldPointCloud();
         showSlamInfoPanel();
-        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("在线 SLAM worker 尚未接入。请切换到离线 SLAM 或等待实时 worker 接入。"));
+        showSlamStatusPanel();
+        postSlamStatus(SlamStatusCode::Starting,
+                       QStringLiteral("正在启动在线 SLAM：%1 Hz / %2 ms。")
+                           .arg(config.preprocessScanRateHz, 0, 'f', 1)
+                           .arg(config.inputFrameDurationMs));
+        updateSlamControlBarUi();
+
+        slamWorker = std::thread([this, config]() {
+            auto postOutput = [this](SlamOutput output) {
+                QMetaObject::invokeMethod(this, [this, output = std::move(output)]() mutable {
+                    submitSlamOutputForUi(output);
+                    updateSlamControlBarUi();
+                }, Qt::QueuedConnection);
+            };
+
+            FastLioSlamBackend backend;
+            QString error;
+            if (!backend.start(config, &error)) {
+                postOutput(statusOutput(SlamStatusCode::Failed, error));
+                slamWorkerActive.store(false);
+                return;
+            }
+
+            QElapsedTimer elapsed;
+            elapsed.start();
+            int processedFrames = 0;
+            int skippedFrames = 0;
+            SlamOutput lastOutput;
+            bool hasLastOutput = false;
+
+            while (!slamWorkerCancel.load()) {
+                if (slamWorkerPaused.load()) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    continue;
+                }
+
+                SlamInputFrame frame;
+                if (!liveSlamSource.inputQueue().tryPop(frame)) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                    continue;
+                }
+
+                if (!frame.hasPointOffsetTime || !frame.hasCompleteImuCoverage) {
+                    ++skippedFrames;
+                    continue;
+                }
+
+                SlamOutput output;
+                error.clear();
+                const bool accepted = backend.processFrame(frame, &output, &error);
+                ++processedFrames;
+                const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+                output.inputFps = stats.inputFps;
+                output.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
+                if (!error.isEmpty() && output.message.isEmpty()) {
+                    output.message = error;
+                }
+                lastOutput = output;
+                hasLastOutput = true;
+                postOutput(output);
+
+                if (!accepted &&
+                    output.status != SlamStatusCode::InitializingImu &&
+                    output.status != SlamStatusCode::TimeSyncError) {
+                    break;
+                }
+            }
+
+            backend.stop();
+            const bool cancelled = slamWorkerCancel.load();
+            SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
+            finalOutput.status = SlamStatusCode::Stopped;
+            finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("在线 SLAM 已结束。");
+            finalOutput.newTrajectoryPoints.clear();
+            finalOutput.newGlobalMapPoints.clear();
+            const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+            finalOutput.inputFps = stats.inputFps;
+            finalOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
+            if (processedFrames > 0 && finalOutput.inputFps <= 0.0) {
+                const double elapsedSec = qMax(0.001, double(elapsed.elapsed()) / 1000.0);
+                finalOutput.inputFps = double(processedFrames) / elapsedSec;
+            }
+            postOutput(finalOutput);
+            slamWorkerActive.store(false);
+        });
         return;
     }
 
@@ -278,15 +404,18 @@ void LivoxViewerWindow::startSlamProcessing()
     clearSlamWorldPointCloud();
     ensureSlamVisualizationTab(pcapPath);
     showSlamInfoPanel();
+    showSlamStatusPanel();
     postSlamStatus(SlamStatusCode::Starting,
                    QStringLiteral("正在启动离线 SLAM：%1 Hz / %2 ms。")
                        .arg(config.preprocessScanRateHz, 0, 'f', 1)
                        .arg(config.inputFrameDurationMs));
+    updateSlamControlBarUi();
 
     slamWorker = std::thread([this, pcapPath, config]() {
         auto postOutput = [this](SlamOutput output) {
             QMetaObject::invokeMethod(this, [this, output = std::move(output)]() mutable {
                 submitSlamOutputForUi(output);
+                updateSlamControlBarUi();
             }, Qt::QueuedConnection);
         };
 
@@ -407,10 +536,12 @@ void LivoxViewerWindow::pauseSlamProcessing()
     ensureSlamUiBridge();
     if (!slamWorker.joinable() || !slamWorkerActive.load()) {
         postSlamStatus(SlamStatusCode::Paused, QStringLiteral("当前没有正在运行的 SLAM。"));
+        updateSlamControlBarUi();
         return;
     }
     slamWorkerPaused.store(true);
     postSlamStatus(SlamStatusCode::Paused, QStringLiteral("SLAM 已暂停。"));
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::stopSlamProcessing()
@@ -423,6 +554,7 @@ void LivoxViewerWindow::stopSlamProcessing()
     }
     slamWorkerActive.store(false);
     postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 已停止。"));
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::resetSlamProcessing()
@@ -430,6 +562,7 @@ void LivoxViewerWindow::resetSlamProcessing()
     stopSlamProcessing();
     clearSlamDisplay();
     postSlamStatus(SlamStatusCode::Idle, QStringLiteral("SLAM 已重置。"));
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::clearSlamDisplay()

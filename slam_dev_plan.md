@@ -1604,7 +1604,7 @@ Phase 5.4 已完成基础版本：
 
 - 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-27：不打开 SLAM UI 的启动/关闭 smoke 通过，`LivoxViewerQT.exe` 启动后响应正常，主窗口标题 `LivoxViewerQT`，关闭后进程退出。
-- 2026-06-27：修正 SLAM 面板地图计数字段语义：`后端地图点数` 始终显示后端 `SlamOutput::mapPointCount`，`预览点数` 单独显示 `GlobalMapPreviewStore::previewPointCount()`，避免预览开启时两个字段都显示 UI 预览点数。
+- 2026-06-27：修正 SLAM 面板地图计数字段语义：`局部 ikd-tree 有效点数` 始终显示后端 `SlamOutput::mapPointCount`，`预览点数` 单独显示 `GlobalMapPreviewStore::previewPointCount()`，避免预览开启时两个字段都显示 UI 预览点数。
 
 验证缺口：
 
@@ -1642,14 +1642,16 @@ Phase 5.4 已完成基础版本：
   - 机体系当前帧点云：使用 `feats_undistort`，只做 LiDAR body 到 IMU body 外参变换。
   - 完整全局地图增量：当 `saveMap=true` 时，使用 dense `feats_undistort` 转 world frame 后输出 `newGlobalMapPoints`。
 - `SlamUiBridge` 不再维护预览 store；现在缓存轨迹、当前帧发布点云、完整全局地图点集，并在状态面板显示：
-  - 世界系点云点数。
+  - 局部 ikd-tree 有效点数。
+  - 世界系点云总数。
   - 机体系当前帧点数。
   - 完整全局地图点数。
 - `SlamRenderSnapshot` 改为携带：
   - 轨迹 overlay。
   - 当前位姿 axis overlay。
+  - 世界系当前帧点云 overlay。
   - 机体系当前帧点云 overlay。
-- 世界系点云不再走 overlay；现在进入 SLAM 专属 OpenGL tab 的主点云流，可复用工具栏积分时间、点大小、着色模式和色标。
+- 世界系点云累计显示进入 SLAM 专属 OpenGL tab 的主点云流，可复用工具栏积分时间、点大小、着色模式和色标；世界系当前帧点云作为固定颜色 overlay 显示。
 - `PointCloudView` 继续只允许 UI 主线程调用 `setSlamRenderSnapshot()` / `clearSlamRenderOverlay()`；机体系点云和轨迹/位姿 overlay VBO 在有效 OpenGL context 下上传/销毁。
 - 新增 `SlamMapExport`，直接从后端完整地图点集 `QVector<SlamPoint>` 流式写 PCD/LAS，不从 OpenGL VBO 读取，也不使用旧预览缓存。
 - `SlamControlDialog` 导出按钮改为：
@@ -1666,7 +1668,15 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：启动 SLAM 后在左侧设备 dock 区域显示 `SLAM` tab，使用与文件信息设备卡片一致的眼睛图标卡片控制 `世界系点云`、`机体系点云`、`轨迹`、`姿态坐标轴` 可见性；世界系点云控制 SLAM tab 主点云段显示，其他三项控制 `SlamUiBridge` overlay 快照输出。
 - 2026-06-28：继续迁移原版 FAST_LIO 参数到 `SlamRuntimeConfig` 和首选项 SLAM 页：`cube_side_length` -> `cubeSideLengthM`、`mapping/det_range` -> `detRangeM`、`mapping/fov_degree` -> `fovDegree`、`max_iteration` -> `maxIterations`、`mapping/gyr_cov` -> `gyrCov`、`mapping/acc_cov` -> `accCov`、`mapping/b_gyr_cov` -> `bGyrCov`、`mapping/b_acc_cov` -> `bAccCov`。后端初始化不再使用这些硬编码常量，统一从运行配置读取。
 - 2026-06-28：按原版 RViz 语义补齐 `surround`/`currPoints` 区分：两者数据源均为 FAST_LIO 发布世界系点云；`世界系点云` 继续作为 SLAM tab 主点云按积分时间窗口累计显示，新增 `世界系当前帧点云` overlay 固定颜色只显示最新帧。SLAM dock 在 `世界系点云` 下方新增对应卡片；首选项 SLAM 页新增世界系当前帧颜色，默认白色；机体系当前帧 overlay 默认颜色改为绿色。
+- 2026-06-28：将 `世界系当前帧点云` 和 `机体系点云` overlay 的像素点大小从 `PointCloudView` 硬编码迁移为首选项 SLAM 页可配置显示参数。默认值保持兼容：世界系当前帧 2.0 px，机体系当前帧 2.5 px；配置经 `QSettings` 持久化，并通过 `SlamRenderSnapshot` 传入 OpenGL 绘制。
 - 2026-06-28：迁移原版 FAST_LIO 重力常量 `G_m_s2` 为 `SlamRuntimeConfig::gravityNorm`，默认 9.81 m/s²，并在首选项 SLAM 页暴露。`ImuProcess` 使用该配置初始化重力向量、缩放 IMU 加速度和初始化协方差，默认值下与原版行为一致。
+- 2026-06-28：将 SLAM 主入口从 `工具 -> SLAM...` 对话框迁移为 `工具 -> SLAM（在线）` 和 `工具 -> SLAM（离线）` 两个入口；在线入口启动实时 `LiveLidarSlamSource` queue worker，离线入口自动弹出 PCAP 文件选择框并启动 PCAP SLAM source。`SlamControlDialog` 保留为过渡类但不再作为工具菜单主入口。
+- 2026-06-28：将 SLAM 状态字段迁移到底部 `SLAM状态` dock，并与日志 dock tabify；字段横向显示，包含状态、模式、后端、IMU 状态、输入 FPS、后端耗时、丢帧数、当前位姿、轨迹点数、`局部 ikd-tree 有效点数`、`世界系点云总数`、机体系当前帧点数、完整全局地图点数和错误信息。
+- 2026-06-28：将启动、暂停、停止、重置、清空显示迁移到 `SLAM` 点云可视化 tab 上方浮动控制条，控制条仅在 SLAM tab 聚焦时显示。
+- 2026-06-28：修复底部 `日志` dock 与 `SLAM状态` dock 在恢复旧窗口布局后被拆成并排显示的问题：窗口状态恢复后和显示 SLAM 状态时都会重新强制 `tabifyDockWidget(logDock, slamStatusDock)`。同时将 `SLAM状态` 内容从“一项一卡片横向排列”改为 3 行紧凑字段网格，减少底部 dock 横向空间浪费。
+- 2026-06-28：修复 SLAM tab 浮动控制条首次点击“启动”后仍需再次点击才启用“暂停/停止”的问题。原因是首次刷新发生在 `slamWorkerActive=true` 之后、`slamWorker = std::thread(...)` 赋值之前，旧逻辑同时依赖 `slamWorker.joinable()`，误判为未运行；现改为按钮运行态以 `slamWorkerActive` 为准，并让离线 worker 输出回调同步刷新控制条。
+- 2026-06-28：修复 `SLAM状态` tab 纵向分布异常的问题。原因是状态字段区是固定高度紧凑网格，而根 `QVBoxLayout` 未将剩余高度明确分配到底部，导致空白出现在标题和字段区之间；现将标题和字段区顶部锚定，并用底部 stretch 吸收剩余高度，使其与 `日志` tab 的纵向起始位置一致。
+- 2026-06-28：继续优化 `SLAM状态` tab 深色主题显示效果：取消“固定高度字段网格 + 外层底部 stretch”方案，改为状态内容 frame 填满 dock 剩余高度，字段网格在 frame 内顶部对齐，避免底部空白使用外层背景造成视觉割裂。
 
 验证：
 
@@ -1675,6 +1685,12 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：迁移 FAST_LIO 局部地图、FOV、迭代次数和 IMU 噪声参数后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：新增世界系当前帧 overlay 与 SLAM dock 图层卡片后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：`gravityNorm` 接入 `ImuProcess` 并在首选项 SLAM 页暴露后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：迁移 SLAM 在线/离线菜单入口、底部 `SLAM状态` dock、SLAM tab 浮动控制条并接入实时 SLAM worker 后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：优化 `日志` / `SLAM状态` tabify 恢复和状态面板紧凑网格布局后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：修复 SLAM tab 浮动控制条首次启动后的按钮状态同步后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：修复 `SLAM状态` tab 纵向空白分布后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：优化 `SLAM状态` tab 深色主题底部空白显示后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：将世界系当前帧点云和机体系点云 overlay 点大小改为首选项可配置后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 

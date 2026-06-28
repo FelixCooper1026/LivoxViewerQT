@@ -874,6 +874,79 @@ void LivoxViewerWindow::updatePlaybackBarGeometry()
     playbackState.bar->raise();
 }
 
+void LivoxViewerWindow::updateSlamControlBarUi()
+{
+    if (!slamControlBar) {
+        return;
+    }
+
+    const bool visible = isSlamPointCloudTab(activeVisualizationTabId) && slamPointCloudView != nullptr;
+    slamControlBar->setVisible(visible);
+    if (!visible) {
+        return;
+    }
+
+    const bool active = slamWorkerActive.load();
+    const bool hasWorker = slamWorker.joinable();
+    const bool paused = active && slamWorkerPaused.load();
+    if (slamStartButton) {
+        slamStartButton->setText(paused ? QStringLiteral("继续") : QStringLiteral("启动"));
+        slamStartButton->setEnabled(!active || paused);
+    }
+    if (slamPauseButton) {
+        slamPauseButton->setEnabled(active && !paused);
+    }
+    if (slamStopButton) {
+        slamStopButton->setEnabled(active || hasWorker);
+    }
+    if (slamResetButton) {
+        slamResetButton->setEnabled(true);
+    }
+    if (slamClearButton) {
+        slamClearButton->setEnabled(true);
+    }
+    if (slamControlLabel) {
+        const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM");
+        const QString stateText = active
+            ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
+            : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));
+        const QString sourceText = isOfflineSlamMode() && !slamOfflinePcapPath.isEmpty()
+            ? QDir::toNativeSeparators(slamOfflinePcapPath)
+            : QString();
+        const QString text = sourceText.isEmpty()
+            ? QStringLiteral("%1 | %2").arg(modeText, stateText)
+            : QStringLiteral("%1 | %2 | %3").arg(modeText, stateText, sourceText);
+        slamControlLabel->setToolTip(text);
+        slamControlLabel->setText(slamControlLabel->fontMetrics().elidedText(text, Qt::ElideMiddle, slamControlLabel->width()));
+    }
+    updateSlamControlBarGeometry();
+}
+
+void LivoxViewerWindow::updateSlamControlBarGeometry()
+{
+    if (!slamControlBar || !visualizationWorkspace || !slamPointCloudView) {
+        return;
+    }
+
+    if (!slamControlBar->isVisible() || !isSlamPointCloudTab(activeVisualizationTabId)) {
+        return;
+    }
+
+    if (slamControlBar->parentWidget() != visualizationWorkspace) {
+        slamControlBar->setParent(visualizationWorkspace);
+    }
+
+    const QPoint viewTopLeft = slamPointCloudView->mapTo(visualizationWorkspace, QPoint(0, 0));
+    const int margin = 10;
+    const int barWidth = std::max(1, slamPointCloudView->width() - margin * 2);
+    const int barHeight = slamControlBar->sizeHint().height();
+    slamControlBar->setGeometry(viewTopLeft.x() + margin,
+                                viewTopLeft.y() + margin,
+                                barWidth,
+                                barHeight);
+    slamControlBar->raise();
+}
+
 bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == playbackState.progressSlider &&
@@ -941,6 +1014,7 @@ bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
                 event->type() == QEvent::Show)) {
         QMetaObject::invokeMethod(this, [this]() {
             updatePlaybackBarGeometry();
+            updateSlamControlBarGeometry();
         }, Qt::QueuedConnection);
     }
 
