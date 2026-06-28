@@ -232,7 +232,9 @@ void LivoxViewerWindow::closeVisualizationTab(int tabId)
         pointCloudViewsByTab.remove(tabId);
         slamPointCloudView = nullptr;
         slamVisualizationTabId = -1;
-        slamOfflinePcapPath.clear();
+        slamOfflineSourceKind = SlamOfflineSourceKind::None;
+        slamOfflineSourcePath.clear();
+        slamOfflineSourceDisplayName.clear();
         if (slamInfoDock) {
             slamInfoDock->hide();
         }

@@ -226,6 +226,8 @@ set(SOURCES
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
+    libs/Rosbag/src/RosbagReader.cpp
+    libs/Rosbag/src/RosMessageParsers.cpp
     libs/Slam/src/Core/ISlamBackend.cpp
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
@@ -235,6 +237,7 @@ set(SOURCES
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
     libs/Slam/src/Io/LiveLidarSlamSource.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
+    libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Export/src/PointCloudExport.cpp
     libs/AppConfig/src/AppSettings.cpp
     libs/AppConfig/src/LidarConfigService.cpp
@@ -292,6 +295,9 @@ set(SOURCES
     libs/Pcap/include/Pcap/PointParser.h
     libs/Pcap/include/Pcap/PushMsgParser.h
     libs/Pcap/include/Pcap/PcapPlaybackController.h
+    libs/Rosbag/include/Rosbag/RosbagTypes.h
+    libs/Rosbag/include/Rosbag/RosbagReader.h
+    libs/Rosbag/include/Rosbag/RosMessageParsers.h
     libs/Slam/include/Slam/Core/ISlamBackend.h
     libs/Slam/include/Slam/Core/SlamInputQueue.h
     libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
@@ -301,6 +307,7 @@ set(SOURCES
     libs/Slam/include/Slam/Export/SlamTrajectoryExport.h
     libs/Slam/include/Slam/Io/LiveLidarSlamSource.h
     libs/Slam/include/Slam/Io/PcapSlamSource.h
+    libs/Slam/include/Slam/Io/RosbagSlamSource.h
     libs/Slam/include/Slam/Visualization/SlamRenderSnapshot.h
     libs/Export/include/Export/PointCloudExport.h
     libs/AppConfig/include/AppConfig/AppSettings.h
@@ -413,6 +420,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
     ${SLAM_FAST_LIO_COMPAT_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/include

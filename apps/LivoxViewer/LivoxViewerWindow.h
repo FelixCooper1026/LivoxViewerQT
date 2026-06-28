@@ -165,8 +165,10 @@ public:
     void startOfflineSlamFromMenu();
     void setSlamInputModeOffline();
     void setSlamInputModeOnline();
+    bool loadOfflineSlamSource();
     bool loadOfflineSlamPcap();
     bool isOfflineSlamMode() const;
+    QString offlineSlamSourcePath() const;
     QString offlineSlamPcapPath() const;
     void startSlamProcessing();
     void pauseSlamProcessing();
@@ -415,12 +417,19 @@ private:
         Offline,
         Online
     };
+    enum class SlamOfflineSourceKind {
+        None,
+        Pcap,
+        Rosbag
+    };
     struct SlamWorldPointSegment {
         int64_t timestampNs = 0;
         QVector<PointCloudPoint> points;
     };
     SlamInputMode slamInputMode = SlamInputMode::Offline;
-    QString slamOfflinePcapPath;
+    SlamOfflineSourceKind slamOfflineSourceKind = SlamOfflineSourceKind::None;
+    QString slamOfflineSourcePath;
+    QString slamOfflineSourceDisplayName;
     PointCloudView* slamPointCloudView = nullptr;
     int slamVisualizationTabId = -1;
     QVector<SlamWorldPointSegment> slamWorldPointSegments;

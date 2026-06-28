@@ -40,10 +40,10 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     QHBoxLayout* offlineSourceLayout = new QHBoxLayout(m_offlineSourceWidget);
     offlineSourceLayout->setContentsMargins(0, 0, 0, 0);
     offlineSourceLayout->setSpacing(8);
-    m_offlinePathLabel = new QLabel(QStringLiteral("未加载 PCAP"), m_offlineSourceWidget);
+    m_offlinePathLabel = new QLabel(QStringLiteral("未加载离线数据源"), m_offlineSourceWidget);
     m_offlinePathLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_offlinePathLabel->setWordWrap(true);
-    QPushButton* loadPcapButton = new QPushButton(QStringLiteral("加载 PCAP..."), m_offlineSourceWidget);
+    QPushButton* loadPcapButton = new QPushButton(QStringLiteral("加载数据源..."), m_offlineSourceWidget);
     offlineSourceLayout->addWidget(m_offlinePathLabel, 1);
     offlineSourceLayout->addWidget(loadPcapButton);
     inputForm->addRow(QStringLiteral("离线数据:"), m_offlineSourceWidget);
@@ -171,7 +171,7 @@ void SlamControlDialog::refreshInputControls()
     if (m_offlinePathLabel) {
         const QString path = m_window->offlineSlamPcapPath();
         m_offlinePathLabel->setText(path.isEmpty()
-                                        ? QStringLiteral("未加载 PCAP")
+                                        ? QStringLiteral("未加载离线数据源")
                                         : QFileInfo(path).fileName());
         m_offlinePathLabel->setToolTip(path);
     }

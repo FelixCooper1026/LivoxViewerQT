@@ -916,8 +916,8 @@ void LivoxViewerWindow::updateSlamControlBarUi()
         const QString stateText = active
             ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
             : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));
-        const QString sourceText = isOfflineSlamMode() && !slamOfflinePcapPath.isEmpty()
-            ? QDir::toNativeSeparators(slamOfflinePcapPath)
+        const QString sourceText = isOfflineSlamMode() && !slamOfflineSourcePath.isEmpty()
+            ? QDir::toNativeSeparators(slamOfflineSourcePath)
             : QString();
         const QString text = sourceText.isEmpty()
             ? QStringLiteral("%1 | %2").arg(modeText, stateText)

@@ -4,6 +4,7 @@
 #include "Slam/Export/SlamMapExport.h"
 #include "Slam/Export/SlamTrajectoryExport.h"
 #include "Slam/Io/PcapSlamSource.h"
+#include "Slam/Io/RosbagSlamSource.h"
 #include "slam/SlamControlDialog.h"
 #include "slam/SlamUiBridge.h"
 
@@ -200,6 +201,12 @@ QString skippedLiveFrameMessage(const SlamInputFrame& frame, const LiveLidarSlam
     return QStringLiteral("实时输入帧不完整，已跳过当前帧。");
 }
 
+QString offlineSourceKindForPath(const QString& filePath)
+{
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    return suffix == QStringLiteral("bag") ? QStringLiteral("ROSbag") : QStringLiteral("PCAP");
+}
+
 } // namespace
 
 SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
@@ -260,13 +267,15 @@ void LivoxViewerWindow::startOnlineSlamFromMenu()
 void LivoxViewerWindow::startOfflineSlamFromMenu()
 {
     setSlamInputModeOffline();
-    if (!loadOfflineSlamPcap()) {
+    if (!loadOfflineSlamSource()) {
         return;
     }
     showSlamInfoPanel();
     showSlamStatusPanel();
     if (!slamWorkerActive.load() && !slamWorker.joinable()) {
-        postSlamStatus(SlamStatusCode::Idle, QStringLiteral("离线 SLAM PCAP 已加载，点击浮动控制条“启动”开始。"));
+        postSlamStatus(SlamStatusCode::Idle,
+                       QStringLiteral("离线 SLAM %1 已加载，点击浮动控制条“启动”开始。")
+                           .arg(slamOfflineSourceDisplayName));
     }
     updateSlamControlBarUi();
 }
@@ -292,14 +301,19 @@ bool LivoxViewerWindow::isOfflineSlamMode() const
 
 QString LivoxViewerWindow::offlineSlamPcapPath() const
 {
-    return slamOfflinePcapPath;
+    return slamOfflineSourcePath;
 }
 
-bool LivoxViewerWindow::loadOfflineSlamPcap()
+QString LivoxViewerWindow::offlineSlamSourcePath() const
+{
+    return slamOfflineSourcePath;
+}
+
+bool LivoxViewerWindow::loadOfflineSlamSource()
 {
     setSlamInputModeOffline();
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
-    QString lastDir = settings.value(QStringLiteral("slam/lastOfflinePcapDir"),
+    QString lastDir = settings.value(QStringLiteral("slam/lastOfflineSourceDir"),
                                      QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
     if (lastDir.isEmpty()) {
         lastDir = QDir::homePath();
@@ -307,10 +321,15 @@ bool LivoxViewerWindow::loadOfflineSlamPcap()
 
     QFileDialog dialog(this);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
-    dialog.setWindowTitle(QStringLiteral("加载离线 SLAM PCAP"));
+    dialog.setWindowTitle(QStringLiteral("加载离线 SLAM 数据源"));
     dialog.setDirectory(lastDir);
     dialog.setFileMode(QFileDialog::ExistingFile);
-    dialog.setNameFilter(QStringLiteral("PCAP 文件 (*.pcap *.pcapng);;所有文件 (*.*)"));
+    dialog.setNameFilters({
+        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag)"),
+        QStringLiteral("PCAP 文件 (*.pcap *.pcapng)"),
+        QStringLiteral("ROS1 Bag 文件 (*.bag)"),
+        QStringLiteral("所有文件 (*.*)")
+    });
     if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
         return false;
     }
@@ -319,17 +338,26 @@ bool LivoxViewerWindow::loadOfflineSlamPcap()
     if (slamWorker.joinable()) {
         stopSlamProcessing();
     }
-    slamOfflinePcapPath = filePath;
-    settings.setValue(QStringLiteral("slam/lastOfflinePcapDir"), QFileInfo(filePath).absolutePath());
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    slamOfflineSourceKind = suffix == QStringLiteral("bag") ? SlamOfflineSourceKind::Rosbag : SlamOfflineSourceKind::Pcap;
+    slamOfflineSourcePath = filePath;
+    slamOfflineSourceDisplayName = offlineSourceKindForPath(filePath);
+    settings.setValue(QStringLiteral("slam/lastOfflineSourceDir"), QFileInfo(filePath).absolutePath());
     ensureSlamVisualizationTab(filePath);
     clearSlamDisplay();
     ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
-    logMessage(QStringLiteral("[SLAM] 已加载离线 PCAP: %1").arg(QDir::toNativeSeparators(filePath)));
+    logMessage(QStringLiteral("[SLAM] 已加载离线 %1: %2")
+                   .arg(slamOfflineSourceDisplayName, QDir::toNativeSeparators(filePath)));
     if (statusBar()) {
-        statusBar()->showMessage(QStringLiteral("离线 SLAM PCAP 已加载"), 3000);
+        statusBar()->showMessage(QStringLiteral("离线 SLAM %1 已加载").arg(slamOfflineSourceDisplayName), 3000);
     }
     updateSlamControlBarUi();
     return true;
+}
+
+bool LivoxViewerWindow::loadOfflineSlamPcap()
+{
+    return loadOfflineSlamSource();
 }
 
 int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
@@ -524,12 +552,16 @@ void LivoxViewerWindow::startSlamProcessing()
         return;
     }
 
-    if (slamOfflinePcapPath.isEmpty()) {
-        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先在 SLAM 面板加载离线 PCAP 文件。"));
+    if (slamOfflineSourcePath.isEmpty() || slamOfflineSourceKind == SlamOfflineSourceKind::None) {
+        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先加载离线 SLAM 数据源（PCAP 或 ROSbag）。"));
         return;
     }
 
-    const QString pcapPath = slamOfflinePcapPath;
+    const QString sourcePath = slamOfflineSourcePath;
+    const SlamOfflineSourceKind sourceKind = slamOfflineSourceKind;
+    const QString sourceDisplayName = slamOfflineSourceDisplayName.isEmpty()
+        ? offlineSourceKindForPath(sourcePath)
+        : slamOfflineSourceDisplayName;
     const SlamRuntimeConfig config = slamRuntimeConfig;
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
@@ -537,30 +569,58 @@ void LivoxViewerWindow::startSlamProcessing()
     slamRenderOverlayEnabled = true;
     bridge->clearDisplay();
     clearSlamWorldPointCloud();
-    ensureSlamVisualizationTab(pcapPath);
+    ensureSlamVisualizationTab(sourcePath);
     showSlamInfoPanel();
     showSlamStatusPanel();
     postSlamStatus(SlamStatusCode::Starting,
-                   QStringLiteral("正在启动离线 SLAM：%1 Hz / %2 ms。")
+                   QStringLiteral("正在启动离线 SLAM（%1）：%2 Hz / %3 ms。")
+                       .arg(sourceDisplayName)
                        .arg(config.preprocessScanRateHz, 0, 'f', 1)
                        .arg(config.inputFrameDurationMs));
     updateSlamControlBarUi();
 
-    slamWorker = std::thread([this, pcapPath, config]() {
+    slamWorker = std::thread([this, sourcePath, sourceKind, sourceDisplayName, config]() {
         auto postOutput = [this](SlamOutput output) {
             QMetaObject::invokeMethod(this, [this, output = std::move(output)]() mutable {
                 submitSlamOutputForUi(output);
                 updateSlamControlBarUi();
             }, Qt::QueuedConnection);
         };
+        auto postLog = [this](QString message) {
+            QMetaObject::invokeMethod(this, [this, message = std::move(message)]() {
+                logMessage(message);
+            }, Qt::QueuedConnection);
+        };
 
-        PcapSlamSource source(config.inputFrameDurationMs);
         QString error;
-        if (!source.load(pcapPath, &error)) {
-            postOutput(statusOutput(SlamStatusCode::Failed, error));
+        QVector<SlamInputFrame> frames;
+        QString summaryText;
+        if (sourceKind == SlamOfflineSourceKind::Pcap) {
+            PcapSlamSource source(config.inputFrameDurationMs);
+            if (!source.load(sourcePath, &error)) {
+                postOutput(statusOutput(SlamStatusCode::Failed, error));
+                slamWorkerActive.store(false);
+                return;
+            }
+            frames = source.frames();
+            summaryText = source.summaryText();
+        } else if (sourceKind == SlamOfflineSourceKind::Rosbag) {
+            RosbagSlamSourceConfig rosbagConfig;
+            rosbagConfig.frameDurationMs = config.inputFrameDurationMs;
+            RosbagSlamSource source(rosbagConfig);
+            if (!source.load(sourcePath, &error)) {
+                postOutput(statusOutput(SlamStatusCode::Failed, error));
+                slamWorkerActive.store(false);
+                return;
+            }
+            frames = source.frames();
+            summaryText = source.summaryText();
+        } else {
+            postOutput(statusOutput(SlamStatusCode::Failed, QStringLiteral("未知离线 SLAM 数据源类型。")));
             slamWorkerActive.store(false);
             return;
         }
+        postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
 
         FastLioSlamBackend backend;
         if (!backend.start(config, &error)) {
@@ -608,7 +668,7 @@ void LivoxViewerWindow::startSlamProcessing()
             return false;
         };
 
-        for (const SlamInputFrame& frame : source.frames()) {
+        for (const SlamInputFrame& frame : frames) {
             if (slamWorkerCancel.load()) {
                 break;
             }
@@ -653,7 +713,7 @@ void LivoxViewerWindow::startSlamProcessing()
         const bool cancelled = slamWorkerCancel.load();
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
         finalOutput.status = SlamStatusCode::Stopped;
-        finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("PCAP SLAM 已完成。");
+        finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("%1 SLAM 已完成。").arg(sourceDisplayName);
         finalOutput.droppedFrameCount = droppedFrames;
         if (processedFrames > 0) {
             const double elapsedSec = qMax(0.001, double(elapsed.elapsed()) / 1000.0);

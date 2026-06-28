@@ -1683,6 +1683,12 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：优化 SLAM dock 生命周期和底部高度行为：`SLAM状态` 内容改为可滚动区域，避免 raise 后分组内容 sizeHint 把整个底部 dock 最小高度撑大；关闭 SLAM 点云可视化 tab 时同步停止/清空 SLAM、隐藏左侧 `SLAM` dock 和底部 `SLAM状态` dock，并将左侧/底部 tab 回退到 `设备` / `日志`。
 - 2026-06-28：调整 `SLAM状态` dock 分组布局，将 `错误信息` 分组放在 `当前位姿` 分组下方，组名和组名下方分隔线保持与其他四组一致。
 - 2026-06-28：修复实时 SLAM 在无实时数据流时状态一直停留在 `Starting` 且错误信息为空的问题。在线 worker 现在等待首个有效输入帧期间会定期发布 `Failed` 状态并提示未收到 LiDAR/IMU/点云数据；收到点云但 IMU 覆盖不完整或点内时间无效时，也保持与离线启动失败一致的 `Failed` 状态，并显示具体跳帧原因。
+- 2026-06-28：按 `rosbag_slam_source_development_plan.md` 分阶段完成 ROSbag 离线 SLAM 数据源第一版：
+  - R1/R2：新增 `libs/Rosbag` 轻量 ROS1 bag reader，支持 ROS1 bag v2.0、connection、uncompressed chunk、message data 读取；压缩 chunk 明确拒绝。
+  - R3：新增 ROS message parser，手写解析 `std_msgs/Header`、`livox_ros_driver2/CustomMsg` / 字段兼容的 `livox_ros_driver/CustomMsg`、`sensor_msgs/Imu`；`timebase` 和 `offset_time` 均按 ns 处理。
+  - R4：新增 `RosbagSlamSource`，自动识别 `/livox/lidar`、`/livox/lidar_<ip>`、`/livox/imu`、`/livox/imu_<ip>`，将一个 Livox CustomMsg 转为一个 `SlamInputFrame`，附加 IMU 样本并计算覆盖状态。
+  - R5：`工具 -> SLAM（离线）` 文件选择改为通用 SLAM 数据源，支持 `*.pcap`、`*.pcapng`、`*.bag`；内部新增 `SlamOfflineSourceKind`，按扩展名选择 `PcapSlamSource` 或 `RosbagSlamSource`，菜单入口仍只加载数据源，不自动启动 worker。
+  - R6：根 `CMakeLists.txt` 接入 `libs/Rosbag` 源/头文件和 include path；现有 SLAM tab、状态 dock、浮动控制条、轨迹和完整全局地图导出路径复用不变。
 
 验证：
 
@@ -1708,8 +1714,10 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：保持 `错误信息` 独立五组语义并放在 `当前位姿` 分组下方后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：修复实时 SLAM 无数据流时状态卡在 `Starting` 且无错误提示的问题，并统一为 `Failed` 状态后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：将实时 SLAM 无输入/输入无效状态从 `Degraded` / `MissingImu` / `TimeSyncError` 统一调整为 `Failed` 后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：完成 ROSbag 离线 SLAM 数据源第一版后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 
 - 本轮尚未重新用 `F:\slam_test.pcap` 完整跑 UI worker 并导出完整全局地图 PCD/LAS。
+- 尚未用真实 ROS1 `.bag` 跑完整 UI worker；当前只完成编译级验证和代码路径接入。
 - Linux 编译仍未执行，延续 Phase 4 的环境缺口。
