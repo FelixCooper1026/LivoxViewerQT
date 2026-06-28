@@ -905,6 +905,12 @@ void LivoxViewerWindow::updateSlamControlBarUi()
     if (slamClearButton) {
         slamClearButton->setEnabled(true);
     }
+    if (slamExportTrajectoryButton) {
+        slamExportTrajectoryButton->setEnabled(true);
+    }
+    if (slamExportMapButton) {
+        slamExportMapButton->setEnabled(!slamMapExportActive.load());
+    }
     if (slamControlLabel) {
         const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM");
         const QString stateText = active

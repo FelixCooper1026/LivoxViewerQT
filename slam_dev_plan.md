@@ -1654,9 +1654,7 @@ Phase 5.4 已完成基础版本：
 - 世界系点云累计显示进入 SLAM 专属 OpenGL tab 的主点云流，可复用工具栏积分时间、点大小、着色模式和色标；世界系当前帧点云作为固定颜色 overlay 显示。
 - `PointCloudView` 继续只允许 UI 主线程调用 `setSlamRenderSnapshot()` / `clearSlamRenderOverlay()`；机体系点云和轨迹/位姿 overlay VBO 在有效 OpenGL context 下上传/销毁。
 - 新增 `SlamMapExport`，直接从后端完整地图点集 `QVector<SlamPoint>` 流式写 PCD/LAS，不从 OpenGL VBO 读取，也不使用旧预览缓存。
-- `SlamControlDialog` 导出按钮改为：
-  - `导出完整全局地图 PCD`
-  - `导出完整全局地图 LAS`
+- `SlamControlDialog` 保留为过渡类；保存入口统一为“保存轨迹...”和“保存完整全局地图...”，具体 CSV/TUM/PCD/LAS 格式在文件保存对话框中选择。
 - 完整全局地图导出在后台线程执行，避免 UI 线程执行大文件写出。
 - `SlamPhase4Replay` 工具更新为校验 `newGlobalMapPoints`，不再依赖旧 `newMapChunks`。
 - `fastlio_migration_audit.md` 已更新为当前迁移状态。
@@ -1677,6 +1675,7 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：修复 SLAM tab 浮动控制条首次点击“启动”后仍需再次点击才启用“暂停/停止”的问题。原因是首次刷新发生在 `slamWorkerActive=true` 之后、`slamWorker = std::thread(...)` 赋值之前，旧逻辑同时依赖 `slamWorker.joinable()`，误判为未运行；现改为按钮运行态以 `slamWorkerActive` 为准，并让离线 worker 输出回调同步刷新控制条。
 - 2026-06-28：修复 `SLAM状态` tab 纵向分布异常的问题。原因是状态字段区是固定高度紧凑网格，而根 `QVBoxLayout` 未将剩余高度明确分配到底部，导致空白出现在标题和字段区之间；现将标题和字段区顶部锚定，并用底部 stretch 吸收剩余高度，使其与 `日志` tab 的纵向起始位置一致。
 - 2026-06-28：继续优化 `SLAM状态` tab 深色主题显示效果：取消“固定高度字段网格 + 外层底部 stretch”方案，改为状态内容 frame 填满 dock 剩余高度，字段网格在 frame 内顶部对齐，避免底部空白使用外层背景造成视觉割裂。
+- 2026-06-28：将“保存轨迹”和“保存完整全局点云地图”入口迁移到 `SLAM` 点云 tab 上方浮动控制条，新增 `保存轨迹...` 和 `保存全局点云地图...` 两个按钮；文件保存对话框提供 CSV/TUM 或 PCD/LAS 过滤器并按用户选择决定实际保存格式。过渡用 `SlamControlDialog` 的导出按钮同步收敛为两个统一保存按钮。
 
 验证：
 
@@ -1691,6 +1690,7 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：修复 `SLAM状态` tab 纵向空白分布后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：优化 `SLAM状态` tab 深色主题底部空白显示后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：将世界系当前帧点云和机体系点云 overlay 点大小改为首选项可配置后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：迁移 SLAM 轨迹/完整全局点云地图保存按钮到 SLAM tab 浮动控制条，并改为文件对话框选择保存格式后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 

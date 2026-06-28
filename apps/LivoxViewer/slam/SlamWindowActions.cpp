@@ -16,6 +16,7 @@
 #include <QSettings>
 #include <QStatusBar>
 #include <QStandardPaths>
+#include <QStringList>
 
 #include <algorithm>
 #include <chrono>
@@ -82,6 +83,23 @@ QString trajectoryExportFilter(SlamTrajectoryExport::Format format)
         : QStringLiteral("TUM 轨迹 (*.tum *.txt)");
 }
 
+QStringList trajectoryExportFilters()
+{
+    return {trajectoryExportFilter(SlamTrajectoryExport::Format::Csv),
+            trajectoryExportFilter(SlamTrajectoryExport::Format::Tum)};
+}
+
+SlamTrajectoryExport::Format trajectoryExportFormatFromSelection(const QString& selectedFilter, const QString& filePath)
+{
+    if (selectedFilter == trajectoryExportFilter(SlamTrajectoryExport::Format::Tum)) {
+        return SlamTrajectoryExport::Format::Tum;
+    }
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    return (suffix == QStringLiteral("tum") || suffix == QStringLiteral("txt"))
+        ? SlamTrajectoryExport::Format::Tum
+        : SlamTrajectoryExport::Format::Csv;
+}
+
 QString mapExportExtension(bool lasFormat)
 {
     return lasFormat ? QStringLiteral("las") : QStringLiteral("pcd");
@@ -90,6 +108,60 @@ QString mapExportExtension(bool lasFormat)
 QString mapExportFilter(bool lasFormat)
 {
     return lasFormat ? QStringLiteral("LAS 点云 (*.las)") : QStringLiteral("PCD 点云 (*.pcd)");
+}
+
+QStringList mapExportFilters()
+{
+    return {mapExportFilter(false), mapExportFilter(true)};
+}
+
+bool mapExportLasFormatFromSelection(const QString& selectedFilter, const QString& filePath)
+{
+    if (selectedFilter == mapExportFilter(true)) {
+        return true;
+    }
+    return QFileInfo(filePath).suffix().compare(QStringLiteral("las"), Qt::CaseInsensitive) == 0;
+}
+
+QString normalizedExportPath(const QString& filePath,
+                             const QStringList& allowedSuffixes,
+                             const QString& primarySuffix,
+                             const QStringList& replaceableSuffixes)
+{
+    QFileInfo info(filePath);
+    const QString suffix = info.suffix().toLower();
+    if (allowedSuffixes.contains(suffix)) {
+        return filePath;
+    }
+    if (suffix.isEmpty()) {
+        return filePath + QStringLiteral(".") + primarySuffix;
+    }
+    if (replaceableSuffixes.contains(suffix)) {
+        return info.dir().filePath(info.completeBaseName() + QStringLiteral(".") + primarySuffix);
+    }
+    return filePath + QStringLiteral(".") + primarySuffix;
+}
+
+QString normalizedTrajectoryExportPath(const QString& filePath, SlamTrajectoryExport::Format format)
+{
+    if (format == SlamTrajectoryExport::Format::Tum) {
+        return normalizedExportPath(filePath,
+                                    {QStringLiteral("tum"), QStringLiteral("txt")},
+                                    QStringLiteral("tum"),
+                                    {QStringLiteral("csv"), QStringLiteral("tum"), QStringLiteral("txt")});
+    }
+    return normalizedExportPath(filePath,
+                                {QStringLiteral("csv")},
+                                QStringLiteral("csv"),
+                                {QStringLiteral("csv"), QStringLiteral("tum"), QStringLiteral("txt")});
+}
+
+QString normalizedMapExportPath(const QString& filePath, bool lasFormat)
+{
+    return normalizedExportPath(filePath,
+                                {mapExportExtension(lasFormat)},
+                                mapExportExtension(lasFormat),
+                                {QStringLiteral("pcd"), QStringLiteral("las")});
 }
 
 } // namespace
@@ -750,6 +822,156 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
                                            slamPoseAxisVisible,
                                            slamWorldCurrentFrameVisible,
                                            slamBodyFrameVisible);
+}
+
+void LivoxViewerWindow::exportSlamTrajectoryFromDialog()
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    const QVector<SlamTrajectoryPoint> trajectory = bridge->trajectorySnapshot();
+    if (trajectory.isEmpty()) {
+        const QString message = QStringLiteral("当前没有可导出的 SLAM 轨迹。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(QStringLiteral("slam/lastTrajectoryExportDir"),
+                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    const QString defaultName = QStringLiteral("slam_trajectory_%1.csv")
+                                    .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("保存 SLAM 轨迹"));
+    dialog.setDirectory(lastDir);
+    dialog.selectFile(defaultName);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDefaultSuffix(QStringLiteral("csv"));
+    dialog.setNameFilters(trajectoryExportFilters());
+    dialog.selectNameFilter(trajectoryExportFilter(SlamTrajectoryExport::Format::Csv));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const SlamTrajectoryExport::Format format =
+        trajectoryExportFormatFromSelection(dialog.selectedNameFilter(), dialog.selectedFiles().first());
+    const QString filePath = normalizedTrajectoryExportPath(dialog.selectedFiles().first(), format);
+    QString error;
+    if (!SlamTrajectoryExport::save(filePath, trajectory, format, &error)) {
+        bridge->setErrorMessage(error);
+        logMessage(QStringLiteral("[SLAM] 轨迹保存失败: %1").arg(error));
+        if (statusBar()) {
+            statusBar()->showMessage(error, 3000);
+        }
+        return;
+    }
+
+    settings.setValue(QStringLiteral("slam/lastTrajectoryExportDir"), QFileInfo(filePath).absolutePath());
+    bridge->clearErrorMessage();
+    logMessage(QStringLiteral("[SLAM] 轨迹保存完成: %1").arg(QDir::toNativeSeparators(filePath)));
+    if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("SLAM 轨迹已保存"), 3000);
+    }
+}
+
+void LivoxViewerWindow::exportSlamGlobalMapFromDialog()
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    if (slamMapExportWorker.joinable() && !slamMapExportActive.load()) {
+        slamMapExportWorker.join();
+    }
+    if (slamMapExportWorker.joinable()) {
+        const QString message = QStringLiteral("完整全局地图正在导出，请等待当前导出完成。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QVector<SlamPoint> points = bridge->globalMapSnapshot();
+    if (points.isEmpty()) {
+        const QString message = QStringLiteral("当前没有可导出的 SLAM 完整全局地图。请在 SLAM 设置中启用完整地图保存并重新运行 SLAM。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[SLAM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(QStringLiteral("slam/lastMapExportDir"),
+                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+
+    const QString defaultName = QStringLiteral("slam_global_map_%1.pcd")
+                                    .arg(QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss")));
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("保存 SLAM 完整全局地图"));
+    dialog.setDirectory(lastDir);
+    dialog.selectFile(defaultName);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDefaultSuffix(QStringLiteral("pcd"));
+    dialog.setNameFilters(mapExportFilters());
+    dialog.selectNameFilter(mapExportFilter(false));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const bool lasFormat = mapExportLasFormatFromSelection(dialog.selectedNameFilter(), dialog.selectedFiles().first());
+    const QString filePath = normalizedMapExportPath(dialog.selectedFiles().first(), lasFormat);
+    settings.setValue(QStringLiteral("slam/lastMapExportDir"), QFileInfo(filePath).absolutePath());
+    const int pointCount = points.size();
+    const SlamMapExport::Format format = lasFormat ? SlamMapExport::Format::Las : SlamMapExport::Format::Pcd;
+    slamMapExportActive.store(true);
+    updateSlamControlBarUi();
+    bridge->clearErrorMessage();
+    logMessage(QStringLiteral("[SLAM] 开始保存完整全局地图: points=%1, file=%2")
+                   .arg(QString::number(pointCount), QDir::toNativeSeparators(filePath)));
+    if (statusBar()) {
+        statusBar()->showMessage(QStringLiteral("正在保存 SLAM 完整全局地图"), 3000);
+    }
+
+    slamMapExportWorker = std::thread([this, filePath, points = std::move(points), format, pointCount]() {
+        QString error;
+        const bool ok = SlamMapExport::save(filePath, points, format, &error);
+        QMetaObject::invokeMethod(this, [this, ok, error, filePath, pointCount]() {
+            slamMapExportActive.store(false);
+            updateSlamControlBarUi();
+            if (!ok) {
+                if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
+                    bridge->setErrorMessage(error);
+                }
+                logMessage(QStringLiteral("[SLAM] 完整全局地图保存失败: %1").arg(error));
+                if (statusBar()) {
+                    statusBar()->showMessage(error, 3000);
+                }
+                return;
+            }
+            if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
+                bridge->clearErrorMessage();
+            }
+            logMessage(QStringLiteral("[SLAM] 完整全局地图保存完成: points=%1, file=%2")
+                           .arg(QString::number(pointCount), QDir::toNativeSeparators(filePath)));
+            if (statusBar()) {
+                statusBar()->showMessage(QStringLiteral("SLAM 完整全局地图已保存"), 3000);
+            }
+        }, Qt::QueuedConnection);
+    });
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryCsv()

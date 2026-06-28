@@ -173,6 +173,8 @@ public:
     void stopSlamProcessing();
     void resetSlamProcessing();
     void clearSlamDisplay();
+    void exportSlamTrajectoryFromDialog();
+    void exportSlamGlobalMapFromDialog();
     void exportSlamTrajectoryCsv();
     void exportSlamTrajectoryTum();
     void exportSlamMapPcd();
@@ -436,6 +438,8 @@ private:
     QPushButton* slamStopButton = nullptr;
     QPushButton* slamResetButton = nullptr;
     QPushButton* slamClearButton = nullptr;
+    QPushButton* slamExportTrajectoryButton = nullptr;
+    QPushButton* slamExportMapButton = nullptr;
     QLabel* slamControlLabel = nullptr;
     QMap<QString, QLabel*> slamStatusFields;
 

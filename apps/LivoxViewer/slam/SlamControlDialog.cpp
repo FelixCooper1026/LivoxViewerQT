@@ -90,18 +90,12 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     QHBoxLayout* exportButtonLayout = new QHBoxLayout();
     exportButtonLayout->setContentsMargins(0, 0, 0, 0);
     exportButtonLayout->setSpacing(8);
-    QPushButton* exportCsvButton = new QPushButton(QStringLiteral("导出 CSV"), this);
-    QPushButton* exportTumButton = new QPushButton(QStringLiteral("导出 TUM"), this);
-    QPushButton* exportPcdButton = new QPushButton(QStringLiteral("导出完整全局地图 PCD"), this);
-    QPushButton* exportLasButton = new QPushButton(QStringLiteral("导出完整全局地图 LAS"), this);
-    exportCsvButton->setObjectName(QStringLiteral("exportSlamCsvButton"));
-    exportTumButton->setObjectName(QStringLiteral("exportSlamTumButton"));
-    exportPcdButton->setObjectName(QStringLiteral("exportSlamMapPcdButton"));
-    exportLasButton->setObjectName(QStringLiteral("exportSlamMapLasButton"));
-    exportButtonLayout->addWidget(exportCsvButton);
-    exportButtonLayout->addWidget(exportTumButton);
-    exportButtonLayout->addWidget(exportPcdButton);
-    exportButtonLayout->addWidget(exportLasButton);
+    QPushButton* exportTrajectoryButton = new QPushButton(QStringLiteral("保存轨迹..."), this);
+    QPushButton* exportMapButton = new QPushButton(QStringLiteral("保存完整全局地图..."), this);
+    exportTrajectoryButton->setObjectName(QStringLiteral("exportSlamTrajectoryButton"));
+    exportMapButton->setObjectName(QStringLiteral("exportSlamMapButton"));
+    exportButtonLayout->addWidget(exportTrajectoryButton);
+    exportButtonLayout->addWidget(exportMapButton);
     exportButtonLayout->addStretch();
     layout->addLayout(exportButtonLayout);
 
@@ -127,10 +121,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     connect(stopButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::stopSlamProcessing);
     connect(resetButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::resetSlamProcessing);
     connect(clearButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::clearSlamDisplay);
-    connect(exportCsvButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryCsv);
-    connect(exportTumButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryTum);
-    connect(exportPcdButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapPcd);
-    connect(exportLasButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamMapLas);
+    connect(exportTrajectoryButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryFromDialog);
+    connect(exportMapButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamGlobalMapFromDialog);
     if (m_bridge) {
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshFields);
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshInputControls);
