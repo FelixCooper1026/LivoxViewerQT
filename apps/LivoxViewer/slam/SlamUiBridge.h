@@ -43,6 +43,9 @@ public slots:
     void setBodyFrameColor(const QColor& color);
     void setWorldFramePointSize(float sizePx);
     void setBodyFramePointSize(float sizePx);
+    void setTrajectoryLineWidth(float widthPx);
+    void setPoseAxisLength(float lengthM);
+    void setPoseAxisLineWidth(float widthPx);
     void setRenderLayerVisibility(bool trajectoryVisible,
                                   bool poseAxisVisible,
                                   bool worldFrameVisible,
@@ -73,9 +76,12 @@ private:
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");
     QColor m_worldFrameColor = QColor(255, 255, 255);
-    QColor m_bodyFrameColor = QColor(0, 255, 0);
+    QColor m_bodyFrameColor = QColor(255, 140, 26);
     float m_worldFramePointSizePx = 2.0f;
     float m_bodyFramePointSizePx = 2.5f;
+    float m_trajectoryLineWidthPx = 2.0f;
+    float m_poseAxisLengthM = 0.8f;
+    float m_poseAxisLineWidthPx = 3.0f;
     bool m_trajectoryVisible = true;
     bool m_poseAxisVisible = true;
     bool m_worldFrameVisible = true;

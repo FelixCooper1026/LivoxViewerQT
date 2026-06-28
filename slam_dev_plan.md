@@ -1669,7 +1669,10 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：继续迁移原版 FAST_LIO 参数到 `SlamRuntimeConfig` 和首选项 SLAM 页：`cube_side_length` -> `cubeSideLengthM`、`mapping/det_range` -> `detRangeM`、`mapping/fov_degree` -> `fovDegree`、`max_iteration` -> `maxIterations`、`mapping/gyr_cov` -> `gyrCov`、`mapping/acc_cov` -> `accCov`、`mapping/b_gyr_cov` -> `bGyrCov`、`mapping/b_acc_cov` -> `bAccCov`。后端初始化不再使用这些硬编码常量，统一从运行配置读取。
 - 2026-06-28：迁移原版 `preprocess/blind` 为 `SlamRuntimeConfig::blindMinRangeM`，在 `SlamInputFrame -> MeasureGroup` 转换阶段按 LiDAR 坐标系半径过滤近距离盲区点；首选项 SLAM 页新增“近距离盲区”可配置项。
 - 2026-06-28：首选项 SLAM 页新增 LiDAR 模板下拉框和“恢复默认”按钮。默认模板为 `Mid360/Mid360S`，差异项按原版 `mid360.yaml` 设置为 `detRangeM=100.0 m`、`fovDegree=360°`、`extrinsicT_L_I=[-0.011,-0.02329,0.04412]`、`blindMinRangeM=0.5 m`；`Avia` 模板按 `avia.yaml` 设置为 `detRangeM=450.0 m`、`fovDegree=90°`、`extrinsicT_L_I=[0.04165,0.02326,-0.0284]`、`blindMinRangeM=4.0 m`。模板未覆盖未迁移的原版 yaml 参数。
-- 2026-06-28：按原版 RViz 语义补齐 `surround`/`currPoints` 区分：两者数据源均为 FAST_LIO 发布世界系点云；`世界系点云` 继续作为 SLAM tab 主点云按积分时间窗口累计显示，新增 `世界系当前帧点云` overlay 固定颜色只显示最新帧。SLAM dock 在 `世界系点云` 下方新增对应卡片；首选项 SLAM 页新增世界系当前帧颜色，默认白色；机体系当前帧 overlay 默认颜色改为绿色。
+- 2026-06-29：重组首选项 SLAM 页：`LiDAR 模板` 独立显示，`FAST_LIO 后端`、`IMU 噪声`、`LiDAR-IMU 外参`、`发布与导出`、`可视化效果` 改为内部 tab 布局，tab 外观对齐设备 dock 的文字 tab 样式。ROSbag driver2 PointCloud2 和 driver1 PointCloud2 合成时间兼容开关改为默认启用且不再暴露为用户配置项，旧保存值不会覆盖运行配置。`发布与导出` 仅保留发布/保存语义开关，颜色和点大小迁入 `可视化效果`。
+- 2026-06-29：`可视化效果` 新增 SLAM overlay 参数：轨迹线宽、位姿坐标轴长度、位姿坐标轴线宽；配置经 `QSettings` 持久化，并通过 `SlamRenderSnapshot` 下发到 `PointCloudView`，替代原先轨迹线宽 2.0 px、姿态坐标轴长度 0.8 m、坐标轴线宽 3.0 px 的硬编码。位姿坐标轴由 `GL_LINES` 改为三角面片绘制的圆柱体 + 末端圆锥，长度配置控制圆柱体长度，线宽配置映射为圆柱和圆锥直径。
+- 2026-06-29：LiDAR 模板配置改为按模板独立持久化。用户在 `Mid360/Mid360S` 或 `Avia` 下修改参数并确认后，会写入 `slam/runtime/templates/<template>`；再次切换模板时优先加载该模板的用户配置，只有点击“恢复默认”才回到模板默认值。
+- 2026-06-28：按原版 RViz 语义补齐 `surround`/`currPoints` 区分：两者数据源均为 FAST_LIO 发布世界系点云；`世界系点云` 继续作为 SLAM tab 主点云按积分时间窗口累计显示，新增 `世界系当前帧点云` overlay 固定颜色只显示最新帧。SLAM dock 在 `世界系点云` 下方新增对应卡片；首选项 SLAM 页新增世界系当前帧颜色，默认白色；机体系当前帧 overlay 默认颜色为橙色。
 - 2026-06-28：将 `世界系当前帧点云` 和 `机体系点云` overlay 的像素点大小从 `PointCloudView` 硬编码迁移为首选项 SLAM 页可配置显示参数。默认值保持兼容：世界系当前帧 2.0 px，机体系当前帧 2.5 px；配置经 `QSettings` 持久化，并通过 `SlamRenderSnapshot` 传入 OpenGL 绘制。
 - 2026-06-28：迁移原版 FAST_LIO 重力常量 `G_m_s2` 为 `SlamRuntimeConfig::gravityNorm`，默认 9.81 m/s²，并在首选项 SLAM 页暴露。`ImuProcess` 使用该配置初始化重力向量、缩放 IMU 加速度和初始化协方差，默认值下与原版行为一致。
 - 2026-06-28：将 SLAM 主入口从 `工具 -> SLAM...` 对话框迁移为 `工具 -> SLAM（在线）` 和 `工具 -> SLAM（离线）` 两个入口；在线入口启动实时 `LiveLidarSlamSource` queue worker，离线入口自动弹出 PCAP 文件选择框并启动 PCAP SLAM source。`SlamControlDialog` 保留为过渡类但不再作为工具菜单主入口。
@@ -1694,9 +1697,9 @@ Phase 5.4 已完成基础版本：
   - R5：`工具 -> SLAM（离线）` 文件选择改为通用 SLAM 数据源，支持 `*.pcap`、`*.pcapng`、`*.bag`；内部新增 `SlamOfflineSourceKind`，按扩展名选择 `PcapSlamSource` 或 `RosbagSlamSource`，菜单入口仍只加载数据源，不自动启动 worker。
   - R6：根 `CMakeLists.txt` 接入 `libs/Rosbag` 源/头文件和 include path；现有 SLAM tab、状态 dock、浮动控制条、轨迹和完整全局地图导出路径复用不变。
 - 2026-06-28：严格按 `rosbag_slam_source_development_plan.md` 后续路线完成 ROSbag 扩展：
-  - R7：新增 ROS1 `sensor_msgs/PointCloud2` 解析。支持 `livox_ros_driver2` 精确 `x/y/z/intensity/tag/line/timestamp` 布局，timestamp 按每点绝对 ns 生成 `offsetNs`；支持旧 `livox_ros_driver` 精确 `x/y/z/intensity/tag/line` 布局，但必须在首选项 SLAM 页显式启用合成点内时间，summary/log 会提示精度风险。
+  - R7：新增 ROS1 `sensor_msgs/PointCloud2` 解析。支持 `livox_ros_driver2` 精确 `x/y/z/intensity/tag/line/timestamp` 布局，timestamp 按每点绝对 ns 生成 `offsetNs`；支持旧 `livox_ros_driver` 精确 `x/y/z/intensity/tag/line` 布局，当前版本默认允许按帧周期合成点内时间，summary/log 会提示精度风险。
   - R8：新增 `Ros2BagReader` 和最小 CDR parser，支持 ROS2 sqlite3 storage `.db3` / `metadata.yaml`，读取 `topics` / `messages` 表并解析 ROS2 `livox_ros_driver2/msg/CustomMsg`、`sensor_msgs/msg/Imu`、`sensor_msgs/msg/PointCloud2`，最终仍转换为现有 `SlamInputFrame`。
-  - 首选项 SLAM 页新增 `ROSbag 输入` 分组，提供“允许 driver2 PointCloud2”和“允许 driver1 PointCloud2 合成时间”两个默认关闭的显式开关。
+  - ROSbag driver2 PointCloud2 和 driver1 PointCloud2 合成时间兼容路径当前已改为默认启用，不再作为首选项 SLAM 页用户可配置项。
   - `工具 -> SLAM（离线）` 文件选择扩展为支持 `*.db3 *.yaml *.yml`；不引入 ROS/ROS2 runtime，不规划 bz2/lz4 chunk 或 MCAP。
 - 2026-06-28：修复 ROS1 driver2-style PointCloud2 padding 布局被误判为字段不匹配的问题。`mid360l_garage_fast_pc2.bag` 中 `/livox/lidar` 实际为 `point_step=32`、`intensity offset=16`、`tag offset=20`、`line offset=21`、`timestamp offset=24` 的对齐布局；当前 detector 已改为按字段名、datatype、count 和 `point_step` 边界校验，不再要求紧凑 26 字节固定 offset。
 - 2026-06-28：修复 driver2 PointCloud2 绝对 ns 时间戳存为 `double` 后产生百纳秒级舍入误差导致首点 `timestamp < header.stamp` 被误判的问题。当前转换允许 1 ms 内负 offset 夹到 0，大幅时间不匹配仍返回 `Failed`。

@@ -709,7 +709,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
             if (pointCloud2Mode == PointCloud2Mode::Unknown) {
                 if (isLivoxDriver2PointCloud2Layout(cloud)) {
                     if (!config_.allowLivoxDriver2PointCloud2) {
-                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 livox_ros_driver2 PointCloud2。请在首选项 SLAM 页启用“允许 driver2 PointCloud2”。")
+                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 livox_ros_driver2 PointCloud2，但当前运行配置未允许该格式。")
                                             .arg(lidarConnection->topic);
                         if (error != nullptr) {
                             *error = errorMessage_;
@@ -722,7 +722,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
                 } else if (isLivoxDriverPointCloud2Layout(cloud)) {
                     if (!config_.allowLivoxDriverPointCloud2SynthesizedTime &&
                         !config_.synthesizePointOffsetTime) {
-                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 livox_ros_driver PointCloud2，但消息不包含真实点内时间。请启用 driver1 PointCloud2 合成点内时间，或改用 xfer_format=1 的 CustomMsg。")
+                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 livox_ros_driver PointCloud2，但消息不包含真实点内时间，且当前运行配置未允许合成点内时间。")
                                             .arg(lidarConnection->topic);
                         if (error != nullptr) {
                             *error = errorMessage_;

@@ -126,15 +126,20 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.blindMinRangeM = 0.5;
 }
 
-SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix)
+namespace {
+
+QString templateConfigPrefix(const QString& prefix, SlamLidarTemplate lidarTemplate)
 {
-    SlamRuntimeConfig config;
-    config.backendType = settings.value(key(prefix, QStringLiteral("backendType")), config.backendType).toString();
-    config.lidarModel = settings.value(key(prefix, QStringLiteral("lidarModel")), config.lidarModel).toString();
-    config.lidarTemplate = slamLidarTemplateFromInt(settings.value(
-        key(prefix, QStringLiteral("lidarTemplate")),
-        int(config.lidarTemplate)).toInt());
-    applySlamLidarTemplateDefaults(config, config.lidarTemplate);
+    return key(key(prefix, QStringLiteral("templates")), QString::number(int(lidarTemplate)));
+}
+
+bool hasTemplateConfig(const QSettings& settings, const QString& prefix, SlamLidarTemplate lidarTemplate)
+{
+    return settings.contains(key(templateConfigPrefix(prefix, lidarTemplate), QStringLiteral("configured")));
+}
+
+void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefix, SlamRuntimeConfig& config)
+{
     config.imuEnabled = settings.value(key(prefix, QStringLiteral("imuEnabled")), config.imuEnabled).toBool();
     config.allowPureLidar = settings.value(key(prefix, QStringLiteral("allowPureLidar")), config.allowPureLidar).toBool();
     config.lidarToImuTimeOffsetNs = settings.value(key(prefix, QStringLiteral("lidarToImuTimeOffsetNs")),
@@ -200,12 +205,8 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
     } else if (!hasScanRate && hasFrameDuration) {
         config.preprocessScanRateHz = scanRateFromFrameDurationMs(config.inputFrameDurationMs);
     }
-    config.allowRosbagDriver2PointCloud2 =
-        settings.value(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")),
-                       config.allowRosbagDriver2PointCloud2).toBool();
-    config.allowRosbagDriverPointCloud2SynthesizedTime =
-        settings.value(key(prefix, QStringLiteral("allowRosbagDriverPointCloud2SynthesizedTime")),
-                       config.allowRosbagDriverPointCloud2SynthesizedTime).toBool();
+    config.allowRosbagDriver2PointCloud2 = true;
+    config.allowRosbagDriverPointCloud2SynthesizedTime = true;
     const bool hasPublishConfig = settings.contains(key(prefix, QStringLiteral("publishWorldFrameCloud")));
     config.publishWorldFrameCloud = settings.value(key(prefix, QStringLiteral("publishWorldFrameCloud")),
                                                    config.publishWorldFrameCloud).toBool();
@@ -223,10 +224,9 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
         config.saveMap = true;
     }
     config.logLevel = settings.value(key(prefix, QStringLiteral("logLevel")), config.logLevel).toString();
-    return config;
 }
 
-void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix)
+void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix)
 {
     settings.setValue(key(prefix, QStringLiteral("backendType")), config.backendType);
     settings.setValue(key(prefix, QStringLiteral("lidarModel")), config.lidarModel);
@@ -255,9 +255,8 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
     settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);
     settings.setValue(key(prefix, QStringLiteral("inputFrameDurationMs")), config.inputFrameDurationMs);
-    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")), config.allowRosbagDriver2PointCloud2);
-    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriverPointCloud2SynthesizedTime")),
-                      config.allowRosbagDriverPointCloud2SynthesizedTime);
+    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")), true);
+    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriverPointCloud2SynthesizedTime")), true);
     settings.setValue(key(prefix, QStringLiteral("publishWorldFrameCloud")), config.publishWorldFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
@@ -268,4 +267,53 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     settings.setValue(key(prefix, QStringLiteral("saveTrajectory")), config.saveTrajectory);
     settings.setValue(key(prefix, QStringLiteral("saveMap")), config.saveMap);
     settings.setValue(key(prefix, QStringLiteral("logLevel")), config.logLevel);
+}
+
+} // namespace
+
+SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix)
+{
+    const SlamLidarTemplate selectedTemplate = slamLidarTemplateFromInt(settings.value(
+        key(prefix, QStringLiteral("lidarTemplate")),
+        int(SlamLidarTemplate::Mid360Mid360S)).toInt());
+    if (hasTemplateConfig(settings, prefix, selectedTemplate)) {
+        return loadSlamRuntimeConfigForTemplate(settings, prefix, selectedTemplate);
+    }
+
+    SlamRuntimeConfig config;
+    config.backendType = settings.value(key(prefix, QStringLiteral("backendType")), config.backendType).toString();
+    config.lidarModel = settings.value(key(prefix, QStringLiteral("lidarModel")), config.lidarModel).toString();
+    applySlamLidarTemplateDefaults(config, selectedTemplate);
+    loadSlamRuntimeConfigValues(settings, prefix, config);
+    config.lidarTemplate = selectedTemplate;
+    return config;
+}
+
+SlamRuntimeConfig loadSlamRuntimeConfigForTemplate(const QSettings& settings,
+                                                   const QString& prefix,
+                                                   SlamLidarTemplate lidarTemplate)
+{
+    SlamRuntimeConfig config;
+    config.backendType = settings.value(key(prefix, QStringLiteral("backendType")), config.backendType).toString();
+    config.lidarModel = settings.value(key(prefix, QStringLiteral("lidarModel")), config.lidarModel).toString();
+    applySlamLidarTemplateDefaults(config, lidarTemplate);
+    const QString tPrefix = templateConfigPrefix(prefix, lidarTemplate);
+    if (hasTemplateConfig(settings, prefix, lidarTemplate)) {
+        loadSlamRuntimeConfigValues(settings, tPrefix, config);
+        config.lidarTemplate = lidarTemplate;
+    }
+    return config;
+}
+
+void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix)
+{
+    saveSlamRuntimeConfigValues(settings, config, prefix);
+    saveSlamRuntimeConfigForTemplate(settings, config, prefix);
+}
+
+void saveSlamRuntimeConfigForTemplate(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix)
+{
+    const QString tPrefix = templateConfigPrefix(prefix, config.lidarTemplate);
+    saveSlamRuntimeConfigValues(settings, config, tPrefix);
+    settings.setValue(key(tPrefix, QStringLiteral("configured")), true);
 }

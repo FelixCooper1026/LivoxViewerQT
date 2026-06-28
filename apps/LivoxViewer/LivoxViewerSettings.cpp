@@ -22,6 +22,7 @@
 #include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -42,6 +43,8 @@
 #include <QStyleFactory>
 #include <QStyleHints>
 #include <QStackedWidget>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QStringList>
 #include <QTextStream>
 #include <QTimer>
@@ -864,12 +867,26 @@ void LivoxViewerWindow::loadViewPreferences()
         settings.value(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx).toFloat(),
         1.0f,
         10.0f);
+    const bool hasSlamBodyFrameColor = settings.contains(QStringLiteral("slam/bodyFrameColor"));
     slamBodyFrameColor = settings.value(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor).value<QColor>();
-    if (!slamBodyFrameColor.isValid() || slamBodyFrameColor == QColor(255, 140, 26)) {
-        slamBodyFrameColor = QColor(0, 255, 0);
+    if (!slamBodyFrameColor.isValid() ||
+        (hasSlamBodyFrameColor && slamBodyFrameColor == QColor(0, 255, 0))) {
+        slamBodyFrameColor = QColor(255, 140, 26);
     }
     slamBodyFramePointSizePx = std::clamp(
         settings.value(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx).toFloat(),
+        1.0f,
+        10.0f);
+    slamTrajectoryLineWidthPx = std::clamp(
+        settings.value(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx).toFloat(),
+        1.0f,
+        10.0f);
+    slamPoseAxisLengthM = std::clamp(
+        settings.value(QStringLiteral("slam/poseAxisLengthM"), slamPoseAxisLengthM).toFloat(),
+        0.1f,
+        10.0f);
+    slamPoseAxisLineWidthPx = std::clamp(
+        settings.value(QStringLiteral("slam/poseAxisLineWidthPx"), slamPoseAxisLineWidthPx).toFloat(),
         1.0f,
         10.0f);
     rebuildSlamInfoPanel();
@@ -989,6 +1006,9 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx);
     settings.setValue(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor);
     settings.setValue(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx);
+    settings.setValue(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx);
+    settings.setValue(QStringLiteral("slam/poseAxisLengthM"), slamPoseAxisLengthM);
+    settings.setValue(QStringLiteral("slam/poseAxisLineWidthPx"), slamPoseAxisLineWidthPx);
     saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
 }
 
@@ -1401,10 +1421,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
-    SwitchCheckBox* slamAllowRosbagDriver2PointCloud2Check =
-        createSlamSwitch(slamRuntimeConfig.allowRosbagDriver2PointCloud2);
-    SwitchCheckBox* slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck =
-        createSlamSwitch(slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime);
     QWidget* slamWorldCurrentFrameColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamWorldCurrentFrameColorRow);
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
@@ -1459,6 +1475,12 @@ void LivoxViewerWindow::showPreferencesDialog()
     });
     QDoubleSpinBox* slamBodyFramePointSizeSpin =
         createSlamDoubleSpin(slamBodyFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamTrajectoryLineWidthSpin =
+        createSlamDoubleSpin(slamTrajectoryLineWidthPx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamPoseAxisLengthSpin =
+        createSlamDoubleSpin(slamPoseAxisLengthM, 0.1, 10.0, 2, 0.1, QStringLiteral(" m"));
+    QDoubleSpinBox* slamPoseAxisLineWidthSpin =
+        createSlamDoubleSpin(slamPoseAxisLineWidthPx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     auto syncSlamPublishControls = [slamPublishWorldCheck, slamPublishDenseCheck, slamPublishBodyCheck]() {
         const bool enabled = slamPublishWorldCheck->isChecked();
         slamPublishDenseCheck->setEnabled(enabled);
@@ -1470,19 +1492,6 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     auto currentSlamTemplate = [slamTemplateCombo]() {
         return slamLidarTemplateFromInt(slamTemplateCombo->currentData().toInt());
-    };
-    auto applySlamTemplateToControls = [&](SlamLidarTemplate lidarTemplate) {
-        SlamRuntimeConfig templateDefaults;
-        applySlamLidarTemplateDefaults(templateDefaults, lidarTemplate);
-        slamDetRangeSpin->setValue(templateDefaults.detRangeM);
-        slamFovDegreeSpin->setValue(templateDefaults.fovDegree);
-        slamBlindMinRangeSpin->setValue(templateDefaults.blindMinRangeM);
-        for (int i = 0; i < 3; ++i) {
-            slamExtrinsicTSpins[static_cast<std::size_t>(i)]->setValue(templateDefaults.extrinsicT_L_I[i]);
-        }
-        for (int i = 0; i < 9; ++i) {
-            slamExtrinsicRSpins[static_cast<std::size_t>(i)]->setValue(templateDefaults.extrinsicR_L_I[i]);
-        }
     };
     auto setSlamRuntimeControls = [&](const SlamRuntimeConfig& runtimeDefaults) {
         syncingSlamFrameControls = true;
@@ -1501,9 +1510,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamAccCovSpin->setValue(runtimeDefaults.accCov);
         slamBGyrCovSpin->setValue(runtimeDefaults.bGyrCov);
         slamBAccCovSpin->setValue(runtimeDefaults.bAccCov);
-        slamAllowRosbagDriver2PointCloud2Check->setChecked(runtimeDefaults.allowRosbagDriver2PointCloud2);
-        slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck->setChecked(
-            runtimeDefaults.allowRosbagDriverPointCloud2SynthesizedTime);
         slamExtrinsicEstimationCheck->setChecked(runtimeDefaults.extrinsicEstimationEnabled);
         for (int i = 0; i < 3; ++i) {
             slamExtrinsicTSpins[static_cast<std::size_t>(i)]->setValue(runtimeDefaults.extrinsicT_L_I[i]);
@@ -1517,14 +1523,65 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
         syncSlamPublishControls();
     };
+    auto slamRuntimeConfigFromControls = [&](SlamLidarTemplate lidarTemplate) {
+        SlamRuntimeConfig config;
+        applySlamLidarTemplateDefaults(config, lidarTemplate);
+        config.filterSizeSurfM = slamFilterSurfSpin->value();
+        config.filterSizeMapM = slamFilterMapSpin->value();
+        config.gravityNorm = slamGravityNormSpin->value();
+        config.preprocessScanRateHz = slamScanRateSpin->value();
+        config.inputFrameDurationMs = slamFrameDurationSpin->value();
+        config.cubeSideLengthM = slamCubeSideLengthSpin->value();
+        config.detRangeM = slamDetRangeSpin->value();
+        config.fovDegree = slamFovDegreeSpin->value();
+        config.blindMinRangeM = slamBlindMinRangeSpin->value();
+        config.maxIterations = slamMaxIterationsSpin->value();
+        config.gyrCov = slamGyrCovSpin->value();
+        config.accCov = slamAccCovSpin->value();
+        config.bGyrCov = slamBGyrCovSpin->value();
+        config.bAccCov = slamBAccCovSpin->value();
+        config.allowRosbagDriver2PointCloud2 = true;
+        config.allowRosbagDriverPointCloud2SynthesizedTime = true;
+        config.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
+        for (int i = 0; i < 3; ++i) {
+            config.extrinsicT_L_I[i] = slamExtrinsicTSpins[static_cast<std::size_t>(i)]->value();
+        }
+        for (int i = 0; i < 9; ++i) {
+            config.extrinsicR_L_I[i] = slamExtrinsicRSpins[static_cast<std::size_t>(i)]->value();
+        }
+        config.publishWorldFrameCloud = slamPublishWorldCheck->isChecked();
+        config.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
+        config.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
+        config.saveMap = slamSaveMapCheck->isChecked();
+        return config;
+    };
+    QHash<int, SlamRuntimeConfig> editedSlamTemplateConfigs;
+    auto loadSlamTemplateConfigForDialog = [&](SlamLidarTemplate lidarTemplate) {
+        const int templateKey = int(lidarTemplate);
+        if (editedSlamTemplateConfigs.contains(templateKey)) {
+            return editedSlamTemplateConfigs.value(templateKey);
+        }
+        QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+        return loadSlamRuntimeConfigForTemplate(settings, QStringLiteral("slam/runtime"), lidarTemplate);
+    };
+    SlamLidarTemplate activeSlamTemplate = currentSlamTemplate();
     connect(slamTemplateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
-            [applySlamTemplateToControls, currentSlamTemplate](int) {
-                applySlamTemplateToControls(currentSlamTemplate());
+            [&editedSlamTemplateConfigs,
+             &activeSlamTemplate,
+             slamRuntimeConfigFromControls,
+             loadSlamTemplateConfigForDialog,
+             setSlamRuntimeControls,
+             currentSlamTemplate](int) {
+                editedSlamTemplateConfigs.insert(int(activeSlamTemplate),
+                                                 slamRuntimeConfigFromControls(activeSlamTemplate));
+                activeSlamTemplate = currentSlamTemplate();
+                setSlamRuntimeControls(loadSlamTemplateConfigForDialog(activeSlamTemplate));
             });
     connect(slamRestoreTemplateDefaultsButton, &QPushButton::clicked, &dlg,
-            [setSlamRuntimeControls, currentSlamTemplate]() {
+            [&editedSlamTemplateConfigs, setSlamRuntimeControls, currentSlamTemplate]() {
                 SlamRuntimeConfig runtimeDefaults;
                 applySlamLidarTemplateDefaults(runtimeDefaults, currentSlamTemplate());
+                editedSlamTemplateConfigs.insert(int(runtimeDefaults.lidarTemplate), runtimeDefaults);
                 setSlamRuntimeControls(runtimeDefaults);
             });
 
@@ -1686,12 +1743,62 @@ void LivoxViewerWindow::showPreferencesDialog()
     backgroundLayout->addWidget(backgroundPresetPreview);
     backgroundLayout->addStretch();
 
-    addPreferenceSectionTitle(slamLayout, "FAST_LIO 后端");
-    QFrame* slamBackendSection = createPreferenceSection(slamTab);
-    addPreferenceRow(slamBackendSection,
-                     "LiDAR 模板",
+    addPreferenceSectionTitle(slamLayout, "LiDAR 模板");
+    QFrame* slamTemplateSection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamTemplateSection,
+                     "模板",
                      "根据原版 mid360/avia.yaml 套用探测距离、水平视场角、外参平移和近距离盲区默认值。",
                      slamTemplateRow);
+    slamLayout->addWidget(slamTemplateSection);
+
+    QTabWidget* slamSettingsTabs = new QTabWidget(slamTab);
+    slamSettingsTabs->setObjectName(QStringLiteral("SlamSettingsTabs"));
+    slamSettingsTabs->setDocumentMode(true);
+    slamSettingsTabs->tabBar()->setDrawBase(false);
+    slamSettingsTabs->tabBar()->setExpanding(false);
+    slamSettingsTabs->tabBar()->setElideMode(Qt::ElideNone);
+    slamSettingsTabs->tabBar()->setUsesScrollButtons(false);
+    slamSettingsTabs->setStyleSheet(QStringLiteral(
+        "QTabWidget#SlamSettingsTabs::pane { border: none; }"
+        "QTabWidget#SlamSettingsTabs QTabBar { border: none; background: transparent; }"
+        "QTabWidget#SlamSettingsTabs QTabBar::base { border: none; background: transparent; }"
+        "QTabWidget#SlamSettingsTabs QTabBar::tab {"
+        " border: none;"
+        " border-bottom: 2px solid transparent;"
+        " background: transparent;"
+        " padding: 5px 8px;"
+        " margin-right: 10px;"
+        "}"
+        "QTabWidget#SlamSettingsTabs QTabBar::tab:selected {"
+        " color: #2f8cff;"
+        " border-bottom-color: #2f8cff;"
+        " font-weight: 600;"
+        "}"
+        "QTabWidget#SlamSettingsTabs QTabBar::tab:!selected {"
+        " color: palette(window-text);"
+        "}"));
+    auto createSlamSettingsTab = [slamSettingsTabs](const QString& title) {
+        QWidget* tab = new QWidget(slamSettingsTabs);
+        QVBoxLayout* tabLayout = new QVBoxLayout(tab);
+        tabLayout->setContentsMargins(0, 12, 0, 0);
+        tabLayout->setSpacing(12);
+        slamSettingsTabs->addTab(tab, title);
+        return tab;
+    };
+
+    QWidget* slamBackendTab = createSlamSettingsTab(QStringLiteral("FAST_LIO 后端"));
+    QWidget* slamImuNoiseTab = createSlamSettingsTab(QStringLiteral("IMU 噪声"));
+    QWidget* slamExtrinsicTab = createSlamSettingsTab(QStringLiteral("LiDAR-IMU 外参"));
+    QWidget* slamPublishTab = createSlamSettingsTab(QStringLiteral("发布与导出"));
+    QWidget* slamVisualTab = createSlamSettingsTab(QStringLiteral("可视化效果"));
+
+    QVBoxLayout* slamBackendTabLayout = qobject_cast<QVBoxLayout*>(slamBackendTab->layout());
+    QVBoxLayout* slamImuNoiseTabLayout = qobject_cast<QVBoxLayout*>(slamImuNoiseTab->layout());
+    QVBoxLayout* slamExtrinsicTabLayout = qobject_cast<QVBoxLayout*>(slamExtrinsicTab->layout());
+    QVBoxLayout* slamPublishTabLayout = qobject_cast<QVBoxLayout*>(slamPublishTab->layout());
+    QVBoxLayout* slamVisualTabLayout = qobject_cast<QVBoxLayout*>(slamVisualTab->layout());
+
+    QFrame* slamBackendSection = createPreferenceSection(slamBackendTab);
     addPreferenceRow(slamBackendSection,
                      "扫描频率",
                      "按原版 preprocess/scan_rate 语义推导 SLAM 输入聚帧周期。",
@@ -1732,10 +1839,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "地图滤波体素",
                      "设置 FAST_LIO 地图增量降采样体素尺寸。",
                      slamFilterMapSpin);
-    slamLayout->addWidget(slamBackendSection);
+    slamBackendTabLayout->addWidget(slamBackendSection);
+    slamBackendTabLayout->addStretch();
 
-    addPreferenceSectionTitle(slamLayout, "IMU 噪声");
-    QFrame* slamImuNoiseSection = createPreferenceSection(slamTab);
+    QFrame* slamImuNoiseSection = createPreferenceSection(slamImuNoiseTab);
     addPreferenceRow(slamImuNoiseSection,
                      "陀螺测量噪声",
                      "对应原版 mapping/gyr_cov，值越大表示越不信任陀螺测量。",
@@ -1752,10 +1859,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "加计零偏噪声",
                      "对应原版 mapping/b_acc_cov，描述加速度计零偏随机游走速率。",
                      slamBAccCovSpin);
-    slamLayout->addWidget(slamImuNoiseSection);
+    slamImuNoiseTabLayout->addWidget(slamImuNoiseSection);
+    slamImuNoiseTabLayout->addStretch();
 
-    addPreferenceSectionTitle(slamLayout, "LiDAR-IMU 外参");
-    QFrame* slamExtrinsicSection = createPreferenceSection(slamTab);
+    QFrame* slamExtrinsicSection = createPreferenceSection(slamExtrinsicTab);
     addPreferenceRow(slamExtrinsicSection,
                      "在线估计外参",
                      "对应原版 mapping/extrinsic_est_en；关闭时外参固定，并将外参雅可比列置零。",
@@ -1768,22 +1875,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "外参旋转 R",
                      "LiDAR 到 IMU 旋转矩阵，按行优先填写 3x3；MID360 默认 identity。",
                      slamExtrinsicRGrid);
-    slamLayout->addWidget(slamExtrinsicSection);
+    slamExtrinsicTabLayout->addWidget(slamExtrinsicSection);
+    slamExtrinsicTabLayout->addStretch();
 
-    addPreferenceSectionTitle(slamLayout, "ROSbag 输入");
-    QFrame* slamRosbagSection = createPreferenceSection(slamTab);
-    addPreferenceRow(slamRosbagSection,
-                     "允许 driver2 PointCloud2",
-                     "支持 livox_ros_driver2 的 x/y/z/intensity/tag/line/timestamp 布局，timestamp 为每点绝对 ns。",
-                     slamAllowRosbagDriver2PointCloud2Check);
-    addPreferenceRow(slamRosbagSection,
-                     "允许 driver1 PointCloud2 合成时间",
-                     "支持旧 livox_ros_driver 的 x/y/z/intensity/tag/line 布局；该格式无真实点内时间，会按帧周期合成 offset_time。",
-                     slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck);
-    slamLayout->addWidget(slamRosbagSection);
-
-    addPreferenceSectionTitle(slamLayout, "发布与导出");
-    QFrame* slamPublishSection = createPreferenceSection(slamTab);
+    QFrame* slamPublishSection = createPreferenceSection(slamPublishTab);
     addPreferenceRow(slamPublishSection,
                      "发布世界系点云",
                      "按原版 scan_publish_en 语义输出世界系点云，在 SLAM tab 中按积分时间显示。",
@@ -1793,30 +1888,49 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "按原版 dense_publish_en 语义选择世界系点云使用去畸变 dense 点云，否则使用降采样点云。",
                      slamPublishDenseCheck);
     addPreferenceRow(slamPublishSection,
-                     "世界系当前帧颜色",
-                     "设置世界系当前扫描帧 overlay 的固定颜色。",
-                     slamWorldCurrentFrameColorRow);
-    addPreferenceRow(slamPublishSection,
-                     "世界系当前帧点大小",
-                     "设置世界系当前扫描帧 overlay 的 OpenGL 像素点大小。",
-                     slamWorldCurrentFramePointSizeSpin);
-    addPreferenceRow(slamPublishSection,
                      "发布机体系点云",
                      "按原版 scan_bodyframe_pub_en 语义输出当前帧 IMU 机体系点云。",
                      slamPublishBodyCheck);
     addPreferenceRow(slamPublishSection,
-                     "机体系点云颜色",
-                     "设置 IMU 机体系当前帧点云 overlay 的固定颜色。",
-                     slamBodyColorRow);
-    addPreferenceRow(slamPublishSection,
-                     "机体系点云点大小",
-                     "设置 IMU 机体系当前帧点云 overlay 的 OpenGL 像素点大小。",
-                     slamBodyFramePointSizeSpin);
-    addPreferenceRow(slamPublishSection,
                      "保存完整全局地图",
                      "按原版 pcd_save 语义累计去畸变 dense 帧到世界系，供完整全局地图 PCD/LAS 导出。",
                      slamSaveMapCheck);
-    slamLayout->addWidget(slamPublishSection);
+    slamPublishTabLayout->addWidget(slamPublishSection);
+    slamPublishTabLayout->addStretch();
+
+    QFrame* slamVisualSection = createPreferenceSection(slamVisualTab);
+    addPreferenceRow(slamVisualSection,
+                     "世界系当前帧颜色",
+                     "设置世界系当前扫描帧 overlay 的固定颜色。",
+                     slamWorldCurrentFrameColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "世界系当前帧点大小",
+                     "设置世界系当前扫描帧 overlay 的 OpenGL 像素点大小。",
+                     slamWorldCurrentFramePointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "机体系点云颜色",
+                     "设置 IMU 机体系当前帧点云 overlay 的固定颜色。",
+                     slamBodyColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "机体系点云点大小",
+                     "设置 IMU 机体系当前帧点云 overlay 的 OpenGL 像素点大小。",
+                     slamBodyFramePointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "轨迹线宽",
+                     "设置 SLAM 位姿轨迹 overlay 的 OpenGL 线宽。",
+                     slamTrajectoryLineWidthSpin);
+    addPreferenceRow(slamVisualSection,
+                     "位姿坐标轴长度",
+                     "设置当前位置姿态坐标轴 overlay 的世界坐标长度。",
+                     slamPoseAxisLengthSpin);
+    addPreferenceRow(slamVisualSection,
+                     "位姿坐标轴线宽",
+                     "设置当前位置姿态坐标轴 overlay 的 OpenGL 线宽。",
+                     slamPoseAxisLineWidthSpin);
+    slamVisualTabLayout->addWidget(slamVisualSection);
+    slamVisualTabLayout->addStretch();
+
+    slamLayout->addWidget(slamSettingsTabs);
     slamLayout->addStretch();
 
     const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景", "SLAM"};
@@ -1884,9 +1998,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     const double previousSlamAccCov = slamRuntimeConfig.accCov;
     const double previousSlamBGyrCov = slamRuntimeConfig.bGyrCov;
     const double previousSlamBAccCov = slamRuntimeConfig.bAccCov;
-    const bool previousSlamAllowRosbagDriver2PointCloud2 = slamRuntimeConfig.allowRosbagDriver2PointCloud2;
-    const bool previousSlamAllowRosbagDriverPointCloud2SynthesizedTime =
-        slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime;
     const bool previousSlamPublishWorld = slamRuntimeConfig.publishWorldFrameCloud;
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
@@ -1912,6 +2023,9 @@ void LivoxViewerWindow::showPreferencesDialog()
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
     const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
     const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
+    const float previousSlamTrajectoryLineWidthPx = slamTrajectoryLineWidthPx;
+    const float previousSlamPoseAxisLengthM = slamPoseAxisLengthM;
+    const float previousSlamPoseAxisLineWidthPx = slamPoseAxisLineWidthPx;
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
@@ -1928,9 +2042,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.accCov = slamAccCovSpin->value();
     slamRuntimeConfig.bGyrCov = slamBGyrCovSpin->value();
     slamRuntimeConfig.bAccCov = slamBAccCovSpin->value();
-    slamRuntimeConfig.allowRosbagDriver2PointCloud2 = slamAllowRosbagDriver2PointCloud2Check->isChecked();
-    slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime =
-        slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck->isChecked();
+    slamRuntimeConfig.allowRosbagDriver2PointCloud2 = true;
+    slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime = true;
     slamRuntimeConfig.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
     for (int i = 0; i < 3; ++i) {
         slamRuntimeConfig.extrinsicT_L_I[i] = slamExtrinsicTSpins[static_cast<std::size_t>(i)]->value();
@@ -1946,11 +2059,24 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamBodyFrameColor = selectedSlamBodyFrameColor;
     slamWorldCurrentFramePointSizePx = static_cast<float>(slamWorldCurrentFramePointSizeSpin->value());
     slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
+    slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
+    slamPoseAxisLengthM = static_cast<float>(slamPoseAxisLengthSpin->value());
+    slamPoseAxisLineWidthPx = static_cast<float>(slamPoseAxisLineWidthSpin->value());
+    editedSlamTemplateConfigs.insert(int(slamRuntimeConfig.lidarTemplate), slamRuntimeConfig);
+    {
+        QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+        for (auto it = editedSlamTemplateConfigs.cbegin(); it != editedSlamTemplateConfigs.cend(); ++it) {
+            saveSlamRuntimeConfigForTemplate(settings, it.value(), QStringLiteral("slam/runtime"));
+        }
+    }
     if (slamUiBridge) {
         slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
         slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
+        slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
+        slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
+        slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
     }
     rebuildSlamInfoPanel();
     syncSlamRenderLayerVisibility();
@@ -1999,9 +2125,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.accCov != previousSlamAccCov ||
         slamRuntimeConfig.bGyrCov != previousSlamBGyrCov ||
         slamRuntimeConfig.bAccCov != previousSlamBAccCov ||
-        slamRuntimeConfig.allowRosbagDriver2PointCloud2 != previousSlamAllowRosbagDriver2PointCloud2 ||
-        slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime !=
-            previousSlamAllowRosbagDriverPointCloud2SynthesizedTime ||
         slamExtrinsicChanged ||
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
@@ -2010,7 +2133,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
         slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
-        slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx) {
+        slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx ||
+        slamTrajectoryLineWidthPx != previousSlamTrajectoryLineWidthPx ||
+        slamPoseAxisLengthM != previousSlamPoseAxisLengthM ||
+        slamPoseAxisLineWidthPx != previousSlamPoseAxisLineWidthPx) {
         liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
         logMessage(QStringLiteral("[SLAM] 设置已更新"));
     }

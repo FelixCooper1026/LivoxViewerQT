@@ -1176,7 +1176,7 @@ void PointCloudView::paintGL()
     }
     if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {
         glDisable(GL_DEPTH_TEST);
-        glLineWidth(2.0f);
+        glLineWidth(m_slamRenderSnapshot.trajectoryLineWidthPx);
         m_slamTrajectoryVao.bind();
         glDrawArrays(GL_LINE_STRIP, 0, m_slamTrajectoryVertexCount);
         m_slamTrajectoryVao.release();
@@ -1185,11 +1185,9 @@ void PointCloudView::paintGL()
     }
     if (m_slamPoseAxisVertexCount > 0 && m_slamPoseAxisVao.isCreated()) {
         glDisable(GL_DEPTH_TEST);
-        glLineWidth(3.0f);
         m_slamPoseAxisVao.bind();
-        glDrawArrays(GL_LINES, 0, m_slamPoseAxisVertexCount);
+        glDrawArrays(GL_TRIANGLES, 0, m_slamPoseAxisVertexCount);
         m_slamPoseAxisVao.release();
-        glLineWidth(1.0f);
         glEnable(GL_DEPTH_TEST);
     }
 

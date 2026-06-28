@@ -6,6 +6,7 @@
 #include <QVector3D>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -91,6 +92,73 @@ float clampOverlayPointSize(float sizePx)
     return std::clamp(sizePx, 1.0f, 10.0f);
 }
 
+float clampOverlayLineWidth(float widthPx)
+{
+    return std::clamp(widthPx, 1.0f, 10.0f);
+}
+
+float clampPoseAxisLength(float lengthM)
+{
+    return std::clamp(lengthM, 0.1f, 10.0f);
+}
+
+float poseAxisDiameterFromLineWidth(float widthPx)
+{
+    return std::clamp(widthPx * 0.02f, 0.01f, 0.3f);
+}
+
+void appendTriangle(QVector<SlamRenderVertex>& vertices,
+                    const QVector3D& a,
+                    const QVector3D& b,
+                    const QVector3D& c,
+                    float r,
+                    float g,
+                    float bColor)
+{
+    vertices.push_back(renderVertex(a, r, g, bColor));
+    vertices.push_back(renderVertex(b, r, g, bColor));
+    vertices.push_back(renderVertex(c, r, g, bColor));
+}
+
+void appendPoseAxisMesh(QVector<SlamRenderVertex>& vertices,
+                        const QVector3D& origin,
+                        const QVector3D& direction,
+                        float cylinderLength,
+                        float diameter,
+                        float r,
+                        float g,
+                        float b)
+{
+    constexpr int kSegments = 16;
+    constexpr float kPi = 3.14159265358979323846f;
+    const QVector3D axis = direction.normalized();
+    const QVector3D reference = std::abs(QVector3D::dotProduct(axis, QVector3D(0.0f, 0.0f, 1.0f))) > 0.9f
+        ? QVector3D(0.0f, 1.0f, 0.0f)
+        : QVector3D(0.0f, 0.0f, 1.0f);
+    const QVector3D u = QVector3D::crossProduct(axis, reference).normalized();
+    const QVector3D v = QVector3D::crossProduct(axis, u).normalized();
+    const float radius = diameter * 0.5f;
+    const float coneLength = std::min(cylinderLength * 0.35f,
+                                      std::max(diameter * 2.5f, cylinderLength * 0.12f));
+    const QVector3D cylinderEnd = origin + axis * cylinderLength;
+    const QVector3D coneTip = cylinderEnd + axis * coneLength;
+
+    for (int i = 0; i < kSegments; ++i) {
+        const float a0 = 2.0f * kPi * float(i) / float(kSegments);
+        const float a1 = 2.0f * kPi * float(i + 1) / float(kSegments);
+        const QVector3D offset0 = (u * std::cos(a0) + v * std::sin(a0)) * radius;
+        const QVector3D offset1 = (u * std::cos(a1) + v * std::sin(a1)) * radius;
+        const QVector3D base0 = origin + offset0;
+        const QVector3D base1 = origin + offset1;
+        const QVector3D end0 = cylinderEnd + offset0;
+        const QVector3D end1 = cylinderEnd + offset1;
+
+        appendTriangle(vertices, base0, end0, base1, r, g, b);
+        appendTriangle(vertices, base1, end0, end1, r, g, b);
+        appendTriangle(vertices, end0, coneTip, end1, r, g, b);
+    }
+}
+
 } // namespace
 
 SlamUiBridge::SlamUiBridge(QObject* parent)
@@ -158,6 +226,36 @@ void SlamUiBridge::setBodyFramePointSize(float sizePx)
         return;
     }
     m_bodyFramePointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setTrajectoryLineWidth(float widthPx)
+{
+    const float clampedWidth = clampOverlayLineWidth(widthPx);
+    if (m_trajectoryLineWidthPx == clampedWidth) {
+        return;
+    }
+    m_trajectoryLineWidthPx = clampedWidth;
+    refreshStatus();
+}
+
+void SlamUiBridge::setPoseAxisLength(float lengthM)
+{
+    const float clampedLength = clampPoseAxisLength(lengthM);
+    if (m_poseAxisLengthM == clampedLength) {
+        return;
+    }
+    m_poseAxisLengthM = clampedLength;
+    refreshStatus();
+}
+
+void SlamUiBridge::setPoseAxisLineWidth(float widthPx)
+{
+    const float clampedWidth = clampOverlayLineWidth(widthPx);
+    if (m_poseAxisLineWidthPx == clampedWidth) {
+        return;
+    }
+    m_poseAxisLineWidthPx = clampedWidth;
     refreshStatus();
 }
 
@@ -248,6 +346,9 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     SlamRenderSnapshot snapshot;
     snapshot.worldFramePointSizePx = m_worldFramePointSizePx;
     snapshot.bodyFramePointSizePx = m_bodyFramePointSizePx;
+    snapshot.trajectoryLineWidthPx = m_trajectoryLineWidthPx;
+    snapshot.poseAxisLengthM = m_poseAxisLengthM;
+    snapshot.poseAxisLineWidthPx = m_poseAxisLineWidthPx;
 
     if (m_trajectoryVisible) {
         snapshot.trajectoryVertices.reserve(m_trajectory.size());
@@ -262,14 +363,32 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
                                    float(m_latestOutput.currentPose.qx),
                                    float(m_latestOutput.currentPose.qy),
                                    float(m_latestOutput.currentPose.qz));
-        constexpr float kAxisLength = 0.8f;
-        snapshot.poseAxisVertices.reserve(6);
-        snapshot.poseAxisVertices.push_back(renderVertex(origin, 1.0f, 0.05f, 0.05f));
-        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(kAxisLength, 0.0f, 0.0f)), 1.0f, 0.05f, 0.05f));
-        snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.05f, 1.0f, 0.05f));
-        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, kAxisLength, 0.0f)), 0.05f, 1.0f, 0.05f));
-        snapshot.poseAxisVertices.push_back(renderVertex(origin, 0.1f, 0.35f, 1.0f));
-        snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
+        const float diameter = poseAxisDiameterFromLineWidth(m_poseAxisLineWidthPx);
+        snapshot.poseAxisVertices.reserve(432);
+        appendPoseAxisMesh(snapshot.poseAxisVertices,
+                           origin,
+                           rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
+                           m_poseAxisLengthM,
+                           diameter,
+                           1.0f,
+                           0.05f,
+                           0.05f);
+        appendPoseAxisMesh(snapshot.poseAxisVertices,
+                           origin,
+                           rotation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)),
+                           m_poseAxisLengthM,
+                           diameter,
+                           0.05f,
+                           1.0f,
+                           0.05f);
+        appendPoseAxisMesh(snapshot.poseAxisVertices,
+                           origin,
+                           rotation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)),
+                           m_poseAxisLengthM,
+                           diameter,
+                           0.1f,
+                           0.35f,
+                           1.0f);
     }
 
     if (m_worldFrameVisible) {

@@ -229,6 +229,9 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
     slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
     slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
+    slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
+    slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
+    slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
     syncSlamRenderLayerVisibility();
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
         if (statusBar()) {

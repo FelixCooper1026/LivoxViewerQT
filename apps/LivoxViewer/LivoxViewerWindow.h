@@ -436,9 +436,12 @@ private:
     int slamWorldDisplayedSegmentStart = 0;
     int slamWorldDisplayedSegmentEnd = 0;
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
-    QColor slamBodyFrameColor = QColor(0, 255, 0);
+    QColor slamBodyFrameColor = QColor(255, 140, 26);
     float slamWorldCurrentFramePointSizePx = 2.0f;
     float slamBodyFramePointSizePx = 2.5f;
+    float slamTrajectoryLineWidthPx = 2.0f;
+    float slamPoseAxisLengthM = 0.8f;
+    float slamPoseAxisLineWidthPx = 3.0f;
     bool slamWorldFrameVisible = true;
     bool slamWorldCurrentFrameVisible = true;
     bool slamBodyFrameVisible = true;

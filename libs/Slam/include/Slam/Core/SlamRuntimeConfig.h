@@ -35,8 +35,8 @@ struct SlamRuntimeConfig {
     double filterSizeMapM = 0.5;
     double preprocessScanRateHz = 10.0;
     int inputFrameDurationMs = 100;
-    bool allowRosbagDriver2PointCloud2 = false;
-    bool allowRosbagDriverPointCloud2SynthesizedTime = false;
+    bool allowRosbagDriver2PointCloud2 = true;
+    bool allowRosbagDriverPointCloud2SynthesizedTime = true;
     bool publishWorldFrameCloud = true;
     bool publishDenseFrameCloud = true;
     bool publishBodyFrameCloud = true;
@@ -53,6 +53,10 @@ QString slamLidarTemplateDisplayName(SlamLidarTemplate lidarTemplate);
 SlamLidarTemplate slamLidarTemplateFromInt(int value);
 void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate lidarTemplate);
 SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix);
+SlamRuntimeConfig loadSlamRuntimeConfigForTemplate(const QSettings& settings,
+                                                   const QString& prefix,
+                                                   SlamLidarTemplate lidarTemplate);
 void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix);
+void saveSlamRuntimeConfigForTemplate(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix);
 
 #endif // SLAM_CORE_SLAMRUNTIMECONFIG_H

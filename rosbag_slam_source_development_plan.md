@@ -631,7 +631,7 @@ typedef struct {
 
 - driver1 PointCloud2 可以解析点坐标、反射率、tag、line。
 - driver1 PointCloud2 无法从 bag 内恢复真实点内时间。
-- 若要作为 FAST_LIO 输入，只能显式启用合成点内时间。
+- 当前版本默认允许作为兼容路径按帧周期合成点内时间。
 - 合成必须写入 summary warning，并将 `SlamInputFrame::timeSource` 标记为 `SlamTimeSource::SynthesizedFromPacketInterval`。
 
 driver1 PointCloud2 合成策略：
@@ -994,15 +994,13 @@ IMU 覆盖: 完整 1200 / 1234
 
 ### 7.4 首选项 SLAM 页
 
-建议新增 “ROSbag 输入” 小节：
-
 - LiDAR topic：默认自动
 - IMU topic：默认自动
 - 优先使用 Livox CustomMsg timebase：默认开
 - 要求点内时间：默认开
-- 允许解析 Livox driver2 PointCloud2：默认关，建议等 CustomMsg 跑通后再开放
-- 允许解析 Livox driver PointCloud2 并合成点内时间：默认关，只用于旧 `livox_ros_driver` 的 18 字节点格式
-- 允许 PointCloud2 合成点内时间：作为兼容总开关保留，但不能让未知 PointCloud2 静默合成
+- 允许解析 Livox driver2 PointCloud2：当前默认开启，不再暴露为用户开关
+- 允许解析 Livox driver PointCloud2 并合成点内时间：当前默认开启，只用于旧 `livox_ros_driver` 的 18 字节点格式
+- 允许 PointCloud2 合成点内时间：作为内部兼容策略保留，但不能让未知 PointCloud2 静默合成
 - LiDAR/IMU 时间偏移 ns：默认 0
 
 MVP 如果不想扩 UI，可以先只做自动识别和日志摘要；但文档要求进入产品化时补设置项。
@@ -1277,7 +1275,7 @@ ROSbag 加载失败：LiDAR topic /points 类型 sensor_msgs/PointCloud2 缺少 
 ```
 
 ```text
-ROSbag 加载失败：LiDAR topic /livox/lidar 是 sensor_msgs/PointCloud2，但字段不匹配已支持的 Livox 布局。driver2 需要 x/y/z/intensity/tag/line/timestamp 且 timestamp 为 FLOAT64；driver1 需要 x/y/z/intensity/tag/line 且必须显式启用合成点内时间。
+ROSbag 加载失败：LiDAR topic /livox/lidar 是 sensor_msgs/PointCloud2，但字段不匹配已支持的 Livox 布局。driver2 需要 x/y/z/intensity/tag/line/timestamp；driver1 需要 x/y/z/intensity/tag/line。
 ```
 
 ```text
@@ -1351,8 +1349,8 @@ ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。请检查 /livox/imu
 
 配置：
 
-- `allowLivoxDriver2PointCloud2`：默认 false，开启后允许 driver2 PointCloud2。
-- `allowLivoxDriverPointCloud2SynthesizedTime`：默认 false，开启后允许 driver1 PointCloud2 合成时间。
+- `allowLivoxDriver2PointCloud2`：当前固定 true，允许 driver2 PointCloud2。
+- `allowLivoxDriverPointCloud2SynthesizedTime`：当前固定 true，允许 driver1 PointCloud2 合成时间。
 - `synthesizePointOffsetTime` 仅作为兼容总开关，不应让未知 PointCloud2 静默合成。
 
 验收：
@@ -1443,11 +1441,11 @@ ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。请检查 /livox/imu
 - R7：ROS1 PointCloud2 支持。
   - driver2 精确 `x/y/z/intensity/tag/line/timestamp` 布局。
     - `timestamp` 按每点绝对 ns 转换为 `offsetNs = timestamp - header.stamp`。
-    - 由首选项 SLAM 页“允许 driver2 PointCloud2”显式开启，默认关闭。
+    - 当前默认允许，不再暴露为首选项开关。
     - 字段按名称、datatype 和 `point_step` 边界校验，支持紧凑 26 字节布局和 PCL/ROS padding 后的 32 字节布局。
   - driver1 精确 `x/y/z/intensity/tag/line` 布局和显式合成点内时间。
     - 优先使用下一帧 `header.stamp` 推导帧周期，缺失时回退到 SLAM 聚帧周期。
-    - 由首选项 SLAM 页“允许 driver1 PointCloud2 合成时间”显式开启，默认关闭。
+    - 当前默认允许，不再暴露为首选项开关。
     - summary/log 明确提示“PointCloud2 点内时间为合成值”。
   - 非 Livox PointCloud2、字段不匹配、`pcl::PointCloud<pcl::PointXYZI>` 仍返回 `Failed`。
 - R8：ROS2 db3 支持。
@@ -1484,9 +1482,7 @@ ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。请检查 /livox/imu
    - sensor_msgs/msg/PointCloud2。
 3. 所有输入最终转换为现有 SlamInputFrame，不修改 FastLioSlamBackend 输入接口。
 4. SLAM UI、SLAM tab、状态 dock、浮动控制条、轨迹保存和完整全局地图保存继续复用。
-5. 首选项 SLAM 页的 ROSbag 输入分组提供两个默认关闭开关：
-   - 允许 driver2 PointCloud2。
-   - 允许 driver1 PointCloud2 合成时间。
+5. ROSbag driver2 PointCloud2 和 driver1 PointCloud2 合成时间兼容路径默认启用，不再作为首选项 SLAM 页用户开关。
 
 严格禁止：
 - 不启动 ROS master。
