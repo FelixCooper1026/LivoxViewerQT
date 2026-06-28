@@ -496,6 +496,14 @@ struct SlamRuntimeConfig {
     double extrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
     double extrinsicR_L_I[9] = {1,0,0, 0,1,0, 0,0,1};
     bool extrinsicEstimationEnabled = false;
+    double cubeSideLengthM = 200.0;
+    double detRangeM = 300.0;
+    double fovDegree = 360.0;
+    double gyrCov = 0.1;
+    double accCov = 0.1;
+    double bGyrCov = 0.0001;
+    double bAccCov = 0.0001;
+    int maxIterations = 4;
     double filterSizeSurfM = 0.5;
     double filterSizeMapM = 0.5;
     double mapVoxelSizeM = 0.1;
@@ -1656,11 +1664,13 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：修复 SLAM 世界系点云在积分时间 60000 ms 时几乎卡死的问题。原因是此前每次收到 SLAM 输出都会把积分窗口内所有历史世界系点云段拼成单个大 `PointCloudFrame`，重新着色/滤波并整块上传 VBO；离线播放不会卡顿是因为它使用分段滑窗增量 append/remove。当前 SLAM 世界系点云已改为分段增量滑窗：新帧只处理新增段，窗口滑动只移除过期段，只有积分时间增大并需要恢复更早历史段时才重建当前窗口。
 - 2026-06-28：迁移原版 `mapping/extrinsic_est_en` 为 `SlamRuntimeConfig::extrinsicEstimationEnabled`，默认 false；关闭时 FAST_LIO 量测雅可比的外参 6 列按原版置零。MID360 默认外参改为原版 `[-0.011, -0.02329, 0.04412] + identity`，并在首选项 SLAM 页暴露在线估计开关、平移 T 和旋转矩阵 R。
 - 2026-06-28：启动 SLAM 后在左侧设备 dock 区域显示 `SLAM` tab，使用与文件信息设备卡片一致的眼睛图标卡片控制 `世界系点云`、`机体系点云`、`轨迹`、`姿态坐标轴` 可见性；世界系点云控制 SLAM tab 主点云段显示，其他三项控制 `SlamUiBridge` overlay 快照输出。
+- 2026-06-28：继续迁移原版 FAST_LIO 参数到 `SlamRuntimeConfig` 和首选项 SLAM 页：`cube_side_length` -> `cubeSideLengthM`、`mapping/det_range` -> `detRangeM`、`mapping/fov_degree` -> `fovDegree`、`max_iteration` -> `maxIterations`、`mapping/gyr_cov` -> `gyrCov`、`mapping/acc_cov` -> `accCov`、`mapping/b_gyr_cov` -> `bGyrCov`、`mapping/b_acc_cov` -> `bAccCov`。后端初始化不再使用这些硬编码常量，统一从运行配置读取。
 
 验证：
 
 - 2026-06-27：`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示。
 - 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：迁移 FAST_LIO 局部地图、FOV、迭代次数和 IMU 噪声参数后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 

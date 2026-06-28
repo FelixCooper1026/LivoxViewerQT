@@ -25,10 +25,6 @@ constexpr double kNsToSeconds = 1.0e-9;
 constexpr double kNsToMilliseconds = 1.0e-6;
 constexpr double kInitTime = 0.1;
 constexpr double kLaserPointCov = 0.001;
-constexpr double kDefaultCubeLen = 200.0;
-constexpr float kDefaultDetRange = 300.0f;
-constexpr double kDefaultFovDeg = 180.0;
-constexpr int kDefaultMaxIterations = 4;
 constexpr float kMoveThreshold = 1.5f;
 constexpr int kMinMapInitPoints = 5;
 
@@ -67,6 +63,20 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
         assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 滤波体素尺寸必须大于 0。"));
         return false;
     }
+    if (!std::isfinite(config.cubeSideLengthM) || config.cubeSideLengthM <= 0.0 ||
+        !std::isfinite(config.detRangeM) || config.detRangeM <= 0.0 ||
+        !std::isfinite(config.fovDegree) || config.fovDegree <= 0.0 ||
+        config.maxIterations <= 0) {
+        assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 局部地图、视场角、探测距离和最大迭代次数必须大于 0。"));
+        return false;
+    }
+    if (!std::isfinite(config.gyrCov) || config.gyrCov <= 0.0 ||
+        !std::isfinite(config.accCov) || config.accCov <= 0.0 ||
+        !std::isfinite(config.bGyrCov) || config.bGyrCov <= 0.0 ||
+        !std::isfinite(config.bAccCov) || config.bAccCov <= 0.0) {
+        assignError(error, QStringLiteral("SLAM 配置无效：IMU 噪声协方差必须大于 0。"));
+        return false;
+    }
     if (!std::isfinite(config.preprocessScanRateHz) || config.preprocessScanRateHz <= 0.0 ||
         config.inputFrameDurationMs <= 0) {
         assignError(error, QStringLiteral("SLAM 配置无效：扫描频率和聚帧周期必须大于 0。"));
@@ -95,9 +105,9 @@ struct FastLioAlgorithmState {
     {
         filterSizeSurf = config.filterSizeSurfM;
         filterSizeMap = config.filterSizeMapM;
-        cubeLen = kDefaultCubeLen;
-        detRange = kDefaultDetRange;
-        fovDeg = kDefaultFovDeg;
+        cubeLen = config.cubeSideLengthM;
+        detRange = static_cast<float>(config.detRangeM);
+        fovDeg = config.fovDegree;
         fovDegUsed = (fovDeg + 10.0) > 179.9 ? 179.9 : (fovDeg + 10.0);
         halfFovCos = std::cos(fovDegUsed * 0.5 * PI_M / 180.0);
 
@@ -115,15 +125,15 @@ struct FastLioAlgorithmState {
                                       static_cast<float>(filterSizeMap));
 
         imuProcessor->set_extrinsic(lidarTWrImu, lidarRWrImu);
-        imuProcessor->set_gyr_cov(V3D(0.1, 0.1, 0.1));
-        imuProcessor->set_acc_cov(V3D(0.1, 0.1, 0.1));
-        imuProcessor->set_gyr_bias_cov(V3D(0.0001, 0.0001, 0.0001));
-        imuProcessor->set_acc_bias_cov(V3D(0.0001, 0.0001, 0.0001));
+        imuProcessor->set_gyr_cov(V3D(config.gyrCov, config.gyrCov, config.gyrCov));
+        imuProcessor->set_acc_cov(V3D(config.accCov, config.accCov, config.accCov));
+        imuProcessor->set_gyr_bias_cov(V3D(config.bGyrCov, config.bGyrCov, config.bGyrCov));
+        imuProcessor->set_acc_bias_cov(V3D(config.bAccCov, config.bAccCov, config.bAccCov));
         imuProcessor->lidar_type = AVIA;
 
         double epsi[23] = {};
         std::fill(epsi, epsi + 23, 0.001);
-        kf.init_dyn_share(get_f, df_dx, df_dw, hShareModel, kDefaultMaxIterations, epsi);
+        kf.init_dyn_share(get_f, df_dx, df_dw, hShareModel, config.maxIterations, epsi);
     }
 
     SlamRuntimeConfig config;

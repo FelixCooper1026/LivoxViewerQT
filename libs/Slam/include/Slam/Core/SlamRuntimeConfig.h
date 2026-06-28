@@ -16,6 +16,14 @@ struct SlamRuntimeConfig {
     double extrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
     double extrinsicR_L_I[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
     bool extrinsicEstimationEnabled = false;
+    double cubeSideLengthM = 200.0;
+    double detRangeM = 300.0;
+    double fovDegree = 360.0;
+    double gyrCov = 0.1;
+    double accCov = 0.1;
+    double bGyrCov = 0.0001;
+    double bAccCov = 0.0001;
+    int maxIterations = 4;
     double filterSizeSurfM = 0.5;
     double filterSizeMapM = 0.5;
     double preprocessScanRateHz = 10.0;

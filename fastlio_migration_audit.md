@@ -85,17 +85,17 @@
 | `filter_size_corner` | 未配置 | 角点降采样 | 未迁移 |
 | `filter_size_surf` | 未配置 | 输入 surf 降采样 | 已迁移为 `filterSizeSurfM`，设置页可配置 |
 | `filter_size_map` | 未配置 | IKD-tree 地图体素 | 已迁移为 `filterSizeMapM`，设置页可配置 |
-| `cube_side_length` | 未配置 | 局部地图窗口大小 | 部分迁移；后端硬编码 `200.0` |
-| `mapping/det_range` | `100.0` | 检测距离/FOV 判断 | 部分迁移；后端硬编码 `300.0`，与 MID360 yaml 不一致 |
-| `mapping/fov_degree` | `360` | FOV 角度 | 部分迁移；后端硬编码 `180.0`，内部裁到 179.9 |
-| `mapping/gyr_cov` | `0.1` | 陀螺仪噪声 | 部分迁移；后端硬编码 |
-| `mapping/acc_cov` | `0.1` | 加速度计噪声 | 部分迁移；后端硬编码 |
-| `mapping/b_gyr_cov` | `0.0001` | 陀螺 bias 协方差 | 部分迁移；后端硬编码 |
-| `mapping/b_acc_cov` | `0.0001` | 加计 bias 协方差 | 部分迁移；后端硬编码 |
+| `cube_side_length` | 未配置 | 局部地图窗口大小 | 已迁移为 `cubeSideLengthM`，设置页可配置；默认 200.0 m |
+| `mapping/det_range` | `100.0` | 检测距离/FOV 判断 | 已迁移为 `detRangeM`，设置页可配置；默认沿用当前项目 300.0 m |
+| `mapping/fov_degree` | `360` | FOV 角度 | 已迁移为 `fovDegree`，设置页可配置；内部仍按原版加 10° 余量并裁到 179.9° |
+| `mapping/gyr_cov` | `0.1` | 陀螺仪噪声 | 已迁移为 `gyrCov`，设置页可配置 |
+| `mapping/acc_cov` | `0.1` | 加速度计噪声 | 已迁移为 `accCov`，设置页可配置 |
+| `mapping/b_gyr_cov` | `0.0001` | 陀螺 bias 协方差 | 已迁移为 `bGyrCov`，设置页可配置 |
+| `mapping/b_acc_cov` | `0.0001` | 加计 bias 协方差 | 已迁移为 `bAccCov`，设置页可配置 |
 | `mapping/extrinsic_est_en` | `false` | 在线外参估计 | 已迁移为 `extrinsicEstimationEnabled`，设置页可配置；关闭时按原版将外参雅可比列置零 |
 | `mapping/extrinsic_T` | `[-0.011,-0.02329,0.04412]` | LiDAR-IMU 平移 | 已进入 `extrinsicT_L_I`，设置页可配置 |
 | `mapping/extrinsic_R` | identity | LiDAR-IMU 旋转 | 已进入 `extrinsicR_L_I`，设置页可配置 |
-| `max_iteration` | 未配置 | EKF 迭代次数 | 部分迁移；后端硬编码 `4` |
+| `max_iteration` | 未配置 | EKF 迭代次数 | 已迁移为 `maxIterations`，设置页可配置；默认 4 |
 | `publish/path_en` | `false` | 发布 path | 以轨迹 overlay/CSV/TUM 导出替代 |
 | `publish/scan_publish_en` | `true` | 发布世界系当前帧点云 | 已迁移为 `publishWorldFrameCloud`，设置页可配置 |
 | `publish/dense_publish_en` | `true` | 世界系当前帧 dense/降采样选择 | 已迁移为 `publishDenseFrameCloud`，设置页可配置 |
@@ -183,6 +183,14 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 | `extrinsicT_L_I[3]` | `[-0.011,-0.02329,0.04412]` | 是 | 后端初始化 LiDAR 到 IMU 外参平移；旧版本保存的 `[0,0,0]+identity` 默认值会迁移为 MID360 默认 |
 | `extrinsicR_L_I[9]` | identity | 是 | 后端初始化 LiDAR 到 IMU 外参旋转 |
 | `extrinsicEstimationEnabled` | `false` | 是 | 对应原版 `mapping/extrinsic_est_en`；false 时外参固定，EKF 量测雅可比的外参 6 列置零 |
+| `cubeSideLengthM` | `200.0` | 是 | 对应原版 `cube_side_length`；控制局部 ikd-tree 滑动地图立方体边长 |
+| `detRangeM` | `300.0` | 是 | 对应原版 `mapping/det_range`；控制局部地图滑动触发距离 |
+| `fovDegree` | `360.0` | 是 | 对应原版 `mapping/fov_degree`；用于视野内地图点判断，内部按原版裁到 179.9° |
+| `maxIterations` | `4` | 是 | 对应原版 `max_iteration`；控制每帧 iEKF 最大迭代次数 |
+| `gyrCov` | `0.1` | 是 | 对应原版 `mapping/gyr_cov`；传入 `ImuProcess::set_gyr_cov()` |
+| `accCov` | `0.1` | 是 | 对应原版 `mapping/acc_cov`；传入 `ImuProcess::set_acc_cov()` |
+| `bGyrCov` | `0.0001` | 是 | 对应原版 `mapping/b_gyr_cov`；传入 `ImuProcess::set_gyr_bias_cov()` |
+| `bAccCov` | `0.0001` | 是 | 对应原版 `mapping/b_acc_cov`；传入 `ImuProcess::set_acc_bias_cov()` |
 | `filterSizeSurfM` | `0.5` | 是 | 输入 surf 点降采样；越大点越少 |
 | `filterSizeMapM` | `0.5` | 是 | IKD-tree 地图增量体素；影响后端地图点数 |
 | `preprocessScanRateHz` | `10.0` | 是 | 对齐原版 `preprocess/scan_rate` 默认语义；用于推导 SLAM 输入聚帧周期 |
@@ -209,6 +217,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - 原版 `preprocess/scan_rate` 已迁移为用户可配置扫描频率，并同步控制 PCAP/Live SLAM 输入聚帧周期。
 - 原版 `mapping/extrinsic_est_en` 已迁移为 `extrinsicEstimationEnabled`，默认 false；关闭时外参雅可比列按原版置零。
 - MID360 原版外参 `[-0.011,-0.02329,0.04412] + identity` 已作为默认值，并在 SLAM 设置页暴露平移/旋转配置。
+- 原版 `cube_side_length`、`mapping/det_range`、`mapping/fov_degree`、`max_iteration` 已迁移为用户可配置项。
+- 原版 IMU 噪声参数 `gyr_cov`、`acc_cov`、`b_gyr_cov`、`b_acc_cov` 已迁移为用户可配置项，并传入 `ImuProcess`。
 - 世界系 dense/降采样点云已作为 SLAM tab 主点云输出，可复用工具栏积分时间、点大小、着色模式和色标。
 - 机体系当前帧 dense 点云仍作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置。
 - 旧地图预览配置、store、增量预览 VBO 和预览导出已移除。
@@ -219,7 +229,6 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 部分完成：
 
 - Live SLAM 输入源已实现，但实时 SLAM worker 尚未成为主 UI 可用流程。
-- FAST_LIO 参数只迁移了一部分到 `SlamRuntimeConfig` 和设置页。
 - `lidarToImuTimeOffsetNs`、`gravityNorm`、`mapVoxelSizeM`、`maxMapPoints` 等仍是占位或未完全使用。
 - 原版 PCD `interval` 分片保存未迁移；当前是手动导出一个完整 PCD/LAS。
 
@@ -235,7 +244,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 
 - 完整地图保存默认开启会增加内存占用；长时间 dense 轨迹可能占用大量内存。后续可以增加点数上限、分片落盘或后台 streaming writer。
 - 当前完整地图点源是原版 `pcd_save` 语义的 dense scan accumulation，不是 IKD-tree flatten。若后续需要导出 IKD-tree 全局地图，应新增独立功能和文案。
-- `det_range=300`、`fov_degree=180` 仍与 `mid360.yaml` 中的 `100/360` 不一致，后续需要确定参数基线。
+- `detRangeM` 默认沿用当前项目 300 m；`mid360.yaml` 中 `mapping/det_range=100`，后续仍需要用实测数据确认项目默认基线。
 - `publishBodyFrameCloud` 在同一个 3D 视图中显示 IMU body frame 点云，坐标语义不同于 world frame；它用于迁移原版发布输出，不应被理解为全局地图。
 - 完整地图导出已放到后台线程，但导出前从 `SlamUiBridge` 获取 `QVector<SlamPoint>` 快照仍可能带来短时内存压力。
 

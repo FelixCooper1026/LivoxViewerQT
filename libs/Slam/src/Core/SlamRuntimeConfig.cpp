@@ -37,6 +37,16 @@ int validFrameDurationMs(int value, int fallback)
     return value > 0 ? value : fallback;
 }
 
+double validPositiveDouble(double value, double fallback)
+{
+    return std::isfinite(value) && value > 0.0 ? value : fallback;
+}
+
+int validPositiveInt(int value, int fallback)
+{
+    return value > 0 ? value : fallback;
+}
+
 bool isZeroTranslation(const double* values)
 {
     for (int i = 0; i < 3; ++i) {
@@ -95,6 +105,30 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
         isIdentityRotation(config.extrinsicR_L_I)) {
         assignMid360DefaultExtrinsic(config);
     }
+    config.cubeSideLengthM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("cubeSideLengthM")), config.cubeSideLengthM).toDouble(),
+        config.cubeSideLengthM);
+    config.detRangeM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("detRangeM")), config.detRangeM).toDouble(),
+        config.detRangeM);
+    config.fovDegree = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("fovDegree")), config.fovDegree).toDouble(),
+        config.fovDegree);
+    config.gyrCov = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("gyrCov")), config.gyrCov).toDouble(),
+        config.gyrCov);
+    config.accCov = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("accCov")), config.accCov).toDouble(),
+        config.accCov);
+    config.bGyrCov = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("bGyrCov")), config.bGyrCov).toDouble(),
+        config.bGyrCov);
+    config.bAccCov = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("bAccCov")), config.bAccCov).toDouble(),
+        config.bAccCov);
+    config.maxIterations = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("maxIterations")), config.maxIterations).toInt(),
+        config.maxIterations);
     config.filterSizeSurfM = settings.value(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM).toDouble();
     config.filterSizeMapM = settings.value(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM).toDouble();
     const bool hasScanRate = settings.contains(key(prefix, QStringLiteral("preprocessScanRateHz")));
@@ -145,6 +179,14 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
         settings.setValue(key(prefix, QStringLiteral("extrinsicR_L_I/%1").arg(i)), config.extrinsicR_L_I[i]);
     }
     settings.setValue(key(prefix, QStringLiteral("extrinsicEstimationEnabled")), config.extrinsicEstimationEnabled);
+    settings.setValue(key(prefix, QStringLiteral("cubeSideLengthM")), config.cubeSideLengthM);
+    settings.setValue(key(prefix, QStringLiteral("detRangeM")), config.detRangeM);
+    settings.setValue(key(prefix, QStringLiteral("fovDegree")), config.fovDegree);
+    settings.setValue(key(prefix, QStringLiteral("gyrCov")), config.gyrCov);
+    settings.setValue(key(prefix, QStringLiteral("accCov")), config.accCov);
+    settings.setValue(key(prefix, QStringLiteral("bGyrCov")), config.bGyrCov);
+    settings.setValue(key(prefix, QStringLiteral("bAccCov")), config.bAccCov);
+    settings.setValue(key(prefix, QStringLiteral("maxIterations")), config.maxIterations);
     settings.setValue(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM);
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
     settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);

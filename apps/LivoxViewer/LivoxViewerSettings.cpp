@@ -1246,6 +1246,42 @@ void LivoxViewerWindow::showPreferencesDialog()
                 syncingSlamFrameControls = false;
             });
 
+    auto createSlamDoubleSpin = [&dlg](double value,
+                                       double minValue,
+                                       double maxValue,
+                                       int decimals,
+                                       double step,
+                                       const QString& suffix) {
+        QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
+        spin->setRange(minValue, maxValue);
+        spin->setDecimals(decimals);
+        spin->setSingleStep(step);
+        spin->setSuffix(suffix);
+        spin->setValue(value);
+        preparePreferenceSpinBox(spin);
+        return spin;
+    };
+    QDoubleSpinBox* slamCubeSideLengthSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.cubeSideLengthM, 10.0, 10000.0, 1, 10.0, QStringLiteral(" m"));
+    QDoubleSpinBox* slamDetRangeSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.detRangeM, 1.0, 2000.0, 1, 10.0, QStringLiteral(" m"));
+    QDoubleSpinBox* slamFovDegreeSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.fovDegree, 1.0, 360.0, 1, 1.0, QStringLiteral(" °"));
+    QSpinBox* slamMaxIterationsSpin = new QSpinBox(&dlg);
+    slamMaxIterationsSpin->setRange(1, 100);
+    slamMaxIterationsSpin->setSingleStep(1);
+    slamMaxIterationsSpin->setValue(slamRuntimeConfig.maxIterations);
+    slamMaxIterationsSpin->setFixedWidth(kPreferenceSpinBoxWidth);
+    usePreferenceControlColumn(slamMaxIterationsSpin);
+    QDoubleSpinBox* slamGyrCovSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.gyrCov, 0.000001, 100.0, 6, 0.01, QString());
+    QDoubleSpinBox* slamAccCovSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.accCov, 0.000001, 100.0, 6, 0.01, QString());
+    QDoubleSpinBox* slamBGyrCovSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.bGyrCov, 0.000001, 100.0, 6, 0.0001, QString());
+    QDoubleSpinBox* slamBAccCovSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.bAccCov, 0.000001, 100.0, 6, 0.0001, QString());
+
     auto createSlamSwitch = [&dlg](bool checked) {
         SwitchCheckBox* check = new SwitchCheckBox(&dlg);
         check->setChecked(checked);
@@ -1507,6 +1543,22 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "控制 PCAP/Live SLAM 输入源按原始点云时间戳切分当前帧。",
                      slamFrameDurationSpin);
     addPreferenceRow(slamBackendSection,
+                     "局部地图边长",
+                     "对应原版 cube_side_length，控制 ikd-tree 滑动窗口地图立方体边长。",
+                     slamCubeSideLengthSpin);
+    addPreferenceRow(slamBackendSection,
+                     "探测距离",
+                     "对应原版 mapping/det_range，影响局部地图滑动窗口触发距离。",
+                     slamDetRangeSpin);
+    addPreferenceRow(slamBackendSection,
+                     "水平视场角",
+                     "对应原版 mapping/fov_degree，用于过滤 LiDAR 视野外的地图点；MID360 通常为 360°。",
+                     slamFovDegreeSpin);
+    addPreferenceRow(slamBackendSection,
+                     "最大迭代次数",
+                     "对应原版 max_iteration，控制每帧 iEKF 更新的最大迭代次数。",
+                     slamMaxIterationsSpin);
+    addPreferenceRow(slamBackendSection,
                      "表面滤波体素",
                      "设置 FAST_LIO 输入特征降采样体素尺寸。",
                      slamFilterSurfSpin);
@@ -1515,6 +1567,26 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "设置 FAST_LIO 地图增量降采样体素尺寸。",
                      slamFilterMapSpin);
     slamLayout->addWidget(slamBackendSection);
+
+    addPreferenceSectionTitle(slamLayout, "IMU 噪声");
+    QFrame* slamImuNoiseSection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamImuNoiseSection,
+                     "陀螺测量噪声",
+                     "对应原版 mapping/gyr_cov，值越大表示越不信任陀螺测量。",
+                     slamGyrCovSpin);
+    addPreferenceRow(slamImuNoiseSection,
+                     "加速度测量噪声",
+                     "对应原版 mapping/acc_cov，值越大表示越不信任加速度计测量。",
+                     slamAccCovSpin);
+    addPreferenceRow(slamImuNoiseSection,
+                     "陀螺零偏噪声",
+                     "对应原版 mapping/b_gyr_cov，描述陀螺零偏随机游走速率。",
+                     slamBGyrCovSpin);
+    addPreferenceRow(slamImuNoiseSection,
+                     "加计零偏噪声",
+                     "对应原版 mapping/b_acc_cov，描述加速度计零偏随机游走速率。",
+                     slamBAccCovSpin);
+    slamLayout->addWidget(slamImuNoiseSection);
 
     addPreferenceSectionTitle(slamLayout, "LiDAR-IMU 外参");
     QFrame* slamExtrinsicSection = createPreferenceSection(slamTab);
@@ -1611,6 +1683,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
     const double previousSlamScanRateHz = slamRuntimeConfig.preprocessScanRateHz;
     const int previousSlamFrameDurationMs = slamRuntimeConfig.inputFrameDurationMs;
+    const double previousSlamCubeSideLengthM = slamRuntimeConfig.cubeSideLengthM;
+    const double previousSlamDetRangeM = slamRuntimeConfig.detRangeM;
+    const double previousSlamFovDegree = slamRuntimeConfig.fovDegree;
+    const int previousSlamMaxIterations = slamRuntimeConfig.maxIterations;
+    const double previousSlamGyrCov = slamRuntimeConfig.gyrCov;
+    const double previousSlamAccCov = slamRuntimeConfig.accCov;
+    const double previousSlamBGyrCov = slamRuntimeConfig.bGyrCov;
+    const double previousSlamBAccCov = slamRuntimeConfig.bAccCov;
     const bool previousSlamPublishWorld = slamRuntimeConfig.publishWorldFrameCloud;
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
@@ -1638,6 +1718,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
     slamRuntimeConfig.preprocessScanRateHz = slamScanRateSpin->value();
     slamRuntimeConfig.inputFrameDurationMs = slamFrameDurationSpin->value();
+    slamRuntimeConfig.cubeSideLengthM = slamCubeSideLengthSpin->value();
+    slamRuntimeConfig.detRangeM = slamDetRangeSpin->value();
+    slamRuntimeConfig.fovDegree = slamFovDegreeSpin->value();
+    slamRuntimeConfig.maxIterations = slamMaxIterationsSpin->value();
+    slamRuntimeConfig.gyrCov = slamGyrCovSpin->value();
+    slamRuntimeConfig.accCov = slamAccCovSpin->value();
+    slamRuntimeConfig.bGyrCov = slamBGyrCovSpin->value();
+    slamRuntimeConfig.bAccCov = slamBAccCovSpin->value();
     slamRuntimeConfig.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
     for (int i = 0; i < 3; ++i) {
         slamRuntimeConfig.extrinsicT_L_I[i] = slamExtrinsicTSpins[static_cast<std::size_t>(i)]->value();
@@ -1686,6 +1774,14 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
         slamRuntimeConfig.preprocessScanRateHz != previousSlamScanRateHz ||
         slamRuntimeConfig.inputFrameDurationMs != previousSlamFrameDurationMs ||
+        slamRuntimeConfig.cubeSideLengthM != previousSlamCubeSideLengthM ||
+        slamRuntimeConfig.detRangeM != previousSlamDetRangeM ||
+        slamRuntimeConfig.fovDegree != previousSlamFovDegree ||
+        slamRuntimeConfig.maxIterations != previousSlamMaxIterations ||
+        slamRuntimeConfig.gyrCov != previousSlamGyrCov ||
+        slamRuntimeConfig.accCov != previousSlamAccCov ||
+        slamRuntimeConfig.bGyrCov != previousSlamBGyrCov ||
+        slamRuntimeConfig.bAccCov != previousSlamBAccCov ||
         slamExtrinsicChanged ||
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
