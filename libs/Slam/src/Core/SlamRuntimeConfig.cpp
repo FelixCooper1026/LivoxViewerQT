@@ -88,7 +88,9 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
     config.allowPureLidar = settings.value(key(prefix, QStringLiteral("allowPureLidar")), config.allowPureLidar).toBool();
     config.lidarToImuTimeOffsetNs = settings.value(key(prefix, QStringLiteral("lidarToImuTimeOffsetNs")),
                                                    qlonglong(config.lidarToImuTimeOffsetNs)).toLongLong();
-    config.gravityNorm = settings.value(key(prefix, QStringLiteral("gravityNorm")), config.gravityNorm).toDouble();
+    config.gravityNorm = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("gravityNorm")), config.gravityNorm).toDouble(),
+        config.gravityNorm);
     for (int i = 0; i < 3; ++i) {
         config.extrinsicT_L_I[i] = settings.value(key(prefix, QStringLiteral("extrinsicT_L_I/%1").arg(i)),
                                                   config.extrinsicT_L_I[i]).toDouble();

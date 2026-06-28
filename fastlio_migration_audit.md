@@ -75,6 +75,7 @@
 | `common/imu_topic` | `/livox/imu` | ROS IMU 订阅 topic | 未迁移；当前从 PCAP/SDK payload 解析 |
 | `common/time_sync_en` | `false` | 软件自同步开关 | 未等价迁移；当前要求原始时间戳和 IMU 覆盖 |
 | `common/time_offset_lidar_to_imu` | `0.0` | LiDAR 到 IMU 时间偏移 | 已进入 `SlamRuntimeConfig::lidarToImuTimeOffsetNs`，当前未实际应用 |
+| `common_lib.h/G_m_s2` | `9.81` | 重力加速度常量 | 已迁移为 `gravityNorm`，设置页可配置；默认 9.81 m/s² |
 | `preprocess/lidar_type` | `1` | 选择预处理分支 | 部分迁移；当前直接解析 Livox payload，后端固定 `AVIA` |
 | `preprocess/scan_line` | `4` | 线数 | 部分迁移；当前从设备类型推导 lineCount |
 | `preprocess/blind` | `0.5` | 近距离盲区滤除 | 未迁移 |
@@ -182,7 +183,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 | `imuEnabled` | `true` | 否 | false 会导致 FAST_LIO 拒绝启动 |
 | `allowPureLidar` | `false` | 否 | 占位；FAST_LIO 当前仍强制要求 IMU |
 | `lidarToImuTimeOffsetNs` | `0` | 否 | 已持久化，当前未实际应用 |
-| `gravityNorm` | `9.81` | 否 | 已持久化，当前未传入 `ImuProcess` |
+| `gravityNorm` | `9.81` | 是 | 对应原版 `G_m_s2`；传入 `ImuProcess`，用于 IMU 初始化重力向量长度、加速度归一化和初始化协方差缩放 |
 | `extrinsicT_L_I[3]` | `[-0.011,-0.02329,0.04412]` | 是 | 后端初始化 LiDAR 到 IMU 外参平移；旧版本保存的 `[0,0,0]+identity` 默认值会迁移为 MID360 默认 |
 | `extrinsicR_L_I[9]` | identity | 是 | 后端初始化 LiDAR 到 IMU 外参旋转 |
 | `extrinsicEstimationEnabled` | `false` | 是 | 对应原版 `mapping/extrinsic_est_en`；false 时外参固定，EKF 量测雅可比的外参 6 列置零 |
@@ -222,6 +223,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - 原版 `mapping/extrinsic_est_en` 已迁移为 `extrinsicEstimationEnabled`，默认 false；关闭时外参雅可比列按原版置零。
 - MID360 原版外参 `[-0.011,-0.02329,0.04412] + identity` 已作为默认值，并在 SLAM 设置页暴露平移/旋转配置。
 - 原版 `cube_side_length`、`mapping/det_range`、`mapping/fov_degree`、`max_iteration` 已迁移为用户可配置项。
+- 原版重力常量 `G_m_s2` 已迁移为 `gravityNorm`，默认 9.81 m/s²，并传入 `ImuProcess`。
 - 原版 IMU 噪声参数 `gyr_cov`、`acc_cov`、`b_gyr_cov`、`b_acc_cov` 已迁移为用户可配置项，并传入 `ImuProcess`。
 - 世界系 dense/降采样点云已作为 SLAM tab 主点云输出，可复用工具栏积分时间、点大小、着色模式和色标。
 - 世界系当前帧点云作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置，默认白色。
@@ -234,7 +236,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 部分完成：
 
 - Live SLAM 输入源已实现，但实时 SLAM worker 尚未成为主 UI 可用流程。
-- `lidarToImuTimeOffsetNs`、`gravityNorm`、`mapVoxelSizeM`、`maxMapPoints` 等仍是占位或未完全使用。
+- `lidarToImuTimeOffsetNs`、`mapVoxelSizeM`、`maxMapPoints` 等仍是占位或未完全使用。
 - 原版 PCD `interval` 分片保存未迁移；当前是手动导出一个完整 PCD/LAS。
 
 未完成：

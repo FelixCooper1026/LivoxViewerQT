@@ -58,6 +58,10 @@ bool isUsableRotationMatrix(const double* values)
 
 bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
 {
+    if (!std::isfinite(config.gravityNorm) || config.gravityNorm <= 0.0) {
+        assignError(error, QStringLiteral("SLAM 配置无效：重力加速度必须大于 0。"));
+        return false;
+    }
     if (!std::isfinite(config.filterSizeSurfM) || config.filterSizeSurfM <= 0.0 ||
         !std::isfinite(config.filterSizeMapM) || config.filterSizeMapM <= 0.0) {
         assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 滤波体素尺寸必须大于 0。"));
@@ -125,6 +129,7 @@ struct FastLioAlgorithmState {
                                       static_cast<float>(filterSizeMap));
 
         imuProcessor->set_extrinsic(lidarTWrImu, lidarRWrImu);
+        imuProcessor->set_gravity_norm(config.gravityNorm);
         imuProcessor->set_gyr_cov(V3D(config.gyrCov, config.gyrCov, config.gyrCov));
         imuProcessor->set_acc_cov(V3D(config.accCov, config.accCov, config.accCov));
         imuProcessor->set_gyr_bias_cov(V3D(config.bGyrCov, config.bGyrCov, config.bGyrCov));

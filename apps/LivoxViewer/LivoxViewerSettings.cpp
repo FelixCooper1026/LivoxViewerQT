@@ -1267,6 +1267,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         preparePreferenceSpinBox(spin);
         return spin;
     };
+    QDoubleSpinBox* slamGravityNormSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.gravityNorm, 1.0, 20.0, 4, 0.001, QStringLiteral(" m/s²"));
     QDoubleSpinBox* slamCubeSideLengthSpin =
         createSlamDoubleSpin(slamRuntimeConfig.cubeSideLengthM, 10.0, 10000.0, 1, 10.0, QStringLiteral(" m"));
     QDoubleSpinBox* slamDetRangeSpin =
@@ -1577,6 +1579,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "控制 PCAP/Live SLAM 输入源按原始点云时间戳切分当前帧。",
                      slamFrameDurationSpin);
     addPreferenceRow(slamBackendSection,
+                     "重力加速度",
+                     "对应原版 G_m_s2，用于 IMU 初始化重力向量长度和加速度归一化缩放。",
+                     slamGravityNormSpin);
+    addPreferenceRow(slamBackendSection,
                      "局部地图边长",
                      "对应原版 cube_side_length，控制 ikd-tree 滑动窗口地图立方体边长。",
                      slamCubeSideLengthSpin);
@@ -1719,6 +1725,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
+    const double previousSlamGravityNorm = slamRuntimeConfig.gravityNorm;
     const double previousSlamScanRateHz = slamRuntimeConfig.preprocessScanRateHz;
     const int previousSlamFrameDurationMs = slamRuntimeConfig.inputFrameDurationMs;
     const double previousSlamCubeSideLengthM = slamRuntimeConfig.cubeSideLengthM;
@@ -1755,6 +1762,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
+    slamRuntimeConfig.gravityNorm = slamGravityNormSpin->value();
     slamRuntimeConfig.preprocessScanRateHz = slamScanRateSpin->value();
     slamRuntimeConfig.inputFrameDurationMs = slamFrameDurationSpin->value();
     slamRuntimeConfig.cubeSideLengthM = slamCubeSideLengthSpin->value();
@@ -1813,6 +1821,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     }();
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
+        slamRuntimeConfig.gravityNorm != previousSlamGravityNorm ||
         slamRuntimeConfig.preprocessScanRateHz != previousSlamScanRateHz ||
         slamRuntimeConfig.inputFrameDurationMs != previousSlamFrameDurationMs ||
         slamRuntimeConfig.cubeSideLengthM != previousSlamCubeSideLengthM ||
