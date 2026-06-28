@@ -228,10 +228,23 @@ void LivoxViewerWindow::closeVisualizationTab(int tabId)
     if (isSlamPointCloudTab(tabId)) {
         stopSlamProcessing();
         clearSlamDisplay();
+        slamRenderOverlayEnabled = false;
         pointCloudViewsByTab.remove(tabId);
         slamPointCloudView = nullptr;
         slamVisualizationTabId = -1;
         slamOfflinePcapPath.clear();
+        if (slamInfoDock) {
+            slamInfoDock->hide();
+        }
+        if (slamStatusDock) {
+            slamStatusDock->hide();
+        }
+        if (lidarDevicesDock) {
+            lidarDevicesDock->raise();
+        }
+        if (logDock) {
+            logDock->raise();
+        }
         updateSlamControlBarUi();
     } else if (isOfflinePointCloudTab(tabId)) {
         const int tabNumber = offlinePointCloudTabNumbersByTab.value(tabId, 0);

@@ -4,30 +4,78 @@
 
 namespace {
 
+QFrame* createSlamStatusGroup(const QString& title, QWidget* parent, QVBoxLayout** bodyLayoutOut)
+{
+    QFrame* group = new QFrame(parent);
+    group->setObjectName(QStringLiteral("SlamStatusGroup"));
+    group->setFrameShape(QFrame::NoFrame);
+    group->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+
+    QVBoxLayout* layout = new QVBoxLayout(group);
+    layout->setContentsMargins(4, 4, 4, 4);
+    layout->setSpacing(6);
+
+    QLabel* titleLabel = new QLabel(title, group);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleLabel->setFont(titleFont);
+    layout->addWidget(titleLabel);
+
+    QFrame* separator = new QFrame(group);
+    separator->setFrameShape(QFrame::HLine);
+    separator->setFrameShadow(QFrame::Plain);
+    separator->setStyleSheet(QStringLiteral("color: palette(mid);"));
+    layout->addWidget(separator);
+
+    QVBoxLayout* bodyLayout = new QVBoxLayout();
+    bodyLayout->setContentsMargins(0, 0, 0, 0);
+    bodyLayout->setSpacing(0);
+    layout->addLayout(bodyLayout, 1);
+    *bodyLayoutOut = bodyLayout;
+    return group;
+}
+
 QWidget* createSlamStatusField(const QString& title, QLabel** valueOut, QWidget* parent)
 {
     QWidget* field = new QWidget(parent);
     field->setObjectName(QStringLiteral("SlamStatusField"));
     field->setMinimumWidth(0);
     field->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    field->setStyleSheet(QStringLiteral(
+        "QWidget#SlamStatusField {"
+        "  border-bottom: 1px solid palette(mid);"
+        "}"));
 
     QHBoxLayout* layout = new QHBoxLayout(field);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(4);
+    layout->setContentsMargins(0, 4, 0, 4);
+    layout->setSpacing(10);
 
-    QLabel* titleLabel = new QLabel(title + QStringLiteral(":"), field);
+    QLabel* titleLabel = new QLabel(title, field);
     titleLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    titleLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+    titleLabel->setMinimumWidth(0);
+    titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     QLabel* valueLabel = new QLabel(QStringLiteral("-"), field);
     valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     valueLabel->setWordWrap(false);
     valueLabel->setMinimumWidth(0);
     valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
-    layout->addWidget(titleLabel);
+    layout->addWidget(titleLabel, 1);
     layout->addWidget(valueLabel, 1);
     *valueOut = valueLabel;
     return field;
+}
+
+QLabel* createSlamStatusTextValue(QWidget* parent)
+{
+    QLabel* valueLabel = new QLabel(QStringLiteral("-"), parent);
+    valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    valueLabel->setWordWrap(true);
+    valueLabel->setMinimumWidth(0);
+    valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    return valueLabel;
 }
 
 } // namespace
@@ -149,26 +197,14 @@ void LivoxViewerWindow::createSlamStatusPanel()
 
     QWidget* content = new QWidget(slamStatusDock);
     QVBoxLayout* root = new QVBoxLayout(content);
-    root->setContentsMargins(6, 2, 6, 6);
-    root->setSpacing(4);
-
-    QWidget* header = new QWidget(content);
-    header->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    QHBoxLayout* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(0, 0, 0, 0);
-    headerLayout->setSpacing(0);
-    QLabel* title = new QLabel(QStringLiteral("SLAM状态"), header);
-    QFont titleFont = title->font();
-    titleFont.setBold(true);
-    title->setFont(titleFont);
-    headerLayout->addWidget(title);
-    headerLayout->addStretch();
-    root->addWidget(header, 0, Qt::AlignTop);
+    root->setContentsMargins(6, 6, 6, 6);
+    root->setSpacing(0);
 
     QFrame* fieldFrame = new QFrame(content);
     fieldFrame->setObjectName(QStringLiteral("SlamStatusFrame"));
     fieldFrame->setFrameShape(QFrame::NoFrame);
-    fieldFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    fieldFrame->setMinimumHeight(0);
+    fieldFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     fieldFrame->setStyleSheet(QStringLiteral(
         "QFrame#SlamStatusFrame {"
         "  border: 0;"
@@ -176,39 +212,79 @@ void LivoxViewerWindow::createSlamStatusPanel()
         "  background: palette(base);"
         "}"));
     QGridLayout* fieldLayout = new QGridLayout(fieldFrame);
-    fieldLayout->setContentsMargins(6, 4, 6, 4);
-    fieldLayout->setHorizontalSpacing(12);
-    fieldLayout->setVerticalSpacing(3);
+    fieldLayout->setContentsMargins(0, 0, 0, 0);
+    fieldLayout->setHorizontalSpacing(8);
+    fieldLayout->setVerticalSpacing(8);
     fieldLayout->setAlignment(Qt::AlignTop);
 
-    auto addField = [this, fieldFrame, fieldLayout](const QString& name, int row, int column, int columnSpan = 1) {
+    slamStatusFields.clear();
+
+    auto addField = [this](QVBoxLayout* layout, QFrame* parent, const QString& name) {
         QLabel* value = nullptr;
-        QWidget* field = createSlamStatusField(name, &value, fieldFrame);
+        QWidget* field = createSlamStatusField(name, &value, parent);
         slamStatusFields.insert(name, value);
-        fieldLayout->addWidget(field, row, column, 1, columnSpan);
+        layout->addWidget(field);
     };
 
-    addField(QStringLiteral("状态"), 0, 0);
-    addField(QStringLiteral("模式"), 0, 1);
-    addField(QStringLiteral("后端"), 0, 2);
-    addField(QStringLiteral("IMU 状态"), 0, 3);
-    addField(QStringLiteral("输入 FPS"), 0, 4);
-    addField(QStringLiteral("后端耗时"), 0, 5);
-    addField(QStringLiteral("丢帧数"), 0, 6);
-    addField(QStringLiteral("轨迹点数"), 1, 0);
-    addField(QStringLiteral("局部 ikd-tree 有效点数"), 1, 1, 2);
-    addField(QStringLiteral("世界系点云总数"), 1, 3);
-    addField(QStringLiteral("机体系当前帧点数"), 1, 4);
-    addField(QStringLiteral("完整全局地图点数"), 1, 5, 2);
-    addField(QStringLiteral("当前位姿"), 2, 0, 4);
-    addField(QStringLiteral("错误信息"), 2, 4, 3);
-    for (int column = 0; column < 7; ++column) {
+    QVBoxLayout* statusBody = nullptr;
+    QFrame* statusGroup = createSlamStatusGroup(QStringLiteral("状态摘要"), fieldFrame, &statusBody);
+    addField(statusBody, statusGroup, QStringLiteral("状态"));
+    addField(statusBody, statusGroup, QStringLiteral("模式"));
+    addField(statusBody, statusGroup, QStringLiteral("后端"));
+    addField(statusBody, statusGroup, QStringLiteral("IMU 状态"));
+    statusBody->addStretch(1);
+
+    QVBoxLayout* performanceBody = nullptr;
+    QFrame* performanceGroup = createSlamStatusGroup(QStringLiteral("性能统计"), fieldFrame, &performanceBody);
+    addField(performanceBody, performanceGroup, QStringLiteral("输入 FPS"));
+    addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
+    addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
+    addField(performanceBody, performanceGroup, QStringLiteral("轨迹点数"));
+    performanceBody->addStretch(1);
+
+    QVBoxLayout* mapBody = nullptr;
+    QFrame* mapGroup = createSlamStatusGroup(QStringLiteral("地图与点云信息"), fieldFrame, &mapBody);
+    addField(mapBody, mapGroup, QStringLiteral("局部 ikd-tree 有效点数"));
+    addField(mapBody, mapGroup, QStringLiteral("世界系点云总数"));
+    addField(mapBody, mapGroup, QStringLiteral("机体系当前帧点数"));
+    addField(mapBody, mapGroup, QStringLiteral("完整全局地图点数"));
+    mapBody->addStretch(1);
+
+    QVBoxLayout* poseBody = nullptr;
+    QFrame* poseGroup = createSlamStatusGroup(QStringLiteral("当前位姿"), fieldFrame, &poseBody);
+    QLabel* poseValue = createSlamStatusTextValue(poseGroup);
+    slamStatusFields.insert(QStringLiteral("当前位姿"), poseValue);
+    poseBody->addWidget(poseValue);
+    poseBody->addStretch(1);
+
+    QVBoxLayout* errorBody = nullptr;
+    QFrame* errorGroup = createSlamStatusGroup(QStringLiteral("错误信息"), fieldFrame, &errorBody);
+    QLabel* errorValue = createSlamStatusTextValue(errorGroup);
+    slamStatusFields.insert(QStringLiteral("错误信息"), errorValue);
+    errorBody->addWidget(errorValue);
+
+    fieldLayout->addWidget(statusGroup, 0, 0);
+    fieldLayout->addWidget(performanceGroup, 0, 1);
+    fieldLayout->addWidget(mapGroup, 0, 2);
+    fieldLayout->addWidget(poseGroup, 0, 3);
+    fieldLayout->addWidget(errorGroup, 1, 0, 1, 4);
+    for (int column = 0; column < 4; ++column) {
         fieldLayout->setColumnStretch(column, 1);
     }
-    fieldLayout->setRowStretch(3, 1);
+    fieldLayout->setColumnStretch(2, 1);
+    fieldLayout->setRowStretch(2, 1);
 
-    root->addWidget(fieldFrame, 1);
+    QScrollArea* statusScroll = new QScrollArea(content);
+    statusScroll->setWidgetResizable(true);
+    statusScroll->setFrameShape(QFrame::NoFrame);
+    statusScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    statusScroll->setMinimumHeight(0);
+    statusScroll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Ignored);
+    statusScroll->setWidget(fieldFrame);
+
+    root->addWidget(statusScroll, 1);
     content->setLayout(root);
+    content->setMinimumHeight(0);
     slamStatusDock->setWidget(content);
     slamStatusDock->setMinimumHeight(50);
 
@@ -256,9 +332,10 @@ void LivoxViewerWindow::updateSlamStatusPanel()
         if (!label) {
             return;
         }
-        label->setText(label->fontMetrics().elidedText(text.isEmpty() ? QStringLiteral("-") : text,
-                                                       Qt::ElideMiddle,
-                                                       label->width()));
+        const QString displayText = text.isEmpty() ? QStringLiteral("-") : text;
+        label->setText(label->wordWrap()
+                           ? displayText
+                           : label->fontMetrics().elidedText(displayText, Qt::ElideMiddle, label->width()));
         label->setToolTip(text);
     };
 
