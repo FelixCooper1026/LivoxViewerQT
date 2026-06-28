@@ -220,6 +220,7 @@ private:
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
     void showSlamInfoPanel();
+    void rebuildSlamInfoPanel();
     void showSlamStatusPanel();
     void tabifySlamStatusPanel();
     void updateSlamStatusPanel();
@@ -353,6 +354,8 @@ private:
     QDockWidget* imuDock = nullptr;
     QDockWidget* lvx2FileDock = nullptr;
     QDockWidget* slamInfoDock = nullptr;
+    QWidget* slamLayerListWidget = nullptr;
+    QVBoxLayout* slamLayerListLayout = nullptr;
     QDockWidget* logDock;
     QDockWidget* slamStatusDock = nullptr;
     QToolBar* mainToolBar;

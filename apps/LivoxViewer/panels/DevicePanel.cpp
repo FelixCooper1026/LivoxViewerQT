@@ -160,18 +160,48 @@ void LivoxViewerWindow::createSlamInfoPanel()
     slamInfoLayout->setContentsMargins(8, 8, 8, 8);
     slamInfoLayout->setSpacing(6);
 
-    QWidget* layerListWidget = new QWidget(slamInfoContent);
-    layerListWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    QVBoxLayout* layerListLayout = new QVBoxLayout(layerListWidget);
-    layerListLayout->setContentsMargins(0, 0, 0, 0);
-    layerListLayout->setSpacing(6);
+    slamLayerListWidget = new QWidget(slamInfoContent);
+    slamLayerListWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+    slamLayerListLayout = new QVBoxLayout(slamLayerListWidget);
+    slamLayerListLayout->setContentsMargins(0, 0, 0, 0);
+    slamLayerListLayout->setSpacing(6);
 
-    auto addLayerCard = [this, layerListLayout, layerListWidget](
+    rebuildSlamInfoPanel();
+
+    QScrollArea* layerScroll = new QScrollArea(slamInfoContent);
+    layerScroll->setWidgetResizable(true);
+    layerScroll->setFrameShape(QFrame::NoFrame);
+    layerScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    layerScroll->setWidget(slamLayerListWidget);
+    slamInfoLayout->addWidget(layerScroll);
+    slamInfoContent->setLayout(slamInfoLayout);
+    slamInfoDock->setWidget(slamInfoContent);
+    slamInfoDock->setMinimumWidth(0);
+
+    addDockWidget(Qt::LeftDockWidgetArea, slamInfoDock);
+    tabifyDockWidget(lidarDevicesDock, slamInfoDock);
+    slamInfoDock->hide();
+}
+
+void LivoxViewerWindow::rebuildSlamInfoPanel()
+{
+    if (!slamLayerListWidget || !slamLayerListLayout) {
+        return;
+    }
+
+    while (QLayoutItem* item = slamLayerListLayout->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            delete widget;
+        }
+        delete item;
+    }
+
+    auto addLayerCard = [this](
                             const QString& title,
                             const QString& description,
                             bool visible,
                             const std::function<void(bool)>& setVisible) {
-        QFrame* card = new QFrame(layerListWidget);
+        QFrame* card = new QFrame(slamLayerListWidget);
         card->setObjectName(QStringLiteral("SlamLayerCard"));
         card->setFrameShape(QFrame::StyledPanel);
         card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -220,21 +250,25 @@ void LivoxViewerWindow::createSlamInfoPanel()
                     setVisible(checked);
                 });
 
-        layerListLayout->addWidget(card);
+        slamLayerListLayout->addWidget(card);
     };
 
-    addLayerCard(QStringLiteral("世界系点云"),
-                 QStringLiteral("SLAM tab 主点云，受积分时间、点大小、着色模式和色标控制。"),
-                 slamWorldFrameVisible,
-                 [this](bool visible) { setSlamWorldFrameVisible(visible); });
-    addLayerCard(QStringLiteral("世界系当前帧点云"),
-                 QStringLiteral("当前扫描帧世界系 overlay，颜色和点大小由首选项控制。"),
-                 slamWorldCurrentFrameVisible,
-                 [this](bool visible) { setSlamWorldCurrentFrameVisible(visible); });
-    addLayerCard(QStringLiteral("机体系点云"),
-                 QStringLiteral("IMU 机体系当前帧 overlay，颜色和点大小由首选项控制。"),
-                 slamBodyFrameVisible,
-                 [this](bool visible) { setSlamBodyFrameVisible(visible); });
+    if (slamRuntimeConfig.publishWorldFrameCloud) {
+        addLayerCard(QStringLiteral("世界系点云"),
+                     QStringLiteral("SLAM tab 主点云，受积分时间、点大小、着色模式和色标控制。"),
+                     slamWorldFrameVisible,
+                     [this](bool visible) { setSlamWorldFrameVisible(visible); });
+        addLayerCard(QStringLiteral("世界系当前帧点云"),
+                     QStringLiteral("当前扫描帧世界系 overlay，颜色和点大小由首选项控制。"),
+                     slamWorldCurrentFrameVisible,
+                     [this](bool visible) { setSlamWorldCurrentFrameVisible(visible); });
+    }
+    if (slamRuntimeConfig.publishWorldFrameCloud && slamRuntimeConfig.publishBodyFrameCloud) {
+        addLayerCard(QStringLiteral("机体系点云"),
+                     QStringLiteral("IMU 机体系当前帧 overlay，颜色和点大小由首选项控制。"),
+                     slamBodyFrameVisible,
+                     [this](bool visible) { setSlamBodyFrameVisible(visible); });
+    }
     addLayerCard(QStringLiteral("轨迹"),
                  QStringLiteral("SLAM 位姿轨迹 overlay。"),
                  slamTrajectoryVisible,
@@ -244,21 +278,7 @@ void LivoxViewerWindow::createSlamInfoPanel()
                  slamPoseAxisVisible,
                  [this](bool visible) { setSlamPoseAxisVisible(visible); });
 
-    layerListLayout->addStretch();
-
-    QScrollArea* layerScroll = new QScrollArea(slamInfoContent);
-    layerScroll->setWidgetResizable(true);
-    layerScroll->setFrameShape(QFrame::NoFrame);
-    layerScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    layerScroll->setWidget(layerListWidget);
-    slamInfoLayout->addWidget(layerScroll);
-    slamInfoContent->setLayout(slamInfoLayout);
-    slamInfoDock->setWidget(slamInfoContent);
-    slamInfoDock->setMinimumWidth(0);
-
-    addDockWidget(Qt::LeftDockWidgetArea, slamInfoDock);
-    tabifyDockWidget(lidarDevicesDock, slamInfoDock);
-    slamInfoDock->hide();
+    slamLayerListLayout->addStretch();
 }
 
 void LivoxViewerWindow::showSlamInfoPanel()

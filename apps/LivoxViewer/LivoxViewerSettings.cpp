@@ -660,6 +660,12 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     if (lvx2FileDock) {
         lvx2FileDock->hide();
     }
+    if (slamInfoDock && slamVisualizationTabId < 0) {
+        slamInfoDock->hide();
+        if (lidarDevicesDock) {
+            lidarDevicesDock->raise();
+        }
+    }
     if (attrDock) {
         attrDock->hide();
     }
@@ -866,6 +872,8 @@ void LivoxViewerWindow::loadViewPreferences()
         settings.value(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx).toFloat(),
         1.0f,
         10.0f);
+    rebuildSlamInfoPanel();
+    syncSlamRenderLayerVisibility();
     autoConfigHostIpEnabled = settings.value("network/autoConfigHostIp", defaultAutoConfigHostIp()).toBool();
     themeMode = settings.value("theme/mode", themeMode).toInt();
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
@@ -1830,6 +1838,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     }
+    rebuildSlamInfoPanel();
+    syncSlamRenderLayerVisibility();
+    refreshSlamWorldPointCloud();
 
     syncReflectivityColorScaleControls();
     pointCloudView->setGridConfig(config);

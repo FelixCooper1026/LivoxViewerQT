@@ -1676,6 +1676,9 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：修复 `SLAM状态` tab 纵向分布异常的问题。原因是状态字段区是固定高度紧凑网格，而根 `QVBoxLayout` 未将剩余高度明确分配到底部，导致空白出现在标题和字段区之间；现将标题和字段区顶部锚定，并用底部 stretch 吸收剩余高度，使其与 `日志` tab 的纵向起始位置一致。
 - 2026-06-28：继续优化 `SLAM状态` tab 深色主题显示效果：取消“固定高度字段网格 + 外层底部 stretch”方案，改为状态内容 frame 填满 dock 剩余高度，字段网格在 frame 内顶部对齐，避免底部空白使用外层背景造成视觉割裂。
 - 2026-06-28：将“保存轨迹”和“保存完整全局点云地图”入口迁移到 `SLAM` 点云 tab 上方浮动控制条，新增 `保存轨迹...` 和 `保存全局点云地图...` 两个按钮；文件保存对话框提供 CSV/TUM 或 PCD/LAS 过滤器并按用户选择决定实际保存格式。过渡用 `SlamControlDialog` 的导出按钮同步收敛为两个统一保存按钮。
+- 2026-06-28：修复程序退出后重新打开时左侧设备 dock 自动 raise `SLAM` tab 的问题。原因是 Qt `restoreState()` 会恢复上次退出时 tabified dock 的当前 tab；冷启动时没有活跃 SLAM 可视化 tab，因此现在恢复布局后会隐藏 `SlamInfoDock` 并将 `设备` dock 重新置为当前 tab，保持与底部 `SLAM状态` 的冷启动行为一致。
+- 2026-06-28：调整 `工具 -> SLAM（在线）` / `SLAM（离线）` 菜单入口语义：菜单只进入 SLAM 模式、创建/切换到 SLAM 点云 tab、显示图层与状态面板；离线入口仍弹出 PCAP 文件选择框。实际后端 worker 不再由菜单入口直接启动，统一等待用户点击 SLAM tab 浮动控制条中的 `启动`。
+- 2026-06-28：将左侧 `SLAM` dock 图层卡片与首选项 SLAM 页的发布设置关联。`发布世界系点云` 关闭时不展示 `世界系点云` 和 `世界系当前帧点云` 卡片，并清空/抑制对应显示；`发布机体系点云` 关闭时不展示 `机体系点云` 卡片，并抑制对应 overlay。轨迹和姿态坐标轴仍作为独立可视化卡片保留。
 
 验证：
 
@@ -1691,6 +1694,9 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：优化 `SLAM状态` tab 深色主题底部空白显示后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：将世界系当前帧点云和机体系点云 overlay 点大小改为首选项可配置后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：迁移 SLAM 轨迹/完整全局点云地图保存按钮到 SLAM tab 浮动控制条，并改为文件对话框选择保存格式后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：修复冷启动恢复布局后设备 dock 自动 raise `SLAM` tab 的问题后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：调整 SLAM 在线/离线菜单入口为“进入模式但不自动启动”后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：将 SLAM dock 图层卡片与发布设置联动后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 

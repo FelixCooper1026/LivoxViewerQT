@@ -215,7 +215,10 @@ void LivoxViewerWindow::startOnlineSlamFromMenu()
     ensureSlamVisualizationTab(QStringLiteral("online"));
     showSlamInfoPanel();
     showSlamStatusPanel();
-    startSlamProcessing();
+    if (!slamWorkerActive.load() && !slamWorker.joinable()) {
+        postSlamStatus(SlamStatusCode::Idle, QStringLiteral("在线 SLAM 已准备，点击浮动控制条“启动”开始。"));
+    }
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::startOfflineSlamFromMenu()
@@ -226,7 +229,10 @@ void LivoxViewerWindow::startOfflineSlamFromMenu()
     }
     showSlamInfoPanel();
     showSlamStatusPanel();
-    startSlamProcessing();
+    if (!slamWorkerActive.load() && !slamWorker.joinable()) {
+        postSlamStatus(SlamStatusCode::Idle, QStringLiteral("离线 SLAM PCAP 已加载，点击浮动控制条“启动”开始。"));
+    }
+    updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::setSlamInputModeOffline()
@@ -695,7 +701,7 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
     if (!slamPointCloudView) {
         return;
     }
-    if (!slamWorldFrameVisible) {
+    if (!slamRuntimeConfig.publishWorldFrameCloud || !slamWorldFrameVisible) {
         slamPointCloudView->clearPointCloudSegments();
         slamWorldDisplayedSegmentStart = 0;
         slamWorldDisplayedSegmentEnd = 0;
@@ -820,8 +826,10 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
     }
     slamUiBridge->setRenderLayerVisibility(slamTrajectoryVisible,
                                            slamPoseAxisVisible,
-                                           slamWorldCurrentFrameVisible,
-                                           slamBodyFrameVisible);
+                                           slamRuntimeConfig.publishWorldFrameCloud && slamWorldCurrentFrameVisible,
+                                           slamRuntimeConfig.publishWorldFrameCloud &&
+                                               slamRuntimeConfig.publishBodyFrameCloud &&
+                                               slamBodyFrameVisible);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryFromDialog()
