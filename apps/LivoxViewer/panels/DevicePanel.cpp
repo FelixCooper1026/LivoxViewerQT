@@ -227,6 +227,10 @@ void LivoxViewerWindow::createSlamInfoPanel()
                  QStringLiteral("SLAM tab 主点云，受积分时间、点大小、着色模式和色标控制。"),
                  slamWorldFrameVisible,
                  [this](bool visible) { setSlamWorldFrameVisible(visible); });
+    addLayerCard(QStringLiteral("世界系当前帧点云"),
+                 QStringLiteral("当前扫描帧世界系 overlay，使用首选项中的固定颜色。"),
+                 slamWorldCurrentFrameVisible,
+                 [this](bool visible) { setSlamWorldCurrentFrameVisible(visible); });
     addLayerCard(QStringLiteral("机体系点云"),
                  QStringLiteral("IMU 机体系当前帧 overlay，使用首选项中的固定颜色。"),
                  slamBodyFrameVisible,

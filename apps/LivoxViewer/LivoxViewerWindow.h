@@ -215,6 +215,7 @@ private:
     void clearSlamWorldPointCloud();
     void showSlamInfoPanel();
     void setSlamWorldFrameVisible(bool visible);
+    void setSlamWorldCurrentFrameVisible(bool visible);
     void setSlamBodyFrameVisible(bool visible);
     void setSlamTrajectoryVisible(bool visible);
     void setSlamPoseAxisVisible(bool visible);
@@ -410,8 +411,10 @@ private:
     QVector<SlamWorldPointSegment> slamWorldPointSegments;
     int slamWorldDisplayedSegmentStart = 0;
     int slamWorldDisplayedSegmentEnd = 0;
-    QColor slamBodyFrameColor = QColor(255, 140, 26);
+    QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
+    QColor slamBodyFrameColor = QColor(0, 255, 0);
     bool slamWorldFrameVisible = true;
+    bool slamWorldCurrentFrameVisible = true;
     bool slamBodyFrameVisible = true;
     bool slamTrajectoryVisible = true;
     bool slamPoseAxisVisible = true;

@@ -34,7 +34,7 @@ SlamRenderVertex renderVertex(const QVector3D& point, float r, float g, float b)
     return {point.x(), point.y(), point.z(), r, g, b};
 }
 
-SlamRenderVertex renderBodyFramePoint(const SlamPoint& point, const QColor& color)
+SlamRenderVertex renderSlamPoint(const SlamPoint& point, const QColor& color)
 {
     return {point.x, point.y, point.z, color.redF(), color.greenF(), color.blueF()};
 }
@@ -115,6 +115,15 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     m_latestOutput.newGlobalMapPoints.clear();
 }
 
+void SlamUiBridge::setWorldFrameColor(const QColor& color)
+{
+    if (!color.isValid() || m_worldFrameColor == color) {
+        return;
+    }
+    m_worldFrameColor = color;
+    refreshStatus();
+}
+
 void SlamUiBridge::setBodyFrameColor(const QColor& color)
 {
     if (!color.isValid() || m_bodyFrameColor == color) {
@@ -124,15 +133,20 @@ void SlamUiBridge::setBodyFrameColor(const QColor& color)
     refreshStatus();
 }
 
-void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible, bool poseAxisVisible, bool bodyFrameVisible)
+void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible,
+                                            bool poseAxisVisible,
+                                            bool worldFrameVisible,
+                                            bool bodyFrameVisible)
 {
     if (m_trajectoryVisible == trajectoryVisible &&
         m_poseAxisVisible == poseAxisVisible &&
+        m_worldFrameVisible == worldFrameVisible &&
         m_bodyFrameVisible == bodyFrameVisible) {
         return;
     }
     m_trajectoryVisible = trajectoryVisible;
     m_poseAxisVisible = poseAxisVisible;
+    m_worldFrameVisible = worldFrameVisible;
     m_bodyFrameVisible = bodyFrameVisible;
     refreshStatus();
 }
@@ -226,10 +240,17 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
         snapshot.poseAxisVertices.push_back(renderVertex(origin + rotation.rotatedVector(QVector3D(0.0f, 0.0f, kAxisLength)), 0.1f, 0.35f, 1.0f));
     }
 
+    if (m_worldFrameVisible) {
+        snapshot.worldFrameVertices.reserve(m_latestOutput.publishedWorldFramePoints.size());
+        for (const SlamPoint& point : m_latestOutput.publishedWorldFramePoints) {
+            snapshot.worldFrameVertices.push_back(renderSlamPoint(point, m_worldFrameColor));
+        }
+    }
+
     if (m_bodyFrameVisible) {
         snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
         for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
-            snapshot.bodyFrameVertices.push_back(renderBodyFramePoint(point, m_bodyFrameColor));
+            snapshot.bodyFrameVertices.push_back(renderSlamPoint(point, m_bodyFrameColor));
         }
     }
     return snapshot;

@@ -152,9 +152,12 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 
 - 轨迹线顶点。
 - 当前位姿坐标轴顶点。
+- 世界系当前扫描帧点云顶点。
 - 机体系当前帧点云顶点。
 
-世界系点云不再作为 SLAM overlay 绘制，而是转换为 `PointCloudFrame` 后进入 SLAM tab 主点云缓存。工具栏的积分时间、点大小、着色模式和反射率色标直接作用于该主点云。
+世界系点云主显示不走 SLAM overlay，而是转换为 `PointCloudFrame` 后进入 SLAM tab 主点云缓存。工具栏的积分时间、点大小、着色模式和反射率色标直接作用于该主点云，对应原版 RViz 中 `currPoints` 通过客户端长 Decay 叠加 `/cloud_registered` 的显示语义。
+
+世界系当前帧点云使用同一份 `publishedWorldFramePoints` 数据源生成固定颜色 overlay，只保留最新一帧，对应原版 RViz 中 `surround` 订阅 `/cloud_registered` 且 Decay Time = 0 的显示语义。
 
 `PointCloudView::setSlamRenderSnapshot()` 和 `clearSlamRenderOverlay()` 仍断言必须在 UI 主线程调用。OpenGL VBO/VAO 创建、写入和销毁只在当前 context 有效时执行。
 
@@ -195,7 +198,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 | `filterSizeMapM` | `0.5` | 是 | IKD-tree 地图增量体素；影响后端地图点数 |
 | `preprocessScanRateHz` | `10.0` | 是 | 对齐原版 `preprocess/scan_rate` 默认语义；用于推导 SLAM 输入聚帧周期 |
 | `inputFrameDurationMs` | `100` | 是 | PCAP/Live SLAM 输入源切分当前帧的周期；实际帧结束时间仍取帧内最后点时间 |
-| `publishWorldFrameCloud` | `true` | 是 | 输出/显示世界系点云 |
+| `publishWorldFrameCloud` | `true` | 是 | 输出世界系 `/cloud_registered` 语义点云；同时供 SLAM tab 积分窗口和世界系当前帧 overlay 使用 |
 | `publishDenseFrameCloud` | `true` | 是 | 世界系点云使用 dense 去畸变点云；false 使用降采样点云 |
 | `publishBodyFrameCloud` | `true` | 是 | 在世界系发布开启时输出/显示 IMU 机体系当前帧点云 |
 | `mapVoxelSizeM` | `0.1` | 否 | 占位 |
@@ -214,13 +217,15 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - PCAP 离线 SLAM worker 已接入 UI，支持按原始时间 replay、暂停、停止、重置。
 - 当前位姿、轨迹 overlay 已接入 `PointCloudView`。
 - 原版 `scan_publish_en`、`dense_publish_en`、`scan_bodyframe_pub_en` 已迁移为用户可配置项。
+- 原版 RViz `surround`/`currPoints` 对同一 `/cloud_registered` 的两种显示语义已迁移：`世界系当前帧点云` 固定颜色 overlay 只显示最新帧，`世界系点云` 主点云按积分时间窗口累计显示。
 - 原版 `preprocess/scan_rate` 已迁移为用户可配置扫描频率，并同步控制 PCAP/Live SLAM 输入聚帧周期。
 - 原版 `mapping/extrinsic_est_en` 已迁移为 `extrinsicEstimationEnabled`，默认 false；关闭时外参雅可比列按原版置零。
 - MID360 原版外参 `[-0.011,-0.02329,0.04412] + identity` 已作为默认值，并在 SLAM 设置页暴露平移/旋转配置。
 - 原版 `cube_side_length`、`mapping/det_range`、`mapping/fov_degree`、`max_iteration` 已迁移为用户可配置项。
 - 原版 IMU 噪声参数 `gyr_cov`、`acc_cov`、`b_gyr_cov`、`b_acc_cov` 已迁移为用户可配置项，并传入 `ImuProcess`。
 - 世界系 dense/降采样点云已作为 SLAM tab 主点云输出，可复用工具栏积分时间、点大小、着色模式和色标。
-- 机体系当前帧 dense 点云仍作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置。
+- 世界系当前帧点云作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置，默认白色。
+- 机体系当前帧 dense 点云仍作为 SLAM overlay 输出，颜色由首选项 SLAM 页配置，默认绿色。
 - 旧地图预览配置、store、增量预览 VBO 和预览导出已移除。
 - 原版 `pcd_save` 的 dense world-frame 累计语义已迁移为完整全局地图缓存。
 - 新增完整全局地图 PCD/LAS 导出，数据源不是 UI 预览缓存，也不是 OpenGL VBO。

@@ -39,8 +39,12 @@ public:
 
 public slots:
     void receiveSlamOutput(const SlamOutput& output);
+    void setWorldFrameColor(const QColor& color);
     void setBodyFrameColor(const QColor& color);
-    void setRenderLayerVisibility(bool trajectoryVisible, bool poseAxisVisible, bool bodyFrameVisible);
+    void setRenderLayerVisibility(bool trajectoryVisible,
+                                  bool poseAxisVisible,
+                                  bool worldFrameVisible,
+                                  bool bodyFrameVisible);
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
@@ -65,9 +69,11 @@ private:
     QTimer m_refreshTimer;
     QString m_mode = QStringLiteral("Idle");
     QString m_backend = QStringLiteral("FAST_LIO");
-    QColor m_bodyFrameColor = QColor(255, 140, 26);
+    QColor m_worldFrameColor = QColor(255, 255, 255);
+    QColor m_bodyFrameColor = QColor(0, 255, 0);
     bool m_trajectoryVisible = true;
     bool m_poseAxisVisible = true;
+    bool m_worldFrameVisible = true;
     bool m_bodyFrameVisible = true;
 };
 

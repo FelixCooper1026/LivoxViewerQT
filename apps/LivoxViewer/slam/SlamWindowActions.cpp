@@ -102,6 +102,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
 
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
     slamUiBridge = new SlamUiBridge(this);
+    slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
     syncSlamRenderLayerVisibility();
     connect(slamUiBridge, &SlamUiBridge::statusTextReady, this, [this](const QString& text) {
@@ -571,6 +572,15 @@ void LivoxViewerWindow::setSlamWorldFrameVisible(bool visible)
     refreshSlamWorldPointCloud();
 }
 
+void LivoxViewerWindow::setSlamWorldCurrentFrameVisible(bool visible)
+{
+    if (slamWorldCurrentFrameVisible == visible) {
+        return;
+    }
+    slamWorldCurrentFrameVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
 void LivoxViewerWindow::setSlamBodyFrameVisible(bool visible)
 {
     if (slamBodyFrameVisible == visible) {
@@ -605,6 +615,7 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
     }
     slamUiBridge->setRenderLayerVisibility(slamTrajectoryVisible,
                                            slamPoseAxisVisible,
+                                           slamWorldCurrentFrameVisible,
                                            slamBodyFrameVisible);
 }
 

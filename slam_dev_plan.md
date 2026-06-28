@@ -1660,17 +1660,19 @@ Phase 5.4 已完成基础版本：
 - `fastlio_migration_audit.md` 已更新为当前迁移状态。
 - 2026-06-27：移除 SLAM PCAP/Live 输入源固定 50 ms 聚帧，改为读取 `SlamRuntimeConfig::inputFrameDurationMs`；默认 10 Hz / 100 ms。
 - 2026-06-27：重做 SLAM 加载入口：`工具 -> SLAM...` 先进入 SLAM 面板，面板内切换“离线 SLAM / 在线 SLAM”；离线 SLAM 通过“加载 PCAP...”选择文件并创建独立 `SLAM` OpenGL tab，不再依赖离线播放 tab 或播放控制条。
-- 2026-06-27：世界系当前帧点云对外改名为“世界系点云”，显示路径改为 SLAM tab 主点云；IMU 机体系点云保留固定颜色 overlay，颜色可在首选项 SLAM 页配置。
+- 2026-06-27：世界系发布点云显示路径改为 SLAM tab 主点云，命名为“世界系点云”；IMU 机体系点云保留固定颜色 overlay，颜色可在首选项 SLAM 页配置。
 - 2026-06-28：修复 SLAM 世界系点云在积分时间 60000 ms 时几乎卡死的问题。原因是此前每次收到 SLAM 输出都会把积分窗口内所有历史世界系点云段拼成单个大 `PointCloudFrame`，重新着色/滤波并整块上传 VBO；离线播放不会卡顿是因为它使用分段滑窗增量 append/remove。当前 SLAM 世界系点云已改为分段增量滑窗：新帧只处理新增段，窗口滑动只移除过期段，只有积分时间增大并需要恢复更早历史段时才重建当前窗口。
 - 2026-06-28：迁移原版 `mapping/extrinsic_est_en` 为 `SlamRuntimeConfig::extrinsicEstimationEnabled`，默认 false；关闭时 FAST_LIO 量测雅可比的外参 6 列按原版置零。MID360 默认外参改为原版 `[-0.011, -0.02329, 0.04412] + identity`，并在首选项 SLAM 页暴露在线估计开关、平移 T 和旋转矩阵 R。
 - 2026-06-28：启动 SLAM 后在左侧设备 dock 区域显示 `SLAM` tab，使用与文件信息设备卡片一致的眼睛图标卡片控制 `世界系点云`、`机体系点云`、`轨迹`、`姿态坐标轴` 可见性；世界系点云控制 SLAM tab 主点云段显示，其他三项控制 `SlamUiBridge` overlay 快照输出。
 - 2026-06-28：继续迁移原版 FAST_LIO 参数到 `SlamRuntimeConfig` 和首选项 SLAM 页：`cube_side_length` -> `cubeSideLengthM`、`mapping/det_range` -> `detRangeM`、`mapping/fov_degree` -> `fovDegree`、`max_iteration` -> `maxIterations`、`mapping/gyr_cov` -> `gyrCov`、`mapping/acc_cov` -> `accCov`、`mapping/b_gyr_cov` -> `bGyrCov`、`mapping/b_acc_cov` -> `bAccCov`。后端初始化不再使用这些硬编码常量，统一从运行配置读取。
+- 2026-06-28：按原版 RViz 语义补齐 `surround`/`currPoints` 区分：两者数据源均为 FAST_LIO 发布世界系点云；`世界系点云` 继续作为 SLAM tab 主点云按积分时间窗口累计显示，新增 `世界系当前帧点云` overlay 固定颜色只显示最新帧。SLAM dock 在 `世界系点云` 下方新增对应卡片；首选项 SLAM 页新增世界系当前帧颜色，默认白色；机体系当前帧 overlay 默认颜色改为绿色。
 
 验证：
 
 - 2026-06-27：`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示。
 - 2026-06-27：按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：迁移 FAST_LIO 局部地图、FOV、迭代次数和 IMU 噪声参数后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：新增世界系当前帧 overlay 与 SLAM dock 图层卡片后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 
