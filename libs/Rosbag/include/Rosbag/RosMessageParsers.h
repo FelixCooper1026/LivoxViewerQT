@@ -39,8 +39,32 @@ struct ImuMsg {
     double linearAcceleration[3] = {};
 };
 
+struct PointField {
+    QString name;
+    uint32_t offset = 0;
+    uint8_t datatype = 0;
+    uint32_t count = 0;
+};
+
+struct PointCloud2Msg {
+    RosHeader header;
+    uint32_t height = 0;
+    uint32_t width = 0;
+    QVector<PointField> fields;
+    bool isBigEndian = false;
+    uint32_t pointStep = 0;
+    uint32_t rowStep = 0;
+    QByteArray data;
+    bool isDense = false;
+};
+
 bool parseLivoxCustomMsg(const QByteArray& data, LivoxCustomMsg* out, QString* error);
 bool parseSensorImu(const QByteArray& data, ImuMsg* out, QString* error);
+bool parseSensorPointCloud2(const QByteArray& data, PointCloud2Msg* out, QString* error);
+
+bool parseRos2LivoxCustomMsg(const QByteArray& data, LivoxCustomMsg* out, QString* error);
+bool parseRos2SensorImu(const QByteArray& data, ImuMsg* out, QString* error);
+bool parseRos2SensorPointCloud2(const QByteArray& data, PointCloud2Msg* out, QString* error);
 
 } // namespace Rosbag
 

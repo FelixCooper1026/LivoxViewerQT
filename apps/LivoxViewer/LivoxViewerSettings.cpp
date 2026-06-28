@@ -1305,6 +1305,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         createSlamDoubleSpin(slamRuntimeConfig.detRangeM, 1.0, 2000.0, 1, 10.0, QStringLiteral(" m"));
     QDoubleSpinBox* slamFovDegreeSpin =
         createSlamDoubleSpin(slamRuntimeConfig.fovDegree, 1.0, 360.0, 1, 1.0, QStringLiteral(" °"));
+    QDoubleSpinBox* slamBlindMinRangeSpin =
+        createSlamDoubleSpin(slamRuntimeConfig.blindMinRangeM, 0.0, 100.0, 2, 0.1, QStringLiteral(" m"));
     QSpinBox* slamMaxIterationsSpin = new QSpinBox(&dlg);
     slamMaxIterationsSpin->setRange(1, 100);
     slamMaxIterationsSpin->setSingleStep(1);
@@ -1319,6 +1321,24 @@ void LivoxViewerWindow::showPreferencesDialog()
         createSlamDoubleSpin(slamRuntimeConfig.bGyrCov, 0.000001, 100.0, 6, 0.0001, QString());
     QDoubleSpinBox* slamBAccCovSpin =
         createSlamDoubleSpin(slamRuntimeConfig.bAccCov, 0.000001, 100.0, 6, 0.0001, QString());
+
+    QWidget* slamTemplateRow = new QWidget(&dlg);
+    usePreferenceControlColumn(slamTemplateRow, 360);
+    QHBoxLayout* slamTemplateLayout = new QHBoxLayout(slamTemplateRow);
+    slamTemplateLayout->setContentsMargins(0, 0, 0, 0);
+    slamTemplateLayout->setSpacing(8);
+    QComboBox* slamTemplateCombo = new QComboBox(slamTemplateRow);
+    slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Mid360Mid360S),
+                               int(SlamLidarTemplate::Mid360Mid360S));
+    slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Avia),
+                               int(SlamLidarTemplate::Avia));
+    const int slamTemplateIndex = slamTemplateCombo->findData(int(slamRuntimeConfig.lidarTemplate));
+    slamTemplateCombo->setCurrentIndex(slamTemplateIndex >= 0 ? slamTemplateIndex : 0);
+    slamTemplateCombo->setFixedWidth(168);
+    QPushButton* slamRestoreTemplateDefaultsButton = new QPushButton(QStringLiteral("恢复默认"), slamTemplateRow);
+    slamTemplateLayout->addWidget(slamTemplateCombo);
+    slamTemplateLayout->addWidget(slamRestoreTemplateDefaultsButton);
+    slamTemplateLayout->addStretch();
 
     auto createSlamSwitch = [&dlg](bool checked) {
         SwitchCheckBox* check = new SwitchCheckBox(&dlg);
@@ -1381,6 +1401,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
+    SwitchCheckBox* slamAllowRosbagDriver2PointCloud2Check =
+        createSlamSwitch(slamRuntimeConfig.allowRosbagDriver2PointCloud2);
+    SwitchCheckBox* slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck =
+        createSlamSwitch(slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime);
     QWidget* slamWorldCurrentFrameColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamWorldCurrentFrameColorRow);
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
@@ -1443,6 +1467,66 @@ void LivoxViewerWindow::showPreferencesDialog()
     connect(slamPublishWorldCheck, &QCheckBox::toggled, &dlg,
             [syncSlamPublishControls](bool) { syncSlamPublishControls(); });
     syncSlamPublishControls();
+
+    auto currentSlamTemplate = [slamTemplateCombo]() {
+        return slamLidarTemplateFromInt(slamTemplateCombo->currentData().toInt());
+    };
+    auto applySlamTemplateToControls = [&](SlamLidarTemplate lidarTemplate) {
+        SlamRuntimeConfig templateDefaults;
+        applySlamLidarTemplateDefaults(templateDefaults, lidarTemplate);
+        slamDetRangeSpin->setValue(templateDefaults.detRangeM);
+        slamFovDegreeSpin->setValue(templateDefaults.fovDegree);
+        slamBlindMinRangeSpin->setValue(templateDefaults.blindMinRangeM);
+        for (int i = 0; i < 3; ++i) {
+            slamExtrinsicTSpins[static_cast<std::size_t>(i)]->setValue(templateDefaults.extrinsicT_L_I[i]);
+        }
+        for (int i = 0; i < 9; ++i) {
+            slamExtrinsicRSpins[static_cast<std::size_t>(i)]->setValue(templateDefaults.extrinsicR_L_I[i]);
+        }
+    };
+    auto setSlamRuntimeControls = [&](const SlamRuntimeConfig& runtimeDefaults) {
+        syncingSlamFrameControls = true;
+        slamScanRateSpin->setValue(runtimeDefaults.preprocessScanRateHz);
+        slamFrameDurationSpin->setValue(runtimeDefaults.inputFrameDurationMs);
+        syncingSlamFrameControls = false;
+        slamFilterSurfSpin->setValue(runtimeDefaults.filterSizeSurfM);
+        slamFilterMapSpin->setValue(runtimeDefaults.filterSizeMapM);
+        slamGravityNormSpin->setValue(runtimeDefaults.gravityNorm);
+        slamCubeSideLengthSpin->setValue(runtimeDefaults.cubeSideLengthM);
+        slamDetRangeSpin->setValue(runtimeDefaults.detRangeM);
+        slamFovDegreeSpin->setValue(runtimeDefaults.fovDegree);
+        slamBlindMinRangeSpin->setValue(runtimeDefaults.blindMinRangeM);
+        slamMaxIterationsSpin->setValue(runtimeDefaults.maxIterations);
+        slamGyrCovSpin->setValue(runtimeDefaults.gyrCov);
+        slamAccCovSpin->setValue(runtimeDefaults.accCov);
+        slamBGyrCovSpin->setValue(runtimeDefaults.bGyrCov);
+        slamBAccCovSpin->setValue(runtimeDefaults.bAccCov);
+        slamAllowRosbagDriver2PointCloud2Check->setChecked(runtimeDefaults.allowRosbagDriver2PointCloud2);
+        slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck->setChecked(
+            runtimeDefaults.allowRosbagDriverPointCloud2SynthesizedTime);
+        slamExtrinsicEstimationCheck->setChecked(runtimeDefaults.extrinsicEstimationEnabled);
+        for (int i = 0; i < 3; ++i) {
+            slamExtrinsicTSpins[static_cast<std::size_t>(i)]->setValue(runtimeDefaults.extrinsicT_L_I[i]);
+        }
+        for (int i = 0; i < 9; ++i) {
+            slamExtrinsicRSpins[static_cast<std::size_t>(i)]->setValue(runtimeDefaults.extrinsicR_L_I[i]);
+        }
+        slamPublishWorldCheck->setChecked(runtimeDefaults.publishWorldFrameCloud);
+        slamPublishDenseCheck->setChecked(runtimeDefaults.publishDenseFrameCloud);
+        slamPublishBodyCheck->setChecked(runtimeDefaults.publishBodyFrameCloud);
+        slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
+        syncSlamPublishControls();
+    };
+    connect(slamTemplateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), &dlg,
+            [applySlamTemplateToControls, currentSlamTemplate](int) {
+                applySlamTemplateToControls(currentSlamTemplate());
+            });
+    connect(slamRestoreTemplateDefaultsButton, &QPushButton::clicked, &dlg,
+            [setSlamRuntimeControls, currentSlamTemplate]() {
+                SlamRuntimeConfig runtimeDefaults;
+                applySlamLidarTemplateDefaults(runtimeDefaults, currentSlamTemplate());
+                setSlamRuntimeControls(runtimeDefaults);
+            });
 
     QWidget* solidColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(solidColorRow);
@@ -1605,6 +1689,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     addPreferenceSectionTitle(slamLayout, "FAST_LIO 后端");
     QFrame* slamBackendSection = createPreferenceSection(slamTab);
     addPreferenceRow(slamBackendSection,
+                     "LiDAR 模板",
+                     "根据原版 mid360/avia.yaml 套用探测距离、水平视场角、外参平移和近距离盲区默认值。",
+                     slamTemplateRow);
+    addPreferenceRow(slamBackendSection,
                      "扫描频率",
                      "按原版 preprocess/scan_rate 语义推导 SLAM 输入聚帧周期。",
                      slamScanRateSpin);
@@ -1612,6 +1700,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "聚帧周期",
                      "控制 PCAP/Live SLAM 输入源按原始点云时间戳切分当前帧。",
                      slamFrameDurationSpin);
+    addPreferenceRow(slamBackendSection,
+                     "近距离盲区",
+                     "对应原版 preprocess/blind，滤除 LiDAR 坐标系中距离小于该值的近场点。",
+                     slamBlindMinRangeSpin);
     addPreferenceRow(slamBackendSection,
                      "重力加速度",
                      "对应原版 G_m_s2，用于 IMU 初始化重力向量长度和加速度归一化缩放。",
@@ -1677,6 +1769,18 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "LiDAR 到 IMU 旋转矩阵，按行优先填写 3x3；MID360 默认 identity。",
                      slamExtrinsicRGrid);
     slamLayout->addWidget(slamExtrinsicSection);
+
+    addPreferenceSectionTitle(slamLayout, "ROSbag 输入");
+    QFrame* slamRosbagSection = createPreferenceSection(slamTab);
+    addPreferenceRow(slamRosbagSection,
+                     "允许 driver2 PointCloud2",
+                     "支持 livox_ros_driver2 的 x/y/z/intensity/tag/line/timestamp 布局，timestamp 为每点绝对 ns。",
+                     slamAllowRosbagDriver2PointCloud2Check);
+    addPreferenceRow(slamRosbagSection,
+                     "允许 driver1 PointCloud2 合成时间",
+                     "支持旧 livox_ros_driver 的 x/y/z/intensity/tag/line 布局；该格式无真实点内时间，会按帧周期合成 offset_time。",
+                     slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck);
+    slamLayout->addWidget(slamRosbagSection);
 
     addPreferenceSectionTitle(slamLayout, "发布与导出");
     QFrame* slamPublishSection = createPreferenceSection(slamTab);
@@ -1767,17 +1871,22 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
+    const SlamLidarTemplate previousSlamLidarTemplate = slamRuntimeConfig.lidarTemplate;
     const double previousSlamGravityNorm = slamRuntimeConfig.gravityNorm;
     const double previousSlamScanRateHz = slamRuntimeConfig.preprocessScanRateHz;
     const int previousSlamFrameDurationMs = slamRuntimeConfig.inputFrameDurationMs;
     const double previousSlamCubeSideLengthM = slamRuntimeConfig.cubeSideLengthM;
     const double previousSlamDetRangeM = slamRuntimeConfig.detRangeM;
     const double previousSlamFovDegree = slamRuntimeConfig.fovDegree;
+    const double previousSlamBlindMinRangeM = slamRuntimeConfig.blindMinRangeM;
     const int previousSlamMaxIterations = slamRuntimeConfig.maxIterations;
     const double previousSlamGyrCov = slamRuntimeConfig.gyrCov;
     const double previousSlamAccCov = slamRuntimeConfig.accCov;
     const double previousSlamBGyrCov = slamRuntimeConfig.bGyrCov;
     const double previousSlamBAccCov = slamRuntimeConfig.bAccCov;
+    const bool previousSlamAllowRosbagDriver2PointCloud2 = slamRuntimeConfig.allowRosbagDriver2PointCloud2;
+    const bool previousSlamAllowRosbagDriverPointCloud2SynthesizedTime =
+        slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime;
     const bool previousSlamPublishWorld = slamRuntimeConfig.publishWorldFrameCloud;
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
@@ -1806,17 +1915,22 @@ void LivoxViewerWindow::showPreferencesDialog()
     autoConfigHostIpEnabled = autoConfigHostIpPreferenceCheck->isChecked();
     slamRuntimeConfig.filterSizeSurfM = slamFilterSurfSpin->value();
     slamRuntimeConfig.filterSizeMapM = slamFilterMapSpin->value();
+    slamRuntimeConfig.lidarTemplate = currentSlamTemplate();
     slamRuntimeConfig.gravityNorm = slamGravityNormSpin->value();
     slamRuntimeConfig.preprocessScanRateHz = slamScanRateSpin->value();
     slamRuntimeConfig.inputFrameDurationMs = slamFrameDurationSpin->value();
     slamRuntimeConfig.cubeSideLengthM = slamCubeSideLengthSpin->value();
     slamRuntimeConfig.detRangeM = slamDetRangeSpin->value();
     slamRuntimeConfig.fovDegree = slamFovDegreeSpin->value();
+    slamRuntimeConfig.blindMinRangeM = slamBlindMinRangeSpin->value();
     slamRuntimeConfig.maxIterations = slamMaxIterationsSpin->value();
     slamRuntimeConfig.gyrCov = slamGyrCovSpin->value();
     slamRuntimeConfig.accCov = slamAccCovSpin->value();
     slamRuntimeConfig.bGyrCov = slamBGyrCovSpin->value();
     slamRuntimeConfig.bAccCov = slamBAccCovSpin->value();
+    slamRuntimeConfig.allowRosbagDriver2PointCloud2 = slamAllowRosbagDriver2PointCloud2Check->isChecked();
+    slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime =
+        slamAllowRosbagDriverPointCloud2SynthesizedTimeCheck->isChecked();
     slamRuntimeConfig.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
     for (int i = 0; i < 3; ++i) {
         slamRuntimeConfig.extrinsicT_L_I[i] = slamExtrinsicTSpins[static_cast<std::size_t>(i)]->value();
@@ -1872,17 +1986,22 @@ void LivoxViewerWindow::showPreferencesDialog()
     }();
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
+        slamRuntimeConfig.lidarTemplate != previousSlamLidarTemplate ||
         slamRuntimeConfig.gravityNorm != previousSlamGravityNorm ||
         slamRuntimeConfig.preprocessScanRateHz != previousSlamScanRateHz ||
         slamRuntimeConfig.inputFrameDurationMs != previousSlamFrameDurationMs ||
         slamRuntimeConfig.cubeSideLengthM != previousSlamCubeSideLengthM ||
         slamRuntimeConfig.detRangeM != previousSlamDetRangeM ||
         slamRuntimeConfig.fovDegree != previousSlamFovDegree ||
+        slamRuntimeConfig.blindMinRangeM != previousSlamBlindMinRangeM ||
         slamRuntimeConfig.maxIterations != previousSlamMaxIterations ||
         slamRuntimeConfig.gyrCov != previousSlamGyrCov ||
         slamRuntimeConfig.accCov != previousSlamAccCov ||
         slamRuntimeConfig.bGyrCov != previousSlamBGyrCov ||
         slamRuntimeConfig.bAccCov != previousSlamBAccCov ||
+        slamRuntimeConfig.allowRosbagDriver2PointCloud2 != previousSlamAllowRosbagDriver2PointCloud2 ||
+        slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime !=
+            previousSlamAllowRosbagDriverPointCloud2SynthesizedTime ||
         slamExtrinsicChanged ||
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||

@@ -70,8 +70,9 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
     if (!std::isfinite(config.cubeSideLengthM) || config.cubeSideLengthM <= 0.0 ||
         !std::isfinite(config.detRangeM) || config.detRangeM <= 0.0 ||
         !std::isfinite(config.fovDegree) || config.fovDegree <= 0.0 ||
+        !std::isfinite(config.blindMinRangeM) || config.blindMinRangeM < 0.0 ||
         config.maxIterations <= 0) {
-        assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 局部地图、视场角、探测距离和最大迭代次数必须大于 0。"));
+        assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 局部地图、视场角、探测距离、近距离盲区和最大迭代次数必须有效。"));
         return false;
     }
     if (!std::isfinite(config.gyrCov) || config.gyrCov <= 0.0 ||
@@ -216,14 +217,22 @@ void assignOutputStatus(SlamOutput* output, SlamStatusCode status, const QString
     }
 }
 
-MeasureGroup toFastLioMeasureGroup(const SlamInputFrame& frame)
+MeasureGroup toFastLioMeasureGroup(const SlamInputFrame& frame, double blindMinRangeM)
 {
     MeasureGroup measure;
     measure.lidar_beg_time = static_cast<double>(frame.frameStartNs) * kNsToSeconds;
     measure.lidar_end_time = static_cast<double>(frame.frameEndNs) * kNsToSeconds;
     measure.lidar->points.reserve(static_cast<std::size_t>(frame.points.size()));
+    const double blindRangeSq = blindMinRangeM * blindMinRangeM;
 
     for (const SlamPoint& sourcePoint : frame.points) {
+        const double x = sourcePoint.x;
+        const double y = sourcePoint.y;
+        const double z = sourcePoint.z;
+        if (x * x + y * y + z * z < blindRangeSq) {
+            continue;
+        }
+
         PointType targetPoint;
         targetPoint.x = sourcePoint.x;
         targetPoint.y = sourcePoint.y;
@@ -686,7 +695,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     }
 
     FastLioState& state = *state_;
-    state.measures = toFastLioMeasureGroup(frame);
+    state.measures = toFastLioMeasureGroup(frame, state.config.blindMinRangeM);
 
     if (state.firstScan) {
         state.firstLidarTime = state.measures.lidar_beg_time;

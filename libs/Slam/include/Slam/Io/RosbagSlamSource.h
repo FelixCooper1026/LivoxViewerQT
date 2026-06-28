@@ -24,6 +24,7 @@ struct RosbagSlamSourceConfig {
     bool requirePointOffsetTime = true;
     bool synthesizePointOffsetTime = false;
     bool allowLivoxDriver2PointCloud2 = false;
+    bool allowLivoxDriverPointCloud2SynthesizedTime = false;
     int64_t lidarToImuTimeOffsetNs = 0;
     int frameDurationMs = 100;
 };

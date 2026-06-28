@@ -61,8 +61,9 @@
 
 第一版不做：
 
-- 不支持 ROS2 `.db3` / `.mcap`
-- 不支持压缩 chunk
+- 不支持 ROS2 `.db3`，该项放入后续 R8
+- 不支持 `.mcap`，且后续不规划 MCAP 路线
+- 不支持压缩 chunk，且后续不规划 bz2/lz4 chunk 路线
 - 不支持多雷达 topic 同时融合
 - 不支持无 IMU 数据启动 FAST_LIO
 - 不支持缺少点内时间的 `PointCloud2` 直接启动 FAST_LIO
@@ -165,10 +166,14 @@ libs/Rosbag/src/RosMessageParsers.cpp
 
 后续扩展：
 
+- index data 快速 seek
+- ROS1 `livox_ros_driver2` / `livox_ros_driver` PointCloud2
+- ROS2 db3
+
+不再规划：
+
 - bz2 chunk
 - lz4 chunk
-- index data 快速 seek
-- ROS2 db3
 - MCAP
 
 ### 4.2 新增 RosbagSlamSource
@@ -199,6 +204,7 @@ struct RosbagSlamSourceConfig {
     bool requirePointOffsetTime = true;
     bool synthesizePointOffsetTime = false;
     bool allowLivoxDriver2PointCloud2 = false; // MVP 默认关，后续增强可打开
+    bool allowLivoxDriverPointCloud2SynthesizedTime = false; // 仅旧 livox_ros_driver PointCloud2 使用
 
     int64_t lidarToImuTimeOffsetNs = 0;
     int frameDurationMs = 100;
@@ -211,10 +217,10 @@ struct RosbagSlamSourceSummary {
 
     QString lidarTopic;
     QString lidarType;
-    QString lidarFormat; // LivoxCustomMsg / LivoxDriver2PointCloud2 / UnsupportedPclPointXyzi
+    QString lidarFormat; // LivoxCustomMsg / LivoxDriver2PointCloud2 / LivoxDriverPointCloud2SynthesizedTime
     QString imuTopic;
     QString imuType;
-    QString pointTimeMode; // CustomMsgOffsetNs / PointCloud2AbsoluteTimestampNs / Missing
+    QString pointTimeMode; // CustomMsgOffsetNs / PointCloud2AbsoluteTimestampNs / SynthesizedFromFrameDuration
 
     int frameCount = 0;
     uint64_t pointCount = 0;
@@ -404,7 +410,7 @@ point.offset_time = pkt.time_stamp + i * pkt.point_interval;
 | `line` | 17 | `UINT8` | laser line |
 | `timestamp` | 18 | `FLOAT64` | 每点绝对时间，ns |
 
-`point_step = sizeof(LivoxPointXyzrtlt)`。该结构体在 `src/comm/comm.h` 中受 `#pragma pack(1)` 影响，布局为 26 字节：
+`point_step = sizeof(LivoxPointXyzrtlt)`。该结构体在 `src/comm/comm.h` 中受 `#pragma pack(1)` 影响时布局为 26 字节：
 
 ```cpp
 typedef struct {
@@ -429,10 +435,12 @@ point.offsetNs = pointAbsoluteNs - frameStartNs;
 必须校验：
 
 - `height == 1`
-- `point_step >= 26`
 - 存在上述 7 个字段
+- `x/y/z/intensity` 字段为 `FLOAT32`
+- `tag/line` 字段为 `UINT8`
 - `timestamp` 字段为 `FLOAT64`
-- `timestamp - header.stamp` 非负且落在合理帧周期内
+- 所有字段的 `offset + sizeof(datatype)` 均落在 `point_step` 范围内；允许 PCL/ROS 对齐导致的 padding，例如 `point_step=32`、`timestamp offset=24`
+- `timestamp - header.stamp` 非负且落在合理帧周期内；由于 driver2 PointCloud2 将绝对 ns 存为 `double`，允许 1 ms 内的负 offset 作为浮点舍入误差夹到 0
 
 如果 `PointCloud2` 缺少 `timestamp`，或者字段不是 Livox driver2 的布局，第一版必须拒绝启动，而不是用点序静默合成。
 
@@ -495,7 +503,177 @@ ROSbag 加载失败：topic /livox/lidar 使用 pcl::PointCloud<pcl::PointXYZI>�
 
 需要集中做边界检查，任何越界或数组长度不一致都应 `load()` 失败。
 
-### 5.2 时间戳统一
+### 5.2 livox_ros_driver 实际点云数据格式
+
+本节基于本地 `B:/Workspace/livox_ros_driver/livox_ros_driver` 源码确认，版本定义位于 `livox_ros_driver/include/livox_ros_driver.h`，当前为 `2.6.0`。
+
+关键源码位置：
+
+- `msg/CustomMsg.msg`
+- `msg/CustomPoint.msg`
+- `livox_ros_driver/lddc.h`
+- `livox_ros_driver/lddc.cpp`
+- `livox_ros_driver/lds.h`
+- `livox_ros_driver/lds.cpp`
+- `launch/livox_lidar.launch`
+- `launch/livox_lidar_msg.launch`
+
+#### 5.2.1 发布格式选择
+
+`livox_ros_driver/lddc.h` 中 `TransferType` 定义：
+
+```cpp
+typedef enum {
+  kPointCloud2Msg = 0,
+  kLivoxCustomMsg = 1,
+  kPclPxyziMsg
+} TransferType;
+```
+
+ROS1 launch 默认值：
+
+- `launch/livox_lidar.launch`
+  - `xfer_format=0`
+  - 点云 topic 默认 `/livox/lidar`
+  - IMU topic 默认 `/livox/imu`
+  - `publish_freq=10.0`
+  - `enable_lidar_bag=true`
+  - `enable_imu_bag=true`
+- `launch/livox_lidar_msg.launch`
+  - `xfer_format=1`
+  - 点云 topic 默认 `/livox/lidar`
+  - IMU topic 默认 `/livox/imu`
+  - 输出 `livox_ros_driver/CustomMsg`
+
+topic 命名：
+
+- `multi_topic=0` 时：
+  - 点云：`/livox/lidar`
+  - IMU：`/livox/imu`
+- `multi_topic=1` 时：
+  - 点云：`/livox/lidar_<broadcast_code>`
+  - IMU：`/livox/imu_<broadcast_code>`
+
+这与 `livox_ros_driver2` 的 multi-topic 命名不同：driver2 使用 IP 字符串下划线形式，driver1 使用 broadcast code。
+
+#### 5.2.2 Livox CustomMsg 精确定义
+
+driver1 的 `.msg` 定义与 driver2 字段兼容：
+
+```text
+Header header
+uint64 timebase
+uint32 point_num
+uint8 lidar_id
+uint8[3] rsvd
+CustomPoint[] points
+```
+
+```text
+uint32 offset_time
+float32 x
+float32 y
+float32 z
+uint8 reflectivity
+uint8 tag
+uint8 line
+```
+
+`livox_ros_driver/lddc.cpp::PublishCustomPointcloud()` 的实际语义：
+
+- 第一个 packet：
+  - `livox_msg.timebase = timestamp`
+  - `livox_msg.header.stamp = timestamp`
+  - `packet_offset_time = 0`
+- 后续 packet：
+  - `packet_offset_time = timestamp - livox_msg.timebase`
+- 每个点：
+  - 单回波：`point.offset_time = packet_offset_time + i * point_interval`
+  - 多回波：`point.offset_time = packet_offset_time + (i / echo_num) * point_interval`
+  - `x/y/z/reflectivity/tag/line` 从转换后的 `LivoxPointXyzrtl` 拷贝
+
+结论：
+
+- driver1 CustomMsg 可复用当前 `parseLivoxCustomMsg()`。
+- `timebase` 是当前发布帧首 packet 绝对时间，单位 ns。
+- `offset_time` 是相对 `timebase` 的点内时间，单位 ns。
+- 这是 driver1 ROSbag SLAM 的首选格式。
+
+#### 5.2.3 PointCloud2 精确定义
+
+`xfer_format=0` 时，`livox_ros_driver/lddc.cpp::InitPointcloud2MsgHeader()` 创建 6 个字段：
+
+| 字段 | offset | datatype | 含义 |
+|---|---:|---|---|
+| `x` | 0 | `FLOAT32` | X，m |
+| `y` | 4 | `FLOAT32` | Y，m |
+| `z` | 8 | `FLOAT32` | Z，m |
+| `intensity` | 12 | `FLOAT32` | 反射率 |
+| `tag` | 16 | `UINT8` | Livox tag |
+| `line` | 17 | `UINT8` | laser line |
+
+`point_step = sizeof(LivoxPointXyzrtl)`。该结构体在 `livox_ros_driver/lds.h` 中受 `#pragma pack(1)` 影响，布局为 18 字节：
+
+```cpp
+typedef struct {
+  float x;
+  float y;
+  float z;
+  float reflectivity;
+  uint8_t tag;
+  uint8_t line;
+} LivoxPointXyzrtl;
+```
+
+`cloud.header.stamp` 使用第一个 packet timestamp，但 PointCloud2 内没有每点 `timestamp`、`offset_time` 或等价字段。
+
+结论：
+
+- driver1 PointCloud2 可以解析点坐标、反射率、tag、line。
+- driver1 PointCloud2 无法从 bag 内恢复真实点内时间。
+- 若要作为 FAST_LIO 输入，只能显式启用合成点内时间。
+- 合成必须写入 summary warning，并将 `SlamInputFrame::timeSource` 标记为 `SlamTimeSource::SynthesizedFromPacketInterval`。
+
+driver1 PointCloud2 合成策略：
+
+```cpp
+frameStartNs = header.stamp;
+frameDurationNs = nextFrameStartNs - frameStartNs; // 优先
+if (frameDurationNs <= 0) {
+    frameDurationNs = config.frameDurationMs * 1000000LL;
+}
+point.offsetNs = i * frameDurationNs / max(1, pointCount);
+```
+
+风险：
+
+- Livox 非重复扫描下，线性合成点内时间只是近似。
+- 点云去畸变质量不等同于 CustomMsg。
+- UI / 日志必须明确显示“PointCloud2 点内时间为合成值”。
+
+#### 5.2.4 PCL PointXYZI 格式
+
+`xfer_format=2` 时发布 `pcl::PointCloud<pcl::PointXYZI>`，只保留：
+
+- `x`
+- `y`
+- `z`
+- `intensity`
+
+该格式丢失点内时间、`tag` 和 `line`，仍不作为 ROSbag SLAM 数据源支持。
+
+#### 5.2.5 IMU 数据格式
+
+`livox_ros_driver/lddc.cpp::PublishImuData()` 发布 `sensor_msgs/Imu`：
+
+- `header.frame_id = "livox_frame"`
+- `header.stamp = timestamp`
+- `angular_velocity.x/y/z = gyro_x/y/z`
+- `linear_acceleration.x/y/z = acc_x/acc_y/acc_z`
+
+协方差没有写入有效值，仍不进入 `SlamImuSample`。
+
+### 5.3 时间戳统一
 
 内部统一使用纳秒：
 
@@ -520,7 +698,7 @@ int64_t rosTimeToNs(uint32_t sec, uint32_t nsec)
 LiDAR 帧时间优先级：
 
 1. Livox CustomMsg `timebase`
-2. driver2 PointCloud2 `header.stamp`
+2. 已支持的 PointCloud2 `header.stamp`
 3. `header.stamp`
 4. bag record receive time
 
@@ -530,7 +708,7 @@ MVP 建议：
 - `timebase == 0` 时 fallback 到 `header.stamp`。
 - 记录 summary message 说明实际使用的时间源。
 
-### 5.3 Livox CustomMsg
+### 5.4 Livox CustomMsg
 
 优先支持：
 
@@ -584,7 +762,7 @@ frame.frameStartNs = timebase;
 frame.frameEndNs = frame.frameStartNs + max(point.offsetNs);
 ```
 
-### 5.4 sensor_msgs/Imu
+### 5.5 sensor_msgs/Imu
 
 解析字段：
 
@@ -614,9 +792,12 @@ sample.accelMps2[2] = linear_acceleration.z;
 
 - covariance 暂不进入 `SlamImuSample`。
 
-### 5.5 sensor_msgs/PointCloud2
+### 5.6 sensor_msgs/PointCloud2
 
-第一版不作为必交付，但本地 `livox_ros_driver2` 的 `xfer_format=0` 具备可确定解析的字段布局，可作为第二优先级增强。
+第一版不作为必交付。后续扩展路线中，ROS1 PointCloud2 支持优先于 ROS2 db3，且分为两类：
+
+- `livox_ros_driver2` PointCloud2：带每点绝对时间，支持精确点内时间。
+- `livox_ros_driver` PointCloud2：不带每点时间，只能显式合成点内时间。
 
 通用字段映射仍需保留：
 
@@ -635,10 +816,20 @@ driver2 专用规则：
 - 则 `timestamp` 按每点绝对 ns 时间处理
 - `offsetNs = timestamp - header.stamp`
 
+driver1 专用规则：
+
+- 若 topic type 为 `sensor_msgs/PointCloud2`
+- 且字段精确包含 `x/y/z/intensity/tag/line`
+- 且不存在 `timestamp/time/offset_time`
+- 则识别为 `livox_ros_driver` PointCloud2
+- 只有 `allowLivoxDriverPointCloud2SynthesizedTime=true` 时允许启动
+- `offsetNs` 按帧周期和点序合成
+- `timeSource = SlamTimeSource::SynthesizedFromPacketInterval`
+- summary 必须写入 warning
+
 通用规则：
 
-- 没有点内时间字段时，默认拒绝启动 FAST_LIO。
-- 可以后续提供“按点序合成点内时间”的高级选项。
+- 没有点内时间字段时，除 driver1 PointCloud2 显式开启合成外，默认拒绝启动 FAST_LIO。
 - 合成时必须标记 `SlamTimeSource::SynthesizedFromPacketInterval` 或 summary warning。
 
 合成公式：
@@ -788,7 +979,7 @@ IMU 覆盖: 完整 1200 / 1234
   - `/livox/lidar_<ip_with_underscore>`
   - `/livox/lidar_msg`
   - 第一个 type 为 `livox_ros_driver2/CustomMsg` 或 `livox_ros_driver/CustomMsg` 的 topic
-  - 后续增强允许时，再选择字段布局匹配 driver2 的 `sensor_msgs/PointCloud2`
+  - 后续增强允许时，再选择字段布局匹配 driver2 或 driver1 支持规则的 `sensor_msgs/PointCloud2`
 - IMU topic 优先：
   - `/livox/imu`
   - `/livox/imu_<ip_with_underscore>`
@@ -810,7 +1001,8 @@ IMU 覆盖: 完整 1200 / 1234
 - 优先使用 Livox CustomMsg timebase：默认开
 - 要求点内时间：默认开
 - 允许解析 Livox driver2 PointCloud2：默认关，建议等 CustomMsg 跑通后再开放
-- 允许 PointCloud2 合成点内时间：默认关，MVP 可先不做
+- 允许解析 Livox driver PointCloud2 并合成点内时间：默认关，只用于旧 `livox_ros_driver` 的 18 字节点格式
+- 允许 PointCloud2 合成点内时间：作为兼容总开关保留，但不能让未知 PointCloud2 静默合成
 - LiDAR/IMU 时间偏移 ns：默认 0
 
 MVP 如果不想扩 UI，可以先只做自动识别和日志摘要；但文档要求进入产品化时补设置项。
@@ -865,7 +1057,7 @@ case SlamOfflineSourceKind::Rosbag:
 - 未找到 IMU topic：`Failed`
 - 不支持的 message type：`Failed`
 - 点内时间缺失：`Failed`
-- `PointCloud2` 字段不匹配 driver2 布局：`Failed`
+- `PointCloud2` 字段不匹配已支持的 driver2/driver1 Livox 布局：`Failed`
 - `pcl::PointCloud<pcl::PointXYZI>` 缺少点内时间：`Failed`
 - IMU 覆盖全不完整：`Failed`
 
@@ -900,12 +1092,7 @@ ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
 
 不新增 ROS 相关 `find_package`。
 
-压缩支持后续再加：
-
-- bz2：可使用系统 zlib/bzip2 或 `third-party` 下 vendored source。
-- lz4：若引入第三方库，按项目现有规则放在 `third-party`，并更新 `scripts/setup_third_party.ps1`。
-
-MVP uncompressed ROS1 bag 不需要新增第三方依赖。
+压缩 chunk 不再纳入当前路线。MVP uncompressed ROS1 bag 不需要新增第三方依赖。
 
 ## 10. 开发阶段拆分
 
@@ -1026,7 +1213,8 @@ tools/RosbagInspect
 - 损坏 bag。
 - 空 bag。
 - `xfer_format=0` 的 driver2 `PointCloud2` bag：MVP 阶段应明确提示暂不支持；后续增强开启后验证 `timestamp` 绝对 ns 转 `offsetNs`。
-- `PointCloud2` 无 `timestamp` 字段 bag。
+- `xfer_format=0` 的 driver1 `PointCloud2` bag：后续增强开启后验证点坐标/tag/line 解析和合成点内时间 warning。
+- 非 driver1/driver2 布局的 `PointCloud2` 无 `timestamp` 字段 bag：必须失败。
 - `xfer_format=2` 的 `pcl::PointCloud<pcl::PointXYZI>` bag：必须失败并提示缺少点内时间。
 
 ### 11.2 UI 手动验收
@@ -1064,7 +1252,8 @@ tools/RosbagInspect
 | Livox CustomMsg 存在版本差异 | 字段布局不同 | 根据 `connection.type` 分派 parser；为 driver1/driver2 分开 parser |
 | offset_time 单位不一致 | 去畸变时间错误 | 对本地 driver2 固定按 ns；driver1 若兼容也必须在 summary 中显示时间源 |
 | IMU 覆盖不足 | FAST_LIO 初始化失败 | load 阶段 coverage 检查；失败用 `Failed` |
-| PointCloud2 字段不统一 | 无法解析点内时间/line | MVP 默认不支持；后续只对 driver2 精确字段布局先开放 |
+| PointCloud2 字段不统一 | 无法解析点内时间/line | 后续只支持 driver2 精确时间布局和 driver1 精确字段布局；其他布局失败 |
+| driver1 PointCloud2 缺少真实点内时间 | 去畸变精度低于 CustomMsg | 必须显式启用合成时间，summary 和日志必须提示风险 |
 | 大 bag 内存占用高 | 全量 `frames_` 占内存 | MVP 可接受；Phase 2 改流式读取或 `.slamcache` |
 | Windows 打包依赖 | 交付困难 | 不引入 ROS runtime；第三方依赖放 `third-party` |
 | UI 线程卡顿 | 体验差 | 所有 load/parse/SLAM 在 worker 线程 |
@@ -1088,7 +1277,11 @@ ROSbag 加载失败：LiDAR topic /points 类型 sensor_msgs/PointCloud2 缺少 
 ```
 
 ```text
-ROSbag 加载失败：LiDAR topic /livox/lidar 是 sensor_msgs/PointCloud2，但字段不匹配 livox_ros_driver2 布局。需要 x/y/z/intensity/tag/line/timestamp，且 timestamp 为 FLOAT64。
+ROSbag 加载失败：LiDAR topic /livox/lidar 是 sensor_msgs/PointCloud2，但字段不匹配已支持的 Livox 布局。driver2 需要 x/y/z/intensity/tag/line/timestamp 且 timestamp 为 FLOAT64；driver1 需要 x/y/z/intensity/tag/line 且必须显式启用合成点内时间。
+```
+
+```text
+ROSbag 提示：LiDAR topic /livox/lidar 是 livox_ros_driver PointCloud2，消息不包含真实点内时间；已按帧周期合成 offset_time，建图精度可能低于 CustomMsg。
 ```
 
 ```text
@@ -1101,65 +1294,116 @@ ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。请检查 /livox/imu
 
 ## 14. 后续扩展路线
 
-### 14.1 PointCloud2 支持
+当前后续路线只保留两个方向，并按顺序实施：
 
-新增：
+1. ROS1 `livox_ros_driver2` / `livox_ros_driver` PointCloud2 支持。
+2. ROS2 db3 支持。
 
-- 第一阶段只支持 `livox_ros_driver2` 的精确布局：`x/y/z/intensity/tag/line/timestamp`。
-- `timestamp` 按每点绝对 ns 处理，转换为 `offsetNs = timestamp - header.stamp`。
-- 字段扫描。
-- 字段映射配置。
-- endian / point_step / row_step 处理。
-- time 字段单位推断。
+不再规划：
 
-默认策略：
+- bz2 chunk。
+- lz4 chunk。
+- MCAP。
 
-- 有 time 字段才允许启动。
-- 无 time 字段默认 `Failed`。
-- 不对缺少时间字段的 PointCloud2 默认按点序合成点内时间。
+### Phase R7：ROS1 PointCloud2 支持
 
-### 14.2 ROS2 db3 支持
+目标：
 
-新增：
+- 支持 `livox_ros_driver2` 的 PointCloud2 精确布局：
+  - `x/y/z/intensity/tag/line/timestamp`
+  - `timestamp` 为 `FLOAT64`
+  - `timestamp` 是每点绝对 ns 时间
+  - 字段按名称、datatype 和 `point_step` 边界校验，允许 padding 对齐布局
+- 支持 `livox_ros_driver` 的 PointCloud2 精确布局：
+  - `x/y/z/intensity/tag/line`
+  - 无每点时间字段
+  - 字段按名称、datatype 和 `point_step` 边界校验，允许 padding 对齐布局
+  - 点内时间必须显式合成
+- 拒绝其他 PointCloud2 布局。
+- 保持 `pcl::PointCloud<pcl::PointXYZI>` 不支持。
 
-- 读取 `metadata.yaml`。
-- SQLite 读取 topics/messages。
-- CDR 反序列化。
+实现要点：
 
-可选第三方：
+- 新增 `Rosbag::PointCloud2Msg` 轻量结构。
+- 解析 `sensor_msgs/PointCloud2`：
+  - `Header`
+  - `height`
+  - `width`
+  - `fields[]`
+  - `is_bigendian`
+  - `point_step`
+  - `row_step`
+  - `data`
+  - `is_dense`
+- 字段按名称和 datatype 定位，不依赖字段顺序。
+- driver2：
+  - `frameStartNs = header.stamp`
+  - `pointAbsoluteNs = int64_t(timestamp)`
+  - `offsetNs = pointAbsoluteNs - frameStartNs`
+  - `timeSource = SlamTimeSource::LivoxPacketTimestamp`
+- driver1：
+  - `frameStartNs = header.stamp`
+  - 优先使用相邻 LiDAR message 的 `nextFrameStartNs - frameStartNs` 作为合成周期
+  - 不可用时使用 `RosbagSlamSourceConfig::frameDurationMs`
+  - `offsetNs = i * frameDurationNs / pointCount`
+  - `timeSource = SlamTimeSource::SynthesizedFromPacketInterval`
+  - summary/log 写明“PointCloud2 点内时间为合成值”
 
-- SQLite：Qt 自带 SQL 模块或直接 sqlite amalgamation。
-- YAML：可以手写 metadata 最小解析，或 third-party yaml-cpp。
+配置：
 
-### 14.3 MCAP 支持
+- `allowLivoxDriver2PointCloud2`：默认 false，开启后允许 driver2 PointCloud2。
+- `allowLivoxDriverPointCloud2SynthesizedTime`：默认 false，开启后允许 driver1 PointCloud2 合成时间。
+- `synthesizePointOffsetTime` 仅作为兼容总开关，不应让未知 PointCloud2 静默合成。
 
-新增：
+验收：
 
-- MCAP reader。
-- schema/channel/message 解析。
-- compression support。
+- driver2 PointCloud2 bag 能生成 `SlamInputFrame`，`hasPointOffsetTime=true`，summary 显示 `PointCloud2AbsoluteTimestampNs`。
+- driver1 PointCloud2 bag 在未启用合成时失败并提示缺少真实点内时间。
+- driver1 PointCloud2 bag 在启用合成时能生成 `SlamInputFrame`，summary 显示 `SynthesizedFromFrameDuration` 并有 warning。
+- 非 Livox PointCloud2 或字段不匹配的 bag 必须失败。
+- CustomMsg 路径行为不变。
 
-建议作为独立 Phase，不与 ROS1 MVP 混合。
+### Phase R8：ROS2 db3 支持
 
-### 14.4 SlamCache
+目标：
 
-为大 bag 或外部转换器准备内部缓存格式：
+- 支持 ROS2 sqlite3 storage `.db3` 作为离线 SLAM 数据源。
+- 支持 ROS2 `livox_ros_driver2/msg/CustomMsg`。
+- 支持 ROS2 `sensor_msgs/msg/Imu`。
+- 在 R7 完成后，支持 ROS2 `sensor_msgs/msg/PointCloud2` 的 driver2 精确布局。
 
-```text
-Header
-Source metadata
-Frame block repeated:
-  frameStartNs
-  frameEndNs
-  points[]
-  imuSamples[]
-```
+实现要点：
 
-用途：
+- 读取 `metadata.yaml`：
+  - storage identifier
+  - relative file paths
+  - topics with type
+  - message count
+  - duration / starting time
+- 读取 `.db3` SQLite 表：
+  - `topics`
+  - `messages`
+- 实现最小 CDR 反序列化：
+  - 处理封装头。
+  - 处理 alignment。
+  - 解析 string、sequence、primitive fields。
+- ROS2 type name 映射：
+  - `livox_ros_driver2/msg/CustomMsg`
+  - `sensor_msgs/msg/Imu`
+  - `sensor_msgs/msg/PointCloud2`
+- 继续转换为 `SlamInputFrame`，不改变 `FastLioSlamBackend` 接口。
 
-- 加速重复运行。
-- 隔离 ROSbag 格式复杂度。
-- 支持外部转换器过渡。
+依赖策略：
+
+- SQLite：优先使用 Qt SQL SQLite driver；如果打包不可控，再考虑 sqlite amalgamation 放入 `third-party`。
+- YAML：优先手写 metadata 最小解析；仅当字段兼容问题明显时再考虑 `third-party/yaml-cpp`。
+- 不引入 ROS2 runtime、rclcpp、rosbag2_cpp、ament。
+
+验收：
+
+- ROS2 `.db3` 中的 driver2 CustomMsg + Imu 能跑离线 SLAM。
+- 缺 metadata、缺 topic、缺 IMU、CDR 解析失败都返回 `Failed` 并显示具体原因。
+- ROS1 `.bag` 和 PCAP 离线 SLAM 不受影响。
 
 ## 15. 当前实施状态
 
@@ -1194,43 +1438,69 @@ Frame block repeated:
   - `git diff --check` 通过。
   - `C:/Users/FelixCooper/Desktop/compile.bat` 编译通过。
 
-当前第一版仍未实现：
+2026-06-28 已按后续路线完成 R7/R8 第一版扩展：
 
-- 压缩 ROS1 bag chunk。
-- ROS2 `.db3` / MCAP。
-- driver2 PointCloud2 解析。
+- R7：ROS1 PointCloud2 支持。
+  - driver2 精确 `x/y/z/intensity/tag/line/timestamp` 布局。
+    - `timestamp` 按每点绝对 ns 转换为 `offsetNs = timestamp - header.stamp`。
+    - 由首选项 SLAM 页“允许 driver2 PointCloud2”显式开启，默认关闭。
+    - 字段按名称、datatype 和 `point_step` 边界校验，支持紧凑 26 字节布局和 PCL/ROS padding 后的 32 字节布局。
+  - driver1 精确 `x/y/z/intensity/tag/line` 布局和显式合成点内时间。
+    - 优先使用下一帧 `header.stamp` 推导帧周期，缺失时回退到 SLAM 聚帧周期。
+    - 由首选项 SLAM 页“允许 driver1 PointCloud2 合成时间”显式开启，默认关闭。
+    - summary/log 明确提示“PointCloud2 点内时间为合成值”。
+  - 非 Livox PointCloud2、字段不匹配、`pcl::PointCloud<pcl::PointXYZI>` 仍返回 `Failed`。
+- R8：ROS2 db3 支持。
+  - 新增 `Ros2BagReader`，读取 SQLite `.db3` 的 `topics` / `messages` 表。
+  - 支持直接选择 `.db3`，也支持通过 `metadata.yaml` 中的 `relative_file_paths` 找到 db3。
+  - 新增最小 CDR parser，支持 ROS2 `livox_ros_driver2/msg/CustomMsg`、`sensor_msgs/msg/Imu`、`sensor_msgs/msg/PointCloud2`。
+  - ROS2 数据仍转换为现有 `SlamInputFrame`，不改变 `FastLioSlamBackend` 输入接口。
+  - UI 文件选择支持 `*.db3 *.yaml *.yml`，控制条和状态摘要显示 `ROS2 db3`。
+  - CMake 增加 Qt Sql 组件，用 Qt SQLite driver 读取 db3；不引入 ROS2 runtime、rclcpp、rosbag2_cpp、ament。
+
+当前仍未实现：
+
 - 大 bag 流式读取或 `.slamcache`。
 
-## 16. 给后续 Codex 的实施提示词
+当前明确不规划：
+
+- bz2 chunk。
+- lz4 chunk。
+- MCAP。
+
+## 16. 给后续 Codex 的维护提示词
 
 ```text
-当前 LivoxViewerQT 已有 PcapSlamSource、LiveLidarSlamSource、SlamInputFrame、SlamInputQueue、FastLioSlamBackend 和完整 SLAM UI。现在新增 ROSbag 文件作为离线 SLAM 数据源。
-
-第一版目标：
-1. 支持 ROS1 uncompressed .bag。
-2. 优先支持 livox_ros_driver2/CustomMsg 和 sensor_msgs/Imu；livox_ros_driver2/CustomMsg 字段以 B:/Workspace/livox_ros_driver2/msg/CustomMsg.msg 与 CustomPoint.msg 为准。
-3. ROSbag 最终转换为现有 SlamInputFrame，不修改 FastLioSlamBackend 输入接口。
-4. 不引入 ROS runtime、roscpp、rosbag、catkin、ament。
-5. 不在 UI 线程读取大 bag 或运行 SLAM。
-6. 遇到无 IMU、缺点内 offset time、topic 类型不支持时统一返回 Failed，并在 SLAM状态 dock 的错误信息中显示原因。
-7. CustomMsg.timebase 和 CustomPoint.offset_time 均按 ns 处理；offset_time 是相对 timebase 的点内时间。
-8. driver2 的 PointCloud2 是后续增强：只有字段精确匹配 x/y/z/intensity/tag/line/timestamp 且 timestamp 为 FLOAT64 时才可解析，timestamp 是每点绝对 ns。
-
-实现顺序：
-1. 新增 libs/Rosbag 轻量 ROS1 bag reader 和 message parser。
-2. 新增 libs/Slam/Io/RosbagSlamSource，接口先贴近 PcapSlamSource。
-3. 解析 driver2 CustomMsg + Imu，组装 SlamInputFrame。
-4. 离线 SLAM 文件选择支持 .bag，并根据扩展名选择 PcapSlamSource 或 RosbagSlamSource。
-5. 复用现有 SLAM tab、状态 dock、浮动控制条和导出功能。
-6. 更新 CMakeLists.txt，新增源文件和 include path。
-7. 运行 git diff --check 和 C:\Users\FelixCooper\Desktop\compile.bat。
+当前 LivoxViewerQT 已完成 ROSbag/ROS2 db3 离线 SLAM 数据源接入：
+1. ROS1 uncompressed .bag：
+   - livox_ros_driver2/CustomMsg。
+   - livox_ros_driver/CustomMsg。
+   - sensor_msgs/Imu。
+   - livox_ros_driver2 PointCloud2 精确 x/y/z/intensity/tag/line/timestamp 布局。
+   - livox_ros_driver PointCloud2 精确 x/y/z/intensity/tag/line 布局，但必须显式开启合成点内时间。
+2. ROS2 sqlite3 storage .db3 / metadata.yaml：
+   - livox_ros_driver2/msg/CustomMsg。
+   - sensor_msgs/msg/Imu。
+   - sensor_msgs/msg/PointCloud2。
+3. 所有输入最终转换为现有 SlamInputFrame，不修改 FastLioSlamBackend 输入接口。
+4. SLAM UI、SLAM tab、状态 dock、浮动控制条、轨迹保存和完整全局地图保存继续复用。
+5. 首选项 SLAM 页的 ROSbag 输入分组提供两个默认关闭开关：
+   - 允许 driver2 PointCloud2。
+   - 允许 driver1 PointCloud2 合成时间。
 
 严格禁止：
 - 不启动 ROS master。
 - 不要求用户安装 ROS。
-- 不把 ROS message 类型传给 FastLioSlamBackend。
+- 不引入 ROS runtime、roscpp、rosbag、catkin、ament、rclcpp、rosbag2_cpp。
+- 不把 ROS/ROS2 message 类型传给 FastLioSlamBackend。
 - 不把 pcl::PointCloud<pcl::PointXYZI> 当作可用 FAST_LIO 输入。
-- 不对缺失点内时间的 PointCloud2 默认合成时间。
+- 不对未知 PointCloud2 默认合成时间；仅旧 livox_ros_driver 精确布局在用户显式开启后允许合成。
+- 不规划 bz2 chunk、lz4 chunk、MCAP。
 - 不从 OpenGL VBO 读取点云用于导出。
 - 不影响现有 PCAP 离线 SLAM、在线 SLAM、PCAP 普通播放。
+
+后续若继续增强，优先考虑：
+1. 大 bag 流式读取或 .slamcache，降低一次性 frames_ 内存占用。
+2. 真实 ROS1 .bag / ROS2 .db3 UI worker 验收数据集和自动化 inspect 工具。
+3. ROS2 CDR parser 对更多实际录包变体的兼容测试。
 ```

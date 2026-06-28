@@ -78,7 +78,7 @@
 | `common_lib.h/G_m_s2` | `9.81` | 重力加速度常量 | 已迁移为 `gravityNorm`，设置页可配置；默认 9.81 m/s² |
 | `preprocess/lidar_type` | `1` | 选择预处理分支 | 部分迁移；当前直接解析 Livox payload，后端固定 `AVIA` |
 | `preprocess/scan_line` | `4` | 线数 | 部分迁移；当前从设备类型推导 lineCount |
-| `preprocess/blind` | `0.5` | 近距离盲区滤除 | 未迁移 |
+| `preprocess/blind` | `0.5` | 近距离盲区滤除 | 已迁移为 `blindMinRangeM`，设置页可配置；Mid360/Mid360S 默认 0.5 m，Avia 默认 4.0 m |
 | `preprocess/timestamp_unit` | 未配置 | 点内时间单位 | 部分迁移；Livox payload 使用 `time_interval * 100ns` |
 | `preprocess/scan_rate` | 未配置 | 扫描频率估计 | 已迁移为 `preprocessScanRateHz`，设置页可配置；默认 10 Hz，并同步推导 `inputFrameDurationMs=100` |
 | `point_filter_num` | 未配置 | 点抽样过滤 | 未迁移 |
@@ -87,7 +87,7 @@
 | `filter_size_surf` | 未配置 | 输入 surf 降采样 | 已迁移为 `filterSizeSurfM`，设置页可配置 |
 | `filter_size_map` | 未配置 | IKD-tree 地图体素 | 已迁移为 `filterSizeMapM`，设置页可配置 |
 | `cube_side_length` | 未配置 | 局部地图窗口大小 | 已迁移为 `cubeSideLengthM`，设置页可配置；默认 200.0 m |
-| `mapping/det_range` | `100.0` | 检测距离/FOV 判断 | 已迁移为 `detRangeM`，设置页可配置；默认沿用当前项目 300.0 m |
+| `mapping/det_range` | `100.0` | 检测距离/FOV 判断 | 已迁移为 `detRangeM`，设置页可配置；Mid360/Mid360S 默认 100.0 m，Avia 默认 450.0 m |
 | `mapping/fov_degree` | `360` | FOV 角度 | 已迁移为 `fovDegree`，设置页可配置；内部仍按原版加 10° 余量并裁到 179.9° |
 | `mapping/gyr_cov` | `0.1` | 陀螺仪噪声 | 已迁移为 `gyrCov`，设置页可配置 |
 | `mapping/acc_cov` | `0.1` | 加速度计噪声 | 已迁移为 `accCov`，设置页可配置 |
@@ -184,16 +184,18 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 | --- | ---: | --- | --- |
 | `backendType` | `FAST_LIO` | 否 | 当前 worker 固定创建 `FastLioSlamBackend` |
 | `lidarModel` | 空 | 否 | 占位 |
+| `lidarTemplate` | `Mid360/Mid360S` | 是 | 控制 SLAM 设置页模板默认值；当前模板差异项为 `detRangeM`、`fovDegree`、`extrinsicT_L_I` 和 `blindMinRangeM` |
 | `imuEnabled` | `true` | 否 | false 会导致 FAST_LIO 拒绝启动 |
 | `allowPureLidar` | `false` | 否 | 占位；FAST_LIO 当前仍强制要求 IMU |
 | `lidarToImuTimeOffsetNs` | `0` | 否 | 已持久化，当前未实际应用 |
 | `gravityNorm` | `9.81` | 是 | 对应原版 `G_m_s2`；传入 `ImuProcess`，用于 IMU 初始化重力向量长度、加速度归一化和初始化协方差缩放 |
-| `extrinsicT_L_I[3]` | `[-0.011,-0.02329,0.04412]` | 是 | 后端初始化 LiDAR 到 IMU 外参平移；旧版本保存的 `[0,0,0]+identity` 默认值会迁移为 MID360 默认 |
+| `extrinsicT_L_I[3]` | `[-0.011,-0.02329,0.04412]` | 是 | 后端初始化 LiDAR 到 IMU 外参平移；旧版本保存的 `[0,0,0]+identity` 默认值会迁移为当前模板默认；Avia 模板默认 `[0.04165,0.02326,-0.0284]` |
 | `extrinsicR_L_I[9]` | identity | 是 | 后端初始化 LiDAR 到 IMU 外参旋转 |
 | `extrinsicEstimationEnabled` | `false` | 是 | 对应原版 `mapping/extrinsic_est_en`；false 时外参固定，EKF 量测雅可比的外参 6 列置零 |
 | `cubeSideLengthM` | `200.0` | 是 | 对应原版 `cube_side_length`；控制局部 ikd-tree 滑动地图立方体边长 |
-| `detRangeM` | `300.0` | 是 | 对应原版 `mapping/det_range`；控制局部地图滑动触发距离 |
-| `fovDegree` | `360.0` | 是 | 对应原版 `mapping/fov_degree`；用于视野内地图点判断，内部按原版裁到 179.9° |
+| `detRangeM` | `100.0` | 是 | 对应原版 `mapping/det_range`；控制局部地图滑动触发距离；Avia 模板默认 450.0 m |
+| `fovDegree` | `360.0` | 是 | 对应原版 `mapping/fov_degree`；用于视野内地图点判断，内部按原版裁到 179.9°；Avia 模板默认 90° |
+| `blindMinRangeM` | `0.5` | 是 | 对应原版 `preprocess/blind`；在 `SlamInputFrame -> MeasureGroup` 转换时滤除 LiDAR 坐标系近场点；Avia 模板默认 4.0 m |
 | `maxIterations` | `4` | 是 | 对应原版 `max_iteration`；控制每帧 iEKF 最大迭代次数 |
 | `gyrCov` | `0.1` | 是 | 对应原版 `mapping/gyr_cov`；传入 `ImuProcess::set_gyr_cov()` |
 | `accCov` | `0.1` | 是 | 对应原版 `mapping/acc_cov`；传入 `ImuProcess::set_acc_cov()` |
@@ -227,6 +229,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - 原版 `mapping/extrinsic_est_en` 已迁移为 `extrinsicEstimationEnabled`，默认 false；关闭时外参雅可比列按原版置零。
 - MID360 原版外参 `[-0.011,-0.02329,0.04412] + identity` 已作为默认值，并在 SLAM 设置页暴露平移/旋转配置。
 - 原版 `cube_side_length`、`mapping/det_range`、`mapping/fov_degree`、`max_iteration` 已迁移为用户可配置项。
+- 原版 `preprocess/blind` 已迁移为 `blindMinRangeM`，在进入 FAST_LIO IMU 去畸变和建图前过滤近距离点。
+- SLAM 设置页新增 LiDAR 模板：`Mid360/Mid360S` 和 `Avia`。模板只覆盖已迁移的原版差异项：探测距离、水平视场角、外参平移 T 和近距离盲区；恢复默认按钮会按当前模板恢复 SLAM 运行参数默认值。
 - 原版重力常量 `G_m_s2` 已迁移为 `gravityNorm`，默认 9.81 m/s²，并传入 `ImuProcess`。
 - 原版 IMU 噪声参数 `gyr_cov`、`acc_cov`、`b_gyr_cov`、`b_acc_cov` 已迁移为用户可配置项，并传入 `ImuProcess`。
 - 世界系 dense/降采样点云已作为 SLAM tab 主点云输出，可复用工具栏积分时间、点大小、着色模式和色标。
@@ -255,7 +259,7 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 
 - 完整地图保存默认开启会增加内存占用；长时间 dense 轨迹可能占用大量内存。后续可以增加点数上限、分片落盘或后台 streaming writer。
 - 当前完整地图点源是原版 `pcd_save` 语义的 dense scan accumulation，不是 IKD-tree flatten。若后续需要导出 IKD-tree 全局地图，应新增独立功能和文案。
-- `detRangeM` 默认沿用当前项目 300 m；`mid360.yaml` 中 `mapping/det_range=100`，后续仍需要用实测数据确认项目默认基线。
+- `detRangeM` 默认已改为 Mid360/Mid360S 模板的 100 m；旧版本已保存的用户配置不会被强制覆盖，需要用户在首选项 SLAM 页点击“恢复默认”才会套用模板默认值。
 - `publishBodyFrameCloud` 在同一个 3D 视图中显示 IMU body frame 点云，坐标语义不同于 world frame；它用于迁移原版发布输出，不应被理解为全局地图。
 - 完整地图导出已放到后台线程，但导出前从 `SlamUiBridge` 获取 `QVector<SlamPoint>` 快照仍可能带来短时内存压力。
 

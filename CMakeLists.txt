@@ -60,7 +60,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # 查找Qt6，如果失败则尝试Qt5
 find_package(Qt6 6.2 QUIET COMPONENTS 
-    Core Widgets OpenGL OpenGLWidgets SerialPort Charts Network Svg Concurrent
+    Core Widgets OpenGL OpenGLWidgets SerialPort Charts Network Svg Concurrent Sql
 )
 
 if(Qt6_FOUND)
@@ -70,7 +70,7 @@ if(Qt6_FOUND)
 else()
     # 尝试Qt5作为备选
     find_package(Qt5 5.15 QUIET COMPONENTS 
-        Core Widgets OpenGL SerialPort Charts Network Svg Concurrent
+        Core Widgets OpenGL SerialPort Charts Network Svg Concurrent Sql
     )
     
     if(Qt5_FOUND)
@@ -227,6 +227,7 @@ set(SOURCES
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
     libs/Rosbag/src/RosbagReader.cpp
+    libs/Rosbag/src/Ros2BagReader.cpp
     libs/Rosbag/src/RosMessageParsers.cpp
     libs/Slam/src/Core/ISlamBackend.cpp
     libs/Slam/src/Core/SlamInputQueue.cpp
@@ -297,6 +298,7 @@ set(SOURCES
     libs/Pcap/include/Pcap/PcapPlaybackController.h
     libs/Rosbag/include/Rosbag/RosbagTypes.h
     libs/Rosbag/include/Rosbag/RosbagReader.h
+    libs/Rosbag/include/Rosbag/Ros2BagReader.h
     libs/Rosbag/include/Rosbag/RosMessageParsers.h
     libs/Slam/include/Slam/Core/ISlamBackend.h
     libs/Slam/include/Slam/Core/SlamInputQueue.h
@@ -498,6 +500,7 @@ if(QT_VERSION_MAJOR EQUAL 6)
         Qt6::Network
         Qt6::Svg
         Qt6::Concurrent
+        Qt6::Sql
     )
 else()
     target_link_libraries(LivoxViewerQT PRIVATE
@@ -509,6 +512,7 @@ else()
         Qt5::Network
         Qt5::Svg
         Qt5::Concurrent
+        Qt5::Sql
     )
 endif()
 

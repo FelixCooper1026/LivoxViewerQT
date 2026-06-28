@@ -8,6 +8,7 @@
 namespace {
 
 constexpr double kMid360ExtrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
+constexpr double kAviaExtrinsicT_L_I[3] = {0.04165, 0.02326, -0.0284};
 constexpr double kIdentityExtrinsicR_L_I[9] = {1.0, 0.0, 0.0,
                                                0.0, 1.0, 0.0,
                                                0.0, 0.0, 1.0};
@@ -42,6 +43,11 @@ double validPositiveDouble(double value, double fallback)
     return std::isfinite(value) && value > 0.0 ? value : fallback;
 }
 
+double validNonNegativeDouble(double value, double fallback)
+{
+    return std::isfinite(value) && value >= 0.0 ? value : fallback;
+}
+
 int validPositiveInt(int value, int fallback)
 {
     return value > 0 ? value : fallback;
@@ -67,10 +73,13 @@ bool isIdentityRotation(const double* values)
     return true;
 }
 
-void assignMid360DefaultExtrinsic(SlamRuntimeConfig& config)
+void assignTemplateDefaultExtrinsic(SlamRuntimeConfig& config, SlamLidarTemplate lidarTemplate)
 {
+    const double* extrinsicT = lidarTemplate == SlamLidarTemplate::Avia
+        ? kAviaExtrinsicT_L_I
+        : kMid360ExtrinsicT_L_I;
     for (int i = 0; i < 3; ++i) {
-        config.extrinsicT_L_I[i] = kMid360ExtrinsicT_L_I[i];
+        config.extrinsicT_L_I[i] = extrinsicT[i];
     }
     for (int i = 0; i < 9; ++i) {
         config.extrinsicR_L_I[i] = kIdentityExtrinsicR_L_I[i];
@@ -79,11 +88,53 @@ void assignMid360DefaultExtrinsic(SlamRuntimeConfig& config)
 
 } // namespace
 
+QString slamLidarTemplateDisplayName(SlamLidarTemplate lidarTemplate)
+{
+    switch (lidarTemplate) {
+    case SlamLidarTemplate::Avia:
+        return QStringLiteral("Avia");
+    case SlamLidarTemplate::Mid360Mid360S:
+    default:
+        return QStringLiteral("Mid360/Mid360S");
+    }
+}
+
+SlamLidarTemplate slamLidarTemplateFromInt(int value)
+{
+    switch (value) {
+    case int(SlamLidarTemplate::Avia):
+        return SlamLidarTemplate::Avia;
+    case int(SlamLidarTemplate::Mid360Mid360S):
+    default:
+        return SlamLidarTemplate::Mid360Mid360S;
+    }
+}
+
+void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate lidarTemplate)
+{
+    config.lidarTemplate = lidarTemplate;
+    assignTemplateDefaultExtrinsic(config, lidarTemplate);
+    if (lidarTemplate == SlamLidarTemplate::Avia) {
+        config.detRangeM = 450.0;
+        config.fovDegree = 90.0;
+        config.blindMinRangeM = 4.0;
+        return;
+    }
+
+    config.detRangeM = 100.0;
+    config.fovDegree = 360.0;
+    config.blindMinRangeM = 0.5;
+}
+
 SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix)
 {
     SlamRuntimeConfig config;
     config.backendType = settings.value(key(prefix, QStringLiteral("backendType")), config.backendType).toString();
     config.lidarModel = settings.value(key(prefix, QStringLiteral("lidarModel")), config.lidarModel).toString();
+    config.lidarTemplate = slamLidarTemplateFromInt(settings.value(
+        key(prefix, QStringLiteral("lidarTemplate")),
+        int(config.lidarTemplate)).toInt());
+    applySlamLidarTemplateDefaults(config, config.lidarTemplate);
     config.imuEnabled = settings.value(key(prefix, QStringLiteral("imuEnabled")), config.imuEnabled).toBool();
     config.allowPureLidar = settings.value(key(prefix, QStringLiteral("allowPureLidar")), config.allowPureLidar).toBool();
     config.lidarToImuTimeOffsetNs = settings.value(key(prefix, QStringLiteral("lidarToImuTimeOffsetNs")),
@@ -105,7 +156,7 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
     if (!hasExtrinsicEstimation &&
         isZeroTranslation(config.extrinsicT_L_I) &&
         isIdentityRotation(config.extrinsicR_L_I)) {
-        assignMid360DefaultExtrinsic(config);
+        assignTemplateDefaultExtrinsic(config, config.lidarTemplate);
     }
     config.cubeSideLengthM = validPositiveDouble(
         settings.value(key(prefix, QStringLiteral("cubeSideLengthM")), config.cubeSideLengthM).toDouble(),
@@ -116,6 +167,9 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
     config.fovDegree = validPositiveDouble(
         settings.value(key(prefix, QStringLiteral("fovDegree")), config.fovDegree).toDouble(),
         config.fovDegree);
+    config.blindMinRangeM = validNonNegativeDouble(
+        settings.value(key(prefix, QStringLiteral("blindMinRangeM")), config.blindMinRangeM).toDouble(),
+        config.blindMinRangeM);
     config.gyrCov = validPositiveDouble(
         settings.value(key(prefix, QStringLiteral("gyrCov")), config.gyrCov).toDouble(),
         config.gyrCov);
@@ -146,6 +200,12 @@ SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString
     } else if (!hasScanRate && hasFrameDuration) {
         config.preprocessScanRateHz = scanRateFromFrameDurationMs(config.inputFrameDurationMs);
     }
+    config.allowRosbagDriver2PointCloud2 =
+        settings.value(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")),
+                       config.allowRosbagDriver2PointCloud2).toBool();
+    config.allowRosbagDriverPointCloud2SynthesizedTime =
+        settings.value(key(prefix, QStringLiteral("allowRosbagDriverPointCloud2SynthesizedTime")),
+                       config.allowRosbagDriverPointCloud2SynthesizedTime).toBool();
     const bool hasPublishConfig = settings.contains(key(prefix, QStringLiteral("publishWorldFrameCloud")));
     config.publishWorldFrameCloud = settings.value(key(prefix, QStringLiteral("publishWorldFrameCloud")),
                                                    config.publishWorldFrameCloud).toBool();
@@ -170,6 +230,7 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
 {
     settings.setValue(key(prefix, QStringLiteral("backendType")), config.backendType);
     settings.setValue(key(prefix, QStringLiteral("lidarModel")), config.lidarModel);
+    settings.setValue(key(prefix, QStringLiteral("lidarTemplate")), int(config.lidarTemplate));
     settings.setValue(key(prefix, QStringLiteral("imuEnabled")), config.imuEnabled);
     settings.setValue(key(prefix, QStringLiteral("allowPureLidar")), config.allowPureLidar);
     settings.setValue(key(prefix, QStringLiteral("lidarToImuTimeOffsetNs")), qlonglong(config.lidarToImuTimeOffsetNs));
@@ -184,6 +245,7 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     settings.setValue(key(prefix, QStringLiteral("cubeSideLengthM")), config.cubeSideLengthM);
     settings.setValue(key(prefix, QStringLiteral("detRangeM")), config.detRangeM);
     settings.setValue(key(prefix, QStringLiteral("fovDegree")), config.fovDegree);
+    settings.setValue(key(prefix, QStringLiteral("blindMinRangeM")), config.blindMinRangeM);
     settings.setValue(key(prefix, QStringLiteral("gyrCov")), config.gyrCov);
     settings.setValue(key(prefix, QStringLiteral("accCov")), config.accCov);
     settings.setValue(key(prefix, QStringLiteral("bGyrCov")), config.bGyrCov);
@@ -193,6 +255,9 @@ void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config,
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
     settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);
     settings.setValue(key(prefix, QStringLiteral("inputFrameDurationMs")), config.inputFrameDurationMs);
+    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")), config.allowRosbagDriver2PointCloud2);
+    settings.setValue(key(prefix, QStringLiteral("allowRosbagDriverPointCloud2SynthesizedTime")),
+                      config.allowRosbagDriverPointCloud2SynthesizedTime);
     settings.setValue(key(prefix, QStringLiteral("publishWorldFrameCloud")), config.publishWorldFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);

@@ -6,9 +6,15 @@
 
 #include <cstdint>
 
+enum class SlamLidarTemplate {
+    Mid360Mid360S = 0,
+    Avia = 1
+};
+
 struct SlamRuntimeConfig {
     QString backendType = "FAST_LIO";
     QString lidarModel;
+    SlamLidarTemplate lidarTemplate = SlamLidarTemplate::Mid360Mid360S;
     bool imuEnabled = true;
     bool allowPureLidar = false;
     int64_t lidarToImuTimeOffsetNs = 0;
@@ -17,8 +23,9 @@ struct SlamRuntimeConfig {
     double extrinsicR_L_I[9] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
     bool extrinsicEstimationEnabled = false;
     double cubeSideLengthM = 200.0;
-    double detRangeM = 300.0;
+    double detRangeM = 100.0;
     double fovDegree = 360.0;
+    double blindMinRangeM = 0.5;
     double gyrCov = 0.1;
     double accCov = 0.1;
     double bGyrCov = 0.0001;
@@ -28,6 +35,8 @@ struct SlamRuntimeConfig {
     double filterSizeMapM = 0.5;
     double preprocessScanRateHz = 10.0;
     int inputFrameDurationMs = 100;
+    bool allowRosbagDriver2PointCloud2 = false;
+    bool allowRosbagDriverPointCloud2SynthesizedTime = false;
     bool publishWorldFrameCloud = true;
     bool publishDenseFrameCloud = true;
     bool publishBodyFrameCloud = true;
@@ -40,6 +49,9 @@ struct SlamRuntimeConfig {
     QString logLevel = "info";
 };
 
+QString slamLidarTemplateDisplayName(SlamLidarTemplate lidarTemplate);
+SlamLidarTemplate slamLidarTemplateFromInt(int value);
+void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate lidarTemplate);
 SlamRuntimeConfig loadSlamRuntimeConfig(const QSettings& settings, const QString& prefix);
 void saveSlamRuntimeConfig(QSettings& settings, const SlamRuntimeConfig& config, const QString& prefix);
 

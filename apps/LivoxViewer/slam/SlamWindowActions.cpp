@@ -204,7 +204,15 @@ QString skippedLiveFrameMessage(const SlamInputFrame& frame, const LiveLidarSlam
 QString offlineSourceKindForPath(const QString& filePath)
 {
     const QString suffix = QFileInfo(filePath).suffix().toLower();
-    return suffix == QStringLiteral("bag") ? QStringLiteral("ROSbag") : QStringLiteral("PCAP");
+    if (suffix == QStringLiteral("bag")) {
+        return QStringLiteral("ROSbag");
+    }
+    if (suffix == QStringLiteral("db3") ||
+        suffix == QStringLiteral("yaml") ||
+        suffix == QStringLiteral("yml")) {
+        return QStringLiteral("ROS2 db3");
+    }
+    return QStringLiteral("PCAP");
 }
 
 } // namespace
@@ -325,9 +333,10 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
     dialog.setDirectory(lastDir);
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setNameFilters({
-        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag)"),
+        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag *.db3 *.yaml *.yml)"),
         QStringLiteral("PCAP 文件 (*.pcap *.pcapng)"),
         QStringLiteral("ROS1 Bag 文件 (*.bag)"),
+        QStringLiteral("ROS2 db3 文件 (*.db3 *.yaml *.yml)"),
         QStringLiteral("所有文件 (*.*)")
     });
     if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
@@ -339,7 +348,12 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
         stopSlamProcessing();
     }
     const QString suffix = QFileInfo(filePath).suffix().toLower();
-    slamOfflineSourceKind = suffix == QStringLiteral("bag") ? SlamOfflineSourceKind::Rosbag : SlamOfflineSourceKind::Pcap;
+    slamOfflineSourceKind = (suffix == QStringLiteral("bag") ||
+                             suffix == QStringLiteral("db3") ||
+                             suffix == QStringLiteral("yaml") ||
+                             suffix == QStringLiteral("yml"))
+        ? SlamOfflineSourceKind::Rosbag
+        : SlamOfflineSourceKind::Pcap;
     slamOfflineSourcePath = filePath;
     slamOfflineSourceDisplayName = offlineSourceKindForPath(filePath);
     settings.setValue(QStringLiteral("slam/lastOfflineSourceDir"), QFileInfo(filePath).absolutePath());
@@ -607,6 +621,9 @@ void LivoxViewerWindow::startSlamProcessing()
         } else if (sourceKind == SlamOfflineSourceKind::Rosbag) {
             RosbagSlamSourceConfig rosbagConfig;
             rosbagConfig.frameDurationMs = config.inputFrameDurationMs;
+            rosbagConfig.allowLivoxDriver2PointCloud2 = config.allowRosbagDriver2PointCloud2;
+            rosbagConfig.allowLivoxDriverPointCloud2SynthesizedTime =
+                config.allowRosbagDriverPointCloud2SynthesizedTime;
             RosbagSlamSource source(rosbagConfig);
             if (!source.load(sourcePath, &error)) {
                 postOutput(statusOutput(SlamStatusCode::Failed, error));
