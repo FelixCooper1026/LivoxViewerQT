@@ -262,17 +262,27 @@ void LivoxViewerWindow::createSlamStatusPanel()
     QLabel* errorValue = createSlamStatusTextValue(errorGroup);
     slamStatusFields.insert(QStringLiteral("错误信息"), errorValue);
     errorBody->addWidget(errorValue);
+    errorBody->addStretch(1);
+
+    QWidget* poseColumn = new QWidget(fieldFrame);
+    poseColumn->setMinimumWidth(0);
+    poseColumn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    QVBoxLayout* poseColumnLayout = new QVBoxLayout(poseColumn);
+    poseColumnLayout->setContentsMargins(0, 0, 0, 0);
+    poseColumnLayout->setSpacing(8);
+    poseColumnLayout->addWidget(poseGroup);
+    poseColumnLayout->addWidget(errorGroup);
+    poseColumnLayout->addStretch(1);
 
     fieldLayout->addWidget(statusGroup, 0, 0);
     fieldLayout->addWidget(performanceGroup, 0, 1);
     fieldLayout->addWidget(mapGroup, 0, 2);
-    fieldLayout->addWidget(poseGroup, 0, 3);
-    fieldLayout->addWidget(errorGroup, 1, 0, 1, 4);
+    fieldLayout->addWidget(poseColumn, 0, 3);
     for (int column = 0; column < 4; ++column) {
         fieldLayout->setColumnStretch(column, 1);
     }
     fieldLayout->setColumnStretch(2, 1);
-    fieldLayout->setRowStretch(2, 1);
+    fieldLayout->setRowStretch(1, 1);
 
     QScrollArea* statusScroll = new QScrollArea(content);
     statusScroll->setWidgetResizable(true);

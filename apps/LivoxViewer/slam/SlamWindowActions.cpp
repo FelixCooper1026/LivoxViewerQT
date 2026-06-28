@@ -164,6 +164,42 @@ QString normalizedMapExportPath(const QString& filePath, bool lasFormat)
                                 {QStringLiteral("pcd"), QStringLiteral("las")});
 }
 
+QString liveInputWaitingMessage(const LiveLidarSlamSourceStats& stats)
+{
+    if (!stats.message.isEmpty()) {
+        return stats.message;
+    }
+    if (stats.pointPacketCount == 0 && stats.imuPacketCount == 0) {
+        return QStringLiteral("未收到实时 LiDAR/IMU 数据。请确认雷达已连接、SDK 已启动、网络接口正确，并且设备正在输出点云和 IMU。");
+    }
+    if (stats.pointPacketCount == 0) {
+        return QStringLiteral("未收到实时点云数据。请确认设备正在输出点云，且数据回调已进入 SLAM 输入源。");
+    }
+    if (stats.imuPacketCount == 0) {
+        return QStringLiteral("已收到实时点云，但未收到 IMU 数据。FAST_LIO 需要连续 IMU 覆盖当前帧。");
+    }
+    if (stats.inputFrameCount == 0) {
+        return QStringLiteral("已收到实时数据，但尚未形成可处理 SLAM 输入帧。请检查点云时间戳、IMU 时间戳和聚帧周期。");
+    }
+    return QStringLiteral("正在等待实时 SLAM 输入帧。");
+}
+
+QString skippedLiveFrameMessage(const SlamInputFrame& frame, const LiveLidarSlamSourceStats& stats)
+{
+    if (!stats.message.isEmpty()) {
+        return stats.message;
+    }
+    if (!frame.hasPointOffsetTime) {
+        return QStringLiteral("实时点云帧缺少可用点内 offset 时间，无法执行 FAST_LIO 去畸变。");
+    }
+    if (!frame.hasCompleteImuCoverage) {
+        return frame.imuSamples.isEmpty()
+            ? QStringLiteral("实时输入帧缺少 IMU 样本，已跳过当前帧。")
+            : QStringLiteral("实时 IMU 样本未完整覆盖当前点云帧，已跳过当前帧。");
+    }
+    return QStringLiteral("实时输入帧不完整，已跳过当前帧。");
+}
+
 } // namespace
 
 SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
@@ -408,6 +444,7 @@ void LivoxViewerWindow::startSlamProcessing()
             int skippedFrames = 0;
             SlamOutput lastOutput;
             bool hasLastOutput = false;
+            qint64 lastInputWarningMs = -1000;
 
             while (!slamWorkerCancel.load()) {
                 if (slamWorkerPaused.load()) {
@@ -417,12 +454,32 @@ void LivoxViewerWindow::startSlamProcessing()
 
                 SlamInputFrame frame;
                 if (!liveSlamSource.inputQueue().tryPop(frame)) {
+                    const qint64 nowMs = elapsed.elapsed();
+                    if (!hasLastOutput && nowMs - lastInputWarningMs >= 1000) {
+                        const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+                        SlamOutput waitingOutput = statusOutput(SlamStatusCode::Failed, liveInputWaitingMessage(stats));
+                        waitingOutput.inputFps = stats.inputFps;
+                        waitingOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
+                        lastOutput = waitingOutput;
+                        postOutput(waitingOutput);
+                        lastInputWarningMs = nowMs;
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(5));
                     continue;
                 }
 
                 if (!frame.hasPointOffsetTime || !frame.hasCompleteImuCoverage) {
                     ++skippedFrames;
+                    const qint64 nowMs = elapsed.elapsed();
+                    if (nowMs - lastInputWarningMs >= 1000) {
+                        const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+                        SlamOutput skippedOutput = statusOutput(SlamStatusCode::Failed, skippedLiveFrameMessage(frame, stats));
+                        skippedOutput.inputFps = stats.inputFps;
+                        skippedOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
+                        lastOutput = skippedOutput;
+                        postOutput(skippedOutput);
+                        lastInputWarningMs = nowMs;
+                    }
                     continue;
                 }
 

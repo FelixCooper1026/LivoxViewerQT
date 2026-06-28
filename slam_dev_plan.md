@@ -1679,8 +1679,10 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：修复程序退出后重新打开时左侧设备 dock 自动 raise `SLAM` tab 的问题。原因是 Qt `restoreState()` 会恢复上次退出时 tabified dock 的当前 tab；冷启动时没有活跃 SLAM 可视化 tab，因此现在恢复布局后会隐藏 `SlamInfoDock` 并将 `设备` dock 重新置为当前 tab，保持与底部 `SLAM状态` 的冷启动行为一致。
 - 2026-06-28：调整 `工具 -> SLAM（在线）` / `SLAM（离线）` 菜单入口语义：菜单只进入 SLAM 模式、创建/切换到 SLAM 点云 tab、显示图层与状态面板；离线入口仍弹出 PCAP 文件选择框。实际后端 worker 不再由菜单入口直接启动，统一等待用户点击 SLAM tab 浮动控制条中的 `启动`。
 - 2026-06-28：将左侧 `SLAM` dock 图层卡片与首选项 SLAM 页的发布设置关联。`发布世界系点云` 关闭时不展示 `世界系点云` 和 `世界系当前帧点云` 卡片，并清空/抑制对应显示；`发布机体系点云` 关闭时不展示 `机体系点云` 卡片，并抑制对应 overlay。轨迹和姿态坐标轴仍作为独立可视化卡片保留。
-- 2026-06-28：重排底部 `SLAM状态` dock 内容布局：按参考图分为 `状态摘要`、`性能统计`、`地图与点云信息`、`当前位姿`、`错误信息` 五组；不使用卡片式边框/背景，仅用分组标题和分隔线组织内容。字段文本和数据来源保持不变，`当前位姿` 与 `错误信息` 改为可换行显示完整当前值。
+- 2026-06-28：重排底部 `SLAM状态` dock 内容布局：按参考图分为 `状态摘要`、`性能统计`、`地图与点云信息`、`当前位姿`、`错误信息` 五个分组；`错误信息` 分组放在右侧 `当前位姿` 分组下方，不单独占用底部整行。不使用卡片式边框/背景，仅用分组标题和分隔线组织内容。字段文本和数据来源保持不变，`当前位姿` 与 `错误信息` 改为可换行显示完整当前值。
 - 2026-06-28：优化 SLAM dock 生命周期和底部高度行为：`SLAM状态` 内容改为可滚动区域，避免 raise 后分组内容 sizeHint 把整个底部 dock 最小高度撑大；关闭 SLAM 点云可视化 tab 时同步停止/清空 SLAM、隐藏左侧 `SLAM` dock 和底部 `SLAM状态` dock，并将左侧/底部 tab 回退到 `设备` / `日志`。
+- 2026-06-28：调整 `SLAM状态` dock 分组布局，将 `错误信息` 分组放在 `当前位姿` 分组下方，组名和组名下方分隔线保持与其他四组一致。
+- 2026-06-28：修复实时 SLAM 在无实时数据流时状态一直停留在 `Starting` 且错误信息为空的问题。在线 worker 现在等待首个有效输入帧期间会定期发布 `Failed` 状态并提示未收到 LiDAR/IMU/点云数据；收到点云但 IMU 覆盖不完整或点内时间无效时，也保持与离线启动失败一致的 `Failed` 状态，并显示具体跳帧原因。
 
 验证：
 
@@ -1702,6 +1704,10 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：按分组布局重排 `SLAM状态` dock 布局后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：去除 `SLAM状态` 分组的卡片式边框、圆角和独立背景后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：修复 `SLAM状态` raise 后底部 dock 高度被状态内容锁住、以及关闭 SLAM 点云 tab 后 SLAM 左侧/底部 dock 仍保留的问题后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：将 `错误信息` 作为独立分组放到 `当前位姿` 分组下方后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：保持 `错误信息` 独立五组语义并放在 `当前位姿` 分组下方后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：修复实时 SLAM 无数据流时状态卡在 `Starting` 且无错误提示的问题，并统一为 `Failed` 状态后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-28：将实时 SLAM 无输入/输入无效状态从 `Degraded` / `MissingImu` / `TimeSyncError` 统一调整为 `Failed` 后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 
 验证缺口：
 
