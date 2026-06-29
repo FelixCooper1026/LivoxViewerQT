@@ -482,6 +482,19 @@ void finalizeTimestampRange(const QVector<SlamInputFrame>& frames, RosbagSlamSou
     }
 }
 
+void finalizeImuTimestampRange(const QVector<SlamImuSample>& imuSamples, RosbagSlamSourceSummary& summary)
+{
+    if (imuSamples.isEmpty()) {
+        return;
+    }
+    summary.imuStartTimestampNs = imuSamples.first().timestampNs;
+    summary.imuEndTimestampNs = imuSamples.first().timestampNs;
+    for (const SlamImuSample& sample : imuSamples) {
+        summary.imuStartTimestampNs = std::min(summary.imuStartTimestampNs, sample.timestampNs);
+        summary.imuEndTimestampNs = std::max(summary.imuEndTimestampNs, sample.timestampNs);
+    }
+}
+
 } // namespace
 
 RosbagSlamSource::RosbagSlamSource(const RosbagSlamSourceConfig& config)
@@ -788,6 +801,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
     summary_.hasImu = !imuSamples.isEmpty();
     summary_.hasPointOffsetTime = !frames_.isEmpty();
     finalizeTimestampRange(frames_, summary_);
+    finalizeImuTimestampRange(imuSamples, summary_);
 
     if (frames_.isEmpty()) {
         errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 未生成有效 SLAM 输入帧。").arg(lidarConnection->topic);
@@ -806,8 +820,12 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
 
     attachImuSamples(frames_, imuSamples, summary_);
     if (summary_.framesWithCompleteImuCoverage == 0) {
-        errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。请检查 %1 topic、时间戳和 LiDAR/IMU 时间偏移配置。")
-                            .arg(imuConnection->topic);
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。LiDAR 时间范围(ns): %1 - %2，IMU 时间范围(ns): %3 - %4。请检查 %5 topic、时间戳和 LiDAR/IMU 时间偏移配置。")
+                            .arg(QString::number(summary_.startTimestampNs),
+                                 QString::number(summary_.endTimestampNs),
+                                 QString::number(summary_.imuStartTimestampNs),
+                                 QString::number(summary_.imuEndTimestampNs),
+                                 imuConnection->topic);
         if (error != nullptr) {
             *error = errorMessage_;
         }
@@ -871,6 +889,8 @@ QString RosbagSlamSource::summaryText() const
     lines << QStringLiteral("- 空 LiDAR 消息数: %1").arg(QString::number(summary_.emptyLidarMessageCount));
     lines << QStringLiteral("- 时间范围(ns): %1 - %2")
                  .arg(QString::number(summary_.startTimestampNs), QString::number(summary_.endTimestampNs));
+    lines << QStringLiteral("- IMU 时间范围(ns): %1 - %2")
+                 .arg(QString::number(summary_.imuStartTimestampNs), QString::number(summary_.imuEndTimestampNs));
     lines << QStringLiteral("- 完整 IMU 覆盖帧数: %1/%2")
                  .arg(summary_.framesWithCompleteImuCoverage)
                  .arg(summary_.frameCount);

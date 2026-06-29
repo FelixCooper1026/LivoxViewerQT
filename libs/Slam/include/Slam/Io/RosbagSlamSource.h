@@ -19,7 +19,7 @@ struct RosbagSlamSourceConfig {
     QString lidarTopic;
     QString imuTopic;
     bool autoDetectTopics = true;
-    bool useLivoxCustomTimebase = true;
+    bool useLivoxCustomTimebase = false;
     bool useHeaderStamp = true;
     bool requirePointOffsetTime = true;
     bool synthesizePointOffsetTime = false;
@@ -48,6 +48,8 @@ struct RosbagSlamSourceSummary {
     int framesWithCompleteImuCoverage = 0;
     int64_t startTimestampNs = 0;
     int64_t endTimestampNs = 0;
+    int64_t imuStartTimestampNs = 0;
+    int64_t imuEndTimestampNs = 0;
     bool hasImu = false;
     bool hasPointOffsetTime = false;
     bool hasCompleteImuCoverage = false;

@@ -1,5 +1,28 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-29 离线 SLAM test_data 复验入口扩展
+
+- 背景：`E:\Livox_ws\sandbox\test_data` 下包含 ROS1 `.bag` 与 ROS2 `.db3/metadata.yaml` 数据，原 `SlamPhase4Replay` 仅支持 `with_imu.pcap/no_imu.pcap` 双 PCAP 回归，不能复现 UI 离线 SLAM 对 ROSbag 数据源的加载与后端处理问题。
+- 变更：`SlamPhase4Replay` 保留原双 PCAP 回归用法，并新增 `--diagnose <pcap|bag|db3|metadata.yaml|directory> [...]` 模式；诊断模式按路径自动选择 Avia/Mid360 模板，复用 `PcapSlamSource` / `RosbagSlamSource` 和 `FastLioSlamBackend`，输出数据源摘要、帧/点/IMU 覆盖统计、首个后端失败或最终位姿统计。
+- 变更：`SlamPhase4Replay --diagnose` 输出关键阶段后立即 flush，并支持 `--max-frames N` 限制后端处理帧数，用于区分“大数据集加载成功但完整后端处理耗时/卡住”和“数据源加载失败”；该选项仅用于诊断，不改变 UI 离线 SLAM 路径。
+- 变更：`SlamPhase4Replay` CMake 目标接入 `libs/Rosbag`、`RosbagSlamSource`、`SlamRuntimeConfig` 与 Qt Sql，以支持 ROS1 bag、ROS2 sqlite bag 和模板默认参数。
+- 变更：`scripts/dev_build_run.bat` 的 Release/Debug 构建目标扩展为 `LivoxViewerQT` + `SlamPhase4Replay`，后续执行 `scripts/dev_build_run.bat Release` 会同步覆盖 UI 程序与离线诊断工具编译。
+- 修正：原版 FAST_LIO 在 `livox_pcl_cbk()` 中使用 `CustomMsg.header.stamp` 作为 LiDAR 帧时间，`offset_time` 只作为点内相对时间；当前 `RosbagSlamSource` 原先默认优先使用 `CustomMsg.timebase`，会在部分 ROSbag 中与 IMU `header.stamp` 处于不同时间基，导致“IMU 未覆盖任何 LiDAR 帧”。现将 ROSbag CustomMsg 默认帧时间改为 `header.stamp`，并在失败摘要中输出 LiDAR/IMU 时间范围。
+- 修正：Mid360 ROS2 `livox_ros_driver2/msg/CustomMsg` 被解析为空帧的原因是最小 CDR parser 的字段对齐基准错误。ROS2 sqlite 中序列化数据前 4 字节是 CDR encapsulation，后续字段对齐应从 encapsulation 后的 payload 起点计算；原实现按整个 `QByteArray` 绝对偏移对齐，导致 `timebase/point_num/points` 读偏。现将 `CdrReader::align()` 改为以 4 字节 encapsulation 后的位置为对齐基准。
+- 复验约束：按用户 2026-06-29 最新要求，本轮不再跑全量后端测试，统一使用 `SlamPhase4Replay --diagnose --max-frames 300 <path>`，即数据源仍完整加载并统计，FAST_LIO 后端只处理前 300 帧。
+- 复验结果：
+  - `avia/degenerate_seq_02.bag`：ROS1 `livox_ros_driver/CustomMsg`，数据源 1019 帧、24456000 点、20797 个 IMU 样本，完整 IMU 覆盖 1017/1019；前 300 帧中 299 帧覆盖完整，后端处理 299 帧，`Initializing=63`、`Running=236`，结果 `BACKEND_OK`。
+  - `avia/hku_campus_custommsg.bag`：ROS1 `livox_ros_driver/CustomMsg`，数据源 2022 帧、48528000 点、41242 个 IMU 样本，完整 IMU 覆盖 2020/2022；前 300 帧中 299 帧覆盖完整，后端处理 299 帧，`Initializing=2`、`Running=297`、`mapPoints=23768`，结果 `BACKEND_OK`。已按用户要求停止此前启动的全量复验进程。
+  - `avia/Retail_Street.bag`：ROS1 `livox_ros_driver/CustomMsg`，数据源 810 帧、19440000 点、16400 个 IMU 样本，完整 IMU 覆盖 809/810；前 300 帧中 299 帧覆盖完整，后端处理 299 帧，`Initializing=2`、`Running=297`、`mapPoints=6498`，结果 `BACKEND_OK`。
+  - `mid360/ros2_custommsg/metadata.yaml`：ROS2 `livox_ros_driver2/msg/CustomMsg`，CDR 对齐修正后数据源 1036 帧、20719680 点、14724 个 IMU 样本，完整 IMU 覆盖 1020/1036；前 300 帧中 299 帧覆盖完整，后端处理 299 帧，`Initializing=2`、`Running=297`、`mapPoints=4540`，结果 `BACKEND_OK`。
+- 原始报错原因：
+  - 三组 Avia ROS1 CustomMsg 的主要失败原因是 `RosbagSlamSource` 使用 `CustomMsg.timebase` 作为帧时间，和 IMU `header.stamp` 不在同一时间基，导致 IMU 覆盖判断失败；已改为与原版 FAST_LIO 一致的 `CustomMsg.header.stamp`。
+  - Mid360 ROS2 CustomMsg 的主要失败原因是 CDR 对齐基准错误，导致 `point_num` 被读成 0，所有 LiDAR 消息被当作空帧；已修正为以 4 字节 encapsulation 后的 payload 起点计算对齐。
+- 后续优化方案：
+  - UI 离线 SLAM 加载失败时应显示数据源摘要中的 LiDAR/IMU 时间范围、完整覆盖帧数和空 LiDAR 消息数，便于区分格式解析问题、时间基问题和首尾 IMU 覆盖不足。
+  - 对大 ROSbag 的快速复验可继续使用 `--max-frames 300`；如后续需要 UI 也支持快速抽样/限帧，应在 `RosbagSlamSource` 增加显式加载上限或流式读取入口，避免为了 300 帧复验仍完整加载大文件。
+  - 首尾少量 IMU 覆盖不完整帧属于当前数据特征，离线 worker 继续跳过即可；若中间出现大段不完整覆盖，再分析 topic 或时间偏移配置。
+
 ## 2026-06-29 FAST_LIO Avia/Mid360 launch 默认参数对齐
 
 - 对照来源：官方 `hku-mars/FAST_LIO` 的 `launch/mapping_avia.launch`、`launch/mapping_mid360.launch`、`config/avia.yaml`、`config/mid360.yaml`。

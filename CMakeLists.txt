@@ -568,8 +568,13 @@ set(SLAM_PHASE4_REPLAY_SOURCES
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
     libs/Pcap/src/PushMsgParser.cpp
+    libs/Rosbag/src/RosbagReader.cpp
+    libs/Rosbag/src/Ros2BagReader.cpp
+    libs/Rosbag/src/RosMessageParsers.cpp
+    libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
+    libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
 )
 
@@ -582,6 +587,7 @@ target_include_directories(SlamPhase4Replay PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
     ${SLAM_FAST_LIO_COMPAT_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/include
@@ -594,9 +600,9 @@ if(LIVOX_SDK_AVAILABLE AND EXISTS "${LIVOX_INCLUDE_PATH}")
 endif()
 
 if(QT_VERSION_MAJOR EQUAL 6)
-    target_link_libraries(SlamPhase4Replay PRIVATE Qt6::Core)
+    target_link_libraries(SlamPhase4Replay PRIVATE Qt6::Core Qt6::Sql)
 else()
-    target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core)
+    target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core Qt5::Sql)
 endif()
 
 target_link_libraries(SlamPhase4Replay PRIVATE OpenMP::OpenMP_CXX)

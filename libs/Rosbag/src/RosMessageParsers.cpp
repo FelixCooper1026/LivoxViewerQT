@@ -134,13 +134,13 @@ class CdrReader {
 public:
     explicit CdrReader(const QByteArray& data) : data_(data)
     {
-        if (data_.size() >= 4) {
+        if (data_.size() >= kEncapsulationSize) {
             const uint8_t b0 = uint8_t(data_.at(0));
             const uint8_t b1 = uint8_t(data_.at(1));
             littleEndian_ = (b0 == 0 && (b1 == 1 || b1 == 3)) ||
                             ((b0 == 1 || b0 == 3) && b1 == 0);
             valid_ = littleEndian_;
-            offset_ = 4;
+            offset_ = kEncapsulationSize;
         }
     }
 
@@ -257,7 +257,9 @@ private:
         if (alignment <= 1) {
             return true;
         }
-        const int aligned = (offset_ + alignment - 1) & ~(alignment - 1);
+        const int relativeOffset = offset_ - kEncapsulationSize;
+        const int alignedRelativeOffset = (relativeOffset + alignment - 1) & ~(alignment - 1);
+        const int aligned = kEncapsulationSize + alignedRelativeOffset;
         if (aligned < offset_ || aligned > data_.size()) {
             return false;
         }
@@ -271,6 +273,7 @@ private:
     }
 
     const QByteArray& data_;
+    static constexpr int kEncapsulationSize = 4;
     int offset_ = 0;
     bool littleEndian_ = false;
     bool valid_ = false;
