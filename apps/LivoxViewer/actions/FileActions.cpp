@@ -1,4 +1,7 @@
 #include "LivoxViewerWindow.h"
+#include "Pcap/PcapPlaybackController.h"
+#include "Rosbag/RosbagPlaybackController.h"
+
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -29,7 +32,7 @@ QString selectPlaybackFile(QWidget* parent, const QString& title, const QString&
 void LivoxViewerWindow::createFileActions()
 {
     QAction* actionGenerateConfig = fileMenu->addAction("生成配置文件...");
-    actionPlayLvx2 = fileMenu->addAction("播放LVX2点云...");
+    actionPlayLvx2 = fileMenu->addAction("播放点云文件...");
     actionPlayPcap = fileMenu->addAction("播放Pcap文件...");
     QAction* actionFormatConvert = fileMenu->addAction("格式转换...");
     QAction* actionPreferences = fileMenu->addAction("首选项...");
@@ -41,17 +44,32 @@ void LivoxViewerWindow::createFileActions()
     });
     connect(actionPlayLvx2, &QAction::triggered, this, [this]() {
         QSettings settings("Livox", "LivoxViewerQT");
-        QString lastDir = settings.value("playback/lastLVX2Dir",
+        QString lastDir = settings.value("playback/lastDir",
                                          QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
         if (lastDir.isEmpty()) {
             lastDir = QDir::homePath();
         }
-        const QString filePath = selectPlaybackFile(this, "选择LVX2点云文件", lastDir, "LVX2点云 (*.lvx2)");
+        const QString filePath = selectPlaybackFile(
+            this,
+            "选择点云回放文件",
+            lastDir,
+            "点云回放文件 (*.lvx2 *.pcap *.pcapng *.cap *.bag *.db3 *.yaml *.yml);;"
+            "LVX2文件 (*.lvx2);;"
+            "Pcap文件 (*.pcap *.pcapng *.cap);;"
+            "ROS1 Bag文件 (*.bag);;"
+            "ROS2 Bag文件 (*.db3 *.yaml *.yml);;"
+            "所有文件 (*.*)");
         if (filePath.isEmpty()) {
             return;
         }
-        settings.setValue("playback/lastLVX2Dir", QFileInfo(filePath).absolutePath());
-        loadLvx2PlaybackFile(filePath);
+        settings.setValue("playback/lastDir", QFileInfo(filePath).absolutePath());
+        if (RosbagPlayback::isSupportedFile(filePath)) {
+            loadRosbagPlaybackFile(filePath);
+        } else if (PcapPlayback::isSupportedFile(filePath)) {
+            loadPcapPlaybackFile(filePath);
+        } else {
+            loadLvx2PlaybackFile(filePath);
+        }
     });
     connect(actionPlayPcap, &QAction::triggered, this, [this]() {
         QSettings settings("Livox", "LivoxViewerQT");

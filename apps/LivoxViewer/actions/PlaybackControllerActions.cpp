@@ -5,6 +5,8 @@
 #include "Pcap/PcapPlaybackController.h"
 #include "Pcap/PushMsgParser.h"
 #include "PointCloud/PointCloudColorizer.h"
+#include "Rosbag/RosbagPlaybackController.h"
+#include "Rosbag/RosbagPlaybackSource.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -125,6 +127,32 @@ static QString formatPlaybackTime(int frameNumber, int totalFrameCount)
         .arg(minutes, 2, 10, QLatin1Char('0'))
         .arg(seconds, 2, 10, QLatin1Char('0'))
         .arg(tenths);
+}
+
+static QString playbackSourceDisplayName(Playback::SourceKind kind)
+{
+    switch (kind) {
+    case Playback::SourceKind::Pcap:
+        return QStringLiteral("Pcap");
+    case Playback::SourceKind::Rosbag:
+        return QStringLiteral("ROSbag");
+    case Playback::SourceKind::Lvx2:
+    default:
+        return QStringLiteral("LVX2");
+    }
+}
+
+static bool playbackSourceProvidesImu(Playback::SourceKind kind)
+{
+    return kind == Playback::SourceKind::Pcap || kind == Playback::SourceKind::Rosbag;
+}
+
+static uint64_t playbackImuQueryPaddingNs(Playback::SourceKind kind, uint64_t frameIntervalMs)
+{
+    if (kind == Playback::SourceKind::Pcap) {
+        return kPcapRawFrameDurationNs;
+    }
+    return std::max<uint64_t>(1, frameIntervalMs) * 1000000ULL;
 }
 
 static void updatePlaybackDeviceCardState(bool visible,
@@ -336,7 +364,7 @@ void LivoxViewerWindow::finishPlaybackSourceLoad(int tabId, const std::shared_pt
     state->deviceVisible.clear();
     for (const PlaybackDeviceInfo& device : state->devices) {
         state->deviceVisible.insert(device.lidarId, true);
-        if (state->source && state->source->kind() == Playback::SourceKind::Pcap) {
+        if (state->source && playbackSourceProvidesImu(state->source->kind())) {
             playbackImuHandleForLidarId(*state, device.lidarId);
         }
     }
@@ -367,20 +395,16 @@ void LivoxViewerWindow::finishPlaybackSourceLoad(int tabId, const std::shared_pt
     showLvx2PlaybackFrame(0);
 
     const QString fileName = playbackState.path.isEmpty() ? QString() : QFileInfo(playbackState.path).fileName();
+    const QString sourceName = playbackState.source
+        ? playbackSourceDisplayName(playbackState.source->kind())
+        : QStringLiteral("点云");
     if (statusLabelBar) {
-        if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
-            statusLabelBar->setText(QString("Pcap播放: %1").arg(fileName));
-        } else {
-            statusLabelBar->setText(QString("LVX2播放: %1").arg(fileName));
-        }
+        statusLabelBar->setText(QString("%1播放: %2").arg(sourceName, fileName));
     }
-    if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Pcap) {
-        logMessage(QString("已加载Pcap文件: %1 (共%2帧)")
-                       .arg(QDir::toNativeSeparators(playbackState.path))
-                       .arg(playbackState.source->frameCount()));
-    } else {
-        logMessage(QString("已加载LVX2文件: %1").arg(QDir::toNativeSeparators(playbackState.path)));
-    }
+    logMessage(QString("已加载%1文件: %2 (共%3帧)")
+                   .arg(sourceName)
+                   .arg(QDir::toNativeSeparators(playbackState.path))
+                   .arg(playbackState.source ? playbackState.source->frameCount() : 0));
 }
 
 bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
@@ -416,6 +440,50 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
                 updateLvx2PlaybackUi();
                 updateStatus();
                 QMessageBox::warning(this, "播放LVX2点云", errorMessage);
+                closeVisualizationTab(tabId);
+                return;
+            }
+
+            finishPlaybackSourceLoad(tabId, source);
+        }, Qt::QueuedConnection);
+    }).detach();
+
+    return true;
+}
+
+bool LivoxViewerWindow::loadRosbagPlaybackFile(const QString& filePath)
+{
+    const int tabId = createOfflinePointCloudTab(filePath);
+
+    playbackState.loading = true;
+    playbackState.path = filePath;
+    playbackState.loadToken++;
+    const quint64 currentToken = playbackState.loadToken;
+
+    setLvx2PlaybackPlaying(false);
+    updateLvx2PlaybackUi();
+    if (statusLabelBar) {
+        statusLabelBar->setText(QString("正在加载ROSbag: %1").arg(QFileInfo(filePath).fileName()));
+    }
+    saveBoundPlaybackState();
+
+    std::thread([this, filePath, tabId, currentToken]() {
+        auto source = std::make_shared<RosbagPlaybackSource>(int(frameIntervalMs));
+        const bool ok = source->load(filePath);
+        const QString errorMessage = source->errorMessage();
+
+        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage]() {
+            PlaybackControllerState* state = playbackStateForTab(tabId);
+            if (!state || currentToken != state->loadToken) {
+                return;
+            }
+
+            state->loading = false;
+            if (!ok) {
+                state->path.clear();
+                updateLvx2PlaybackUi();
+                updateStatus();
+                QMessageBox::warning(this, "播放ROSbag点云", errorMessage);
                 closeVisualizationTab(tabId);
                 return;
             }
@@ -660,7 +728,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
             pointCloudView->updatePointCloud(std::move(frame));
         }
     }
-    if (playbackState.source->kind() == Playback::SourceKind::Pcap) {
+    if (playbackSourceProvidesImu(playbackState.source->kind())) {
         const bool rebuildImuHistory = previousPlaybackFrame < 0 || playbackFrameIndex != previousPlaybackFrame + 1;
         const uint64_t imuStartTimestamp =
             rebuildImuHistory ? 0ULL
@@ -668,7 +736,9 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
                                      ? windowEndTimestamp
                                      : windowStartTimestamp);
         const QVector<Playback::ImuSample> imuSamples =
-            playbackState.source->readImuSamples(imuStartTimestamp, windowEndTimestamp + kPcapRawFrameDurationNs);
+            playbackState.source->readImuSamples(
+                imuStartTimestamp,
+                windowEndTimestamp + playbackImuQueryPaddingNs(playbackState.source->kind(), frameIntervalMs));
         appendPlaybackImuSamples(playbackState, imuSamples, rebuildImuHistory);
     }
 
@@ -1084,6 +1154,10 @@ void LivoxViewerWindow::onLvx2PlaybackFileDropped(const QString& filePath)
     }
     if (PcapPlayback::isSupportedFile(filePath)) {
         loadPcapPlaybackFile(filePath);
+        return;
+    }
+    if (RosbagPlayback::isSupportedFile(filePath)) {
+        loadRosbagPlaybackFile(filePath);
         return;
     }
     loadLvx2PlaybackFile(filePath);

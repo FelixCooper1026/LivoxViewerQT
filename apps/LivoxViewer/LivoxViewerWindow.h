@@ -262,6 +262,7 @@ private:
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
     bool loadLvx2PlaybackFile(const QString& filePath);
     bool loadPcapPlaybackFile(const QString& filePath);
+    bool loadRosbagPlaybackFile(const QString& filePath);
     void closeLvx2Playback(bool clearView = true);
     void showLvx2PlaybackFrame(int playbackFrameIndex);
     void updateLvx2PlaybackUi();

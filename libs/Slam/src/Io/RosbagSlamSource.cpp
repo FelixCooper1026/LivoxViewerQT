@@ -576,7 +576,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
     const Rosbag::Connection* imuConnection = config_.imuTopic.isEmpty()
         ? autoSelectImuConnection(connections)
         : findConnectionByTopic(connections, config_.imuTopic);
-    if (imuConnection == nullptr) {
+    if (imuConnection == nullptr && config_.requireImu) {
         errorMessage_ = QStringLiteral("ROSbag 加载失败：未找到 IMU topic。已发现 topic: %1。").arg(topicListText(summary_.topics));
         if (error != nullptr) {
             *error = errorMessage_;
@@ -586,8 +586,10 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
 
     summary_.lidarTopic = lidarConnection->topic;
     summary_.lidarType = lidarConnection->type;
-    summary_.imuTopic = imuConnection->topic;
-    summary_.imuType = imuConnection->type;
+    if (imuConnection != nullptr) {
+        summary_.imuTopic = imuConnection->topic;
+        summary_.imuType = imuConnection->type;
+    }
 
     const bool lidarIsCustomMsg = isLivoxCustomMsgType(lidarConnection->type);
     const bool lidarIsPointCloud2 = isPointCloud2Type(lidarConnection->type);
@@ -605,7 +607,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
     uint64_t nextSequence = 0;
 
     for (const Rosbag::SerializedMessage& message : messages) {
-        if (message.connectionId == imuConnection->id) {
+        if (imuConnection != nullptr && message.connectionId == imuConnection->id) {
             Rosbag::ImuMsg imu;
             QString parseError;
             if (!parseImuMessage(imuConnection->type, message.data, &imu, &parseError)) {
@@ -800,6 +802,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
     summary_.frameCount = frames_.size();
     summary_.hasImu = !imuSamples.isEmpty();
     summary_.hasPointOffsetTime = !frames_.isEmpty();
+    imuSamples_ = imuSamples;
     finalizeTimestampRange(frames_, summary_);
     finalizeImuTimestampRange(imuSamples, summary_);
 
@@ -810,7 +813,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         }
         return false;
     }
-    if (!summary_.hasImu) {
+    if (!summary_.hasImu && config_.requireImu) {
         errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU topic %1 没有可用 sensor_msgs/Imu 样本。").arg(imuConnection->topic);
         if (error != nullptr) {
             *error = errorMessage_;
@@ -818,8 +821,12 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         return false;
     }
 
-    attachImuSamples(frames_, imuSamples, summary_);
-    if (summary_.framesWithCompleteImuCoverage == 0) {
+    if (!imuSamples.isEmpty()) {
+        attachImuSamples(frames_, imuSamples, summary_);
+    } else {
+        summary_.messages.push_back(QStringLiteral("ROSbag 未包含 IMU topic，普通点云播放将仅显示点云。"));
+    }
+    if (config_.requireImu && summary_.framesWithCompleteImuCoverage == 0) {
         errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。LiDAR 时间范围(ns): %1 - %2，IMU 时间范围(ns): %3 - %4。请检查 %5 topic、时间戳和 LiDAR/IMU 时间偏移配置。")
                             .arg(QString::number(summary_.startTimestampNs),
                                  QString::number(summary_.endTimestampNs),
@@ -831,8 +838,10 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         }
         return false;
     }
-    if (summary_.framesWithCompleteImuCoverage < summary_.frameCount) {
+    if (config_.requireImu && summary_.framesWithCompleteImuCoverage < summary_.frameCount) {
         summary_.messages.push_back(QStringLiteral("ROSbag IMU 样本未完整覆盖所有 SLAM 输入帧，未覆盖帧将在离线 worker 中跳过。"));
+    } else if (!config_.requireImu && summary_.hasImu && summary_.framesWithCompleteImuCoverage < summary_.frameCount) {
+        summary_.messages.push_back(QStringLiteral("ROSbag IMU 样本未完整覆盖所有点云帧，普通播放仍会显示点云。"));
     }
     return true;
 }
@@ -840,6 +849,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
 void RosbagSlamSource::clear()
 {
     frames_.clear();
+    imuSamples_.clear();
     summary_ = RosbagSlamSourceSummary();
     errorMessage_.clear();
 }
@@ -857,6 +867,11 @@ const SlamInputFrame& RosbagSlamSource::frameAt(int index) const
 const QVector<SlamInputFrame>& RosbagSlamSource::frames() const
 {
     return frames_;
+}
+
+const QVector<SlamImuSample>& RosbagSlamSource::imuSamples() const
+{
+    return imuSamples_;
 }
 
 const RosbagSlamSourceSummary& RosbagSlamSource::summary() const

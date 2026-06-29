@@ -25,6 +25,7 @@ struct RosbagSlamSourceConfig {
     bool synthesizePointOffsetTime = false;
     bool allowLivoxDriver2PointCloud2 = false;
     bool allowLivoxDriverPointCloud2SynthesizedTime = false;
+    bool requireImu = true;
     int64_t lidarToImuTimeOffsetNs = 0;
     int frameDurationMs = 100;
 };
@@ -69,6 +70,7 @@ public:
     int frameCount() const;
     const SlamInputFrame& frameAt(int index) const;
     const QVector<SlamInputFrame>& frames() const;
+    const QVector<SlamImuSample>& imuSamples() const;
     const RosbagSlamSourceSummary& summary() const;
     QString errorMessage() const;
     QString summaryText() const;
@@ -76,6 +78,7 @@ public:
 private:
     RosbagSlamSourceConfig config_;
     QVector<SlamInputFrame> frames_;
+    QVector<SlamImuSample> imuSamples_;
     RosbagSlamSourceSummary summary_;
     QString errorMessage_;
 };

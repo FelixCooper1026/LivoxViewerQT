@@ -147,7 +147,9 @@ QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDev
     }
 
     const PlaybackControllerState* imuPlayback = imuPlaybackState();
-    if (imuPlayback && imuPlayback->active && imuPlayback->source && imuPlayback->source->kind() == Playback::SourceKind::Pcap) {
+    if (imuPlayback && imuPlayback->active && imuPlayback->source &&
+        (imuPlayback->source->kind() == Playback::SourceKind::Pcap ||
+         imuPlayback->source->kind() == Playback::SourceKind::Rosbag)) {
         QSet<uint32_t> listedLidarIds;
         for (const PlaybackDeviceInfo& device : imuPlayback->devices) {
             ImuVisualizationDeviceDescriptor descriptor;

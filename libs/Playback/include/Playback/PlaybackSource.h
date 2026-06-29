@@ -14,7 +14,8 @@ namespace Playback {
 
 enum class SourceKind {
     Lvx2,
-    Pcap
+    Pcap,
+    Rosbag
 };
 
 struct FrameRef {

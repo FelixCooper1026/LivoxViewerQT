@@ -227,6 +227,7 @@ set(SOURCES
     libs/Rosbag/src/RosbagReader.cpp
     libs/Rosbag/src/Ros2BagReader.cpp
     libs/Rosbag/src/RosMessageParsers.cpp
+    libs/Rosbag/src/RosbagPlaybackSource.cpp
     libs/Slam/src/Core/ISlamBackend.cpp
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
@@ -298,6 +299,8 @@ set(SOURCES
     libs/Rosbag/include/Rosbag/RosbagReader.h
     libs/Rosbag/include/Rosbag/Ros2BagReader.h
     libs/Rosbag/include/Rosbag/RosMessageParsers.h
+    libs/Rosbag/include/Rosbag/RosbagPlaybackController.h
+    libs/Rosbag/include/Rosbag/RosbagPlaybackSource.h
     libs/Slam/include/Slam/Core/ISlamBackend.h
     libs/Slam/include/Slam/Core/SlamInputQueue.h
     libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
