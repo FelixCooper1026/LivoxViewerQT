@@ -1,5 +1,15 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-29 Linux Eigen 安装指令修正
+
+- 问题：Linux CMake 配置缺少 `third-party/eigen-3.4.0/Eigen/Core` 时，错误信息仍提示运行 Windows PowerShell 脚本 `scripts/setup_third_party.ps1`，在没有 `pwsh` 的 Linux 环境下无法执行。
+- 修正：新增 `scripts/setup_third_party.sh`，Linux/macOS 使用 `bash scripts/setup_third_party.sh` 安装 Eigen 3.4.0 到仓库相对目录 `third-party/eigen-3.4.0`；Windows 继续使用 `pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/setup_third_party.ps1`。
+- 修正：`CMakeLists.txt` 根据 `WIN32` 选择缺失 Eigen 时的报错修复命令；Linux 下现在会提示 `bash "<repo>/scripts/setup_third_party.sh"`，不再提示 PowerShell 命令。
+- 修正：`.gitignore` 放行 `scripts/setup_third_party.sh`，保持 `third-party/eigen-3.4.0/` 和 `third-party/.downloads/` 仍为本地下载产物，不进入 Git。
+- 后续 Linux 编译规则：首次配置前先执行 `bash scripts/setup_third_party.sh`；若需要重装 Eigen，执行 `bash scripts/setup_third_party.sh --force`；随后再运行 `cmake -S . -B build/cmd-linux-Release -DCMAKE_BUILD_TYPE=Release` 和 `cmake --build build/cmd-linux-Release -j`。
+- 验证：2026-06-29 当前 Windows 环境执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；显式执行 MSVC 环境下 CMake configure 通过；`cmake --build ... --target LivoxViewerQT SlamPhase4Replay --parallel 4` 通过。
+- 验证缺口：当前 Windows 主机没有 `bash`/WSL/Docker，仍无法在本机实际执行 `scripts/setup_third_party.sh` 或 Linux configure/build；需要在 Linux 目标机按上述规则复验。
+
 ## 1. 目标与非目标
 
 ### 1.1 本阶段目标

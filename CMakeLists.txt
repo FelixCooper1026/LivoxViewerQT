@@ -145,7 +145,11 @@ set(SLAM_FAST_LIO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_l
 set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio_compat")
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(SLAM_EIGEN_INCLUDE_DIR "${THIRD_PARTY_ROOT}/eigen-3.4.0")
-set(SETUP_THIRD_PARTY_COMMAND "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
+if(WIN32)
+    set(SETUP_THIRD_PARTY_COMMAND "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
+else()
+    set(SETUP_THIRD_PARTY_COMMAND "bash \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.sh\"")
+endif()
 
 if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
     message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")

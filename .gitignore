@@ -80,6 +80,7 @@ CMakeLists.txt.user
 scripts/*
 !scripts/
 !scripts/setup_third_party.ps1
+!scripts/setup_third_party.sh
 
 # distribution files
 dist/
