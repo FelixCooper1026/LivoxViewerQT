@@ -579,7 +579,22 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
 
     const QSize toolbarIconSize(fontMetrics().height() + 8, fontMetrics().height() + 8);
 
-    ToolbarGroup* displayGroup = new ToolbarGroup("显示控制", viewerToolbar, 0);
+    ensureDataOperationActions();
+
+    ToolbarGroup* dataOperationGroup = new ToolbarGroup(QStringLiteral("数据操作"), viewerToolbar, 0);
+    dataOperationGroup->setCompactPriority(4);
+    dataOperationGroup->addPrimaryWidget(createIconButton(actionPlayPointCloud, dataOperationGroup, toolbarIconSize));
+    dataOperationGroup->addPrimaryWidget(createIconButton(actionShowImuCharts, dataOperationGroup, toolbarIconSize));
+    dataOperationGroup->addPrimaryWidget(createIconButton(actionSlamOnline, dataOperationGroup, toolbarIconSize));
+    dataOperationGroup->addPrimaryWidget(createIconButton(actionSlamOffline, dataOperationGroup, toolbarIconSize));
+    dataOperationGroup->moreMenu()->addAction(actionPlayPointCloud);
+    dataOperationGroup->moreMenu()->addAction(actionShowImuCharts);
+    dataOperationGroup->moreMenu()->addSeparator();
+    dataOperationGroup->moreMenu()->addAction(actionSlamOnline);
+    dataOperationGroup->moreMenu()->addAction(actionSlamOffline);
+    toolbarLayout->addWidget(dataOperationGroup);
+
+    ToolbarGroup* displayGroup = new ToolbarGroup(QStringLiteral("显示控制"), viewerToolbar);
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
     ThemeIconUtils::setThemedSvgIcon(gridAction, QStringLiteral(":/icons/grid.svg"));
     gridAction->setCheckable(true);

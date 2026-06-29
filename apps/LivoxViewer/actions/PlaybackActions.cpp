@@ -4,6 +4,8 @@
 
 void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
 {
+    ensureDataOperationActions();
+
     // GPS 模拟定时器
     imuState.gpsTimer = new QTimer(this);
     connect(imuState.gpsTimer, &QTimer::timeout, this, &LivoxViewerWindow::onGpsTick);
@@ -29,8 +31,7 @@ void LivoxViewerWindow::createPlaybackActions(QMenu* toolsMenu)
     connect(playbackState.speedCombo, &QComboBox::currentTextChanged, this, &LivoxViewerWindow::playbackSetSpeedText);
     connect(playbackState.modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &LivoxViewerWindow::playbackSetModeIndex);
-    actionShowImuCharts = toolsMenu->addAction("IMU数据可视化");
-    connect(actionShowImuCharts, &QAction::triggered, this, &LivoxViewerWindow::onActionShowImuCharts);
+    toolsMenu->addAction(actionShowImuCharts);
 
     // 点云滤波
     QAction* actionPointCloudFilter = toolsMenu->addAction("点云滤波...");

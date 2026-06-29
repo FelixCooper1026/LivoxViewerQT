@@ -993,11 +993,12 @@ void LivoxViewerWindow::createMenusAndActions()
     }
     syncPanelButtons();
 
+    ensureDataOperationActions();
     createFileActions();
     createDeviceActions();
     createHelpActions();
-    toolsMenu->addAction(QStringLiteral("SLAM（在线）"), this, &LivoxViewerWindow::startOnlineSlamFromMenu);
-    toolsMenu->addAction(QStringLiteral("SLAM（离线）"), this, &LivoxViewerWindow::startOfflineSlamFromMenu);
+    toolsMenu->addAction(actionSlamOnline);
+    toolsMenu->addAction(actionSlamOffline);
     // 视图菜单：显示/隐藏 dock
     viewMenu->addAction(lidarDevicesDock->toggleViewAction());
     viewMenu->addAction(lvx2FileDock->toggleViewAction());

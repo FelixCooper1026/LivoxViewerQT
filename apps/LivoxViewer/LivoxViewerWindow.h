@@ -215,6 +215,8 @@ private:
     void createHelpActions();
     void createPlaybackActions(QMenu* toolsMenu);
     void createFileActions();
+    void ensureDataOperationActions();
+    void openPointCloudPlaybackFileDialog();
     void createStatusBarAndTimers();
     SlamUiBridge* ensureSlamUiBridge();
     void postSlamStatus(SlamStatusCode status, const QString& message);
@@ -377,6 +379,8 @@ private:
     QAction* actionResetView;
     QAction* actionShowImuCharts = nullptr;
     QAction* actionPlayPointCloud = nullptr;
+    QAction* actionSlamOnline = nullptr;
+    QAction* actionSlamOffline = nullptr;
     QAction* actionPointCloudVisualization = nullptr;
     QAction* pointCloudStlModelAction = nullptr;
     QAction* pointCloudMeasureAction = nullptr;

@@ -255,7 +255,7 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
 
     if (slamRuntimeConfig.publishWorldFrameCloud) {
         addLayerCard(QStringLiteral("世界系历史点云"),
-                     QStringLiteral("世界坐标系下的历史点云，显示时长默认 600s，颜色跟随当前点云着色模式"),
+                     QStringLiteral("历史地图点云，显示时长 600s，颜色跟随当前点云着色模式"),
                      slamWorldFrameVisible,
                      [this](bool visible) { setSlamWorldFrameVisible(visible); });
         addLayerCard(QStringLiteral("世界系当前帧点云"),
