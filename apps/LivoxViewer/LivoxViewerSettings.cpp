@@ -1784,7 +1784,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamTemplateSection = createPreferenceSection(slamTab);
     addPreferenceRow(slamTemplateSection,
                      "模板",
-                     "根据原版 mid360/avia.yaml 套用探测距离、水平视场角、外参平移和近距离盲区默认值。",
+                     "选择 LiDAR 类型预设，用于快速填充探测距离、视场角、近距离盲区和 LiDAR-IMU 外参等参数",
                      slamTemplateRow);
     slamLayout->addWidget(slamTemplateSection);
 
@@ -1823,11 +1823,11 @@ void LivoxViewerWindow::showPreferencesDialog()
         return tab;
     };
 
-    QWidget* slamBackendTab = createSlamSettingsTab(QStringLiteral("FAST_LIO 后端"));
+    QWidget* slamBackendTab = createSlamSettingsTab(QStringLiteral("后端参数"));
     QWidget* slamImuNoiseTab = createSlamSettingsTab(QStringLiteral("IMU 噪声"));
     QWidget* slamExtrinsicTab = createSlamSettingsTab(QStringLiteral("LiDAR-IMU 外参"));
-    QWidget* slamPublishTab = createSlamSettingsTab(QStringLiteral("发布与导出"));
-    QWidget* slamVisualTab = createSlamSettingsTab(QStringLiteral("可视化效果"));
+    QWidget* slamPublishTab = createSlamSettingsTab(QStringLiteral("点云输出"));
+    QWidget* slamVisualTab = createSlamSettingsTab(QStringLiteral("显示样式"));
 
     QVBoxLayout* slamBackendTabLayout = qobject_cast<QVBoxLayout*>(slamBackendTab->layout());
     QVBoxLayout* slamImuNoiseTabLayout = qobject_cast<QVBoxLayout*>(slamImuNoiseTab->layout());
@@ -1838,67 +1838,67 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamBackendSection = createPreferenceSection(slamBackendTab);
     addPreferenceRow(slamBackendSection,
                      "扫描频率",
-                     "按原版 preprocess/scan_rate 语义推导 SLAM 输入聚帧周期。",
+                     "preprocessScanRateHz，输入点云的帧率，用于推导聚帧周期并影响时间间隔计算",
                      slamScanRateSpin);
     addPreferenceRow(slamBackendSection,
                      "聚帧周期",
-                     "控制 PCAP/Live SLAM 输入源按原始点云时间戳切分当前帧。",
+                     "inputFrameDurationMs，单个 SLAM 输入帧的时间长度，用于实时数据和 PCAP 数据按时间切分点云帧",
                      slamFrameDurationSpin);
     addPreferenceRow(slamBackendSection,
                      "近距离盲区",
-                     "对应原版 preprocess/blind，滤除 LiDAR 坐标系中距离小于该值的近场点。",
+                     "blindMinRangeM，滤除 LiDAR 坐标系下距离过近的点，减小近场噪点对匹配的影响",
                      slamBlindMinRangeSpin);
     addPreferenceRow(slamBackendSection,
                      "点过滤步长",
-                     "对应原版 point_filter_num，按 Livox 点序号保留每第 N 个点输入 FAST_LIO。",
+                     "pointFilterNum，按点序间隔抽样输入点云，值越大输入点越少、速度更快但约束变弱",
                      slamPointFilterNumSpin);
     addPreferenceRow(slamBackendSection,
                      "重力加速度",
-                     "对应原版 G_m_s2，用于 IMU 初始化重力向量长度和加速度归一化缩放。",
+                     "gravityNorm，IMU 初始化使用的重力模长，影响姿态初始化和加速度归一化",
                      slamGravityNormSpin);
     addPreferenceRow(slamBackendSection,
                      "局部地图边长",
-                     "对应原版 cube_side_length，控制 ikd-tree 滑动窗口地图立方体边长。",
+                     "cubeSideLengthM，局部地图立方体边长，决定滑动局部地图的空间范围和内存占用",
                      slamCubeSideLengthSpin);
     addPreferenceRow(slamBackendSection,
                      "探测距离",
-                     "对应原版 mapping/det_range，影响局部地图滑动窗口触发距离。",
+                     "detRangeM，参与局部地图维护和匹配的有效探测距离，过小会减少远处稳定结构约束",
                      slamDetRangeSpin);
     addPreferenceRow(slamBackendSection,
                      "水平视场角",
-                     "对应原版 mapping/fov_degree，用于过滤 LiDAR 视野外的地图点；MID360 通常为 360°。",
+                     "fovDegree，LiDAR 水平有效视场角，用于限制参与匹配的地图点范围",
                      slamFovDegreeSpin);
     addPreferenceRow(slamBackendSection,
                      "最大迭代次数",
-                     "对应原版 max_iteration，控制每帧 iEKF 更新的最大迭代次数。",
+                     "maxIterations，每帧状态更新的最大迭代次数，值越大收敛更充分但耗时增加",
                      slamMaxIterationsSpin);
     addPreferenceRow(slamBackendSection,
                      "表面滤波体素",
-                     "设置 FAST_LIO 输入特征降采样体素尺寸。",
+                     "filterSizeSurfM，输入点云降采样体素尺寸，值越大点数越少、速度更快但细节减少",
                      slamFilterSurfSpin);
     addPreferenceRow(slamBackendSection,
                      "地图滤波体素",
-                     "设置 FAST_LIO 地图增量降采样体素尺寸。",
+                     "filterSizeMapM，地图点云降采样体素尺寸，值越大地图越稀疏、内存更低但匹配精度可能下降",
                      slamFilterMapSpin);
     slamBackendTabLayout->addWidget(slamBackendSection);
     slamBackendTabLayout->addStretch();
 
     QFrame* slamImuNoiseSection = createPreferenceSection(slamImuNoiseTab);
     addPreferenceRow(slamImuNoiseSection,
-                     "陀螺测量噪声",
-                     "对应原版 mapping/gyr_cov，值越大表示越不信任陀螺测量。",
+                     "陀螺仪测量噪声",
+                     "gyrCov，陀螺仪测量噪声协方差，值越大表示越不信任角速度测量",
                      slamGyrCovSpin);
     addPreferenceRow(slamImuNoiseSection,
-                     "加速度测量噪声",
-                     "对应原版 mapping/acc_cov，值越大表示越不信任加速度计测量。",
+                     "加速度计测量噪声",
+                     "accCov，加速度计测量噪声协方差，值越大表示越不信任线加速度测量",
                      slamAccCovSpin);
     addPreferenceRow(slamImuNoiseSection,
-                     "陀螺零偏噪声",
-                     "对应原版 mapping/b_gyr_cov，描述陀螺零偏随机游走速率。",
+                     "陀螺仪零偏噪声",
+                     "bGyrCov，陀螺仪零偏随机游走噪声，值越大表示零偏变化越快",
                      slamBGyrCovSpin);
     addPreferenceRow(slamImuNoiseSection,
-                     "加计零偏噪声",
-                     "对应原版 mapping/b_acc_cov，描述加速度计零偏随机游走速率。",
+                     "加速度计零偏噪声",
+                     "bAccCov，加速度计零偏随机游走噪声，值越大表示零偏变化越快",
                      slamBAccCovSpin);
     slamImuNoiseTabLayout->addWidget(slamImuNoiseSection);
     slamImuNoiseTabLayout->addStretch();
@@ -1906,35 +1906,35 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamExtrinsicSection = createPreferenceSection(slamExtrinsicTab);
     addPreferenceRow(slamExtrinsicSection,
                      "在线估计外参",
-                     "对应原版 mapping/extrinsic_est_en；关闭时外参固定，并将外参雅可比列置零。",
+                     "extrinsicEstimationEnabled，允许运行时估计 LiDAR-IMU 外参，开启后可补偿外参误差但稳定性更依赖数据质量",
                      slamExtrinsicEstimationCheck);
     addPreferenceRow(slamExtrinsicSection,
                      "外参平移 T",
-                     "LiDAR 到 IMU 平移 [x,y,z]，单位 m；MID360 默认 [-0.011, -0.02329, 0.04412]。",
+                     "extrinsicT_L_I，LiDAR 到 IMU 的平移向量，单位 m，影响点云去畸变和位姿估计坐标关系",
                      slamExtrinsicTRow);
     addPreferenceRow(slamExtrinsicSection,
                      "外参旋转 R",
-                     "LiDAR 到 IMU 旋转矩阵，按行优先填写 3x3；MID360 默认 identity。",
+                     "extrinsicR_L_I，LiDAR 到 IMU 的旋转矩阵，按行优先填写 3x3，影响点云与 IMU 姿态对齐",
                      slamExtrinsicRGrid);
     slamExtrinsicTabLayout->addWidget(slamExtrinsicSection);
     slamExtrinsicTabLayout->addStretch();
 
     QFrame* slamPublishSection = createPreferenceSection(slamPublishTab);
     addPreferenceRow(slamPublishSection,
-                     "发布世界系点云",
-                     "按原版 scan_publish_en 语义输出世界系点云，在 SLAM tab 中按积分时间显示。",
+                     "输出世界系点云",
+                     "publishWorldFrameCloud，输出世界坐标系点云，用于 SLAM 视图显示历史建图结果",
                      slamPublishWorldCheck);
     addPreferenceRow(slamPublishSection,
-                     "世界系点云 dense",
-                     "按原版 dense_publish_en 语义选择世界系点云使用去畸变 dense 点云，否则使用降采样点云。",
+                     "稠密世界系点云",
+                     "publishDenseFrameCloud，世界系点云使用去畸变后的稠密点云，开启后细节更多但点数和内存占用增加",
                      slamPublishDenseCheck);
     addPreferenceRow(slamPublishSection,
-                     "发布机体系点云",
-                     "按原版 scan_bodyframe_pub_en 语义输出当前帧 IMU 机体系点云。",
+                     "输出机体系点云",
+                     "publishBodyFrameCloud，输出 IMU 机体系下的当前帧点云，用于检查去畸变前后的当前帧形态",
                      slamPublishBodyCheck);
     addPreferenceRow(slamPublishSection,
                      "保存完整全局地图",
-                     "按原版 pcd_save 语义累计去畸变 dense 帧到世界系，供完整全局地图 PCD/LAS 导出。",
+                     "saveMap，累计完整世界系点云地图用于导出，开启后可保存更完整地图但内存占用增加",
                      slamSaveMapCheck);
     slamPublishTabLayout->addWidget(slamPublishSection);
     slamPublishTabLayout->addStretch();
@@ -1942,35 +1942,35 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamVisualSection = createPreferenceSection(slamVisualTab);
     addPreferenceRow(slamVisualSection,
                      "世界系当前帧颜色",
-                     "设置世界系当前扫描帧 overlay 的固定颜色。",
+                     "slamWorldCurrentFrameColor，世界坐标系当前帧点云颜色，用于区分最新输入帧和历史地图",
                      slamWorldCurrentFrameColorRow);
     addPreferenceRow(slamVisualSection,
                      "世界系当前帧点大小",
-                     "设置世界系当前扫描帧 overlay 的 OpenGL 像素点大小。",
+                     "slamWorldCurrentFramePointSizePx，世界坐标系当前帧点大小，影响当前帧点云的显示醒目程度",
                      slamWorldCurrentFramePointSizeSpin);
     addPreferenceRow(slamVisualSection,
-                     "机体系点云颜色",
-                     "设置 IMU 机体系当前帧点云 overlay 的固定颜色。",
+                     "机体系当前帧颜色",
+                     "slamBodyFrameColor，IMU 机体系当前帧点云颜色，用于区分机体系点云和世界系点云",
                      slamBodyColorRow);
     addPreferenceRow(slamVisualSection,
-                     "机体系点云点大小",
-                     "设置 IMU 机体系当前帧点云 overlay 的 OpenGL 像素点大小。",
+                     "机体系当前帧点大小",
+                     "slamBodyFramePointSizePx，IMU 机体系当前帧点大小，影响机体系当前帧点云显示醒目程度",
                      slamBodyFramePointSizeSpin);
     addPreferenceRow(slamVisualSection,
                      "轨迹颜色",
-                     "设置 SLAM 位姿轨迹 overlay 的固定颜色。",
+                     "slamTrajectoryColor，位姿轨迹线颜色，用于区分轨迹和点云",
                      slamTrajectoryColorRow);
     addPreferenceRow(slamVisualSection,
                      "轨迹线宽",
-                     "设置 SLAM 位姿轨迹 overlay 的 OpenGL 线宽。",
+                     "slamTrajectoryLineWidthPx，位姿轨迹线宽，值越大轨迹显示越醒目",
                      slamTrajectoryLineWidthSpin);
     addPreferenceRow(slamVisualSection,
                      "位姿坐标轴长度",
-                     "设置当前位置姿态坐标轴 overlay 的世界坐标长度。",
+                     "slamPoseAxisLengthM，当前位置姿态坐标轴长度，影响姿态方向显示范围",
                      slamPoseAxisLengthSpin);
     addPreferenceRow(slamVisualSection,
                      "位姿坐标轴线宽",
-                     "设置当前位置姿态坐标轴 overlay 的 OpenGL 线宽。",
+                     "slamPoseAxisLineWidthPx，当前位置姿态坐标轴线宽，值越大坐标轴显示越醒目",
                      slamPoseAxisLineWidthSpin);
     slamVisualTabLayout->addWidget(slamVisualSection);
     slamVisualTabLayout->addStretch();

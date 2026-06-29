@@ -254,27 +254,27 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
     };
 
     if (slamRuntimeConfig.publishWorldFrameCloud) {
-        addLayerCard(QStringLiteral("世界系点云"),
-                     QStringLiteral("SLAM tab 主点云，受积分时间、点大小、着色模式和色标控制。"),
+        addLayerCard(QStringLiteral("世界系历史点云"),
+                     QStringLiteral("世界坐标系下的历史点云，显示时长默认 600s，颜色跟随当前点云着色模式"),
                      slamWorldFrameVisible,
                      [this](bool visible) { setSlamWorldFrameVisible(visible); });
         addLayerCard(QStringLiteral("世界系当前帧点云"),
-                     QStringLiteral("当前扫描帧世界系 overlay，颜色和点大小由首选项控制。"),
+                     QStringLiteral("最新一帧转换到世界坐标系后的点云，颜色和点大小由首选项控制"),
                      slamWorldCurrentFrameVisible,
                      [this](bool visible) { setSlamWorldCurrentFrameVisible(visible); });
     }
     if (slamRuntimeConfig.publishWorldFrameCloud && slamRuntimeConfig.publishBodyFrameCloud) {
         addLayerCard(QStringLiteral("机体系点云"),
-                     QStringLiteral("IMU 机体系当前帧 overlay，颜色和点大小由首选项控制。"),
+                     QStringLiteral("IMU 机体系下的当前帧点云，颜色和点大小由首选项控制"),
                      slamBodyFrameVisible,
                      [this](bool visible) { setSlamBodyFrameVisible(visible); });
     }
     addLayerCard(QStringLiteral("轨迹"),
-                 QStringLiteral("SLAM 位姿轨迹 overlay。"),
+                 QStringLiteral("SLAM 输出的位姿轨迹，用于观察运动路径和定位连续性"),
                  slamTrajectoryVisible,
                  [this](bool visible) { setSlamTrajectoryVisible(visible); });
     addLayerCard(QStringLiteral("姿态坐标轴"),
-                 QStringLiteral("当前位姿坐标轴 overlay。"),
+                 QStringLiteral("显示当前位姿的三维坐标轴，用于观察位置和姿态方向"),
                  slamPoseAxisVisible,
                  [this](bool visible) { setSlamPoseAxisVisible(visible); });
 
