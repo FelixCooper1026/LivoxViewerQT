@@ -10,6 +10,13 @@
 - 验证：2026-06-29 当前 Windows 环境执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；显式执行 MSVC 环境下 CMake configure 通过；`cmake --build ... --target LivoxViewerQT SlamPhase4Replay --parallel 4` 通过。
 - 验证缺口：当前 Windows 主机没有 `bash`/WSL/Docker，仍无法在本机实际执行 `scripts/setup_third_party.sh` 或 Linux configure/build；需要在 Linux 目标机按上述规则复验。
 
+## 2026-06-29 Linux ikd-Tree shared_ptr 编译修正
+
+- 问题：Linux GCC 9.4 编译 `libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp` 时失败，首个错误为 `ikd_Tree.h:57:22: error: 'shared_ptr' in namespace 'std' does not name a template type`。
+- 原因：`ikd_Tree.h` 使用 `std::shared_ptr`，但只包含了 C 头 `<memory.h>`，没有直接包含 C++ 头 `<memory>`；MSVC 当前构建通过是因为其他头间接带入，GCC 下不能依赖这种隐式 include。
+- 修正：在 `libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.h` 增加 `#include <memory>`，不改动 ikd-Tree 算法逻辑。
+- 验证：2026-06-29 已基于 `//192.168.2.50/Shared Folder/build.log` 定位首个 Linux 编译错误；当前 Windows 主机无法直接执行 Linux 构建，修复后需要在 Linux 目标机重新运行 `cmake --build build/cmd-linux-Release -j` 复验。
+
 ## 1. 目标与非目标
 
 ### 1.1 本阶段目标

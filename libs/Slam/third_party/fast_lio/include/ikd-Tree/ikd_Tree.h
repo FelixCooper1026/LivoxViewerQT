@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <algorithm>
+#include <memory>
 #include <memory.h>
 #include <pcl/point_types.h>
 
