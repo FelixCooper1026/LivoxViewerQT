@@ -345,7 +345,8 @@ Live SDK callback / Pcap reader / Lvx2 reader
 | Eigen | 矩阵、四元数、状态估计 | 必须保留 | 低，注意对齐 | 低 |
 | IKFoM / MTK | ESKF 流形状态 | 保留或内置为后端子模块 | 中，模板兼容需测 MSVC | 许可证待确认 |
 | ikd-Tree | 增量地图 | 保留或替换 | 中，pthread/OpenMP 相关需测 | 许可证待确认 |
-| PCL | 点云容器、VoxelGrid、PCD | 尽量剥离 | 高 | 高 |
+| PCL | 点云容器、VoxelGrid、PCD | 当前不安装完整 PCL；由项目内 `fast_lio_compat` 提供 FAST_LIO 当前所需最小头层 | 中，继续防止引入真实 PCL runtime | 低 |
+| Boost | 原版 IKFoM/MTK 宏和少量工具头 | 当前已剥离，不安装完整 Boost，不新增 Boost 兼容层 | 低，需防止重新包含 `boost/*` | 低 |
 | OpenMP | 并行搜索/处理 | 可选 | 中，MSVC/GCC flag 差异 | 低 |
 | ROS/catkin | 节点、topic、参数 | 必须剥离 | 极高 | 高 |
 | livox_ros_driver | CustomMsg | 必须剥离 | 高 | 中 |
@@ -819,7 +820,8 @@ SLAM 构建建议：
 | CMake 组织 | 新增 `libs/Slam` 文件并显式加入根 `SOURCES/HEADERS`；后续可拆静态库 |
 | Eigen | 先 vendor 或 `find_package(Eigen3)`；注意 MSVC 对齐 |
 | OpenMP | 作为 `option(SLAM_USE_OPENMP OFF)`，Windows/Linux 分别测试 |
-| PCL | MVP 避免；如必须，先作为可选后端实验，不进默认安装 |
+| PCL | 当前不安装完整 PCL；仅允许继续使用项目内 `libs/Slam/third_party/fast_lio_compat/include/pcl` 最小兼容头层 |
+| Boost | 当前不安装完整 Boost；不得新增 Boost 兼容层，若后续 FAST_LIO 代码再次依赖 `boost/*`，优先移除该依赖或固定展开原宏生成代码 |
 | FAST_LIO core | 先在 `slam/backends/fastlio` 做最小可编译子集 |
 | 静态/动态 | MVP 可编进主 exe；后续考虑插件化 |
 | 安装包 | 避免 ROS/PCL，减少 Windows 安装复杂度 |
@@ -1202,7 +1204,7 @@ E:\Livox_ws\LivoxViewerQT\build\Desktop_Qt_6_5_3_MSVC2019_64bit-Release
 当前环境未提供 `C:\Users\FelixCooper\Desktop\compile.bat`，后续 Codex 编译本分支时必须使用以下命令。不能直接在普通 PowerShell 中执行裸 `cmake --build`，否则 MSVC 标准库环境变量未加载时会出现 `Cannot open include file: 'type_traits'`。
 
 ```bat
-cmd /c "call ""E:\Visual Studio\VC\Auxiliary\Build\vcvars64.bat"" && cmake --build ""E:\Livox_ws\LivoxViewerQT\build\Desktop_Qt_6_5_3_MSVC2019_64bit-Release"" --target LivoxViewerQT --parallel 4"
+cmd /c "call ""E:\Visual Studio\VC\Auxiliary\Build\vcvars64.bat"" && cmake --build ""E:\Livox_ws\LivoxViewerQT\build\Desktop_Qt_6_5_3_MSVC2019_64bit-Release"" --target LivoxViewerQT SlamPhase4Replay --parallel 4"
 ```
 
 每次编译通过后必须运行程序做启动冒烟检查，不能只停在编译通过。当前分支运行检查使用以下 PowerShell 命令：
@@ -1357,7 +1359,7 @@ if ($closed) {
 - 上述快照暂未加入主程序编译；下一步按原算法代码做无 ROS/PCL 运行时适配。
 - `FastLioSlamBackend` 当前失败信息已改为“FAST_LIO source snapshot is present under libs/Slam/third_party/fast_lio; backend adapter is not complete yet.”。
 - 下一步接入迁入的 `use-ikfom.hpp` / `IKFoM_toolkit` 到主工程编译，先验证 FAST_LIO ESKF 过程模型可在 MSVC 下编译。
-- `CMakeLists.txt` 已新增 FAST_LIO 原始源码快照 include 路径、Eigen include 探测和 Boost include 探测。
+- `CMakeLists.txt` 已新增 FAST_LIO 原始源码快照 include 路径；早期 Eigen/Boost include 探测已在后续依赖整改中收敛为仓库相对 Eigen，并移除 Boost。
 - `FastLioSlamBackend.cpp` 已直接包含迁入的 `use-ikfom.hpp`，并调用原 FAST_LIO `process_noise_cov()`，用于验证 IKFoM 过程模型进入主工程编译。
 - 首次编译 IKFoM 入口失败：`esekfom.hpp` 使用 `omp_get_wtime()` 但当前包含链未先包含 `omp.h`；这是原 FAST_LIO ROS 节点通过 `laserMapping.cpp` 间接满足的工程依赖。
 - `FastLioSlamBackend.cpp` 已在包含 `use-ikfom.hpp` 前补充 `<omp.h>`，保持原 FAST_LIO 对 OpenMP 计时 API 的依赖。
@@ -1474,13 +1476,17 @@ if ($closed) {
 - 2026-06-26：跳过 `logDock` 连接后崩溃后移到首次 `syncPanelButtons()`；继续临时细化可见性读取、按钮 checked 状态和 active SVG 图标刷新 trace。
 - 2026-06-26：`syncPanelButtons()` trace 确认崩溃发生在读取 `logDock->isVisible()`；`LogPanel.cpp` 中日志清空/复制按钮的信号连接已从 `QPushButton::clicked` 修正为实际控件类型 `QToolButton::clicked`。
 - 2026-06-26：日志按钮信号类型修正后启动继续推进到 `createFileActions()`；临时为 `FileActions.cpp` 添加分段 trace，定位文件菜单 action 创建/连接阶段。
-- 2026-06-26：依赖硬编码路径审计：`CMakeLists.txt` 中 `SLAM_EIGEN_INCLUDE_DIR` 当前通过 `find_path()` 只列出本机绝对候选路径 `E:/Livox_ws/Livox-SDK2-1.2.4/samples/livox_lidar_quick_start/eigen-3.4.0` 和 `E:/Livox_ws/lvxtrans/lvx/include`；这是 FAST_LIO/IKFoM 编译入口的最高优先级可移植性风险，后续需要改为可配置 CMake cache 变量或标准 `find_package(Eigen3)`，不得继续依赖 Felix 本机目录。
-- 2026-06-26：依赖硬编码路径审计：`CMakeLists.txt` 中 `SLAM_BOOST_INCLUDE_DIR` 当前只指向 `E:/thirdparty/PCL 1.13.1/3rdParty/Boost/include/boost-1_82`；当前主工程未链接 PCL runtime，但 Boost 头实际借用了本机 PCL 安装包，迁移到新机器或 CI 时会直接配置失败，后续需要改为独立 Boost include 配置或标准 Boost 查找。
+- 2026-06-26：依赖硬编码路径审计曾发现 `CMakeLists.txt` 中 `SLAM_EIGEN_INCLUDE_DIR` 通过本机绝对候选路径查找 Eigen；2026-06-29 已改为仓库相对 `third-party/eigen-3.4.0`，并由 `scripts/setup_third_party.ps1` 安装。
+- 2026-06-26：依赖硬编码路径审计曾发现 `CMakeLists.txt` 中 `SLAM_BOOST_INCLUDE_DIR` 指向本机 PCL 安装包内的 Boost；2026-06-29 已移除 Boost 编译依赖，不再查找或安装 Boost。
 - 2026-06-26：依赖硬编码路径审计：`ROOT_DIR="${SLAM_FAST_LIO_ROOT}/"` 会把 FAST_LIO 快照源码目录作为编译期宏注入 `LivoxViewerQT` 和 `SlamPhase4Replay`；当前适配层主要用于满足原 FAST_LIO 代码约定，但原 `laserMapping.cpp` 中仍有基于 `ROOT_DIR` 的 `PCD/`、`Log/` 输出路径逻辑，后续若继续移植这些保存/日志分支，必须先改成应用配置路径，避免运行时写入源码目录。
 - 2026-06-26：依赖硬编码路径审计：`apps/LivoxViewer/main.cpp` 当前调用 `SetDllDirectoryA("C:\\Windows\\System32\\Npcap")`；这是 Windows Npcap 运行时默认安装目录假设。`third-party/npcap-sdk-1.16` 是仓库相对 SDK 链接路径，但实际运行仍依赖目标机器安装 Npcap runtime，后续发布包/新机器复验必须明确安装要求或改为随包部署策略。
 - 2026-06-26：依赖硬编码路径审计：`tools/SlamPhase4Replay/main.cpp` 默认参数写死 `E:/Livox_ws/with_imu.pcap` 和 `E:/Livox_ws/no_imu.pcap`；这符合当前用户指定真实 PCAP 复验输入，但属于本机数据路径，工具在 CI 或其他机器运行时必须显式传参，不得把默认路径视为通用测试资源。
 - 2026-06-26：依赖硬编码路径审计：当前主工程没有直接链接 ROS/catkin/PCL runtime，`pcl/*` 由 `libs/Slam/third_party/fast_lio_compat/include` 兼容头提供；原 FAST_LIO 快照自己的 `CMakeLists.txt` 仍声明 `catkin`、`PythonLibs`、`Eigen3`、`PCL 1.8`、`pcl_ros` 等依赖，但该 CMake 当前未纳入主工程构建。后续若把 `preprocess.cpp`、`laserMapping.cpp` 或原 CMake 直接接入，必须先做依赖隔离审计，避免把 ROS/PCL runtime 意外引入主程序。
 - 2026-06-26：依赖硬编码路径审计：`FastLioSlamBackend.cpp` 直接包含 `<omp.h>` 并调用 `omp_get_wtime()`；当前 Windows/MSVC 构建可通过，但 `CMakeLists.txt` 没有为 `LivoxViewerQT` 和 `SlamPhase4Replay` 显式 `find_package(OpenMP)` 或链接 `OpenMP::OpenMP_CXX`。后续 Linux/Clang/GCC 构建复验前需要补齐 OpenMP 编译/链接规则，否则可能出现非 Windows 编译或链接失败。
+- 2026-06-29：依赖硬编码路径复查和整改：`CMakeLists.txt` 已改为仓库相对 `third-party/eigen-3.4.0`，`scripts/setup_third_party.ps1` 只安装 Eigen；原 `SLAM_BOOST_INCLUDE_DIR`、Boost 头存在性检查和 Boost include path 已移除，`find_package(OpenMP REQUIRED COMPONENTS CXX)` 已显式接入当前两个目标。
+- 2026-06-29：Boost 体积风险已处理：删除已被 HEAD 跟踪的 `third-party/boost-1.82.0`，该目录此前虽在 `.gitignore` 中但已经入库，且副本不完整。当前代码扫描 `CMakeLists.txt`、`scripts`、`apps`、`libs`、`tools` 不再命中 `boost/`、`BOOST_`、`boost::` 或 `SLAM_BOOST`。
+- 2026-06-29：IKFoM/MTK 的 Boost 依赖已按当前 FAST_LIO 固定状态类型剥离：移除 `boost/bind.hpp`，`boost::math::tools::epsilon<T>()` 改为 `std::numeric_limits<T>::epsilon()`，`BOOST_STATIC_ASSERT` 改为 `static_assert`，原 `MTK_BUILD_MANIFOLD` 生成的 `state_ikfom`、`input_ikfom`、`process_noise_ikfom` 固定展开在 `use-ikfom.hpp`。这不是 Boost 兼容层，后续不得新增手写 Boost 兼容层。
+- 2026-06-29：PCL 状态复查：仍不需要安装完整 PCL；当前 FAST_LIO 编译入口只允许使用项目内 `libs/Slam/third_party/fast_lio_compat/include/pcl` 最小兼容头层，不链接 PCL runtime。
 
 ### 2026-06-27 Phase 5 / 旁路 UI 重做
 
@@ -1706,6 +1712,7 @@ Phase 5.4 已完成基础版本：
   - `工具 -> SLAM（离线）` 文件选择扩展为支持 `*.db3 *.yaml *.yml`；不引入 ROS/ROS2 runtime，不规划 bz2/lz4 chunk 或 MCAP。
 - 2026-06-28：修复 ROS1 driver2-style PointCloud2 padding 布局被误判为字段不匹配的问题。`mid360l_garage_fast_pc2.bag` 中 `/livox/lidar` 实际为 `point_step=32`、`intensity offset=16`、`tag offset=20`、`line offset=21`、`timestamp offset=24` 的对齐布局；当前 detector 已改为按字段名、datatype、count 和 `point_step` 边界校验，不再要求紧凑 26 字节固定 offset。
 - 2026-06-28：修复 driver2 PointCloud2 绝对 ns 时间戳存为 `double` 后产生百纳秒级舍入误差导致首点 `timestamp < header.stamp` 被误判的问题。当前转换允许 1 ms 内负 offset 夹到 0，大幅时间不匹配仍返回 `Failed`。
+- 2026-06-29：按依赖优化要求移除完整 Boost 依赖：删除 `third-party/boost-1.82.0` 跟踪副本，`setup_third_party.ps1` 不再下载 Boost，CMake 不再配置 Boost include；FAST_LIO/IKFoM 当前固定状态类型已去除 Boost 预处理依赖，PCL 继续由项目内最小兼容头层提供，不要求完整安装 PCL。
 
 验证：
 
@@ -1734,6 +1741,11 @@ Phase 5.4 已完成基础版本：
 - 2026-06-28：完成 ROSbag 离线 SLAM 数据源第一版后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：完成 ROS1 PointCloud2 和 ROS2 db3 后续扩展后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
 - 2026-06-28：修复 PointCloud2 padding 布局识别后，`git diff --check` 通过，仅输出 Git 的 LF/CRLF 转换提示；按 `C:\Users\FelixCooper\Desktop\compile.bat` 编译通过。
+- 2026-06-29：Boost 剥离后，`rg -n "boost/|BOOST_|boost::|SLAM_BOOST" -S CMakeLists.txt scripts apps libs tools --glob '!third-party/**'` 无命中。
+- 2026-06-29：Boost 剥离后，显式执行 CMake configure 并按第 20 节 Windows 规则构建，`LivoxViewerQT` 和 `SlamPhase4Replay` 均编译通过；configure 输出只包含 FAST_LIO Eigen include 和 OpenMP，不再包含 Boost。
+- 2026-06-29：Boost 剥离后，启动冒烟检查通过：`STARTUP_OK`，窗口标题 `LivoxViewerQT`，关闭后 `CLOSED_OK ExitCode=0`。
+- 2026-06-29：Boost 剥离后，运行 `SlamPhase4Replay.exe E:\Livox_ws\with_imu.pcap E:\Livox_ws\no_imu.pcap` 通过：`with_imu.pcap` 输出 `sourceFrames=93`、跳过 IMU 覆盖不完整帧 3 帧、处理 90 帧、Running 88 帧、轨迹点 88 个、mapFrames 87、globalMapPoints 616891；重复运行结果一致；`no_imu.pcap` 输出 `NO_IMU_REJECT_OK status=MissingImu`；最终输出 `SLAM_PHASE4_REPLAY_OK`。
+- 2026-06-29：Linux 编译/运行环境复查：当前 Windows 主机 `wsl --status` 和 `wsl -l -v` 均不可用，未发现 Docker，也未发现可直接调用的 `vmrun.exe`，因此本轮仍无法实际执行 Linux configure/build/run。静态审计显示 CMake 已有 Linux 分支，Linux 目标链接 `pthread`、`dl`、`m`、`OpenMP::OpenMP_CXX` 和可选 `libpcap`，仓库内存在 `livox_sdk_qt/lib/liblivox_lidar_sdk_static.a`；Linux 实测前必须准备 Qt 开发包（Core/Widgets/OpenGL/OpenGLWidgets/SerialPort/Charts/Network/Svg/Concurrent/Sql）、OpenMP、`libpcap-dev`、可用图形会话和 Qt SQLite SQL driver。
 
 验证缺口：
 

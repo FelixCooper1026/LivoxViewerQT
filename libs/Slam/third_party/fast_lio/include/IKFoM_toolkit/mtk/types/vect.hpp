@@ -189,22 +189,22 @@ struct vect : public Eigen::Matrix<_scalar, D, 1, _Options> {
 	
 	template<int dim>
 	vectview<scalar, dim> tail(){
-		BOOST_STATIC_ASSERT(0< dim && dim <= DOF);
+		static_assert(0 < dim && dim <= DOF, "tail dimension out of range");
 		return base::template tail<dim>();
 	}
 	template<int dim>
 	vectview<const scalar, dim> tail() const{
-		BOOST_STATIC_ASSERT(0< dim && dim <= DOF);
+		static_assert(0 < dim && dim <= DOF, "tail dimension out of range");
 		return base::template tail<dim>();
 	}
 	template<int dim>
 	vectview<scalar, dim> head(){
-		BOOST_STATIC_ASSERT(0< dim && dim <= DOF);
+		static_assert(0 < dim && dim <= DOF, "head dimension out of range");
 		return base::template head<dim>();
 	}
 	template<int dim>
 	vectview<const scalar, dim> head() const{
-		BOOST_STATIC_ASSERT(0< dim && dim <= DOF);
+		static_assert(0 < dim && dim <= DOF, "head dimension out of range");
 		return base::template head<dim>();
 	}
 };

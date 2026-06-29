@@ -39,7 +39,6 @@
 #include <vector>
 #include <cstdlib>
 
-#include <boost/bind.hpp>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <Eigen/Dense>
@@ -49,7 +48,6 @@
 #include "../mtk/types/SOn.hpp"
 #include "../mtk/types/S2.hpp"
 #include "../mtk/startIdx.hpp"
-#include "../mtk/build_manifold.hpp"
 #include "util.hpp"
 
 //#define USE_sparse

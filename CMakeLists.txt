@@ -145,22 +145,16 @@ set(SLAM_FAST_LIO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_l
 set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party/fast_lio_compat")
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(SLAM_EIGEN_INCLUDE_DIR "${THIRD_PARTY_ROOT}/eigen-3.4.0")
-set(SLAM_BOOST_INCLUDE_DIR "${THIRD_PARTY_ROOT}/boost-1.82.0")
 set(SETUP_THIRD_PARTY_COMMAND "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
 
 if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
     message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")
 endif()
 
-if(NOT EXISTS "${SLAM_BOOST_INCLUDE_DIR}/boost/preprocessor/seq.hpp")
-    message(FATAL_ERROR "Boost headers are required at ${SLAM_BOOST_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")
-endif()
-
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
-message(STATUS "FAST_LIO Boost include: ${SLAM_BOOST_INCLUDE_DIR}")
 message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
 
 # 基础源文件
@@ -428,7 +422,6 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${SLAM_FAST_LIO_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/src
     ${SLAM_EIGEN_INCLUDE_DIR}
-    ${SLAM_BOOST_INCLUDE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Export/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/AppConfig/include
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -590,7 +583,6 @@ target_include_directories(SlamPhase4Replay PRIVATE
     ${SLAM_FAST_LIO_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/src
     ${SLAM_EIGEN_INCLUDE_DIR}
-    ${SLAM_BOOST_INCLUDE_DIR}
 )
 
 if(LIVOX_SDK_AVAILABLE AND EXISTS "${LIVOX_INCLUDE_PATH}")

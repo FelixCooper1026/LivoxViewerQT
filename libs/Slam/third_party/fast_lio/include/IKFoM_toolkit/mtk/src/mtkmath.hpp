@@ -79,8 +79,7 @@
 #define MTKMATH_H_
 
 #include <cmath>
-
-#include <boost/math/tools/precision.hpp>
+#include <limits>
 
 #include "../types/vect.hpp"
 
@@ -144,7 +143,7 @@ std::pair<scalar, scalar> cos_sinc_sqrt(const scalar &x2){
 	using std::sqrt;
 	using std::cos;
 	using std::sin;
-	static scalar const taylor_0_bound = boost::math::tools::epsilon<scalar>();
+	static scalar const taylor_0_bound = std::numeric_limits<scalar>::epsilon();
 	static scalar const taylor_2_bound = sqrt(taylor_0_bound);
 	static scalar const taylor_n_bound = sqrt(taylor_2_bound);
 	

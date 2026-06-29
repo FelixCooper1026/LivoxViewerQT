@@ -68,6 +68,10 @@ LivoxViewerQT/
   - Charts
   - Network
   - Svg
+  - Sql
+- Eigen 3.4.0 headers：运行 `scripts/setup_third_party.ps1` 安装到 `third-party/eigen-3.4.0`
+- OpenMP C++ runtime/compiler support
+- 不需要安装 Boost 或 PCL；FAST_LIO 当前使用的固定 IKFoM 状态类型已去除 Boost 预处理依赖，PCL 类型由项目内 `fast_lio_compat` 最小兼容层提供
 
 ### 平台附加依赖
 
@@ -84,6 +88,7 @@ LivoxViewerQT/
 ### Windows（PowerShell）
 
 ```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_third_party.ps1
 cmake -S . -B build-msvc -A x64 -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64"
 cmake --build build-msvc --config Release --target LivoxViewerQT
 ```

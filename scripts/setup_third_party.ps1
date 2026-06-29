@@ -69,11 +69,4 @@ Install-ZipDependency `
     -InstallDirName "eigen-3.4.0" `
     -RequiredFile "Eigen/Core"
 
-Install-ZipDependency `
-    -Name "Boost 1.82.0 headers" `
-    -Url "https://archives.boost.io/release/1.82.0/source/boost_1_82_0.zip" `
-    -ArchiveName "boost_1_82_0.zip" `
-    -InstallDirName "boost-1.82.0" `
-    -RequiredFile "boost/preprocessor/seq.hpp"
-
 Write-Host "Third-party dependencies are ready."

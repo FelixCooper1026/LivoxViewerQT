@@ -240,6 +240,8 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - 原版 `pcd_save` 的 dense world-frame 累计语义已迁移为完整全局地图缓存。
 - 新增完整全局地图 PCD/LAS 导出，数据源不是 UI 预览缓存，也不是 OpenGL VBO。
 - 轨迹 CSV/TUM 导出保留。
+- Boost 完整依赖已移除：当前 IKFoM 固定状态类型不再依赖 `MTK_BUILD_MANIFOLD` / Boost.Preprocessor，MTK 数学和断言也已改用 C++ 标准库能力。
+- PCL 完整依赖不需要安装：当前只使用项目内 `fast_lio_compat` 最小兼容头层满足 FAST_LIO 已迁移代码的点云容器、体素滤波和 PCD 写出接口需求，不链接 PCL runtime。
 
 部分完成：
 
@@ -262,7 +264,9 @@ Live 路径由 `LiveLidarSlamSource` 实现，已能把实时 SDK packet 转为 
 - `detRangeM` 默认已改为 Mid360/Mid360S 模板的 100 m；旧版本已保存的用户配置不会被强制覆盖，需要用户在首选项 SLAM 页点击“恢复默认”才会套用模板默认值。
 - `publishBodyFrameCloud` 在同一个 3D 视图中显示 IMU body frame 点云，坐标语义不同于 world frame；它用于迁移原版发布输出，不应被理解为全局地图。
 - 完整地图导出已放到后台线程，但导出前从 `SlamUiBridge` 获取 `QVector<SlamPoint>` 快照仍可能带来短时内存压力。
+- Boost 已不是当前构建依赖；后续若继续从原版 FAST_LIO/IKFoM 同步代码，必须先检查是否重新引入 `boost/*`、`BOOST_*` 或 `MTK_BUILD_MANIFOLD`，优先固定展开当前实际使用的状态类型，不新增 Boost 兼容层。
+- PCL 已不是安装依赖；后续若引入新的原版 FAST_LIO 文件，不得直接链接完整 PCL，应先确认项目内 `fast_lio_compat` 能覆盖实际用到的接口，不能覆盖时再做单独依赖评估。
 
 ## 9. 当前结论
 
-当前迁移已经从“UI 稀疏/稠密地图预览”切换到“原版发布语义 + 完整后端地图保存/导出”。后续重点是继续减少硬编码参数、补齐时间偏移实际应用，以及为长轨迹完整地图保存增加更稳的分片或流式落盘机制。
+当前迁移已经从“UI 稀疏/稠密地图预览”切换到“原版发布语义 + 完整后端地图保存/导出”。当前构建依赖收敛为 Eigen、Qt、OpenMP、Npcap/libpcap 和 Livox SDK；不需要完整安装 Boost 或 PCL。后续重点是继续减少剩余路径假设、补齐时间偏移实际应用，以及为长轨迹完整地图保存增加更稳的分片或流式落盘机制。
