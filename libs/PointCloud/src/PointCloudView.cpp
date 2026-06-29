@@ -52,6 +52,18 @@ constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
 
+bool isSupportedPlaybackDropFile(const QString& filePath)
+{
+    return filePath.endsWith(QStringLiteral(".lvx2"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".pcap"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".pcapng"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".bag"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".db3"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".yaml"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".yml"), Qt::CaseInsensitive);
+}
+
 StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
 {
     return {
@@ -1670,10 +1682,7 @@ void PointCloudView::dragEnterEvent(QDragEnterEvent* event)
             continue;
         }
         const QString localFile = url.toLocalFile();
-        if (localFile.endsWith(QStringLiteral(".lvx2"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".pcap"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".pcapng"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive)) {
+        if (isSupportedPlaybackDropFile(localFile)) {
             event->acceptProposedAction();
             return;
         }
@@ -1692,10 +1701,7 @@ void PointCloudView::dropEvent(QDropEvent* event)
         if (!url.isLocalFile()) {
             continue;
         }
-        if (localFile.endsWith(QStringLiteral(".lvx2"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".pcap"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".pcapng"), Qt::CaseInsensitive) ||
-            localFile.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive)) {
+        if (isSupportedPlaybackDropFile(localFile)) {
             emit lvx2FileDropped(localFile);
             event->acceptProposedAction();
             return;

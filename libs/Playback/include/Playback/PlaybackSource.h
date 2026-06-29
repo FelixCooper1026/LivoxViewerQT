@@ -66,6 +66,19 @@ public:
         Q_UNUSED(endTimestampNs);
         return {};
     }
+    virtual uint64_t nominalFrameDurationNs() const
+    {
+        return 50000000ULL;
+    }
+    virtual uint64_t frameTimestampNs(int frameIndex) const
+    {
+        Q_UNUSED(frameIndex);
+        return 0;
+    }
+    virtual bool hasFrameTimestamps() const
+    {
+        return false;
+    }
     virtual void invalidateCache() {}
 };
 

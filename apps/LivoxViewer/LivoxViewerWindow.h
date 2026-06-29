@@ -372,8 +372,7 @@ private:
     QAction* actionClearCloud;
     QAction* actionResetView;
     QAction* actionShowImuCharts = nullptr;
-    QAction* actionPlayLvx2 = nullptr;
-    QAction* actionPlayPcap = nullptr;
+    QAction* actionPlayPointCloud = nullptr;
     QAction* actionPointCloudVisualization = nullptr;
     QAction* pointCloudStlModelAction = nullptr;
     QAction* pointCloudMeasureAction = nullptr;

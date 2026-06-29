@@ -18,14 +18,14 @@
 #include <QToolButton>
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <thread>
 
 namespace {
 
 constexpr uint64_t kPlaybackDisplayFrameMs = 100;
-constexpr uint64_t kPcapRawFrameDurationNs = 50000000ULL;
-constexpr int kRawFramesPerDisplayFrame = 2;
+constexpr uint64_t kPlaybackDisplayFrameNs = kPlaybackDisplayFrameMs * 1000000ULL;
 constexpr const char* kPlaybackLabelFullTextProperty = "playbackFullText";
 
 void setElidedPlaybackLabelText(QLabel* label, const QString& text)
@@ -49,9 +49,28 @@ void refreshElidedPlaybackLabelText(QLabel* label)
     label->setText(label->fontMetrics().elidedText(text, Qt::ElideMiddle, label->width()));
 }
 
-static int rawFramesPerPlaybackFrame(uint64_t frameIntervalMs)
+static uint64_t sourceNominalFrameDurationNs(const Playback::Source* source)
 {
-    return std::max(1, int((frameIntervalMs + 49ULL) / 50ULL));
+    return source ? std::max<uint64_t>(1, source->nominalFrameDurationNs()) : 50000000ULL;
+}
+
+static int rawFramesForDurationNs(const Playback::Source* source, uint64_t durationNs)
+{
+    const uint64_t nominalNs = sourceNominalFrameDurationNs(source);
+    if (source && source->hasFrameTimestamps()) {
+        return std::max(1, int(std::llround(double(durationNs) / double(nominalNs))));
+    }
+    return std::max(1, int((durationNs + nominalNs - 1ULL) / nominalNs));
+}
+
+static int rawFramesPerPlaybackFrame(const Playback::Source* source, uint64_t frameIntervalMs)
+{
+    return rawFramesForDurationNs(source, std::max<uint64_t>(1, frameIntervalMs) * 1000000ULL);
+}
+
+static int rawFramesPerDisplayFrame(const Playback::Source* source)
+{
+    return rawFramesForDurationNs(source, kPlaybackDisplayFrameNs);
 }
 
 static int visiblePlaybackFrameCount(const Playback::Source* source,
@@ -67,13 +86,14 @@ static int visiblePlaybackFrameCount(const Playback::Source* source,
         return rawFrameCount;
     }
 
-    const int rawFramesPerStep = rawFramesPerPlaybackFrame(frameIntervalMs);
+    const int rawFramesPerStep = rawFramesPerPlaybackFrame(source, frameIntervalMs);
     return (rawFrameCount + rawFramesPerStep - 1) / rawFramesPerStep;
 }
 
-static int displayFrameNumberForRawEndIndex(int rawEndIndex)
+static int displayFrameNumberForRawEndIndex(const Playback::Source* source, int rawEndIndex)
 {
-    return (std::max(1, rawEndIndex) + kRawFramesPerDisplayFrame - 1) / kRawFramesPerDisplayFrame;
+    const int rawFramesPerDisplay = rawFramesPerDisplayFrame(source);
+    return (std::max(1, rawEndIndex) + rawFramesPerDisplay - 1) / rawFramesPerDisplay;
 }
 
 static int displayPlaybackFrameCount(const Playback::Source* source)
@@ -83,7 +103,8 @@ static int displayPlaybackFrameCount(const Playback::Source* source)
     }
 
     const int rawFrameCount = source->frameCount();
-    return std::max(1, (rawFrameCount + kRawFramesPerDisplayFrame - 1) / kRawFramesPerDisplayFrame);
+    const int rawFramesPerDisplay = rawFramesPerDisplayFrame(source);
+    return std::max(1, (rawFrameCount + rawFramesPerDisplay - 1) / rawFramesPerDisplay);
 }
 
 static QVector<int> lineNumbersForPoints(const QVector<PointCloudPoint>& points)
@@ -99,10 +120,47 @@ static QVector<int> lineNumbersForPoints(const QVector<PointCloudPoint>& points)
     return lineNumbers;
 }
 
-static QString formatPlaybackTime(int frameNumber, int totalFrameCount)
+static uint64_t playbackElapsedNsForRawEndIndex(const Playback::Source* source, int rawEndIndex)
 {
-    const uint64_t totalMs = uint64_t(frameNumber) * kPlaybackDisplayFrameMs;
-    const uint64_t durationMs = uint64_t(std::max(1, totalFrameCount)) * kPlaybackDisplayFrameMs;
+    if (!source || rawEndIndex <= 0) {
+        return 0;
+    }
+
+    const int sourceFrameCount = source->frameCount();
+    const int frameIndex = std::clamp(rawEndIndex - 1, 0, std::max(0, sourceFrameCount - 1));
+    const uint64_t nominalNs = sourceNominalFrameDurationNs(source);
+    if (source->hasFrameTimestamps() && sourceFrameCount > 0) {
+        const uint64_t firstTimestampNs = source->frameTimestampNs(0);
+        const uint64_t frameTimestampNs = source->frameTimestampNs(frameIndex);
+        if (frameTimestampNs >= firstTimestampNs) {
+            return frameTimestampNs - firstTimestampNs + nominalNs;
+        }
+    }
+    return uint64_t(rawEndIndex) * nominalNs;
+}
+
+static uint64_t playbackDurationNs(const Playback::Source* source)
+{
+    if (!source || source->frameCount() <= 0) {
+        return kPlaybackDisplayFrameNs;
+    }
+
+    const int sourceFrameCount = source->frameCount();
+    const uint64_t nominalNs = sourceNominalFrameDurationNs(source);
+    if (source->hasFrameTimestamps()) {
+        const uint64_t firstTimestampNs = source->frameTimestampNs(0);
+        const uint64_t lastTimestampNs = source->frameTimestampNs(sourceFrameCount - 1);
+        if (lastTimestampNs >= firstTimestampNs) {
+            return lastTimestampNs - firstTimestampNs + nominalNs;
+        }
+    }
+    return uint64_t(sourceFrameCount) * nominalNs;
+}
+
+static QString formatPlaybackTimeNs(uint64_t timeNs, uint64_t durationNs)
+{
+    const uint64_t totalMs = timeNs / 1000000ULL;
+    const uint64_t durationMs = std::max<uint64_t>(1, durationNs / 1000000ULL);
     const uint64_t totalTenths = totalMs / 100ULL;
     const uint64_t totalSeconds = totalTenths / 10ULL;
     const uint64_t tenths = totalTenths % 10ULL;
@@ -147,12 +205,9 @@ static bool playbackSourceProvidesImu(Playback::SourceKind kind)
     return kind == Playback::SourceKind::Pcap || kind == Playback::SourceKind::Rosbag;
 }
 
-static uint64_t playbackImuQueryPaddingNs(Playback::SourceKind kind, uint64_t frameIntervalMs)
+static uint64_t playbackImuQueryPaddingNs(const Playback::Source* source)
 {
-    if (kind == Playback::SourceKind::Pcap) {
-        return kPcapRawFrameDurationNs;
-    }
-    return std::max<uint64_t>(1, frameIntervalMs) * 1000000ULL;
+    return sourceNominalFrameDurationNs(source);
 }
 
 static void updatePlaybackDeviceCardState(bool visible,
@@ -191,7 +246,7 @@ LivoxViewerWindow::PlaybackUiSnapshot LivoxViewerWindow::playbackUiSnapshot() co
 
     const int displayFrameCount = displayPlaybackFrameCount(playbackState.source.get());
     const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
-    const int displayFrameIndex = displayFrameNumberForRawEndIndex(rawEndIndex) - 1;
+    const int displayFrameIndex = displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex) - 1;
     snapshot.sliderMinimum = 0;
     snapshot.sliderMaximum = std::max(0, displayFrameCount - 1);
     snapshot.sliderValue = std::clamp(displayFrameIndex, 0, snapshot.sliderMaximum);
@@ -202,18 +257,20 @@ LivoxViewerWindow::PlaybackUiSnapshot LivoxViewerWindow::playbackUiSnapshot() co
         snapshot.timeText = QStringLiteral("加载中...");
         snapshot.infoText = QString("%1    加载中...").arg(path);
     } else if (playbackState.active) {
-        const int currentFrame = displayFrameNumberForRawEndIndex(rawEndIndex);
+        const int currentFrame = displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex);
         const int totalFrames = displayPlaybackFrameCount(playbackState.source.get());
+        const uint64_t elapsedNs = playbackElapsedNsForRawEndIndex(playbackState.source.get(), rawEndIndex);
+        const uint64_t durationNs = playbackDurationNs(playbackState.source.get());
         snapshot.timeText = QStringLiteral("时间 %1 / %2")
-                                .arg(formatPlaybackTime(currentFrame, totalFrames))
-                                .arg(formatPlaybackTime(totalFrames, totalFrames));
+                                .arg(formatPlaybackTimeNs(elapsedNs, durationNs))
+                                .arg(formatPlaybackTimeNs(durationNs, durationNs));
         snapshot.frameText = QStringLiteral("帧 %1 / %2")
                                  .arg(currentFrame)
                                  .arg(totalFrames);
         snapshot.infoText = QString("%1    时间 %2 / %3    帧 %4 / %5")
                                 .arg(path)
-                                .arg(formatPlaybackTime(currentFrame, totalFrames))
-                                .arg(formatPlaybackTime(totalFrames, totalFrames))
+                                .arg(formatPlaybackTimeNs(elapsedNs, durationNs))
+                                .arg(formatPlaybackTimeNs(durationNs, durationNs))
                                 .arg(currentFrame)
                                 .arg(totalFrames);
     }
@@ -300,7 +357,7 @@ void LivoxViewerWindow::playbackSeekToDisplayFrame(int value)
     }
     setLvx2PlaybackPlaying(false);
     const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
-    const int rawEndIndex = std::min((value + 1) * kRawFramesPerDisplayFrame, sourceFrameCount);
+    const int rawEndIndex = std::min((value + 1) * rawFramesPerDisplayFrame(playbackState.source.get()), sourceFrameCount);
     showLvx2PlaybackFrame(playbackFrameIndexForRawEndIndex(rawEndIndex, playbackState.mode, frameIntervalMs));
 }
 
@@ -332,7 +389,7 @@ void LivoxViewerWindow::playbackSetModeIndex(int index)
     }
 
     const int sourceFrameCount = playbackState.source ? playbackState.source->frameCount() : 0;
-    const int rawFramesPerStep = rawFramesPerPlaybackFrame(frameIntervalMs);
+    const int rawFramesPerStep = rawFramesPerPlaybackFrame(playbackState.source.get(), frameIntervalMs);
     if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
         playbackState.frameCount = sourceFrameCount;
     } else {
@@ -540,7 +597,7 @@ int LivoxViewerWindow::playbackRawEndIndexForFrame(int playbackFrameIndex,
         return std::min(frameIndex + 1, sourceFrameCount);
     }
 
-    const int rawFrameCount = rawFramesPerPlaybackFrame(intervalMs);
+    const int rawFrameCount = rawFramesPerPlaybackFrame(playbackState.source.get(), intervalMs);
     return std::min((frameIndex + 1) * rawFrameCount, sourceFrameCount);
 }
 
@@ -558,7 +615,7 @@ int LivoxViewerWindow::playbackFrameIndexForRawEndIndex(int rawEndIndex,
         return std::clamp(rawEnd - 1, 0, playbackState.frameCount - 1);
     }
 
-    const int rawFrameCount = rawFramesPerPlaybackFrame(intervalMs);
+    const int rawFrameCount = rawFramesPerPlaybackFrame(playbackState.source.get(), intervalMs);
     return std::clamp((rawEnd - 1) / rawFrameCount, 0, playbackState.frameCount - 1);
 }
 
@@ -571,7 +628,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
     playbackFrameIndex = std::clamp(playbackFrameIndex, 0, playbackState.frameCount - 1);
     const int previousPlaybackFrame = playbackState.frame;
     const int sourceFrameCount = playbackState.source->frameCount();
-    const int rawFrameCount = rawFramesPerPlaybackFrame(frameIntervalMs);
+    const int rawFrameCount = rawFramesPerPlaybackFrame(playbackState.source.get(), frameIntervalMs);
     int rawStartIndex = 0;
     int rawEndIndex = 0;
     if (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) {
@@ -738,7 +795,7 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
         const QVector<Playback::ImuSample> imuSamples =
             playbackState.source->readImuSamples(
                 imuStartTimestamp,
-                windowEndTimestamp + playbackImuQueryPaddingNs(playbackState.source->kind(), frameIntervalMs));
+                windowEndTimestamp + playbackImuQueryPaddingNs(playbackState.source.get()));
         appendPlaybackImuSamples(playbackState, imuSamples, rebuildImuHistory);
     }
 
@@ -883,7 +940,7 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
         playbackState.updatingSlider = true;
         const int displayFrameCount = displayPlaybackFrameCount(playbackState.source.get());
         const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
-        const int displayFrameIndex = displayFrameNumberForRawEndIndex(rawEndIndex) - 1;
+        const int displayFrameIndex = displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex) - 1;
         playbackState.progressSlider->setRange(0, std::max(0, displayFrameCount - 1));
         playbackState.progressSlider->setEnabled(playbackState.active && !playbackState.loading && playbackState.frameCount > 0);
         playbackState.progressSlider->setValue(std::clamp(displayFrameIndex, 0, std::max(0, displayFrameCount - 1)));
@@ -905,12 +962,14 @@ void LivoxViewerWindow::updateLvx2PlaybackUi()
             playbackInfo = QString("%1    加载中...").arg(path);
         } else {
             const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
-            const int currentFrame = displayFrameNumberForRawEndIndex(rawEndIndex);
+            const int currentFrame = displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex);
             const int totalFrames = displayPlaybackFrameCount(playbackState.source.get());
+            const uint64_t elapsedNs = playbackElapsedNsForRawEndIndex(playbackState.source.get(), rawEndIndex);
+            const uint64_t durationNs = playbackDurationNs(playbackState.source.get());
             playbackInfo = QString("%1    时间 %2 / %3    帧 %4 / %5")
                                .arg(path)
-                               .arg(formatPlaybackTime(currentFrame, totalFrames))
-                               .arg(formatPlaybackTime(totalFrames, totalFrames))
+                               .arg(formatPlaybackTimeNs(elapsedNs, durationNs))
+                               .arg(formatPlaybackTimeNs(durationNs, durationNs))
                                .arg(currentFrame)
                                .arg(totalFrames);
         }
@@ -1117,7 +1176,9 @@ void LivoxViewerWindow::setLvx2PlaybackPlaying(bool playing)
     if (playbackState.timer) {
         if (playbackState.playing) {
             const double baseStepMs =
-                (playbackState.mode == Lvx2PlaybackMode::SlidingWindow) ? 50.0 : static_cast<double>(frameIntervalMs);
+                (playbackState.mode == Lvx2PlaybackMode::SlidingWindow)
+                    ? double(sourceNominalFrameDurationNs(playbackState.source.get())) / 1000000.0
+                    : static_cast<double>(frameIntervalMs);
             const int interval = std::max(1, static_cast<int>(baseStepMs / playbackState.speed));
             playbackState.timer->start(interval);
         } else {

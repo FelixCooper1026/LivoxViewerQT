@@ -58,11 +58,53 @@ Playback::ImuSample toPlaybackImuSample(const SlamImuSample& sample, uint32_t de
     return result;
 }
 
+uint64_t fallbackNominalFrameDurationNs(int frameDurationMs)
+{
+    return uint64_t(std::max(1, frameDurationMs)) * 1000000ULL;
+}
+
+uint64_t inferNominalFrameDurationNs(const QVector<SlamInputFrame>& frames, int frameDurationMs)
+{
+    QVector<int64_t> deltas;
+    if (frames.size() > 1) {
+        deltas.reserve(frames.size() - 1);
+    }
+    for (int i = 1; i < frames.size(); ++i) {
+        const int64_t delta = frames.at(i).frameStartNs - frames.at(i - 1).frameStartNs;
+        if (delta > 0) {
+            deltas.push_back(delta);
+        }
+    }
+    if (deltas.isEmpty()) {
+        return fallbackNominalFrameDurationNs(frameDurationMs);
+    }
+
+    std::sort(deltas.begin(), deltas.end());
+    return uint64_t(deltas.at(deltas.size() / 2));
+}
+
+bool hasValidFrameTimestamps(const QVector<SlamInputFrame>& frames)
+{
+    if (frames.isEmpty() || frames.first().frameStartNs <= 0) {
+        return false;
+    }
+    if (frames.size() == 1) {
+        return true;
+    }
+    for (int i = 1; i < frames.size(); ++i) {
+        if (frames.at(i).frameStartNs > frames.at(i - 1).frameStartNs) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 RosbagPlaybackSource::RosbagPlaybackSource(int frameDurationMs)
     : frameDurationMs_(std::max(1, frameDurationMs))
 {
+    nominalFrameDurationNs_ = fallbackNominalFrameDurationNs(frameDurationMs_);
 }
 
 bool RosbagPlaybackSource::load(const QString& filePath)
@@ -73,6 +115,8 @@ bool RosbagPlaybackSource::load(const QString& filePath)
     frames_.clear();
     imuSamples_.clear();
     devices_.clear();
+    nominalFrameDurationNs_ = fallbackNominalFrameDurationNs(frameDurationMs_);
+    hasFrameTimestamps_ = false;
 
     RosbagSlamSourceConfig config;
     config.frameDurationMs = frameDurationMs_;
@@ -89,6 +133,8 @@ bool RosbagPlaybackSource::load(const QString& filePath)
     }
 
     frames_ = source.frames();
+    nominalFrameDurationNs_ = inferNominalFrameDurationNs(frames_, frameDurationMs_);
+    hasFrameTimestamps_ = hasValidFrameTimestamps(frames_);
     imuSamples_ = source.imuSamples();
     std::sort(imuSamples_.begin(), imuSamples_.end(), [](const SlamImuSample& lhs, const SlamImuSample& rhs) {
         return lhs.timestampNs < rhs.timestampNs;
@@ -191,6 +237,25 @@ QVector<Playback::ImuSample> RosbagPlaybackSource::readImuSamples(uint64_t start
         samples.push_back(toPlaybackImuSample(sample, defaultLidarId));
     }
     return samples;
+}
+
+uint64_t RosbagPlaybackSource::nominalFrameDurationNs() const
+{
+    return nominalFrameDurationNs_;
+}
+
+uint64_t RosbagPlaybackSource::frameTimestampNs(int frameIndex) const
+{
+    if (frameIndex < 0 || frameIndex >= frames_.size()) {
+        return 0;
+    }
+    const int64_t timestampNs = frames_.at(frameIndex).frameStartNs;
+    return timestampNs < 0 ? 0ULL : uint64_t(timestampNs);
+}
+
+bool RosbagPlaybackSource::hasFrameTimestamps() const
+{
+    return hasFrameTimestamps_;
 }
 
 void RosbagPlaybackSource::invalidateCache()

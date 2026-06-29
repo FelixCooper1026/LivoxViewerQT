@@ -32,8 +32,7 @@ QString selectPlaybackFile(QWidget* parent, const QString& title, const QString&
 void LivoxViewerWindow::createFileActions()
 {
     QAction* actionGenerateConfig = fileMenu->addAction("生成配置文件...");
-    actionPlayLvx2 = fileMenu->addAction("播放点云文件...");
-    actionPlayPcap = fileMenu->addAction("播放Pcap文件...");
+    actionPlayPointCloud = fileMenu->addAction("播放点云文件...");
     QAction* actionFormatConvert = fileMenu->addAction("格式转换...");
     QAction* actionPreferences = fileMenu->addAction("首选项...");
     fileMenu->addSeparator();
@@ -42,7 +41,7 @@ void LivoxViewerWindow::createFileActions()
     connect(actionGenerateConfig, &QAction::triggered, this, [this]() {
         showConfigGeneratorDialog();
     });
-    connect(actionPlayLvx2, &QAction::triggered, this, [this]() {
+    connect(actionPlayPointCloud, &QAction::triggered, this, [this]() {
         QSettings settings("Livox", "LivoxViewerQT");
         QString lastDir = settings.value("playback/lastDir",
                                          QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
@@ -70,24 +69,6 @@ void LivoxViewerWindow::createFileActions()
         } else {
             loadLvx2PlaybackFile(filePath);
         }
-    });
-    connect(actionPlayPcap, &QAction::triggered, this, [this]() {
-        QSettings settings("Livox", "LivoxViewerQT");
-        QString lastDir = settings.value("playback/lastPcapDir",
-                                         QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-        if (lastDir.isEmpty()) {
-            lastDir = QDir::homePath();
-        }
-        const QString filePath = selectPlaybackFile(
-            this,
-            "选择Pcap点云文件",
-            lastDir,
-            "Pcap文件 (*.pcap *.pcapng *.cap);;所有文件 (*.*)");
-        if (filePath.isEmpty()) {
-            return;
-        }
-        settings.setValue("playback/lastPcapDir", QFileInfo(filePath).absolutePath());
-        loadPcapPlaybackFile(filePath);
     });
     connect(actionFormatConvert, &QAction::triggered, this, &LivoxViewerWindow::showFormatConvertDialog);
     connect(actionPreferences, &QAction::triggered, this, &LivoxViewerWindow::showPreferencesDialog);
