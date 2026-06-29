@@ -71,6 +71,7 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
         !std::isfinite(config.detRangeM) || config.detRangeM <= 0.0 ||
         !std::isfinite(config.fovDegree) || config.fovDegree <= 0.0 ||
         !std::isfinite(config.blindMinRangeM) || config.blindMinRangeM < 0.0 ||
+        config.pointFilterNum <= 0 ||
         config.maxIterations <= 0) {
         assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO 局部地图、视场角、探测距离、近距离盲区和最大迭代次数必须有效。"));
         return false;
@@ -217,15 +218,20 @@ void assignOutputStatus(SlamOutput* output, SlamStatusCode status, const QString
     }
 }
 
-MeasureGroup toFastLioMeasureGroup(const SlamInputFrame& frame, double blindMinRangeM)
+MeasureGroup toFastLioMeasureGroup(const SlamInputFrame& frame, double blindMinRangeM, int pointFilterNum)
 {
     MeasureGroup measure;
     measure.lidar_beg_time = static_cast<double>(frame.frameStartNs) * kNsToSeconds;
     measure.lidar_end_time = static_cast<double>(frame.frameEndNs) * kNsToSeconds;
     measure.lidar->points.reserve(static_cast<std::size_t>(frame.points.size()));
     const double blindRangeSq = blindMinRangeM * blindMinRangeM;
+    int validPointCount = 0;
 
     for (const SlamPoint& sourcePoint : frame.points) {
+        ++validPointCount;
+        if (validPointCount % pointFilterNum != 0) {
+            continue;
+        }
         const double x = sourcePoint.x;
         const double y = sourcePoint.y;
         const double z = sourcePoint.z;
@@ -695,7 +701,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     }
 
     FastLioState& state = *state_;
-    state.measures = toFastLioMeasureGroup(frame, state.config.blindMinRangeM);
+    state.measures = toFastLioMeasureGroup(frame, state.config.blindMinRangeM, state.config.pointFilterNum);
 
     if (state.firstScan) {
         state.firstLidarTime = state.measures.lidar_beg_time;

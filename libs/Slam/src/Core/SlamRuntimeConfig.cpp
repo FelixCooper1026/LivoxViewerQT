@@ -114,6 +114,11 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
 {
     config.lidarTemplate = lidarTemplate;
     assignTemplateDefaultExtrinsic(config, lidarTemplate);
+    config.cubeSideLengthM = 1000.0;
+    config.maxIterations = 3;
+    config.pointFilterNum = 3;
+    config.filterSizeSurfM = 0.5;
+    config.filterSizeMapM = 0.5;
     if (lidarTemplate == SlamLidarTemplate::Avia) {
         config.detRangeM = 450.0;
         config.fovDegree = 90.0;
@@ -175,6 +180,9 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
     config.blindMinRangeM = validNonNegativeDouble(
         settings.value(key(prefix, QStringLiteral("blindMinRangeM")), config.blindMinRangeM).toDouble(),
         config.blindMinRangeM);
+    config.pointFilterNum = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("pointFilterNum")), config.pointFilterNum).toInt(),
+        config.pointFilterNum);
     config.gyrCov = validPositiveDouble(
         settings.value(key(prefix, QStringLiteral("gyrCov")), config.gyrCov).toDouble(),
         config.gyrCov);
@@ -246,6 +254,7 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("detRangeM")), config.detRangeM);
     settings.setValue(key(prefix, QStringLiteral("fovDegree")), config.fovDegree);
     settings.setValue(key(prefix, QStringLiteral("blindMinRangeM")), config.blindMinRangeM);
+    settings.setValue(key(prefix, QStringLiteral("pointFilterNum")), config.pointFilterNum);
     settings.setValue(key(prefix, QStringLiteral("gyrCov")), config.gyrCov);
     settings.setValue(key(prefix, QStringLiteral("accCov")), config.accCov);
     settings.setValue(key(prefix, QStringLiteral("bGyrCov")), config.bGyrCov);

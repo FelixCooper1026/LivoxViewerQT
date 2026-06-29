@@ -1,5 +1,14 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-29 FAST_LIO Avia/Mid360 launch 默认参数对齐
+
+- 对照来源：官方 `hku-mars/FAST_LIO` 的 `launch/mapping_avia.launch`、`launch/mapping_mid360.launch`、`config/avia.yaml`、`config/mid360.yaml`。
+- 对照结果：两个 launch 均设置 `point_filter_num=3`、`max_iteration=3`、`filter_size_surf=0.5`、`filter_size_map=0.5`、`cube_side_length=1000`。Avia yaml 设置 `det_range=450`、`fov_degree=90`、`blind=4`、外参 `[0.04165, 0.02326, -0.0284]`。Mid360 yaml 设置 `det_range=100`、`fov_degree=360`、`blind=0.5`、外参 `[-0.011, -0.02329, 0.04412]`。
+- 不匹配项：当前项目原先 `cubeSideLengthM=200`、`maxIterations=4`，且未接入原版 launch 的 `point_filter_num`。
+- 修正：`SlamRuntimeConfig` 默认改为 `cubeSideLengthM=1000`、`maxIterations=3`，`applySlamLidarTemplateDefaults()` 同步重置这两项；新增 `pointFilterNum=3`，接入模板持久化、首选项 FAST_LIO 后端页和 `SlamInputFrame -> MeasureGroup` 转换，按原版 `valid_num % point_filter_num == 0` 语义抽样输入点。
+- 说明：`feature_extract_enable=0` 与当前未启用特征提取路径一致；`runtime_pos_log_enable=0` 不新增运行日志输出配置。已有用户保存过的模板配置不会被静默覆盖，可通过首选项 SLAM 页的“恢复默认”切到新的原版默认值。
+- 验证：2026-06-29 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；首次 `scripts/dev_build_run.bat Release` 因完整重编译超过 180 秒超时，但后台 MSBuild 完成并生成新 `LivoxViewerQT.exe`；第二次执行 `scripts/dev_build_run.bat Release` 完整返回 0，程序启动后窗口响应，最近 3 分钟 Windows Application 事件日志未出现新的 `LivoxViewerQT` 崩溃事件。
+
 ## 2026-06-29 Linux Eigen 安装指令修正
 
 - 问题：Linux CMake 配置缺少 `third-party/eigen-3.4.0/Eigen/Core` 时，错误信息仍提示运行 Windows PowerShell 脚本 `scripts/setup_third_party.ps1`，在没有 `pwsh` 的 Linux 环境下无法执行。

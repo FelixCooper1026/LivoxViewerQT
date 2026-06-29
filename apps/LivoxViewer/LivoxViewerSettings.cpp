@@ -1361,6 +1361,12 @@ void LivoxViewerWindow::showPreferencesDialog()
         createSlamDoubleSpin(slamRuntimeConfig.fovDegree, 1.0, 360.0, 1, 1.0, QStringLiteral(" °"));
     QDoubleSpinBox* slamBlindMinRangeSpin =
         createSlamDoubleSpin(slamRuntimeConfig.blindMinRangeM, 0.0, 100.0, 2, 0.1, QStringLiteral(" m"));
+    QSpinBox* slamPointFilterNumSpin = new QSpinBox(&dlg);
+    slamPointFilterNumSpin->setRange(1, 100);
+    slamPointFilterNumSpin->setSingleStep(1);
+    slamPointFilterNumSpin->setValue(slamRuntimeConfig.pointFilterNum);
+    slamPointFilterNumSpin->setFixedWidth(kPreferenceSpinBoxWidth);
+    usePreferenceControlColumn(slamPointFilterNumSpin);
     QSpinBox* slamMaxIterationsSpin = new QSpinBox(&dlg);
     slamMaxIterationsSpin->setRange(1, 100);
     slamMaxIterationsSpin->setSingleStep(1);
@@ -1546,6 +1552,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDetRangeSpin->setValue(runtimeDefaults.detRangeM);
         slamFovDegreeSpin->setValue(runtimeDefaults.fovDegree);
         slamBlindMinRangeSpin->setValue(runtimeDefaults.blindMinRangeM);
+        slamPointFilterNumSpin->setValue(runtimeDefaults.pointFilterNum);
         slamMaxIterationsSpin->setValue(runtimeDefaults.maxIterations);
         slamGyrCovSpin->setValue(runtimeDefaults.gyrCov);
         slamAccCovSpin->setValue(runtimeDefaults.accCov);
@@ -1576,6 +1583,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.detRangeM = slamDetRangeSpin->value();
         config.fovDegree = slamFovDegreeSpin->value();
         config.blindMinRangeM = slamBlindMinRangeSpin->value();
+        config.pointFilterNum = slamPointFilterNumSpin->value();
         config.maxIterations = slamMaxIterationsSpin->value();
         config.gyrCov = slamGyrCovSpin->value();
         config.accCov = slamAccCovSpin->value();
@@ -1841,6 +1849,10 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "对应原版 preprocess/blind，滤除 LiDAR 坐标系中距离小于该值的近场点。",
                      slamBlindMinRangeSpin);
     addPreferenceRow(slamBackendSection,
+                     "点过滤步长",
+                     "对应原版 point_filter_num，按 Livox 点序号保留每第 N 个点输入 FAST_LIO。",
+                     slamPointFilterNumSpin);
+    addPreferenceRow(slamBackendSection,
                      "重力加速度",
                      "对应原版 G_m_s2，用于 IMU 初始化重力向量长度和加速度归一化缩放。",
                      slamGravityNormSpin);
@@ -2026,6 +2038,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const double previousSlamDetRangeM = slamRuntimeConfig.detRangeM;
     const double previousSlamFovDegree = slamRuntimeConfig.fovDegree;
     const double previousSlamBlindMinRangeM = slamRuntimeConfig.blindMinRangeM;
+    const int previousSlamPointFilterNum = slamRuntimeConfig.pointFilterNum;
     const int previousSlamMaxIterations = slamRuntimeConfig.maxIterations;
     const double previousSlamGyrCov = slamRuntimeConfig.gyrCov;
     const double previousSlamAccCov = slamRuntimeConfig.accCov;
@@ -2071,6 +2084,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.detRangeM = slamDetRangeSpin->value();
     slamRuntimeConfig.fovDegree = slamFovDegreeSpin->value();
     slamRuntimeConfig.blindMinRangeM = slamBlindMinRangeSpin->value();
+    slamRuntimeConfig.pointFilterNum = slamPointFilterNumSpin->value();
     slamRuntimeConfig.maxIterations = slamMaxIterationsSpin->value();
     slamRuntimeConfig.gyrCov = slamGyrCovSpin->value();
     slamRuntimeConfig.accCov = slamAccCovSpin->value();
@@ -2156,6 +2170,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.detRangeM != previousSlamDetRangeM ||
         slamRuntimeConfig.fovDegree != previousSlamFovDegree ||
         slamRuntimeConfig.blindMinRangeM != previousSlamBlindMinRangeM ||
+        slamRuntimeConfig.pointFilterNum != previousSlamPointFilterNum ||
         slamRuntimeConfig.maxIterations != previousSlamMaxIterations ||
         slamRuntimeConfig.gyrCov != previousSlamGyrCov ||
         slamRuntimeConfig.accCov != previousSlamAccCov ||
