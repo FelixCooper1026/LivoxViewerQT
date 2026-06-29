@@ -78,6 +78,24 @@ QLabel* createSlamStatusTextValue(QWidget* parent)
     return valueLabel;
 }
 
+QString formatStatusMemoryBytes(quint64 bytes)
+{
+    constexpr double kKb = 1024.0;
+    constexpr double kMb = kKb * 1024.0;
+    constexpr double kGb = kMb * 1024.0;
+    const double value = double(bytes);
+    if (value >= kGb) {
+        return QStringLiteral("%1 GB").arg(value / kGb, 0, 'f', 2);
+    }
+    if (value >= kMb) {
+        return QStringLiteral("%1 MB").arg(value / kMb, 0, 'f', 1);
+    }
+    if (value >= kKb) {
+        return QStringLiteral("%1 KB").arg(value / kKb, 0, 'f', 1);
+    }
+    return QStringLiteral("%1 B").arg(bytes);
+}
+
 } // namespace
 
 void LivoxViewerWindow::createLogPanel()
@@ -239,7 +257,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(performanceBody, performanceGroup, QStringLiteral("输入 FPS"));
     addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
-    addField(performanceBody, performanceGroup, QStringLiteral("轨迹点数"));
+    addField(performanceBody, performanceGroup, QStringLiteral("内存占用"));
     performanceBody->addStretch(1);
 
     QVBoxLayout* mapBody = nullptr;
@@ -357,7 +375,17 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     setField(QStringLiteral("后端耗时"), QStringLiteral("%1 ms").arg(state.backendMs));
     setField(QStringLiteral("丢帧数"), state.droppedFrames);
     setField(QStringLiteral("当前位姿"), state.currentPose);
-    setField(QStringLiteral("轨迹点数"), state.trajectoryPoints);
+    quint64 displayCacheBytes = 0;
+    for (const SlamWorldPointSegment& segment : slamWorldPointSegments) {
+        displayCacheBytes += quint64(segment.points.size()) * quint64(sizeof(PointCloudPoint));
+    }
+    const QString memoryText = QStringLiteral("%1 / 显示缓存 %2")
+                                   .arg(state.memoryUsage,
+                                        formatStatusMemoryBytes(displayCacheBytes));
+    setField(QStringLiteral("内存占用"), memoryText);
+    if (QLabel* memoryLabel = slamStatusFields.value(QStringLiteral("内存占用"), nullptr)) {
+        memoryLabel->setToolTip(QStringLiteral("轨迹点数: %1\n%2").arg(state.trajectoryPoints, memoryText));
+    }
     setField(QStringLiteral("局部 ikd-tree 有效点数"), state.mapPoints);
     setField(QStringLiteral("世界系点云总数"), state.worldFramePoints);
     setField(QStringLiteral("机体系当前帧点数"), state.bodyFramePoints);

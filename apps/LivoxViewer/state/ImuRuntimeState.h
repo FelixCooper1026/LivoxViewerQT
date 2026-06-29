@@ -70,12 +70,21 @@ enum class ImuVisualizationSource {
     Offline
 };
 
+enum class ImuVisualizationDeviceKind {
+    Device,
+    RosbagTopic
+};
+
 struct ImuVisualizationDeviceDescriptor
 {
     uint32_t handle = 0;
+    ImuVisualizationDeviceKind kind = ImuVisualizationDeviceKind::Device;
     QString modelDisplay;
     QString serialNumber;
     QString ipAddress;
+    QString topicName;
+    QString messageType;
+    uint64_t messageCount = 0;
     ImuVisualizationSource source = ImuVisualizationSource::Realtime;
 };
 

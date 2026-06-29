@@ -847,17 +847,39 @@ QWidget* ImuVisualizationDialog::createDeviceCard(const ImuVisualizationDeviceDe
     QLabel* modelLabel = new QLabel(device.modelDisplay.isEmpty() ? QStringLiteral("未知型号") : device.modelDisplay, card);
     modelLabel->setObjectName(QStringLiteral("ImuDeviceModel"));
     QLabel* sourceLabel = new QLabel(
-        device.source == ImuVisualizationSource::Realtime ? QStringLiteral("实时数据流") : QStringLiteral("离线数据流"),
+        device.kind == ImuVisualizationDeviceKind::RosbagTopic
+            ? QStringLiteral("离线 ROSbag")
+            : (device.source == ImuVisualizationSource::Realtime ? QStringLiteral("实时数据流") : QStringLiteral("离线数据流")),
         card);
     sourceLabel->setObjectName(QStringLiteral("ImuDeviceSourceTag"));
-    QLabel* snLabel = new QLabel(device.serialNumber.isEmpty() ? QStringLiteral("SN: --") : QStringLiteral("SN: %1").arg(device.serialNumber), card);
-    snLabel->setObjectName(QStringLiteral("ImuDeviceSn"));
-    QLabel* ipLabel = new QLabel(device.ipAddress.isEmpty() ? QStringLiteral("IP: --") : QStringLiteral("IP: %1").arg(device.ipAddress), card);
-    ipLabel->setObjectName(QStringLiteral("ImuDeviceIp"));
     layout->addWidget(modelLabel);
     layout->addWidget(sourceLabel);
-    layout->addWidget(snLabel);
-    layout->addWidget(ipLabel);
+    if (device.kind == ImuVisualizationDeviceKind::RosbagTopic) {
+        QLabel* topicLabel = new QLabel(device.topicName.isEmpty()
+                                            ? QStringLiteral("Topic: --")
+                                            : QStringLiteral("Topic: %1").arg(device.topicName),
+                                        card);
+        topicLabel->setObjectName(QStringLiteral("ImuDeviceSn"));
+        QLabel* typeLabel = new QLabel(device.messageType.isEmpty()
+                                           ? QStringLiteral("类型: --")
+                                           : QStringLiteral("类型: %1").arg(device.messageType),
+                                       card);
+        typeLabel->setObjectName(QStringLiteral("ImuDeviceIp"));
+        QLabel* countLabel = new QLabel(QStringLiteral("消息数: %1").arg(device.messageCount), card);
+        countLabel->setObjectName(QStringLiteral("ImuDeviceIp"));
+        topicLabel->setWordWrap(true);
+        typeLabel->setWordWrap(true);
+        layout->addWidget(topicLabel);
+        layout->addWidget(typeLabel);
+        layout->addWidget(countLabel);
+    } else {
+        QLabel* snLabel = new QLabel(device.serialNumber.isEmpty() ? QStringLiteral("SN: --") : QStringLiteral("SN: %1").arg(device.serialNumber), card);
+        snLabel->setObjectName(QStringLiteral("ImuDeviceSn"));
+        QLabel* ipLabel = new QLabel(device.ipAddress.isEmpty() ? QStringLiteral("IP: --") : QStringLiteral("IP: %1").arg(device.ipAddress), card);
+        ipLabel->setObjectName(QStringLiteral("ImuDeviceIp"));
+        layout->addWidget(snLabel);
+        layout->addWidget(ipLabel);
+    }
     return card;
 }
 
@@ -869,9 +891,13 @@ void ImuVisualizationDialog::refreshDeviceList()
     for (const ImuVisualizationDeviceDescriptor& device : devices) {
         const auto it = m_devicesByHandle.constFind(device.handle);
         if (it == m_devicesByHandle.constEnd() ||
+            it->kind != device.kind ||
             it->modelDisplay != device.modelDisplay ||
             it->serialNumber != device.serialNumber ||
             it->ipAddress != device.ipAddress ||
+            it->topicName != device.topicName ||
+            it->messageType != device.messageType ||
+            it->messageCount != device.messageCount ||
             it->source != device.source) {
             rebuild = true;
             break;
@@ -908,7 +934,8 @@ void ImuVisualizationDialog::refreshDeviceList()
             m_devicesByHandle.insert(device.handle, device);
             QListWidgetItem* item = new QListWidgetItem();
             item->setData(Qt::UserRole, QVariant::fromValue(static_cast<quint32>(device.handle)));
-            item->setSizeHint(QSize(m_embedded ? 190 : 236, 92));
+            item->setSizeHint(QSize(m_embedded ? 190 : 236,
+                                    device.kind == ImuVisualizationDeviceKind::RosbagTopic ? 116 : 92));
             m_deviceList->addItem(item);
             m_deviceList->setItemWidget(item, createDeviceCard(device));
             if (m_haveCurrentHandle && device.handle == m_currentHandle) {

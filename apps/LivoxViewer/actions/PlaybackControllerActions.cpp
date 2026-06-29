@@ -827,6 +827,74 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
         delete item->widget();
         delete item;
     }
+
+    if (playbackState.source && playbackState.source->kind() == Playback::SourceKind::Rosbag) {
+        const Playback::SourceInfo sourceInfo = playbackState.source->sourceInfo();
+        auto addInfoCard = [this, deviceListLayout](const QString& title,
+                                                    const QVector<QPair<QString, QString>>& rows) {
+            QFrame* card = new QFrame(lvx2DeviceListWidget);
+            card->setObjectName("PlaybackDeviceCard");
+            card->setFrameShape(QFrame::StyledPanel);
+            card->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+            card->setStyleSheet("QFrame#PlaybackDeviceCard { border: 1px solid palette(mid); border-radius: 6px; background: palette(base); }");
+
+            QVBoxLayout* cardLayout = new QVBoxLayout(card);
+            cardLayout->setContentsMargins(8, 6, 8, 6);
+            cardLayout->setSpacing(4);
+
+            QLabel* titleLabel = new QLabel(title, card);
+            QFont titleFont = titleLabel->font();
+            titleFont.setBold(true);
+            titleLabel->setFont(titleFont);
+            titleLabel->setWordWrap(true);
+            cardLayout->addWidget(titleLabel);
+
+            for (const QPair<QString, QString>& row : rows) {
+                QLabel* rowLabel = new QLabel(QStringLiteral("%1: %2").arg(row.first, row.second), card);
+                rowLabel->setWordWrap(true);
+                cardLayout->addWidget(rowLabel);
+            }
+            deviceListLayout->addWidget(card);
+        };
+
+        const uint64_t durationNs = sourceInfo.endTimestampNs > sourceInfo.startTimestampNs
+            ? uint64_t(sourceInfo.endTimestampNs - sourceInfo.startTimestampNs)
+            : 0ULL;
+        const QString timeRange = sourceInfo.startTimestampNs > 0 && sourceInfo.endTimestampNs > 0
+            ? QStringLiteral("%1 - %2 (%3)")
+                  .arg(QString::number(sourceInfo.startTimestampNs),
+                       QString::number(sourceInfo.endTimestampNs),
+                       formatPlaybackTimeNs(durationNs, std::max<uint64_t>(1, durationNs)))
+            : QStringLiteral("-");
+        addInfoCard(QStringLiteral("ROSbag 文件"),
+                    {
+                        {QStringLiteral("格式"), sourceInfo.format.isEmpty() ? QStringLiteral("-") : sourceInfo.format},
+                        {QStringLiteral("帧数"), QString::number(sourceInfo.frameCount)},
+                        {QStringLiteral("点数"), QString::number(sourceInfo.pointCount)},
+                        {QStringLiteral("IMU 样本数"), QString::number(sourceInfo.imuSampleCount)},
+                        {QStringLiteral("时间范围"), timeRange}
+                    });
+        for (const Playback::TopicInfo& topic : sourceInfo.lidarTopics) {
+            addInfoCard(QStringLiteral("LiDAR Topic"),
+                        {
+                            {QStringLiteral("Topic"), topic.topic},
+                            {QStringLiteral("类型"), topic.type},
+                            {QStringLiteral("消息数"), QString::number(topic.messageCount)},
+                            {QStringLiteral("点数"), QString::number(topic.pointCount)}
+                        });
+        }
+        for (const Playback::TopicInfo& topic : sourceInfo.imuTopics) {
+            addInfoCard(QStringLiteral("IMU Topic"),
+                        {
+                            {QStringLiteral("Topic"), topic.topic},
+                            {QStringLiteral("类型"), topic.type},
+                            {QStringLiteral("消息数"), QString::number(topic.messageCount)}
+                        });
+        }
+        deviceListLayout->addStretch();
+        return;
+    }
+
     for (int row = 0; row < playbackState.devices.size(); ++row) {
         const auto& info = playbackState.devices[row];
         const QString modelName =
@@ -1019,20 +1087,26 @@ void LivoxViewerWindow::updateSlamControlBarUi()
     const bool hasWorker = slamWorker.joinable();
     const bool paused = active && slamWorkerPaused.load();
     if (slamStartButton) {
-        slamStartButton->setText(paused ? QStringLiteral("继续") : QStringLiteral("启动"));
-        slamStartButton->setEnabled(!active || paused);
-    }
-    if (slamPauseButton) {
-        slamPauseButton->setEnabled(active && !paused);
+        if (active && !paused) {
+            slamStartButton->setText(QStringLiteral("暂停"));
+            slamStartButton->setToolTip(QStringLiteral("暂停 SLAM worker"));
+        } else if (paused) {
+            slamStartButton->setText(QStringLiteral("继续"));
+            slamStartButton->setToolTip(QStringLiteral("继续 SLAM worker"));
+        } else {
+            slamStartButton->setText(QStringLiteral("开始"));
+            slamStartButton->setToolTip(QStringLiteral("开始 SLAM worker"));
+        }
+        slamStartButton->setEnabled(true);
     }
     if (slamStopButton) {
         slamStopButton->setEnabled(active || hasWorker);
     }
-    if (slamResetButton) {
-        slamResetButton->setEnabled(true);
-    }
     if (slamClearButton) {
-        slamClearButton->setEnabled(true);
+        slamClearButton->setEnabled(!active);
+        slamClearButton->setToolTip(active
+                                        ? QStringLiteral("运行中不能清空显示")
+                                        : QStringLiteral("清空 SLAM 显示"));
     }
     if (slamExportTrajectoryButton) {
         slamExportTrajectoryButton->setEnabled(true);
@@ -1053,19 +1127,58 @@ void LivoxViewerWindow::updateSlamControlBarUi()
                                         ? QStringLiteral("%1 / %2").arg(slamProgressValue).arg(slamProgressMaximum)
                                         : QStringLiteral("SLAM 进度"));
     }
-    if (slamControlLabel) {
-        const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线SLAM") : QStringLiteral("在线SLAM");
-        const QString stateText = active
-            ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
-            : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));
-        const QString sourceText = isOfflineSlamMode() && !slamOfflineSourcePath.isEmpty()
-            ? QDir::toNativeSeparators(slamOfflineSourcePath)
-            : QString();
-        const QString text = sourceText.isEmpty()
-            ? QStringLiteral("%1 | %2").arg(modeText, stateText)
-            : QStringLiteral("%1 | %2 | %3").arg(modeText, stateText, sourceText);
-        slamControlLabel->setToolTip(text);
-        slamControlLabel->setText(slamControlLabel->fontMetrics().elidedText(text, Qt::ElideMiddle, slamControlLabel->width()));
+    if (slamReplayModeCombo) {
+        QSignalBlocker blocker(slamReplayModeCombo);
+        slamReplayModeCombo->setEnabled(isOfflineSlamMode() && !active);
+        slamReplayModeCombo->setCurrentIndex(slamReplayMode == SlamReplayMode::Fast ? 1 : 0);
+        slamReplayModeCombo->setToolTip(isOfflineSlamMode()
+                                            ? QStringLiteral("离线 SLAM 回放速度")
+                                            : QStringLiteral("在线 SLAM 不使用回放速度"));
+    }
+    if (slamControlTemplateCombo) {
+        QSignalBlocker blocker(slamControlTemplateCombo);
+        const int index = slamControlTemplateCombo->findData(static_cast<int>(slamRuntimeConfig.lidarTemplate));
+        if (index >= 0) {
+            slamControlTemplateCombo->setCurrentIndex(index);
+        }
+        slamControlTemplateCombo->setEnabled(!active);
+        slamControlTemplateCombo->setToolTip(active
+                                                 ? QStringLiteral("SLAM 运行中不能切换 LiDAR 模板")
+                                                 : QStringLiteral("LiDAR 模板"));
+    }
+    const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线SLAM") : QStringLiteral("在线SLAM");
+    const QString stateText = active
+        ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
+        : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));
+    const QString sourceText = isOfflineSlamMode()
+        ? (!slamProgressSourceText.isEmpty()
+               ? slamProgressSourceText
+               : (slamOfflineSourcePath.isEmpty() ? QString() : QDir::toNativeSeparators(slamOfflineSourcePath)))
+        : QString();
+    const QString sourceLine = sourceText.isEmpty()
+        ? QStringLiteral("%1 | %2").arg(modeText, stateText)
+        : QStringLiteral("%1 | %2 | %3").arg(modeText, stateText, sourceText);
+    if (slamSourceLabel) {
+        slamSourceLabel->setToolTip(sourceLine);
+        slamSourceLabel->setText(slamSourceLabel->fontMetrics().elidedText(sourceLine,
+                                                                           Qt::ElideMiddle,
+                                                                           slamSourceLabel->width()));
+    }
+    if (slamTimeLabel) {
+        QString timeText = slamProgressTimeText;
+        if (timeText.isEmpty()) {
+            timeText = isOfflineSlamMode() ? QStringLiteral("时间 - / -") : QStringLiteral("输入 FPS: 0.0");
+        }
+        slamTimeLabel->setText(timeText);
+        slamTimeLabel->setToolTip(timeText);
+    }
+    if (slamFrameLabel) {
+        QString frameText = slamProgressFrameText;
+        if (frameText.isEmpty()) {
+            frameText = isOfflineSlamMode() ? QStringLiteral("帧 0 / 0") : QStringLiteral("已处理帧: 0");
+        }
+        slamFrameLabel->setText(frameText);
+        slamFrameLabel->setToolTip(frameText);
     }
     updateSlamControlBarGeometry();
 }

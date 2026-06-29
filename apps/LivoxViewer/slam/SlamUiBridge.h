@@ -23,6 +23,7 @@ public:
         QString droppedFrames;
         QString currentPose;
         QString trajectoryPoints;
+        QString memoryUsage;
         QString mapPoints;
         QString worldFramePoints;
         QString bodyFramePoints;

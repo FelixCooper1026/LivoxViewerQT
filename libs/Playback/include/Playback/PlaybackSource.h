@@ -8,6 +8,7 @@
 #include <QString>
 #include <QVector>
 
+#include <algorithm>
 #include <cstdint>
 
 namespace Playback {
@@ -34,6 +35,27 @@ struct DeviceInfo {
     uint8_t deviceType = 0;
     QString lidarSn;
     QString modelDisplay;
+};
+
+struct TopicInfo {
+    QString topic;
+    QString type;
+    uint64_t messageCount = 0;
+    uint64_t pointCount = 0;
+};
+
+struct SourceInfo {
+    SourceKind kind = SourceKind::Lvx2;
+    QString displayName;
+    QString format;
+    QString filePath;
+    QVector<TopicInfo> lidarTopics;
+    QVector<TopicInfo> imuTopics;
+    uint64_t frameCount = 0;
+    uint64_t pointCount = 0;
+    uint64_t imuSampleCount = 0;
+    int64_t startTimestampNs = 0;
+    int64_t endTimestampNs = 0;
 };
 
 struct ImuSample {
@@ -78,6 +100,14 @@ public:
     virtual bool hasFrameTimestamps() const
     {
         return false;
+    }
+    virtual SourceInfo sourceInfo() const
+    {
+        SourceInfo info;
+        info.kind = kind();
+        info.filePath = path();
+        info.frameCount = uint64_t(std::max(0, frameCount()));
+        return info;
     }
     virtual void invalidateCache() {}
 };

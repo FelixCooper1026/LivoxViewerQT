@@ -107,6 +107,32 @@ float poseAxisDiameterFromLineWidth(float widthPx)
     return std::clamp(widthPx * 0.02f, 0.01f, 0.3f);
 }
 
+QString formatMemoryBytes(quint64 bytes)
+{
+    constexpr double kKb = 1024.0;
+    constexpr double kMb = kKb * 1024.0;
+    constexpr double kGb = kMb * 1024.0;
+    const double value = double(bytes);
+    if (value >= kGb) {
+        return QStringLiteral("%1 GB").arg(value / kGb, 0, 'f', 2);
+    }
+    if (value >= kMb) {
+        return QStringLiteral("%1 MB").arg(value / kMb, 0, 'f', 1);
+    }
+    if (value >= kKb) {
+        return QStringLiteral("%1 KB").arg(value / kKb, 0, 'f', 1);
+    }
+    return QStringLiteral("%1 B").arg(bytes);
+}
+
+quint64 vectorBytes(qsizetype size, qsizetype elementSize)
+{
+    if (size <= 0 || elementSize <= 0) {
+        return 0;
+    }
+    return quint64(size) * quint64(elementSize);
+}
+
 void appendTriangle(QVector<SlamRenderVertex>& vertices,
                     const QVector3D& a,
                     const QVector3D& b,
@@ -330,6 +356,18 @@ void SlamUiBridge::refreshStatus()
     m_displayState.droppedFrames = QString::number(m_latestOutput.droppedFrameCount);
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
+    const quint64 snapshotBytes =
+        vectorBytes(snapshot.trajectoryVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.poseAxisVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.worldFrameVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.bodyFrameVertices.size(), sizeof(SlamRenderVertex));
+    const quint64 uiBytes =
+        vectorBytes(m_trajectory.size(), sizeof(SlamTrajectoryPoint)) +
+        vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
+        snapshotBytes;
+    m_displayState.memoryUsage = QStringLiteral("UI %1").arg(formatMemoryBytes(uiBytes));
     m_displayState.mapPoints = QString::number(m_latestOutput.mapPointCount);
     m_displayState.worldFramePoints = QString::number(m_worldFramePointTotal);
     m_displayState.bodyFramePoints = QString::number(m_latestOutput.publishedBodyFramePoints.size());

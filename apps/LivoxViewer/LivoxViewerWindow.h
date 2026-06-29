@@ -171,6 +171,7 @@ public:
     bool isOfflineSlamMode() const;
     QString offlineSlamSourcePath() const;
     QString offlineSlamPcapPath() const;
+    void toggleSlamPrimaryAction();
     void startSlamProcessing();
     void pauseSlamProcessing();
     void stopSlamProcessing();
@@ -269,6 +270,9 @@ private:
     void updatePlaybackBarGeometry();
     void updateSlamControlBarUi();
     void updateSlamControlBarGeometry();
+    void syncSlamTemplateControl();
+    void handleSlamTemplateControlChanged(int index);
+    void handleSlamReplayModeChanged(int index);
     void setLvx2PlaybackPlaying(bool playing);
     void finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source);
     int playbackRawEndIndexForFrame(int playbackFrameIndex, Lvx2PlaybackMode mode, uint64_t intervalMs) const;
@@ -418,6 +422,10 @@ private:
         Offline,
         Online
     };
+    enum class SlamReplayMode {
+        Timed,
+        Fast
+    };
     enum class SlamOfflineSourceKind {
         None,
         Pcap,
@@ -428,6 +436,7 @@ private:
         QVector<PointCloudPoint> points;
     };
     SlamInputMode slamInputMode = SlamInputMode::Offline;
+    SlamReplayMode slamReplayMode = SlamReplayMode::Timed;
     SlamOfflineSourceKind slamOfflineSourceKind = SlamOfflineSourceKind::None;
     QString slamOfflineSourcePath;
     QString slamOfflineSourceDisplayName;
@@ -452,17 +461,23 @@ private:
     bool slamPoseAxisVisible = true;
     QWidget* slamControlBar = nullptr;
     QPushButton* slamStartButton = nullptr;
-    QPushButton* slamPauseButton = nullptr;
     QPushButton* slamStopButton = nullptr;
-    QPushButton* slamResetButton = nullptr;
     QPushButton* slamClearButton = nullptr;
     QPushButton* slamExportTrajectoryButton = nullptr;
     QPushButton* slamExportMapButton = nullptr;
+    QComboBox* slamReplayModeCombo = nullptr;
+    QComboBox* slamControlTemplateCombo = nullptr;
     QProgressBar* slamProgressBar = nullptr;
     QLabel* slamControlLabel = nullptr;
+    QLabel* slamSourceLabel = nullptr;
+    QLabel* slamTimeLabel = nullptr;
+    QLabel* slamFrameLabel = nullptr;
     int slamProgressValue = 0;
     int slamProgressMaximum = 0;
     bool slamProgressIndeterminate = false;
+    QString slamProgressSourceText;
+    QString slamProgressTimeText;
+    QString slamProgressFrameText;
     QMap<QString, QLabel*> slamStatusFields;
 
     // 工作模式状态

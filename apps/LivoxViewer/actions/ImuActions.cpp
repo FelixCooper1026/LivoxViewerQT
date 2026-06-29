@@ -150,6 +150,31 @@ QVector<ImuVisualizationDeviceDescriptor> LivoxViewerWindow::imuVisualizationDev
     if (imuPlayback && imuPlayback->active && imuPlayback->source &&
         (imuPlayback->source->kind() == Playback::SourceKind::Pcap ||
          imuPlayback->source->kind() == Playback::SourceKind::Rosbag)) {
+        if (imuPlayback->source->kind() == Playback::SourceKind::Rosbag) {
+            const Playback::SourceInfo sourceInfo = imuPlayback->source->sourceInfo();
+            if (!sourceInfo.imuTopics.isEmpty()) {
+                uint32_t handle = 0;
+                if (!imuPlayback->devices.isEmpty()) {
+                    handle = imuPlayback->imuHandleByLidarId.value(imuPlayback->devices.first().lidarId);
+                } else if (!imuPlayback->imuHandleByLidarId.isEmpty()) {
+                    handle = imuPlayback->imuHandleByLidarId.constBegin().value();
+                }
+                if (handle != 0) {
+                    const Playback::TopicInfo topic = sourceInfo.imuTopics.first();
+                    ImuVisualizationDeviceDescriptor descriptor;
+                    descriptor.handle = handle;
+                    descriptor.kind = ImuVisualizationDeviceKind::RosbagTopic;
+                    descriptor.modelDisplay = QStringLiteral("ROSbag IMU");
+                    descriptor.topicName = topic.topic;
+                    descriptor.messageType = topic.type;
+                    descriptor.messageCount = topic.messageCount;
+                    descriptor.source = ImuVisualizationSource::Offline;
+                    descriptors.push_back(descriptor);
+                }
+            }
+            return descriptors;
+        }
+
         QSet<uint32_t> listedLidarIds;
         for (const PlaybackDeviceInfo& device : imuPlayback->devices) {
             ImuVisualizationDeviceDescriptor descriptor;

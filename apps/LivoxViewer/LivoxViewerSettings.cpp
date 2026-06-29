@@ -2130,6 +2130,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     }
     rebuildSlamInfoPanel();
     syncSlamRenderLayerVisibility();
+    syncSlamTemplateControl();
     refreshSlamWorldPointCloud();
 
     syncReflectivityColorScaleControls();

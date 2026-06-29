@@ -112,6 +112,7 @@ bool RosbagPlaybackSource::load(const QString& filePath)
     filePath_ = filePath;
     errorMessage_.clear();
     summaryText_.clear();
+    summary_ = RosbagSlamSourceSummary();
     frames_.clear();
     imuSamples_.clear();
     devices_.clear();
@@ -147,10 +148,11 @@ bool RosbagPlaybackSource::load(const QString& filePath)
     }
 
     const RosbagSlamSourceSummary& summary = source.summary();
+    summary_ = summary;
     Playback::DeviceInfo device;
     device.lidarId = defaultLidarIdForFrames(frames_);
     device.deviceType = 0;
-    device.lidarSn = summary.lidarTopic;
+    device.lidarSn.clear();
     device.modelDisplay = rosbagSourceDisplayName(summary);
     devices_.push_back(device);
     return true;
@@ -179,6 +181,38 @@ int RosbagPlaybackSource::frameCount() const
 QVector<Playback::DeviceInfo> RosbagPlaybackSource::devices() const
 {
     return devices_;
+}
+
+Playback::SourceInfo RosbagPlaybackSource::sourceInfo() const
+{
+    Playback::SourceInfo info;
+    info.kind = Playback::SourceKind::Rosbag;
+    info.displayName = rosbagSourceDisplayName(summary_);
+    info.format = summary_.format;
+    info.filePath = filePath_;
+    info.frameCount = uint64_t(frames_.size());
+    info.pointCount = summary_.pointCount;
+    info.imuSampleCount = summary_.imuSampleCount;
+    info.startTimestampNs = summary_.startTimestampNs;
+    info.endTimestampNs = summary_.endTimestampNs;
+
+    if (!summary_.lidarTopic.isEmpty()) {
+        Playback::TopicInfo topic;
+        topic.topic = summary_.lidarTopic;
+        topic.type = summary_.lidarType;
+        topic.messageCount = summary_.lidarMessageCount;
+        topic.pointCount = summary_.pointCount;
+        info.lidarTopics.push_back(topic);
+    }
+    if (!summary_.imuTopic.isEmpty()) {
+        Playback::TopicInfo topic;
+        topic.topic = summary_.imuTopic;
+        topic.type = summary_.imuType;
+        topic.messageCount = summary_.imuMessageCount;
+        topic.pointCount = 0;
+        info.imuTopics.push_back(topic);
+    }
+    return info;
 }
 
 bool RosbagPlaybackSource::readFrame(int frameIndex,

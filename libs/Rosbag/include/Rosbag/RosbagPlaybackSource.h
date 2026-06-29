@@ -14,6 +14,7 @@ public:
     QString errorMessage() const override;
     int frameCount() const override;
     QVector<Playback::DeviceInfo> devices() const override;
+    Playback::SourceInfo sourceInfo() const override;
     bool readFrame(int frameIndex,
                    const QMap<uint32_t, bool>& deviceVisibility,
                    PointCloudFrame& frame) override;
@@ -27,6 +28,7 @@ private:
     QString filePath_;
     QString errorMessage_;
     QString summaryText_;
+    RosbagSlamSourceSummary summary_;
     QVector<SlamInputFrame> frames_;
     QVector<SlamImuSample> imuSamples_;
     QVector<Playback::DeviceInfo> devices_;
