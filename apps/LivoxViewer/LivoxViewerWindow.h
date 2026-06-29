@@ -436,6 +436,7 @@ private:
     QVector<SlamWorldPointSegment> slamWorldPointSegments;
     int slamWorldDisplayedSegmentStart = 0;
     int slamWorldDisplayedSegmentEnd = 0;
+    uint64_t slamWorldDisplayWindowMs = 600000;
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
     QColor slamBodyFrameColor = QColor(255, 140, 26);
     QColor slamTrajectoryColor = QColor(26, 191, 255);

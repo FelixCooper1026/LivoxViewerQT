@@ -267,11 +267,6 @@ void LivoxViewerWindow::showSlamControlDialog()
 void LivoxViewerWindow::startOnlineSlamFromMenu()
 {
     setSlamInputModeOnline();
-    if (frameIntervalSpin) {
-        frameIntervalSpin->setValue(600000);
-    } else {
-        onFrameIntervalChanged(600000);
-    }
     ensureSlamVisualizationTab(QStringLiteral("online"));
     showSlamInfoPanel();
     showSlamStatusPanel();
@@ -284,11 +279,6 @@ void LivoxViewerWindow::startOnlineSlamFromMenu()
 void LivoxViewerWindow::startOfflineSlamFromMenu()
 {
     setSlamInputModeOffline();
-    if (frameIntervalSpin) {
-        frameIntervalSpin->setValue(600000);
-    } else {
-        onFrameIntervalChanged(600000);
-    }
     if (!loadOfflineSlamSource()) {
         return;
     }
@@ -887,7 +877,7 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
     }
 
     const int64_t latestTimestampNs = slamWorldPointSegments.back().timestampNs;
-    const int64_t windowNs = int64_t(std::max<uint64_t>(1, frameIntervalMs)) * 1000000LL;
+    const int64_t windowNs = int64_t(std::max<uint64_t>(1, slamWorldDisplayWindowMs)) * 1000000LL;
     const int64_t windowStartNs = latestTimestampNs > windowNs ? latestTimestampNs - windowNs : 0;
 
     int targetStart = 0;
