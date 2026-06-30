@@ -60,7 +60,7 @@
 
 namespace {
 
-constexpr int kDockStateVersion = 5;
+constexpr int kDockStateVersion = 6;
 constexpr int kPreferenceControlColumnWidth = 104;
 constexpr int kPreferenceComboBoxWidth = 104;
 constexpr int kPreferenceSpinBoxWidth = 104;
@@ -691,7 +691,10 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     QSettings settings("Livox", "LivoxViewerQT");
     restoreGeometry(settings.value("geometry").toByteArray());
     if (settings.value("layout/version", 0).toInt() == kDockStateVersion) {
-        restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
+        const bool restored = restoreState(settings.value("windowState").toByteArray(), kDockStateVersion);
+        if (!restored) {
+            settings.remove("windowState");
+        }
     }
     mainToolBar->show();
     if (lvx2FileDock) {
@@ -711,7 +714,6 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     }
 
     QTimer::singleShot(0, this, [this]() {
-        tabifySlamStatusPanel();
         for (QTabBar* tabBar : findChildren<QTabBar*>()) {
             bool isDeviceDockTabs = false;
             bool isParameterDockTabs = false;

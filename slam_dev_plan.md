@@ -1,5 +1,15 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-30 Linux Qt dock/tab 启动段错误修复
+
+- 问题：Linux/Qt 6.5 下启动后在主线程 Qt Widgets dock layout resize 路径崩溃，gdb 栈显示触发点为构造函数 `QTimer::singleShot(0)` 中调用 `tabifySlamStatusPanel()`，随后进入 `QLayout::activate()`；该问题与 SLAM worker、点云 packet、IMU buffer 和 SDK 回调线程无关。
+- 原因分析：`createSlamStatusPanel()` 已在创建阶段执行 `addDockWidget(Qt::BottomDockWidgetArea, slamStatusDock)`、`tabifyDockWidget(logDock, slamStatusDock)` 和 `slamStatusDock->hide()`；启动恢复 `restoreGeometry/restoreState` 后又立刻通过 `singleShot(0)` 二次 tabify hidden dock。旧 `windowState`、hidden dock、重复 tabify 与 Qt dock layout 激活叠加后，在 Linux/Qt 6.5 下可能触发内部段错误，Windows/MSVC 环境更宽容所以未复现。
+- 修复：`LivoxViewerSettings.cpp` 中启动阶段 `QTimer::singleShot(0)` 不再调用 `tabifySlamStatusPanel()`，保留原有 `QTabBar` objectName/styleSheet 设置逻辑；后续只在 `showSlamStatusPanel()` 中按需 tabify。
+- 修复：`tabifySlamStatusPanel()` 增加空指针、同一 dock、floating dock、已 tabified、`NoDockWidgetArea` 和跨 dock area 处理；跨 area 时先移除 `slamStatusDock` 再加入 `logDock` 所在区域；调用 `tabifyDockWidget()` 前记录 SLAM 状态 dock 可见性，原本隐藏则 tabify 后继续隐藏。
+- 修复：dock 布局状态版本从 `5` 提升到 `6`；`restoreState(..., kDockStateVersion)` 现在检查返回值，恢复失败时移除 `windowState`，避免不兼容旧 dock 布局状态在后续启动中继续生效。
+- 验证：2026-06-30 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 进程启动后 `Responding=True`，最近 10 分钟 Windows Application 日志未出现新的 `LivoxViewerQT` 崩溃事件。
+- 验证缺口：当前 Windows 主机无法直接执行 Linux/GCC 和 gdb 复验；Linux 侧还需在目标机复验不清配置启动、清空 `~/.config/Livox/LivoxViewerQT.conf` 后启动、打开 SLAM 状态 dock、切换日志/SLAM 状态 tab、开启/停止在线 SLAM、窗口最大化/还原。
+
 ## 2026-06-30 Linux/GCC std::max 类型推导修正
 
 - 问题：Linux/GCC 编译 `apps/LivoxViewer/slam/SlamWindowActions.cpp` 时，离线 SLAM `lastFrameEndNs` 计算里的 `std::max(frames.last().frameEndNs, frames.last().frameStartNs + ... * 1000000LL)` 因 `int64_t` 在 Linux 通常为 `long int`、`1000000LL` 为 `long long int`，导致模板参数推导失败；MSVC 对该混用更宽松所以此前未暴露。

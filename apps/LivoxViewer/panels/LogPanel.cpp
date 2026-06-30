@@ -326,16 +326,36 @@ void LivoxViewerWindow::tabifySlamStatusPanel()
     if (!logDock || !slamStatusDock) {
         return;
     }
+    if (logDock == slamStatusDock) {
+        return;
+    }
+    if (logDock->isFloating() || slamStatusDock->isFloating()) {
+        return;
+    }
     if (tabifiedDockWidgets(logDock).contains(slamStatusDock)) {
         return;
     }
-    if (dockWidgetArea(logDock) == Qt::NoDockWidgetArea) {
+
+    const bool wasVisible = slamStatusDock->isVisible();
+    Qt::DockWidgetArea logArea = dockWidgetArea(logDock);
+    Qt::DockWidgetArea statusArea = dockWidgetArea(slamStatusDock);
+    if (logArea == Qt::NoDockWidgetArea) {
         addDockWidget(Qt::BottomDockWidgetArea, logDock);
+        logArea = Qt::BottomDockWidgetArea;
     }
-    if (dockWidgetArea(slamStatusDock) == Qt::NoDockWidgetArea) {
+    if (statusArea == Qt::NoDockWidgetArea) {
         addDockWidget(Qt::BottomDockWidgetArea, slamStatusDock);
+        statusArea = Qt::BottomDockWidgetArea;
     }
+    if (logArea != statusArea) {
+        removeDockWidget(slamStatusDock);
+        addDockWidget(logArea, slamStatusDock);
+    }
+
     tabifyDockWidget(logDock, slamStatusDock);
+    if (!wasVisible) {
+        slamStatusDock->hide();
+    }
 }
 
 void LivoxViewerWindow::showSlamStatusPanel()
