@@ -1,5 +1,17 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-30 实时 SLAM reset 策略与状态跳变修正
+
+- 背景：`bddb177` 中时间异常路径会递增 `backendResetGeneration`，在线 worker 检测后立即 `FastLioSlamBackend::reset()` 并清空 SlamUiBridge/世界系点云；同时 `tryFinalizePendingFramesLocked()` 可能很快把 `stats.message` 清空，导致 UI 看不到 reset 原因，Dock 状态还会在队列短暂为空时从 Running 被覆盖为 Initializing IMU。
+- 当前设备过滤：`onPointCloudData()` 和 `onImuData()` 现在只在 `handle == currentLidarHandle` 时向 `liveSlamSource` 投递在线 SLAM 数据；普通实时点云显示、LVX2 录制和 IMU 可视化仍保留原有按设备处理逻辑，避免多设备/重复 handle 误触发 SLAM active handle 切换。
+- reset 拆分：`LiveLidarSlamSourceStats` 将旧 `backendResetGeneration` 拆分为 `inputTimelineResetGeneration` 与 `backendHardResetGeneration`。单个 packet 大跳变、短时 time_type 变化、pending/current 输入片段异常只清 `currentFrame_` 和 `pendingFrames_` 并递增 input timeline generation，不 reset FAST-LIO，不清地图。
+- hard reset 条件：仅当前 active LiDAR 真实切换或同一 stream 连续 6 次确认 timestamp 大跳变时递增 `backendHardResetGeneration`；worker 只有检测到 hard generation 变化才调用 `backend.reset()` 和清空 SLAM 显示。单个异常 packet 只丢弃，不会让位姿回初始位姿。
+- time_type 降级：time_type 现在主要作为诊断字段。单次 LiDAR/IMU time_type 不一致只置 `Degraded` 并记录 `pointTimeType/imuTimeType/rawDelta/handle/source`；只有连续不一致且 raw timestamp 差异持续超过 200ms，才置 `TimeSyncError` 并停止投递错误输入帧。
+- reset 原因持久化：新增 `lastResetReason/lastResetStatus/lastResetGeneration/lastResetJumpNs/lastResetRawTimestampNs/currentResetRawTimestampNs/lastResetHandle/lastResetTimeType`；`tryFinalizePendingFramesLocked()` 可以清当前 message，但不清 last reset 诊断。每次 hard backend reset 都会通过 `logMessage("[SLAM] ...")` 输出完整原因、handle、time_type、last/current raw timestamp 和 jumpMs。
+- 状态显示修正：`liveInputWaitingStatus()` 增加 already-running 语义；在线 worker 已成功处理帧后，如果队列短暂为空且没有 `TimeSyncError/MissingImu/Degraded`，只更新输入 FPS/进度，不再 post waitingOutput 覆盖 Dock 状态为 Initializing IMU。InitializingImu 仅用于后端尚未成功处理有效帧的启动阶段。
+- 验证：2026-06-30 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，程序启动后 `LivoxViewerQT` 进程响应，最近 10 分钟 Windows Application 事件日志未出现新的 `LivoxViewerQT` 崩溃事件。
+- 验证缺口：当前 Windows 主机仍无可用 bash/WSL 发行版，Linux/GCC 编译需要在 Linux 目标机继续复验。
+
 ## 2026-06-30 实时 SLAM 输入源时间戳与 IMU 覆盖策略优化
 
 - 背景：main 分支在线 SLAM 仍按 LiDAR packet timestamp 到达 `inputFrameDurationMs` 后立即 flush 并入队，随后立刻检查 IMU 覆盖；实时 LiDAR/IMU 是异步 SDK 回调流，IMU 经常晚于点云帧尾到达，worker 又会跳过 `hasCompleteImuCoverage=false` 的帧，导致未外部授时、外部授时抖动或稳定外部授时时都可能没有轨迹、地图和世界系点云输出。

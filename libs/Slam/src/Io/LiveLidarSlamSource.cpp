@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <utility>
 
 namespace {
@@ -20,6 +21,9 @@ constexpr int64_t kMaxImuTailPadNs = 8000000;
 constexpr int64_t kMaxImuStartPadNs = 8000000;
 constexpr int64_t kSmallTimestampBackstepNs = 5000000;
 constexpr int64_t kTimestampJumpResetNs = 1000000000;
+constexpr int64_t kTimeTypeMismatchRawDeltaNs = 200000000;
+constexpr int kTimestampJumpHardResetCount = 6;
+constexpr int kTimeTypeMismatchErrorCount = 8;
 constexpr double kLivoxPi = 3.14159265358979323846;
 
 bool hasOffsetTime(uint16_t dotNum, uint16_t timeIntervalRaw)
@@ -238,9 +242,11 @@ bool LiveLidarSlamSource::appendPointPacket(uint32_t handle,
                                 rawPacketTimestampNs,
                                 true,
                                 SlamStatusCode::Degraded,
-                                QStringLiteral("实时 SLAM 输入设备切换，已重置输入源：oldHandle=%1, newHandle=%2, source=%3。")
+                                QStringLiteral("实时 SLAM 当前设备切换，已重置后端和输入源：oldHandle=%1, newHandle=%2, time_type=%3, raw=%4ms, source=%5。")
                                     .arg(activeHandle_)
                                     .arg(handle)
+                                    .arg(int(packet->time_type))
+                                    .arg(nsToMsText(rawPacketTimestampNs))
                                     .arg(sourceName));
     }
     if (!hasActiveHandle_) {
@@ -429,54 +435,57 @@ bool LiveLidarSlamSource::normalizePacketTimestampLocked(uint32_t handle,
     uint8_t& streamTimeTypeValue = pointStream ? state.pointTimeType : state.imuTimeType;
 
     if (hasStreamTimeType && streamTimeTypeValue != timeType) {
-        const QString message = QStringLiteral(
-            "雷达时间源 time_type 发生切换，已重置实时 SLAM 输入源，等待时间稳定：stream=%1, last_time_type=%2, current_time_type=%3, handle=%4, source=%5。")
-                                    .arg(streamName(pointStream))
-                                    .arg(int(streamTimeTypeValue))
-                                    .arg(int(timeType))
-                                    .arg(handle)
-                                    .arg(sourceName);
-        resetLiveTimelineLocked(handle, timeType, rawTimestampNs, true, SlamStatusCode::Degraded, message);
-    }
-
-    HandleTimingState& typedState = timingByHandle_[handle];
-    bool& typedHasStreamTimeType = pointStream ? typedState.hasPointTimeType : typedState.hasImuTimeType;
-    uint8_t& typedStreamTimeTypeValue = pointStream ? typedState.pointTimeType : typedState.imuTimeType;
-    typedHasStreamTimeType = true;
-    typedStreamTimeTypeValue = timeType;
-
-    if (typedState.hasPointTimeType &&
-        typedState.hasImuTimeType &&
-        typedState.pointTimeType != typedState.imuTimeType) {
-        ++stats_.timeResetCount;
-        ++stats_.backendResetGeneration;
-        queue_.clear();
-        imuBuffer_.clear();
-        pendingFrames_.clear();
-        currentFrame_ = SlamInputFrame();
-        hasCurrentFrame_ = false;
-        typedState = HandleTimingState();
-        stats_.status = SlamStatusCode::TimeSyncError;
+        ++stats_.timeTypeMismatchCount;
+        ++state.consecutiveTimeTypeMismatchCount;
+        stats_.status = SlamStatusCode::Degraded;
         stats_.message = QStringLiteral(
-            "LiDAR 与 IMU 时间源不一致，无法形成有效 SLAM 输入帧：point_time_type=%1, imu_time_type=%2, handle=%3, source=%4。")
-                             .arg(int(pointStream ? timeType : stats_.pointTimeType))
-                             .arg(int(pointStream ? stats_.imuTimeType : timeType))
+            "实时 %1 time_type 短暂变化，继续使用归一化时间轴：last_time_type=%2, current_time_type=%3, raw=%4ms, handle=%5, source=%6。")
+                             .arg(streamName(pointStream))
+                             .arg(int(streamTimeTypeValue))
+                             .arg(int(timeType))
+                             .arg(nsToMsText(rawTimestampNs))
                              .arg(handle)
                              .arg(sourceName);
-        stats_.pendingFrameCount = 0;
-        stats_.activeHandle = handle;
-        return false;
     }
 
-    HandleTimingState& activeState = timingByHandle_[handle];
-    if (!activeState.axisInitialized) {
-        activeState.axisInitialized = true;
-        activeState.epochRawStartNs = rawTimestampNs;
-        activeState.epochNormalizedStartNs = 0;
+    hasStreamTimeType = true;
+    streamTimeTypeValue = timeType;
+
+    if (state.hasPointTimeType && state.hasImuTimeType && state.pointTimeType != state.imuTimeType) {
+        ++stats_.timeTypeMismatchCount;
+        const bool hasBothRaw = state.hasLastPointRawTimestamp && state.hasLastImuRawTimestamp;
+        const int64_t rawDeltaNs = hasBothRaw ? std::llabs(state.lastPointRawTimestampNs - state.lastImuRawTimestampNs) : 0;
+        if (hasBothRaw &&
+            rawDeltaNs > kTimeTypeMismatchRawDeltaNs &&
+            state.consecutiveTimeTypeMismatchCount >= kTimeTypeMismatchErrorCount) {
+            stats_.status = SlamStatusCode::TimeSyncError;
+            stats_.message = QStringLiteral(
+                "LiDAR 与 IMU time_type 持续不一致且 raw timestamp 差异过大，停止投递实时 SLAM 输入：pointTimeType=%1, imuTimeType=%2, rawDelta=%3ms, handle=%4, source=%5。")
+                                 .arg(int(state.pointTimeType))
+                                 .arg(int(state.imuTimeType))
+                                 .arg(nsToMsText(rawDeltaNs))
+                                 .arg(handle)
+                                 .arg(sourceName);
+            return false;
+        }
+        stats_.status = SlamStatusCode::Degraded;
+        stats_.message = QStringLiteral(
+            "LiDAR/IMU time_type 短暂不一致，归一化时间连续时继续运行：pointTimeType=%1, imuTimeType=%2, rawDelta=%3ms, handle=%4, source=%5。")
+                             .arg(int(state.pointTimeType))
+                             .arg(int(state.imuTimeType))
+                             .arg(hasBothRaw ? nsToMsText(rawDeltaNs) : QStringLiteral("n/a"))
+                             .arg(handle)
+                             .arg(sourceName);
     }
 
-    bool& hasLastRawTimestamp = pointStream ? activeState.hasLastPointRawTimestamp : activeState.hasLastImuRawTimestamp;
-    int64_t& lastRawTimestampNs = pointStream ? activeState.lastPointRawTimestampNs : activeState.lastImuRawTimestampNs;
+    if (!state.axisInitialized) {
+        state.axisInitialized = true;
+        state.epochRawStartNs = rawTimestampNs;
+        state.epochNormalizedStartNs = 0;
+    }
+
+    bool& hasLastRawTimestamp = pointStream ? state.hasLastPointRawTimestamp : state.hasLastImuRawTimestamp;
+    int64_t& lastRawTimestampNs = pointStream ? state.lastPointRawTimestampNs : state.lastImuRawTimestampNs;
     if (hasLastRawTimestamp) {
         const int64_t jumpNs = rawTimestampNs - lastRawTimestampNs;
         if (jumpNs < 0) {
@@ -485,6 +494,7 @@ bool LiveLidarSlamSource::normalizePacketTimestampLocked(uint32_t handle,
             stats_.lastRawTimestampNs = lastRawTimestampNs;
             stats_.currentRawTimestampNs = rawTimestampNs;
             if (backstepNs <= kSmallTimestampBackstepNs) {
+                state.consecutiveTimestampJumpCount = 0;
                 stats_.status = SlamStatusCode::Degraded;
                 stats_.message = QStringLiteral(
                     "实时输入轻微乱序，已处理异常 %1 packet：last=%2ms, current=%3ms, jump=%4ms, time_type=%5, handle=%6, source=%7。")
@@ -509,70 +519,77 @@ bool LiveLidarSlamSource::normalizePacketTimestampLocked(uint32_t handle,
                 }
                 ++stats_.outOfOrderImuPacketCount;
             } else {
+                ++stats_.timestampJumpCount;
+                ++state.consecutiveTimestampJumpCount;
                 const QString message = QStringLiteral(
-                    "雷达时间源发生跳变，已重置实时 SLAM 输入源，等待时间稳定：stream=%1, last=%2ms, current=%3ms, jump=%4ms, time_type=%5, handle=%6, source=%7。")
+                    "实时 %1 packet 时间戳大幅回跳，已丢弃异常 packet 并清理未完成输入片段：last=%2ms, current=%3ms, jump=%4ms, time_type=%5, handle=%6, source=%7, consecutive=%8。")
                                             .arg(streamName(pointStream))
                                             .arg(nsToMsText(lastRawTimestampNs))
                                             .arg(nsToMsText(rawTimestampNs))
                                             .arg(nsToMsText(jumpNs))
                                             .arg(int(timeType))
                                             .arg(handle)
-                                            .arg(sourceName);
-                resetLiveTimelineLocked(handle, timeType, rawTimestampNs, true, SlamStatusCode::Degraded, message);
-                HandleTimingState& resetState = timingByHandle_[handle];
-                resetState.hasPointTimeType = pointStream;
-                resetState.hasImuTimeType = !pointStream;
-                resetState.pointTimeType = timeType;
-                resetState.imuTimeType = timeType;
+                                            .arg(sourceName)
+                                            .arg(state.consecutiveTimestampJumpCount);
+                if (state.consecutiveTimestampJumpCount >= kTimestampJumpHardResetCount) {
+                    resetLiveTimelineLocked(handle, timeType, rawTimestampNs, true, SlamStatusCode::Degraded, message);
+                } else {
+                    noteInputTimelineResetLocked(handle, timeType, lastRawTimestampNs, rawTimestampNs, jumpNs, SlamStatusCode::Degraded, message);
+                }
+                return false;
             }
         } else if (jumpNs > kTimestampJumpResetNs) {
+            ++stats_.timestampJumpCount;
+            ++state.consecutiveTimestampJumpCount;
             stats_.lastTimestampJumpNs = jumpNs;
             stats_.lastRawTimestampNs = lastRawTimestampNs;
             stats_.currentRawTimestampNs = rawTimestampNs;
             const QString message = QStringLiteral(
-                "雷达时间源发生大幅前跳，已重置实时 SLAM 输入源，等待时间稳定：stream=%1, last=%2ms, current=%3ms, jump=%4ms, time_type=%5, handle=%6, source=%7。")
+                "实时 %1 packet 时间戳大幅前跳，已丢弃异常 packet 并清理未完成输入片段：last=%2ms, current=%3ms, jump=%4ms, time_type=%5, handle=%6, source=%7, consecutive=%8。")
                                         .arg(streamName(pointStream))
                                         .arg(nsToMsText(lastRawTimestampNs))
                                         .arg(nsToMsText(rawTimestampNs))
                                         .arg(nsToMsText(jumpNs))
                                         .arg(int(timeType))
                                         .arg(handle)
-                                        .arg(sourceName);
-            resetLiveTimelineLocked(handle, timeType, rawTimestampNs, true, SlamStatusCode::Degraded, message);
-            HandleTimingState& resetState = timingByHandle_[handle];
-            resetState.hasPointTimeType = pointStream;
-            resetState.hasImuTimeType = !pointStream;
-            resetState.pointTimeType = timeType;
-            resetState.imuTimeType = timeType;
+                                        .arg(sourceName)
+                                        .arg(state.consecutiveTimestampJumpCount);
+            if (state.consecutiveTimestampJumpCount >= kTimestampJumpHardResetCount) {
+                resetLiveTimelineLocked(handle, timeType, rawTimestampNs, true, SlamStatusCode::Degraded, message);
+            } else {
+                noteInputTimelineResetLocked(handle, timeType, lastRawTimestampNs, rawTimestampNs, jumpNs, SlamStatusCode::Degraded, message);
+            }
+            return false;
+        } else {
+            state.consecutiveTimestampJumpCount = 0;
         }
     }
 
-    HandleTimingState& finalState = timingByHandle_[handle];
-    const int64_t normalized = rawTimestampNs - finalState.epochRawStartNs + finalState.epochNormalizedStartNs;
+    const int64_t normalized = rawTimestampNs - state.epochRawStartNs + state.epochNormalizedStartNs;
     if (normalizedTimestampNs != nullptr) {
         *normalizedTimestampNs = normalized;
     }
 
-    bool& finalHasLastRawTimestamp = pointStream ? finalState.hasLastPointRawTimestamp : finalState.hasLastImuRawTimestamp;
-    int64_t& finalLastRawTimestampNs = pointStream ? finalState.lastPointRawTimestampNs : finalState.lastImuRawTimestampNs;
+    bool& finalHasLastRawTimestamp = pointStream ? state.hasLastPointRawTimestamp : state.hasLastImuRawTimestamp;
+    int64_t& finalLastRawTimestampNs = pointStream ? state.lastPointRawTimestampNs : state.lastImuRawTimestampNs;
     if (!finalHasLastRawTimestamp || rawTimestampNs > finalLastRawTimestampNs) {
         finalLastRawTimestampNs = rawTimestampNs;
         finalHasLastRawTimestamp = true;
     }
 
     if (pointStream) {
-        if (!finalState.hasLatestPointTimestamp || normalized > finalState.latestPointTimestampNs) {
-            finalState.latestPointTimestampNs = normalized;
-            finalState.hasLatestPointTimestamp = true;
+        if (!state.hasLatestPointTimestamp || normalized > state.latestPointTimestampNs) {
+            state.latestPointTimestampNs = normalized;
+            state.hasLatestPointTimestamp = true;
         }
-        stats_.latestPointTimestampNs = finalState.latestPointTimestampNs;
+        stats_.latestPointTimestampNs = state.latestPointTimestampNs;
         stats_.pointTimeType = timeType;
     } else {
-        if (!finalState.hasLatestImuTimestamp || normalized > finalState.latestImuTimestampNs) {
-            finalState.latestImuTimestampNs = normalized;
-            finalState.hasLatestImuTimestamp = true;
+        if (!state.hasLatestImuTimestamp || normalized > state.latestImuTimestampNs) {
+            state.latestImuTimestampNs = normalized;
+            state.hasLatestImuTimestamp = true;
         }
-        stats_.latestImuTimestampNs = finalState.latestImuTimestampNs;
+        stats_.latestImuTimestampNs = state.latestImuTimestampNs;
         stats_.imuTimeType = timeType;
     }
     stats_.activeHandle = handle;
@@ -582,10 +599,12 @@ bool LiveLidarSlamSource::normalizePacketTimestampLocked(uint32_t handle,
 void LiveLidarSlamSource::resetLiveTimelineLocked(uint32_t handle,
                                                   uint8_t timeType,
                                                   int64_t rawTimestampNs,
-                                                  bool requestBackendReset,
+                                                  bool requestBackendHardReset,
                                                   SlamStatusCode status,
                                                   const QString& message)
 {
+    const int64_t resetLastRawTimestampNs = stats_.lastRawTimestampNs;
+    const int64_t resetJumpNs = stats_.lastTimestampJumpNs;
     queue_.clear();
     imuBuffer_.clear();
     pendingFrames_.clear();
@@ -600,8 +619,9 @@ void LiveLidarSlamSource::resetLiveTimelineLocked(uint32_t handle,
     activeHandle_ = handle;
     hasActiveHandle_ = true;
     ++stats_.timeResetCount;
-    if (requestBackendReset) {
-        ++stats_.backendResetGeneration;
+    ++stats_.inputTimelineResetGeneration;
+    if (requestBackendHardReset) {
+        ++stats_.backendHardResetGeneration;
     }
     stats_.status = status;
     stats_.message = message;
@@ -610,6 +630,46 @@ void LiveLidarSlamSource::resetLiveTimelineLocked(uint32_t handle,
     stats_.lastRawTimestampNs = rawTimestampNs;
     stats_.currentRawTimestampNs = rawTimestampNs;
     stats_.pointTimeType = timeType;
+    stats_.lastResetReason = message;
+    stats_.lastResetStatus = status;
+    stats_.lastResetGeneration = requestBackendHardReset
+        ? stats_.backendHardResetGeneration
+        : stats_.inputTimelineResetGeneration;
+    stats_.lastResetJumpNs = resetJumpNs;
+    stats_.lastResetRawTimestampNs = resetLastRawTimestampNs != 0 ? resetLastRawTimestampNs : rawTimestampNs;
+    stats_.currentResetRawTimestampNs = rawTimestampNs;
+    stats_.lastResetHandle = handle;
+    stats_.lastResetTimeType = timeType;
+}
+
+void LiveLidarSlamSource::noteInputTimelineResetLocked(uint32_t handle,
+                                                       uint8_t timeType,
+                                                       int64_t lastRawTimestampNs,
+                                                       int64_t currentRawTimestampNs,
+                                                       int64_t jumpNs,
+                                                       SlamStatusCode status,
+                                                       const QString& message)
+{
+    currentFrame_ = SlamInputFrame();
+    hasCurrentFrame_ = false;
+    pendingFrames_.clear();
+    ++stats_.timeResetCount;
+    ++stats_.inputTimelineResetGeneration;
+    stats_.status = status;
+    stats_.message = message;
+    stats_.pendingFrameCount = 0;
+    stats_.lastTimestampJumpNs = jumpNs;
+    stats_.lastRawTimestampNs = lastRawTimestampNs;
+    stats_.currentRawTimestampNs = currentRawTimestampNs;
+    stats_.activeHandle = handle;
+    stats_.lastResetReason = message;
+    stats_.lastResetStatus = status;
+    stats_.lastResetGeneration = stats_.inputTimelineResetGeneration;
+    stats_.lastResetJumpNs = jumpNs;
+    stats_.lastResetRawTimestampNs = lastRawTimestampNs;
+    stats_.currentResetRawTimestampNs = currentRawTimestampNs;
+    stats_.lastResetHandle = handle;
+    stats_.lastResetTimeType = timeType;
 }
 
 void LiveLidarSlamSource::moveCurrentFrameToPendingLocked()

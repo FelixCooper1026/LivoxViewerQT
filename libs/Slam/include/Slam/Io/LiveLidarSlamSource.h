@@ -31,7 +31,10 @@ struct LiveLidarSlamSourceStats {
     uint64_t paddedImuFrameCount = 0;
     uint64_t paddedImuSampleCount = 0;
     uint64_t timeResetCount = 0;
-    uint64_t backendResetGeneration = 0;
+    uint64_t inputTimelineResetGeneration = 0;
+    uint64_t backendHardResetGeneration = 0;
+    uint64_t timeTypeMismatchCount = 0;
+    uint64_t timestampJumpCount = 0;
     int queueCapacity = 0;
     int queueSize = 0;
     int pendingFrameCount = 0;
@@ -50,6 +53,14 @@ struct LiveLidarSlamSourceStats {
     uint32_t activeHandle = 0;
     uint8_t pointTimeType = 0;
     uint8_t imuTimeType = 0;
+    QString lastResetReason;
+    SlamStatusCode lastResetStatus = SlamStatusCode::Idle;
+    uint64_t lastResetGeneration = 0;
+    int64_t lastResetJumpNs = 0;
+    int64_t lastResetRawTimestampNs = 0;
+    int64_t currentResetRawTimestampNs = 0;
+    uint32_t lastResetHandle = 0;
+    uint8_t lastResetTimeType = 0;
 };
 
 class LiveLidarSlamSource {
@@ -86,6 +97,8 @@ private:
         bool hasLatestImuTimestamp = false;
         int64_t latestPointTimestampNs = 0;
         int64_t latestImuTimestampNs = 0;
+        int consecutiveTimestampJumpCount = 0;
+        int consecutiveTimeTypeMismatchCount = 0;
     };
 
     bool normalizePacketTimestampLocked(uint32_t handle,
@@ -97,9 +110,16 @@ private:
     void resetLiveTimelineLocked(uint32_t handle,
                                  uint8_t timeType,
                                  int64_t rawTimestampNs,
-                                 bool requestBackendReset,
+                                 bool requestBackendHardReset,
                                  SlamStatusCode status,
                                  const QString& message);
+    void noteInputTimelineResetLocked(uint32_t handle,
+                                      uint8_t timeType,
+                                      int64_t lastRawTimestampNs,
+                                      int64_t currentRawTimestampNs,
+                                      int64_t jumpNs,
+                                      SlamStatusCode status,
+                                      const QString& message);
     void moveCurrentFrameToPendingLocked();
     void tryFinalizePendingFramesLocked();
     bool attachImuSamplesLocked(SlamInputFrame& frame, bool allowStartPadding);

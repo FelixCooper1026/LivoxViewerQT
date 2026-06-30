@@ -217,12 +217,15 @@ QString liveInputWaitingMessage(const LiveLidarSlamSourceStats& stats)
     return QStringLiteral("正在等待实时 SLAM 输入帧。");
 }
 
-SlamStatusCode liveInputWaitingStatus(const LiveLidarSlamSourceStats& stats)
+SlamStatusCode liveInputWaitingStatus(const LiveLidarSlamSourceStats& stats, bool alreadyRunning)
 {
     if (stats.status == SlamStatusCode::TimeSyncError ||
         stats.status == SlamStatusCode::MissingImu ||
         stats.status == SlamStatusCode::Degraded) {
         return stats.status;
+    }
+    if (alreadyRunning) {
+        return SlamStatusCode::Running;
     }
     if (stats.pointPacketCount > 0 && stats.imuPacketCount > 0) {
         return SlamStatusCode::InitializingImu;
@@ -617,6 +620,11 @@ void LivoxViewerWindow::startSlamProcessing()
                     updateSlamControlBarUi();
                 }, Qt::QueuedConnection);
             };
+            auto postSlamLog = [this](QString message) {
+                QMetaObject::invokeMethod(this, [this, message = std::move(message)]() {
+                    logMessage(QStringLiteral("[SLAM] %1").arg(message));
+                }, Qt::QueuedConnection);
+            };
             auto postDisplayReset = [this]() {
                 QMetaObject::invokeMethod(this, [this]() {
                     if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
@@ -643,7 +651,7 @@ void LivoxViewerWindow::startSlamProcessing()
             SlamOutput lastOutput;
             bool hasLastOutput = false;
             qint64 lastInputWarningMs = -1000;
-            uint64_t observedInputResetGeneration = liveSlamSource.stats().backendResetGeneration;
+            uint64_t observedBackendHardResetGeneration = liveSlamSource.stats().backendHardResetGeneration;
 
             while (!slamWorkerCancel.load()) {
                 if (slamWorkerPaused.load()) {
@@ -652,8 +660,8 @@ void LivoxViewerWindow::startSlamProcessing()
                 }
 
                 const LiveLidarSlamSourceStats loopStats = liveSlamSource.stats();
-                if (loopStats.backendResetGeneration != observedInputResetGeneration) {
-                    observedInputResetGeneration = loopStats.backendResetGeneration;
+                if (loopStats.backendHardResetGeneration != observedBackendHardResetGeneration) {
+                    observedBackendHardResetGeneration = loopStats.backendHardResetGeneration;
                     error.clear();
                     if (!backend.reset(&error)) {
                         postOutput(statusOutput(SlamStatusCode::Failed, error));
@@ -661,10 +669,26 @@ void LivoxViewerWindow::startSlamProcessing()
                     }
                     hasLastOutput = false;
                     lastOutput = SlamOutput();
-                    SlamOutput resetOutput = statusOutput(liveInputWaitingStatus(loopStats), liveInputWaitingMessage(loopStats));
+                    const QString resetReason = loopStats.lastResetReason.isEmpty()
+                        ? liveInputWaitingMessage(loopStats)
+                        : loopStats.lastResetReason;
+                    const QString resetMessage = QStringLiteral(
+                        "实时 SLAM 后端已重置：%1 last=%2ms, current=%3ms, jump=%4ms, handle=%5, time_type=%6, generation=%7。")
+                                                     .arg(resetReason)
+                                                     .arg(QString::number(double(loopStats.lastResetRawTimestampNs) / 1000000.0, 'f', 3))
+                                                     .arg(QString::number(double(loopStats.currentResetRawTimestampNs) / 1000000.0, 'f', 3))
+                                                     .arg(QString::number(double(loopStats.lastResetJumpNs) / 1000000.0, 'f', 3))
+                                                     .arg(loopStats.lastResetHandle)
+                                                     .arg(int(loopStats.lastResetTimeType))
+                                                     .arg(loopStats.backendHardResetGeneration);
+                    SlamOutput resetOutput = statusOutput(loopStats.lastResetStatus == SlamStatusCode::Idle
+                                                              ? SlamStatusCode::Degraded
+                                                              : loopStats.lastResetStatus,
+                                                          resetMessage);
                     resetOutput.inputFps = loopStats.inputFps;
                     resetOutput.droppedFrameCount = int(loopStats.droppedFrameCount) + skippedFrames;
                     postDisplayReset();
+                    postSlamLog(resetMessage);
                     postOutput(resetOutput);
                     postOnlineProgress(loopStats.inputFps, processedFrames);
                     lastInputWarningMs = elapsed.elapsed();
@@ -674,6 +698,14 @@ void LivoxViewerWindow::startSlamProcessing()
                 if (!liveSlamSource.inputQueue().tryPop(frame)) {
                     const qint64 nowMs = elapsed.elapsed();
                     const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+                    if (hasLastOutput &&
+                        stats.status != SlamStatusCode::TimeSyncError &&
+                        stats.status != SlamStatusCode::MissingImu &&
+                        stats.status != SlamStatusCode::Degraded) {
+                        postOnlineProgress(stats.inputFps, processedFrames);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                        continue;
+                    }
                     const bool shouldPostWaiting =
                         !hasLastOutput ||
                         stats.status == SlamStatusCode::Starting ||
@@ -682,7 +714,8 @@ void LivoxViewerWindow::startSlamProcessing()
                         stats.status == SlamStatusCode::TimeSyncError ||
                         stats.status == SlamStatusCode::MissingImu;
                     if (shouldPostWaiting && nowMs - lastInputWarningMs >= 1000) {
-                        SlamOutput waitingOutput = statusOutput(liveInputWaitingStatus(stats), liveInputWaitingMessage(stats));
+                        SlamOutput waitingOutput = statusOutput(liveInputWaitingStatus(stats, hasLastOutput || processedFrames > 0),
+                                                                liveInputWaitingMessage(stats));
                         waitingOutput.inputFps = stats.inputFps;
                         waitingOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
                         lastOutput = waitingOutput;
@@ -699,7 +732,8 @@ void LivoxViewerWindow::startSlamProcessing()
                     const qint64 nowMs = elapsed.elapsed();
                     if (nowMs - lastInputWarningMs >= 1000) {
                         const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
-                        SlamOutput skippedOutput = statusOutput(liveInputWaitingStatus(stats), skippedLiveFrameMessage(frame, stats));
+                        SlamOutput skippedOutput = statusOutput(liveInputWaitingStatus(stats, hasLastOutput || processedFrames > 0),
+                                                               skippedLiveFrameMessage(frame, stats));
                         skippedOutput.inputFps = stats.inputFps;
                         skippedOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
                         lastOutput = skippedOutput;
