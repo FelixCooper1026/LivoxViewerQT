@@ -28,6 +28,9 @@ struct SlamPoint {
 struct SlamImuSample {
     uint32_t lidarId = 0;
     int64_t timestampNs = 0;
+    int64_t rawTimestampNs = 0;
+    uint8_t timeType = 0;
+    bool hasRawTimestamp = false;
     double gyroRadPerSec[3] = {};
     double accelMps2[3] = {};
 };
@@ -38,6 +41,10 @@ struct SlamInputFrame {
     uint8_t deviceType = 0;
     int64_t frameStartNs = 0;
     int64_t frameEndNs = 0;
+    int64_t rawFrameStartNs = 0;
+    int64_t rawFrameEndNs = 0;
+    uint8_t timeType = 0;
+    bool hasRawFrameTimestamp = false;
     SlamTimeSource timeSource = SlamTimeSource::Unknown;
     QVector<SlamPoint> points;
     QVector<SlamImuSample> imuSamples;

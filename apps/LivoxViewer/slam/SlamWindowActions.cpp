@@ -42,7 +42,8 @@ bool isSlamErrorStatus(SlamStatusCode status)
 {
     return status == SlamStatusCode::Failed ||
            status == SlamStatusCode::MissingImu ||
-           status == SlamStatusCode::TimeSyncError;
+           status == SlamStatusCode::TimeSyncError ||
+           status == SlamStatusCode::Degraded;
 }
 
 PointCloudPoint toPointCloudPoint(const SlamPoint& point)
@@ -211,9 +212,22 @@ QString liveInputWaitingMessage(const LiveLidarSlamSourceStats& stats)
         return QStringLiteral("已收到实时点云，但未收到 IMU 数据。FAST_LIO 需要连续 IMU 覆盖当前帧。");
     }
     if (stats.inputFrameCount == 0) {
-        return QStringLiteral("已收到实时数据，但尚未形成可处理 SLAM 输入帧。请检查点云时间戳、IMU 时间戳和聚帧周期。");
+        return QStringLiteral("实时 SLAM 暖机中，正在等待 IMU 覆盖点云帧。");
     }
     return QStringLiteral("正在等待实时 SLAM 输入帧。");
+}
+
+SlamStatusCode liveInputWaitingStatus(const LiveLidarSlamSourceStats& stats)
+{
+    if (stats.status == SlamStatusCode::TimeSyncError ||
+        stats.status == SlamStatusCode::MissingImu ||
+        stats.status == SlamStatusCode::Degraded) {
+        return stats.status;
+    }
+    if (stats.pointPacketCount > 0 && stats.imuPacketCount > 0) {
+        return SlamStatusCode::InitializingImu;
+    }
+    return SlamStatusCode::Starting;
 }
 
 QString skippedLiveFrameMessage(const SlamInputFrame& frame, const LiveLidarSlamSourceStats& stats)
@@ -603,6 +617,15 @@ void LivoxViewerWindow::startSlamProcessing()
                     updateSlamControlBarUi();
                 }, Qt::QueuedConnection);
             };
+            auto postDisplayReset = [this]() {
+                QMetaObject::invokeMethod(this, [this]() {
+                    if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
+                        bridge->clearDisplay();
+                    }
+                    clearSlamWorldPointCloud();
+                    updateSlamControlBarUi();
+                }, Qt::QueuedConnection);
+            };
 
             FastLioSlamBackend backend;
             QString error;
@@ -620,6 +643,7 @@ void LivoxViewerWindow::startSlamProcessing()
             SlamOutput lastOutput;
             bool hasLastOutput = false;
             qint64 lastInputWarningMs = -1000;
+            uint64_t observedInputResetGeneration = liveSlamSource.stats().backendResetGeneration;
 
             while (!slamWorkerCancel.load()) {
                 if (slamWorkerPaused.load()) {
@@ -627,12 +651,38 @@ void LivoxViewerWindow::startSlamProcessing()
                     continue;
                 }
 
+                const LiveLidarSlamSourceStats loopStats = liveSlamSource.stats();
+                if (loopStats.backendResetGeneration != observedInputResetGeneration) {
+                    observedInputResetGeneration = loopStats.backendResetGeneration;
+                    error.clear();
+                    if (!backend.reset(&error)) {
+                        postOutput(statusOutput(SlamStatusCode::Failed, error));
+                        break;
+                    }
+                    hasLastOutput = false;
+                    lastOutput = SlamOutput();
+                    SlamOutput resetOutput = statusOutput(liveInputWaitingStatus(loopStats), liveInputWaitingMessage(loopStats));
+                    resetOutput.inputFps = loopStats.inputFps;
+                    resetOutput.droppedFrameCount = int(loopStats.droppedFrameCount) + skippedFrames;
+                    postDisplayReset();
+                    postOutput(resetOutput);
+                    postOnlineProgress(loopStats.inputFps, processedFrames);
+                    lastInputWarningMs = elapsed.elapsed();
+                }
+
                 SlamInputFrame frame;
                 if (!liveSlamSource.inputQueue().tryPop(frame)) {
                     const qint64 nowMs = elapsed.elapsed();
-                    if (!hasLastOutput && nowMs - lastInputWarningMs >= 1000) {
-                        const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
-                        SlamOutput waitingOutput = statusOutput(SlamStatusCode::Failed, liveInputWaitingMessage(stats));
+                    const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
+                    const bool shouldPostWaiting =
+                        !hasLastOutput ||
+                        stats.status == SlamStatusCode::Starting ||
+                        stats.status == SlamStatusCode::InitializingImu ||
+                        stats.status == SlamStatusCode::Degraded ||
+                        stats.status == SlamStatusCode::TimeSyncError ||
+                        stats.status == SlamStatusCode::MissingImu;
+                    if (shouldPostWaiting && nowMs - lastInputWarningMs >= 1000) {
+                        SlamOutput waitingOutput = statusOutput(liveInputWaitingStatus(stats), liveInputWaitingMessage(stats));
                         waitingOutput.inputFps = stats.inputFps;
                         waitingOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
                         lastOutput = waitingOutput;
@@ -649,7 +699,7 @@ void LivoxViewerWindow::startSlamProcessing()
                     const qint64 nowMs = elapsed.elapsed();
                     if (nowMs - lastInputWarningMs >= 1000) {
                         const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
-                        SlamOutput skippedOutput = statusOutput(SlamStatusCode::Failed, skippedLiveFrameMessage(frame, stats));
+                        SlamOutput skippedOutput = statusOutput(liveInputWaitingStatus(stats), skippedLiveFrameMessage(frame, stats));
                         skippedOutput.inputFps = stats.inputFps;
                         skippedOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
                         lastOutput = skippedOutput;

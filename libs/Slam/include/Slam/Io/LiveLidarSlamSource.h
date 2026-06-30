@@ -5,7 +5,9 @@
 #include "livox_lidar_def.h"
 
 #include <QElapsedTimer>
+#include <QHash>
 #include <QMutex>
+#include <QQueue>
 #include <QString>
 #include <QVector>
 
@@ -23,12 +25,31 @@ struct LiveLidarSlamSourceStats {
     uint64_t missingPointOffsetPacketCount = 0;
     uint64_t missingImuTimingPacketCount = 0;
     uint64_t outOfOrderPointPacketCount = 0;
+    uint64_t outOfOrderImuPacketCount = 0;
+    uint64_t droppedPendingFrameCount = 0;
+    uint64_t warmupDroppedFrameCount = 0;
+    uint64_t paddedImuFrameCount = 0;
+    uint64_t paddedImuSampleCount = 0;
+    uint64_t timeResetCount = 0;
+    uint64_t backendResetGeneration = 0;
     int queueCapacity = 0;
     int queueSize = 0;
+    int pendingFrameCount = 0;
     uint64_t droppedFrameCount = 0;
     double inputFps = 0.0;
     int64_t lastFrameStartNs = 0;
     int64_t lastFrameEndNs = 0;
+    int64_t latestPointTimestampNs = 0;
+    int64_t latestImuTimestampNs = 0;
+    int64_t waitingFrameStartNs = 0;
+    int64_t waitingFrameEndNs = 0;
+    int64_t imuCoverageGapNs = 0;
+    int64_t lastTimestampJumpNs = 0;
+    int64_t lastRawTimestampNs = 0;
+    int64_t currentRawTimestampNs = 0;
+    uint32_t activeHandle = 0;
+    uint8_t pointTimeType = 0;
+    uint8_t imuTimeType = 0;
 };
 
 class LiveLidarSlamSource {
@@ -49,18 +70,54 @@ public:
     LiveLidarSlamSourceStats stats() const;
 
 private:
-    void flushCurrentFrameLocked();
-    void attachImuSamplesLocked(SlamInputFrame& frame) const;
+    struct HandleTimingState {
+        bool axisInitialized = false;
+        int64_t epochRawStartNs = 0;
+        int64_t epochNormalizedStartNs = 0;
+        bool hasPointTimeType = false;
+        bool hasImuTimeType = false;
+        uint8_t pointTimeType = 0;
+        uint8_t imuTimeType = 0;
+        bool hasLastPointRawTimestamp = false;
+        bool hasLastImuRawTimestamp = false;
+        int64_t lastPointRawTimestampNs = 0;
+        int64_t lastImuRawTimestampNs = 0;
+        bool hasLatestPointTimestamp = false;
+        bool hasLatestImuTimestamp = false;
+        int64_t latestPointTimestampNs = 0;
+        int64_t latestImuTimestampNs = 0;
+    };
+
+    bool normalizePacketTimestampLocked(uint32_t handle,
+                                        uint8_t timeType,
+                                        int64_t rawTimestampNs,
+                                        bool pointStream,
+                                        const QString& sourceName,
+                                        int64_t* normalizedTimestampNs);
+    void resetLiveTimelineLocked(uint32_t handle,
+                                 uint8_t timeType,
+                                 int64_t rawTimestampNs,
+                                 bool requestBackendReset,
+                                 SlamStatusCode status,
+                                 const QString& message);
+    void moveCurrentFrameToPendingLocked();
+    void tryFinalizePendingFramesLocked();
+    bool attachImuSamplesLocked(SlamInputFrame& frame, bool allowStartPadding);
+    void insertImuSampleLocked(const SlamImuSample& sample);
     void pruneImuBufferLocked(int64_t latestTimestampNs);
+    void updatePendingWaitStatusLocked(const SlamInputFrame& frame, int64_t latestImuTimestampNs);
+    int64_t latestObservedTimestampLocked(uint32_t handle) const;
 
     mutable QMutex mutex_;
     SlamInputQueue queue_;
     QVector<SlamImuSample> imuBuffer_;
+    QQueue<SlamInputFrame> pendingFrames_;
     SlamInputFrame currentFrame_;
     bool hasCurrentFrame_ = false;
     uint64_t nextSequence_ = 0;
-    int64_t lastPointPacketTimestampNs_ = 0;
-    bool hasLastPointPacketTimestamp_ = false;
+    QHash<uint32_t, HandleTimingState> timingByHandle_;
+    uint32_t activeHandle_ = 0;
+    bool hasActiveHandle_ = false;
     LiveLidarSlamSourceStats stats_;
     QElapsedTimer statsTimer_;
     int64_t frameDurationNs_ = 100000000;

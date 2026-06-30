@@ -1,5 +1,19 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-30 实时 SLAM 输入源时间戳与 IMU 覆盖策略优化
+
+- 背景：main 分支在线 SLAM 仍按 LiDAR packet timestamp 到达 `inputFrameDurationMs` 后立即 flush 并入队，随后立刻检查 IMU 覆盖；实时 LiDAR/IMU 是异步 SDK 回调流，IMU 经常晚于点云帧尾到达，worker 又会跳过 `hasCompleteImuCoverage=false` 的帧，导致未外部授时、外部授时抖动或稳定外部授时时都可能没有轨迹、地图和世界系点云输出。
+- 当前执行分支：`main`。
+- 输入源重构：`LiveLidarSlamSource` 已改为“点云切帧，IMU 水位线提交”。点云达到帧长后先进入 `pendingFrames_`；只有对应 handle 的 `latestImuTimestampNs >= frameEndNs + 3ms` 时才 attach IMU 并推入 `SlamInputQueue`；pending 等待超过 500ms 会丢帧并计入 `droppedPendingFrameCount/incompleteImuCoverageFrameCount`，不会把不完整帧交给 FAST-LIO。
+- 暖机策略：在线 SLAM 启动或输入源重置后，首批缺少前置 IMU 覆盖的帧只进入暖机等待/丢弃路径，状态显示为 `Starting`/`InitializingImu`，不再直接上报 `Failed`。worker 仍保留完整性检查，但正常情况下只有完整点云+IMU 帧会进入 `FastLioSlamBackend`。
+- IMU 覆盖容忍：attach IMU 时保留帧起点前一个样本和帧尾后一个样本；运行阶段起点缺口不超过 8ms 可复制首个 IMU 样本补到 `frameStartNs`，尾部缺口不超过 8ms 可复制最后一个 IMU 样本补到 `frameEndNs`，并统计 `paddedImuFrameCount/paddedImuSampleCount`。
+- 时间轴优化：实时输入按 handle 维护 LiDAR/IMU raw timestamp、time_type 和归一化 epoch，后端使用 `normalizedTimestampNs = rawTimestampNs - epochRawStartNs + epochNormalizedStartNs`。未外部同步的上电时间、稳定 PTP/GPS/PPS 时间都作为连续相对时间使用；原始 raw frame/IMU timestamp 和 time_type 保留在 `SlamInputFrame/SlamImuSample` 诊断字段。
+- 乱序与跳变处理：LiDAR 小幅回跳（默认 5ms 内）不再 fatal，直接丢弃异常 packet 并置 `Degraded`；IMU 小幅乱序按 timestamp 插入有序 buffer。大幅回跳/前跳、同一 stream 的 time_type 切换、handle 切换会清空 current/pending/IMU/queue、递增 `backendResetGeneration` 并等待 worker 重置 FAST-LIO 后端。LiDAR/IMU time_type 不一致时进入 `TimeSyncError`，不向后端投递错误时间轴帧。
+- 状态显示：等待 IMU 覆盖、暖机丢帧、轻微乱序、时间源跳变、time_type 不一致的消息中加入 frameStart/frameEnd/latestImu/tailGap、last/current/jump ms、time_type、handle、sourceName，便于区分外部主时钟调整、授时跳变、SDK 回调乱序和设备时间源切换。
+- worker 联动：在线 worker 监听 `LiveLidarSlamSourceStats::backendResetGeneration`，变化后调用 `FastLioSlamBackend::reset()` 并清空当前 SLAM 显示缓存；等待输入时使用 `liveInputWaitingStatus()` 输出 `Starting/InitializingImu/Degraded/TimeSyncError`，不再把正常暖机显示为 `Failed`。
+- 验证：2026-06-30 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；首次 `scripts/dev_build_run.bat Release` 完整重编译超过 180 秒超时但后台 MSBuild 完成并更新 `LivoxViewerQT.exe`/`SlamPhase4Replay.exe`；随后再次执行 `scripts/dev_build_run.bat Release` 返回 0，程序启动后 `LivoxViewerQT` 进程响应，最近 10 分钟 Windows Application 事件日志未出现新的 `LivoxViewerQT` 崩溃事件。
+- 验证缺口：当前 Windows 主机没有可用 bash/WSL 发行版，尚未执行 Linux/GCC 编译；该改动只使用 Qt/C++ 标准容器和现有 FAST-LIO 后端接口，后续仍需在 Linux 目标机按 README/CMake 规则复跑 `cmake --build build/cmd-linux-Release -j`。
+
 ## 2026-06-30 当前分支状态与文档更新
 
 - 分支状态：当前工作分支为 `codex/slam`，执行 `git status --short --branch --untracked-files=all` 时，修改前工作树相对 `origin/codex/slam` 干净。
