@@ -2,25 +2,25 @@
 
 ## 1. 当前实现状态
 
-`codex/slam` 分支目前已经实现了 ROS1 / ROS2 bag 的读取、反序列化，并接入了离线 SLAM 功能。
+### 1.1 2026-06-30 分支状态
 
-但当前实现的接入范围是：
+`codex/slam` 分支目前已经实现 ROS1 / ROS2 bag 的读取、反序列化，并同时接入了离线 SLAM 与普通离线点云播放。
+
+离线 SLAM 链路为：
 
 ```text
 ROS1 / ROS2 bag → RosbagSlamSource → SlamInputFrame → FastLioSlamBackend
 ```
 
-也就是说，当前 bag 数据已经可以作为 **离线 SLAM 输入源** 使用。
-
-但还没有接入现有的普通离线点云播放链路：
+普通离线点云播放链路为：
 
 ```text
-LVX2 / PCAP → Playback::Source → PlaybackBar → PointCloudView
+ROS1 / ROS2 bag → RosbagPlaybackSource → Playback::Source → PlaybackBar → PointCloudView
 ```
 
-因此当前状态应定义为：
+当前状态应定义为：
 
-> ROS1 / ROS2 bag 已经接入离线 SLAM，但尚未接入普通离线点云播放。
+> ROS1 / ROS2 bag 已经接入离线 SLAM 和普通离线点云播放；本文前半部分保留原开发方案，底部“实施记录”记录已完成项和仍有限制。
 
 ---
 
@@ -128,9 +128,9 @@ ROS2 反序列化基于 CDR reader，目前只支持可识别的小端 CDR 封�
 
 ---
 
-## 3. 当前未实现内容
+## 3. 普通播放接入状态
 
-当前 ROS1 / ROS2 bag 还没有接入普通离线点云播放。
+当前 ROS1 / ROS2 bag 已经接入普通离线点云播放；本节保留原方案背景，并标记当前已经完成的接口状态。
 
 现有播放抽象为：
 
@@ -139,7 +139,8 @@ namespace Playback {
 
 enum class SourceKind {
     Lvx2,
-    Pcap
+    Pcap,
+    Rosbag
 };
 
 class Source {
@@ -164,20 +165,7 @@ public:
 }
 ```
 
-当前 `SourceKind` 只有：
-
-```cpp
-Lvx2
-Pcap
-```
-
-没有：
-
-```cpp
-Rosbag
-```
-
-因此 bag 目前无法复用现有的播放条、播放按钮、滑动窗口、离线点云 tab 和普通点云显示流程。
+当前 `SourceKind` 已包含 `Rosbag`，`RosbagPlaybackSource` 已经实现 `Playback::Source`，bag 可以复用现有播放条、播放按钮、滑动窗口、离线点云 tab、普通点云显示流程和离线 IMU 曲线。
 
 ---
 

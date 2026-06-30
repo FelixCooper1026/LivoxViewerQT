@@ -1,5 +1,13 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-30 当前分支状态与文档更新
+
+- 分支状态：当前工作分支为 `codex/slam`，执行 `git status --short --branch --untracked-files=all` 时，修改前工作树相对 `origin/codex/slam` 干净。
+- 根目录 Markdown 文档现状：`README.md`、`slam_dev_plan.md`、`fastlio_migration_audit.md`、`rosbag_slam_source_development_plan.md`、`rosbag_offline_playback_plan.md`。
+- README 更新：重写项目概览、功能范围、构建依赖、构建命令、离线 SLAM 诊断命令、支持数据源矩阵和项目文件结构；文件结构覆盖 `apps/LivoxViewer`、`libs/*`、`plugins`、`resources`、`scripts`、`tools/SlamPhase4Replay`、`livox_sdk_qt`、`third-party`、`build/dist` 等当前目录。
+- ROSbag 普通播放文档更新：修正 `rosbag_offline_playback_plan.md` 顶部过期描述，将当前状态改为 ROS1/ROS2 bag 已同时接入离线 SLAM 与普通离线点云播放，并标明 `Playback::SourceKind::Rosbag`、`RosbagPlaybackSource` 已可复用现有播放条、离线点云 tab 和 IMU 曲线。
+- 当前开发约束：`scripts/dev_build_run.bat` 是本机首选构建入口，但 `scripts/*` 当前被 `.gitignore` 忽略；README 中已说明如需团队共享脚本规则，应先调整 `.gitignore`。
+
 ## 2026-06-29 离线 SLAM test_data 复验入口扩展
 
 - 背景：`E:\Livox_ws\sandbox\test_data` 下包含 ROS1 `.bag` 与 ROS2 `.db3/metadata.yaml` 数据，原 `SlamPhase4Replay` 仅支持 `with_imu.pcap/no_imu.pcap` 双 PCAP 回归，不能复现 UI 离线 SLAM 对 ROSbag 数据源的加载与后端处理问题。
