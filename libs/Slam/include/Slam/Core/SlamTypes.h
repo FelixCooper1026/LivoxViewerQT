@@ -32,7 +32,8 @@ struct SlamImuSample {
     uint8_t timeType = 0;
     bool hasRawTimestamp = false;
     double gyroRadPerSec[3] = {};
-    double accelMps2[3] = {};
+    // Source acceleration scale. Livox packets use g; Fast-LIO normalizes it with the initialization gravity norm.
+    double accelRaw[3] = {};
 };
 
 struct SlamInputFrame {

@@ -396,9 +396,9 @@ bool LiveLidarSlamSource::appendImuPacket(uint32_t handle, const LivoxLidarEther
         sample.gyroRadPerSec[0] = points[i].gyro_x;
         sample.gyroRadPerSec[1] = points[i].gyro_y;
         sample.gyroRadPerSec[2] = points[i].gyro_z;
-        sample.accelMps2[0] = points[i].acc_x;
-        sample.accelMps2[1] = points[i].acc_y;
-        sample.accelMps2[2] = points[i].acc_z;
+        sample.accelRaw[0] = points[i].acc_x;
+        sample.accelRaw[1] = points[i].acc_y;
+        sample.accelRaw[2] = points[i].acc_z;
         insertImuSampleLocked(sample);
         latestSampleTimestampNs = sample.timestampNs;
     }

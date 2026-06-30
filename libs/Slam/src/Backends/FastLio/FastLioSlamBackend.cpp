@@ -256,9 +256,9 @@ MeasureGroup toFastLioMeasureGroup(const SlamInputFrame& frame, double blindMinR
         targetImu->angular_velocity.x = sourceImu.gyroRadPerSec[0];
         targetImu->angular_velocity.y = sourceImu.gyroRadPerSec[1];
         targetImu->angular_velocity.z = sourceImu.gyroRadPerSec[2];
-        targetImu->linear_acceleration.x = sourceImu.accelMps2[0];
-        targetImu->linear_acceleration.y = sourceImu.accelMps2[1];
-        targetImu->linear_acceleration.z = sourceImu.accelMps2[2];
+        targetImu->linear_acceleration.x = sourceImu.accelRaw[0];
+        targetImu->linear_acceleration.y = sourceImu.accelRaw[1];
+        targetImu->linear_acceleration.z = sourceImu.accelRaw[2];
         measure.imu.push_back(targetImu);
     }
 

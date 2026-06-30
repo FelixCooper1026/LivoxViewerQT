@@ -396,9 +396,9 @@ void parseImuPayload(const uint8_t* payload,
         sample.gyroRadPerSec[0] = readFloat(p + 0);
         sample.gyroRadPerSec[1] = readFloat(p + 4);
         sample.gyroRadPerSec[2] = readFloat(p + 8);
-        sample.accelMps2[0] = readFloat(p + 12);
-        sample.accelMps2[1] = readFloat(p + 16);
-        sample.accelMps2[2] = readFloat(p + 20);
+        sample.accelRaw[0] = readFloat(p + 12);
+        sample.accelRaw[1] = readFloat(p + 16);
+        sample.accelRaw[2] = readFloat(p + 20);
         samples.push_back(sample);
     }
 

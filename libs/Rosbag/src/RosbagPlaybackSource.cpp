@@ -52,9 +52,9 @@ Playback::ImuSample toPlaybackImuSample(const SlamImuSample& sample, uint32_t de
     result.gyroX = float(sample.gyroRadPerSec[0]);
     result.gyroY = float(sample.gyroRadPerSec[1]);
     result.gyroZ = float(sample.gyroRadPerSec[2]);
-    result.accX = float(sample.accelMps2[0]);
-    result.accY = float(sample.accelMps2[1]);
-    result.accZ = float(sample.accelMps2[2]);
+    result.accX = float(sample.accelRaw[0]);
+    result.accY = float(sample.accelRaw[1]);
+    result.accZ = float(sample.accelRaw[2]);
     return result;
 }
 

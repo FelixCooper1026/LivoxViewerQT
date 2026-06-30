@@ -419,9 +419,9 @@ SlamImuSample toSlamImuSample(const Rosbag::ImuMsg& source, int64_t offsetNs)
     sample.gyroRadPerSec[0] = source.angularVelocity[0];
     sample.gyroRadPerSec[1] = source.angularVelocity[1];
     sample.gyroRadPerSec[2] = source.angularVelocity[2];
-    sample.accelMps2[0] = source.linearAcceleration[0];
-    sample.accelMps2[1] = source.linearAcceleration[1];
-    sample.accelMps2[2] = source.linearAcceleration[2];
+    sample.accelRaw[0] = source.linearAcceleration[0];
+    sample.accelRaw[1] = source.linearAcceleration[1];
+    sample.accelRaw[2] = source.linearAcceleration[2];
     return sample;
 }
 
