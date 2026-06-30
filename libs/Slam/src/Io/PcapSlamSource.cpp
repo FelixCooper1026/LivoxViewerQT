@@ -96,9 +96,17 @@ bool hasPointOffsetTime(const LivoxPayloadHeader& header)
     return header.dotNum <= 1 || header.timeIntervalRaw != 0;
 }
 
+int64_t sampleIntervalNs(const LivoxPayloadHeader& header)
+{
+    if (header.dotNum == 0) {
+        return 0;
+    }
+    return int64_t(header.timeIntervalRaw) * kLivoxTimeIntervalUnitNs / int64_t(header.dotNum);
+}
+
 int64_t sampleOffsetNs(const LivoxPayloadHeader& header, uint16_t sampleIndex)
 {
-    return int64_t(sampleIndex) * int64_t(header.timeIntervalRaw) * kLivoxTimeIntervalUnitNs;
+    return int64_t(sampleIndex) * sampleIntervalNs(header);
 }
 
 void addSlamPoint(SlamInputFrame& frame,

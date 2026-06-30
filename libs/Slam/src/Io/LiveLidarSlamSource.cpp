@@ -31,14 +31,25 @@ bool hasOffsetTime(uint16_t dotNum, uint16_t timeIntervalRaw)
     return dotNum <= 1 || timeIntervalRaw != 0;
 }
 
-int64_t pointTimestampNs(int64_t packetTimestampNs, uint16_t timeIntervalRaw, uint32_t index)
+int64_t sampleIntervalNs(uint16_t timeIntervalRaw, uint16_t dotNum)
 {
-    return packetTimestampNs + int64_t(index) * int64_t(timeIntervalRaw) * kLivoxTimeIntervalUnitNs;
+    if (dotNum == 0) {
+        return 0;
+    }
+    return int64_t(timeIntervalRaw) * kLivoxTimeIntervalUnitNs / int64_t(dotNum);
+}
+
+int64_t pointTimestampNs(int64_t packetTimestampNs, uint16_t timeIntervalRaw, uint16_t dotNum, uint32_t index)
+{
+    return packetTimestampNs + int64_t(index) * sampleIntervalNs(timeIntervalRaw, dotNum);
 }
 
 int64_t packetEndTimestampNs(int64_t packetTimestampNs, const LivoxLidarEthernetPacket* packet)
 {
-    return pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num > 0 ? packet->dot_num - 1 : 0);
+    return pointTimestampNs(packetTimestampNs,
+                            packet->time_interval,
+                            packet->dot_num,
+                            packet->dot_num > 0 ? packet->dot_num - 1 : 0);
 }
 
 QString nsToMsText(int64_t ns)
@@ -81,7 +92,10 @@ void appendCartesianHigh(const LivoxLidarEthernetPacket* packet,
         point.tag = points[i].tag;
         point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         point.hasLine = true;
-        appendPoint(frame, point, pointTimestampNs(packetTimestampNs, packet->time_interval, i), hasOffsets);
+        appendPoint(frame,
+                    point,
+                    pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num, i),
+                    hasOffsets);
     }
 }
 
@@ -101,7 +115,10 @@ void appendCartesianLow(const LivoxLidarEthernetPacket* packet,
         point.tag = points[i].tag;
         point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         point.hasLine = true;
-        appendPoint(frame, point, pointTimestampNs(packetTimestampNs, packet->time_interval, i), hasOffsets);
+        appendPoint(frame,
+                    point,
+                    pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num, i),
+                    hasOffsets);
     }
 }
 
@@ -125,7 +142,10 @@ void appendSpherical(const LivoxLidarEthernetPacket* packet,
         point.tag = points[i].tag;
         point.line = LivoxCore::lineForPointIndex(int(i), lineCount);
         point.hasLine = true;
-        appendPoint(frame, point, pointTimestampNs(packetTimestampNs, packet->time_interval, i), hasOffsets);
+        appendPoint(frame,
+                    point,
+                    pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num, i),
+                    hasOffsets);
     }
 }
 
@@ -137,7 +157,7 @@ void appendDoubleEcho(const LivoxLidarEthernetPacket* packet,
     const auto* points = reinterpret_cast<const LivoxLidarDoubleEchoRawPoint*>(packet->data);
     const bool hasOffsets = hasOffsetTime(packet->dot_num, packet->time_interval);
     for (uint32_t i = 0; i < packet->dot_num; ++i) {
-        const int64_t timestampNs = pointTimestampNs(packetTimestampNs, packet->time_interval, i);
+        const int64_t timestampNs = pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num, i);
 
         SlamPoint point1;
         point1.x = points[i].x1 / 1000.0f;
@@ -369,8 +389,8 @@ bool LiveLidarSlamSource::appendImuPacket(uint32_t handle, const LivoxLidarEther
     for (uint32_t i = 0; i < packet->dot_num; ++i) {
         SlamImuSample sample;
         sample.lidarId = handle;
-        sample.timestampNs = pointTimestampNs(packetTimestampNs, packet->time_interval, i);
-        sample.rawTimestampNs = pointTimestampNs(rawPacketTimestampNs, packet->time_interval, i);
+        sample.timestampNs = pointTimestampNs(packetTimestampNs, packet->time_interval, packet->dot_num, i);
+        sample.rawTimestampNs = pointTimestampNs(rawPacketTimestampNs, packet->time_interval, packet->dot_num, i);
         sample.timeType = packet->time_type;
         sample.hasRawTimestamp = true;
         sample.gyroRadPerSec[0] = points[i].gyro_x;

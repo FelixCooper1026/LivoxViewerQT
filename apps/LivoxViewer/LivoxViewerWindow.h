@@ -546,7 +546,9 @@ private:
         QColor(33, 150, 243),
         QColor(46, 204, 113),
         QColor(255, 193, 7),
-        QColor(233, 30, 99)
+        QColor(233, 30, 99),
+        QColor(0, 188, 212),
+        QColor(156, 39, 176)
     };
     float pointSizePx = 2.0f;
     float distanceLegendMin = 0.0f;

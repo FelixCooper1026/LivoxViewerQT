@@ -1129,7 +1129,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* themeTab = createSettingsPage("主题", "设置应用界面的颜色模式。");
     QWidget* connectionTab = createSettingsPage("连接", "配置与雷达连接时的主机网络行为。");
     QWidget* gridTab = createSettingsPage("网格", "调整点云视图中的世界坐标网格。");
-    QWidget* legendTab = createSettingsPage("图例", "设置距离和高度着色图例的数值范围。");
+    QWidget* legendTab = createSettingsPage("图例", "设置距离、高度和线号着色图例。");
     QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
     QWidget* backgroundTab = createSettingsPage("背景", "设置 OpenGL 点云视图的背景颜色。");
     QWidget* slamTab = createSettingsPage("SLAM", "设置旁路 SLAM 后端和轨迹显示参数。");

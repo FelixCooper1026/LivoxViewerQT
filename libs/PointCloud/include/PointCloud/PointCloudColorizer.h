@@ -31,7 +31,9 @@ struct Config {
         QColor(33, 150, 243),
         QColor(46, 204, 113),
         QColor(255, 193, 7),
-        QColor(233, 30, 99)
+        QColor(233, 30, 99),
+        QColor(0, 188, 212),
+        QColor(156, 39, 176)
     };
     float distanceColorMin = 0.0f;
     float distanceColorMax = 100.0f;
