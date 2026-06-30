@@ -1,5 +1,15 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-06-30 Linux/GCC std::max 类型推导修正
+
+- 问题：Linux/GCC 编译 `apps/LivoxViewer/slam/SlamWindowActions.cpp` 时，离线 SLAM `lastFrameEndNs` 计算里的 `std::max(frames.last().frameEndNs, frames.last().frameStartNs + ... * 1000000LL)` 因 `int64_t` 在 Linux 通常为 `long int`、`1000000LL` 为 `long long int`，导致模板参数推导失败；MSVC 对该混用更宽松所以此前未暴露。
+- 修正：`firstFrameStartNs/lastFrameEndNs/totalDurationNs` 改为显式中间变量；外层 frame end 比较改为 `std::max<int64_t>()`；fallback frame count 使用 `std::max<qsizetype>(qsizetype{1}, frames.size())`；fallback duration 使用 `std::max<int>()` 后再 cast；纳秒常量统一改为 `int64_t{1000000}` 或 `uint64_t{1000000}`。
+- 修正：`SlamWindowActions.cpp` 补充 `#include <utility>`，满足该文件内 `std::move` 的直接依赖；同时收紧 SLAM 世界点云窗口、时间格式化和 replay sleep 中的整数字面量类型。
+- 修正：`libs/Slam/src/Io/RosbagSlamSource.cpp` 补充 `#include <cstring>`，满足 `std::memcpy` 的直接依赖；PointCloud2 fallback frame duration、点数除数和 frameEnd 计算改为显式类型，Livox CustomMsg frameEnd 更新改为 `std::max<int64_t>()`。
+- 检查：已重新扫描 `apps/LivoxViewer/slam/SlamWindowActions.cpp` 与 `libs/Slam` 下 `std::max/std::min/qMax/qMin` 调用；剩余调用要么显式模板类型，要么两侧参数类型一致。
+- 验证：2026-06-30 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，程序启动后 `LivoxViewerQT` 进程响应，最近 10 分钟 Windows Application 事件日志未出现新的 `LivoxViewerQT` 崩溃事件。
+- 验证缺口：当前 Windows 主机没有可用 `bash`，Linux/GCC 需要在 Linux 目标机重新执行 `cmake --build build/cmd-linux-Release -j` 复验。
+
 ## 2026-06-30 实时 SLAM reset 策略与状态跳变修正
 
 - 背景：`bddb177` 中时间异常路径会递增 `backendResetGeneration`，在线 worker 检测后立即 `FastLioSlamBackend::reset()` 并清空 SlamUiBridge/世界系点云；同时 `tryFinalizePendingFramesLocked()` 可能很快把 `stats.message` 清空，导致 UI 看不到 reset 原因，Dock 状态还会在队列短暂为空时从 Running 被覆盖为 Initializing IMU。

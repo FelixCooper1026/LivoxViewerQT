@@ -23,10 +23,11 @@
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <utility>
 
 namespace {
 
-constexpr int64_t kSlamWorldHistoryRetentionNs = 600000LL * 1000000LL;
+constexpr int64_t kSlamWorldHistoryRetentionNs = int64_t{600000} * int64_t{1000000};
 
 SlamOutput statusOutput(SlamStatusCode status, const QString& message)
 {
@@ -71,32 +72,32 @@ qint64 replayTargetMs(int64_t firstFrameStartNs, int64_t frameStartNs)
     if (elapsedNs <= 0) {
         return 0;
     }
-    return qint64(elapsedNs / 1000000);
+    return qint64(elapsedNs / int64_t{1000000});
 }
 
 QString formatSlamTimeNs(uint64_t timeNs, uint64_t durationNs)
 {
-    const uint64_t totalMs = timeNs / 1000000ULL;
-    const uint64_t durationMs = std::max<uint64_t>(1, durationNs / 1000000ULL);
-    const uint64_t totalTenths = totalMs / 100ULL;
-    const uint64_t totalSeconds = totalTenths / 10ULL;
-    const uint64_t tenths = totalTenths % 10ULL;
+    const uint64_t totalMs = timeNs / uint64_t{1000000};
+    const uint64_t durationMs = std::max<uint64_t>(uint64_t{1}, durationNs / uint64_t{1000000});
+    const uint64_t totalTenths = totalMs / uint64_t{100};
+    const uint64_t totalSeconds = totalTenths / uint64_t{10};
+    const uint64_t tenths = totalTenths % uint64_t{10};
 
-    if (durationMs < 60000ULL) {
+    if (durationMs < uint64_t{60000}) {
         return QStringLiteral("%1.%2s").arg(totalSeconds).arg(tenths);
     }
 
-    const uint64_t seconds = totalSeconds % 60ULL;
-    const uint64_t totalMinutes = totalSeconds / 60ULL;
-    if (durationMs < 3600000ULL) {
+    const uint64_t seconds = totalSeconds % uint64_t{60};
+    const uint64_t totalMinutes = totalSeconds / uint64_t{60};
+    if (durationMs < uint64_t{3600000}) {
         return QStringLiteral("%1:%2.%3")
             .arg(totalMinutes)
             .arg(seconds, 2, 10, QLatin1Char('0'))
             .arg(tenths);
     }
 
-    const uint64_t minutes = totalMinutes % 60ULL;
-    const uint64_t hours = totalMinutes / 60ULL;
+    const uint64_t minutes = totalMinutes % uint64_t{60};
+    const uint64_t hours = totalMinutes / uint64_t{60};
     return QStringLiteral("%1:%2:%3.%4")
         .arg(hours)
         .arg(minutes, 2, 10, QLatin1Char('0'))
@@ -901,15 +902,26 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
         const QString sourceText = QDir::toNativeSeparators(sourcePath);
-        const int64_t firstFrameStartNs = frames.isEmpty() ? 0 : frames.first().frameStartNs;
-        const int64_t lastFrameEndNs = frames.isEmpty()
-            ? 0
-            : std::max(frames.last().frameEndNs,
-                       frames.last().frameStartNs + int64_t(std::max(1, config.inputFrameDurationMs)) * 1000000LL);
-        const uint64_t totalDurationNs = firstFrameStartNs >= 0 && lastFrameEndNs > firstFrameStartNs
-            ? uint64_t(lastFrameEndNs - firstFrameStartNs)
-            : uint64_t(std::max<qsizetype>(1, frames.size())) *
-                  uint64_t(std::max(1, config.inputFrameDurationMs)) * 1000000ULL;
+        const int64_t firstFrameStartNs = frames.isEmpty()
+            ? int64_t{0}
+            : frames.first().frameStartNs;
+
+        int64_t lastFrameEndNs = int64_t{0};
+        if (!frames.isEmpty()) {
+            const int64_t fallbackFrameDurationNs =
+                static_cast<int64_t>(std::max<int>(1, config.inputFrameDurationMs)) * int64_t{1000000};
+            const int64_t fallbackFrameEndNs = frames.last().frameStartNs + fallbackFrameDurationNs;
+            lastFrameEndNs = std::max<int64_t>(frames.last().frameEndNs, fallbackFrameEndNs);
+        }
+
+        const uint64_t fallbackFrameCount =
+            static_cast<uint64_t>(std::max<qsizetype>(qsizetype{1}, frames.size()));
+        const uint64_t fallbackFrameDurationMs =
+            static_cast<uint64_t>(std::max<int>(1, config.inputFrameDurationMs));
+        const uint64_t totalDurationNs =
+            firstFrameStartNs >= 0 && lastFrameEndNs > firstFrameStartNs
+                ? static_cast<uint64_t>(lastFrameEndNs - firstFrameStartNs)
+                : fallbackFrameCount * fallbackFrameDurationMs * uint64_t{1000000};
         auto makeTimeText = [totalDurationNs](uint64_t elapsedNs) {
             const uint64_t clampedElapsedNs = std::min(elapsedNs, totalDurationNs);
             return QStringLiteral("时间 %1 / %2")
@@ -962,7 +974,7 @@ void LivoxViewerWindow::startSlamProcessing()
                 if (remainingMs <= 0) {
                     return true;
                 }
-                const qint64 sleepMs = std::min<qint64>(remainingMs, 10);
+                const qint64 sleepMs = std::min<qint64>(remainingMs, qint64{10});
                 std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
             }
             return false;
@@ -1124,7 +1136,9 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
     SlamWorldPointSegment segment;
     segment.timestampNs = output.currentPose.timestampNs;
     if (segment.timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
-        segment.timestampNs = slamWorldPointSegments.back().timestampNs + int64_t(slamRuntimeConfig.inputFrameDurationMs) * 1000000LL;
+        segment.timestampNs =
+            slamWorldPointSegments.back().timestampNs +
+            static_cast<int64_t>(slamRuntimeConfig.inputFrameDurationMs) * int64_t{1000000};
     }
     segment.points.reserve(output.publishedWorldFramePoints.size());
     for (const SlamPoint& point : output.publishedWorldFramePoints) {
@@ -1174,7 +1188,8 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
     }
 
     const int64_t latestTimestampNs = slamWorldPointSegments.back().timestampNs;
-    const int64_t windowNs = int64_t(std::max<uint64_t>(1, slamWorldDisplayWindowMs)) * 1000000LL;
+    const int64_t windowNs =
+        static_cast<int64_t>(std::max<uint64_t>(uint64_t{1}, slamWorldDisplayWindowMs)) * int64_t{1000000};
     const int64_t windowStartNs = latestTimestampNs > windowNs ? latestTimestampNs - windowNs : 0;
 
     int targetStart = 0;
@@ -1186,7 +1201,7 @@ void LivoxViewerWindow::refreshSlamWorldPointCloud()
 
     auto appendDisplayedSegment = [this](const SlamWorldPointSegment& segment) {
         PointCloudFrame frame;
-        frame.timestamp = uint64_t(std::max<int64_t>(0, segment.timestampNs));
+        frame.timestamp = static_cast<uint64_t>(std::max<int64_t>(int64_t{0}, segment.timestampNs));
         frame.device_handle = 0;
         frame.points = segment.points;
         applyPointCloudPipeline(frame, slamPointCloudView);

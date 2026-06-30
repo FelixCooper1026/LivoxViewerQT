@@ -8,11 +8,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 namespace {
 
-constexpr int64_t kPointCloud2TimestampRoundingToleranceNs = 1000000LL;
+constexpr int64_t kPointCloud2TimestampRoundingToleranceNs = int64_t{1000000};
 
 bool isLivoxCustomMsgType(const QString& type)
 {
@@ -332,9 +333,11 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
     }
 
     const int64_t frameStartNs = cloud.header.stampNs > 0 ? cloud.header.stampNs : fallbackFrameStartNs;
+    const int64_t fallbackFrameDurationNs =
+        static_cast<int64_t>(std::max<int>(1, fallbackFrameDurationMs)) * int64_t{1000000};
     int64_t synthesizedFrameDurationNs = nextFrameStartNs > frameStartNs
         ? nextFrameStartNs - frameStartNs
-        : int64_t(std::max(1, fallbackFrameDurationMs)) * 1000000LL;
+        : fallbackFrameDurationNs;
 
     *frame = SlamInputFrame();
     frame->sequence = sequence;
@@ -389,7 +392,8 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
                 return false;
             }
         } else {
-            offsetNs = int64_t(i) * synthesizedFrameDurationNs / std::max(1, pointCount);
+            const int64_t divisor = static_cast<int64_t>(std::max<int>(1, pointCount));
+            offsetNs = int64_t(i) * synthesizedFrameDurationNs / divisor;
         }
 
         SlamPoint point;
@@ -402,7 +406,7 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
         point.hasLine = true;
         point.offsetNs = offsetNs;
         point.hasOffsetTime = true;
-        frame->frameEndNs = std::max(frame->frameEndNs, frameStartNs + offsetNs);
+        frame->frameEndNs = std::max<int64_t>(frame->frameEndNs, frameStartNs + offsetNs);
         frame->points.push_back(point);
     }
     return true;
@@ -673,7 +677,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
 
             for (const Rosbag::LivoxCustomPoint& sourcePoint : livoxMsg.points) {
                 SlamPoint point = toSlamPoint(sourcePoint);
-                frame.frameEndNs = std::max(frame.frameEndNs, frameStartNs + int64_t(point.offsetNs));
+                frame.frameEndNs = std::max<int64_t>(frame.frameEndNs, frameStartNs + int64_t(point.offsetNs));
                 frame.points.push_back(point);
             }
             summary_.pointCount += uint64_t(frame.points.size());
