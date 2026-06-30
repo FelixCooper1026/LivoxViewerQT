@@ -12,6 +12,7 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 - ROSbag 普通播放复用现有播放条、离线点云 tab、IMU 曲线和着色管线
 - 在线 SLAM 与离线 SLAM，后端为移植后的 FAST_LIO 流程
 - SLAM 轨迹显示、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 地图导出
+- 命令行离线 SLAM 诊断工具 `SlamPhase4Replay`
 
 ## 项目文件结构
 
@@ -62,6 +63,8 @@ LivoxViewerQT/
   third-party/
     eigen-3.4.0/                         本地 Eigen 头文件，脚本安装产物
     npcap-sdk-1.16/                      Windows PCAP 构建所需 Npcap SDK
+  build/                                 本地构建目录，不应提交
+  dist/                                  本地打包输出目录，不应提交
 ```
 
 ## 构建依赖
