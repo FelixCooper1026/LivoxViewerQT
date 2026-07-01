@@ -1,5 +1,16 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-07-01 对齐原版 FAST-LIO 在线 IMU buffer 语义
+
+- 背景：实时 SLAM 和离线 PCAP SLAM 在剧烈运动下漂移已有改善但仍可能出现；对照原版 FAST-LIO `sync_packages()` 后确认，原版在线路径先等待 `last_timestamp_imu >= lidar_end_time`，随后只把 IMU buffer 中 `<= lidar_end_time` 的样本交给 `MeasureGroup` 并弹出已消费 IMU，不会复制 IMU 样本补帧首/帧尾，也不会把帧尾后的第一个 IMU 样本放入当前帧。
+- 实时源调整：`LiveLidarSlamSource` 保留“点云切帧、IMU 水位线提交”，但水位线条件从 `frameEnd + 3ms` 改为 `latestImu >= frameEnd`；新增每个 handle 的 `lastSubmittedImuTimestampNs`，按原版 buffer pop 语义只提交上次已提交时间之后且 `<= frameEnd` 的 IMU 样本。
+- 实时源调整：移除实时路径中的 IMU start/tail padding，不再复制首尾 IMU 样本，也不再附加 frameEnd 后第一个 IMU；`paddedImuFrameCount/paddedImuSampleCount` 后续应保持为 0，用作确认旧补点路径未触发的诊断字段。
+- 离线源调整：`PcapSlamSource` 和 `RosbagSlamSource` 的 IMU attach 也改为按帧顺序消费 sorted IMU buffer；每帧只获得上次消费位置之后、当前 `frameEndNs` 之前的 IMU 样本，完整性由“存在当前包 IMU 且全局 IMU 水位线覆盖 frameEnd”判定，避免离线数据继续向 FAST-LIO 投递帧尾后的样本。
+- 预期影响：FAST-LIO 后端继续由 `ImuProcess::last_imu_` 连接帧间 IMU，与原版在线处理一致；剧烈运动时减少由复制样本、重复上一帧 IMU 和帧尾后 IMU 负向预测带来的额外漂移风险。
+- 验证：2026-07-01 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程响应正常且最近 Windows Application 日志未出现新的崩溃事件。
+- 验证：2026-07-01 使用 `build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --max-frames 300 E:\Livox_ws\with_imu.pcap` 复验真实 PCAP，数据源 93 帧、完整 IMU 覆盖 92/93、后端处理 92 帧，`Initializing=2`、`Running=90`、`trajectory=90`、`mapPoints=247`，结果 `BACKEND_OK`。
+- 后续复验：继续用剧烈运动 PCAP 和实时 SLAM 观察轨迹、地图连续性、`skippedIncompleteImu` 和实时 `paddedImu*` 计数；实时路径对齐后 `paddedImu*` 应保持 0。
+
 ## 2026-06-30 Linux Qt dock/tab 启动段错误修复
 
 - 问题：Linux/Qt 6.5 下启动后在主线程 Qt Widgets dock layout resize 路径崩溃，gdb 栈显示触发点为构造函数 `QTimer::singleShot(0)` 中调用 `tabifySlamStatusPanel()`，随后进入 `QLayout::activate()`；该问题与 SLAM worker、点云 packet、IMU buffer 和 SDK 回调线程无关。

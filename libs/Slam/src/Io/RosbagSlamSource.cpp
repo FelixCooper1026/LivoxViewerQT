@@ -434,40 +434,25 @@ void attachImuSamples(QVector<SlamInputFrame>& frames,
         return lhs.timestampNs < rhs.timestampNs;
     });
 
+    auto nextImu = sortedSamples.begin();
+    const int64_t latestImuTimestampNs = sortedSamples.isEmpty() ? 0 : sortedSamples.last().timestampNs;
     for (SlamInputFrame& frame : frames) {
-        const auto firstInside = std::lower_bound(sortedSamples.begin(),
-                                                  sortedSamples.end(),
-                                                  frame.frameStartNs,
-                                                  [](const SlamImuSample& sample, int64_t timestampNs) {
-                                                      return sample.timestampNs < timestampNs;
-                                                  });
-        auto attachBegin = firstInside;
-        if (attachBegin != sortedSamples.begin()) {
-            --attachBegin;
-        }
-
-        auto firstAfterEnd = std::upper_bound(sortedSamples.begin(),
-                                              sortedSamples.end(),
-                                              frame.frameEndNs,
-                                              [](int64_t timestampNs, const SlamImuSample& sample) {
-                                                  return timestampNs < sample.timestampNs;
-                                              });
-        auto attachEnd = firstAfterEnd;
-        if (attachEnd != sortedSamples.end()) {
-            ++attachEnd;
-        }
-
-        for (auto it = attachBegin; it != attachEnd; ++it) {
+        const auto attachEnd = std::upper_bound(nextImu,
+                                                sortedSamples.end(),
+                                                frame.frameEndNs,
+                                                [](int64_t timestampNs, const SlamImuSample& sample) {
+                                                    return timestampNs < sample.timestampNs;
+                                                });
+        for (auto it = nextImu; it != attachEnd; ++it) {
             frame.imuSamples.push_back(*it);
         }
+        nextImu = attachEnd;
 
-        if (!frame.imuSamples.isEmpty()) {
-            const int64_t firstTimestamp = frame.imuSamples.first().timestampNs;
-            const int64_t lastTimestamp = frame.imuSamples.last().timestampNs;
-            frame.hasCompleteImuCoverage = firstTimestamp <= frame.frameStartNs && lastTimestamp >= frame.frameEndNs;
-            if (frame.hasCompleteImuCoverage) {
-                summary.framesWithCompleteImuCoverage++;
-            }
+        frame.hasCompleteImuCoverage =
+            !frame.imuSamples.isEmpty() &&
+            latestImuTimestampNs >= frame.frameEndNs;
+        if (frame.hasCompleteImuCoverage) {
+            summary.framesWithCompleteImuCoverage++;
         }
     }
     summary.hasCompleteImuCoverage = summary.framesWithCompleteImuCoverage == summary.frameCount && summary.frameCount > 0;

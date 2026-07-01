@@ -15,10 +15,7 @@ namespace {
 constexpr int64_t kLivoxTimeIntervalUnitNs = 100;
 constexpr int64_t kNsPerMs = 1000000;
 constexpr int64_t kImuRetentionNs = 5000000000;
-constexpr int64_t kImuCoverageMarginNs = 3000000;
 constexpr int64_t kMaxPendingFrameWaitNs = 500000000;
-constexpr int64_t kMaxImuTailPadNs = 8000000;
-constexpr int64_t kMaxImuStartPadNs = 8000000;
 constexpr int64_t kSmallTimestampBackstepNs = 5000000;
 constexpr int64_t kTimestampJumpResetNs = 1000000000;
 constexpr int64_t kTimeTypeMismatchRawDeltaNs = 200000000;
@@ -735,7 +732,7 @@ void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
         }
 
         const int64_t latestImuNs = stateIt->latestImuTimestampNs;
-        if (latestImuNs < pendingFrame.frameEndNs + kImuCoverageMarginNs) {
+        if (latestImuNs < pendingFrame.frameEndNs) {
             if (latestObservedNs - pendingFrame.frameEndNs >= kMaxPendingFrameWaitNs) {
                 const int64_t frameStartNs = pendingFrame.frameStartNs;
                 const int64_t frameEndNs = pendingFrame.frameEndNs;
@@ -762,8 +759,7 @@ void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
 
         SlamInputFrame frame = std::move(pendingFrames_.head());
         pendingFrames_.dequeue();
-        const bool allowStartPadding = stats_.inputFrameCount > 0;
-        if (!attachImuSamplesLocked(frame, allowStartPadding)) {
+        if (!attachImuSamplesLocked(frame)) {
             ++stats_.droppedPendingFrameCount;
             ++stats_.incompleteImuCoverageFrameCount;
             if (stats_.inputFrameCount == 0) {
@@ -772,7 +768,7 @@ void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
             stats_.pendingFrameCount = pendingFrames_.size();
             stats_.status = SlamStatusCode::InitializingImu;
             stats_.message = QStringLiteral(
-                "实时 SLAM 暖机中：丢弃前置 IMU 覆盖不足的点云帧，frameStart=%1ms, frameEnd=%2ms, latestImu=%3ms, time_type=%4, handle=%5。")
+                "实时 SLAM 暖机中：丢弃无法形成 FAST_LIO IMU 包的点云帧，frameStart=%1ms, frameEnd=%2ms, latestImu=%3ms, time_type=%4, handle=%5。")
                                   .arg(nsToMsText(frame.frameStartNs))
                                   .arg(nsToMsText(frame.frameEndNs))
                                   .arg(nsToMsText(latestImuNs))
@@ -794,84 +790,48 @@ void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
     }
 }
 
-bool LiveLidarSlamSource::attachImuSamplesLocked(SlamInputFrame& frame, bool allowStartPadding)
+bool LiveLidarSlamSource::attachImuSamplesLocked(SlamInputFrame& frame)
 {
     frame.imuSamples.clear();
-    const auto firstInside = std::lower_bound(imuBuffer_.begin(),
-                                              imuBuffer_.end(),
-                                              frame.frameStartNs,
-                                              [](const SlamImuSample& sample, int64_t timestampNs) {
-                                                  return sample.timestampNs < timestampNs;
-                                              });
-
-    for (auto it = firstInside; it != imuBuffer_.begin();) {
-        --it;
-        if (it->lidarId == frame.sourceId) {
-            frame.imuSamples.push_back(*it);
-            break;
-        }
+    auto stateIt = timingByHandle_.find(frame.sourceId);
+    if (stateIt == timingByHandle_.end() ||
+        !stateIt->hasLatestImuTimestamp ||
+        stateIt->latestImuTimestampNs < frame.frameEndNs) {
+        frame.hasCompleteImuCoverage = false;
+        const int64_t latestImuNs = stateIt == timingByHandle_.end() || !stateIt->hasLatestImuTimestamp
+            ? 0
+            : stateIt->latestImuTimestampNs;
+        stats_.imuCoverageGapNs = frame.frameEndNs - latestImuNs;
+        return false;
     }
 
-    for (auto it = firstInside; it != imuBuffer_.end() && it->timestampNs <= frame.frameEndNs; ++it) {
-        if (it->lidarId == frame.sourceId) {
-            frame.imuSamples.push_back(*it);
-        }
+    HandleTimingState& state = stateIt.value();
+    auto attachBegin = imuBuffer_.begin();
+    if (state.hasLastSubmittedImuTimestamp) {
+        attachBegin = std::upper_bound(imuBuffer_.begin(),
+                                       imuBuffer_.end(),
+                                       state.lastSubmittedImuTimestampNs,
+                                       [](int64_t timestampNs, const SlamImuSample& sample) {
+                                           return timestampNs < sample.timestampNs;
+                                       });
     }
 
-    const auto firstAfterEnd = std::upper_bound(imuBuffer_.begin(),
-                                                imuBuffer_.end(),
-                                                frame.frameEndNs,
-                                                [](int64_t timestampNs, const SlamImuSample& sample) {
-                                                    return timestampNs < sample.timestampNs;
-                                                });
-    for (auto it = firstAfterEnd; it != imuBuffer_.end(); ++it) {
+    for (auto it = attachBegin; it != imuBuffer_.end() && it->timestampNs <= frame.frameEndNs; ++it) {
         if (it->lidarId == frame.sourceId) {
             frame.imuSamples.push_back(*it);
-            break;
         }
     }
 
     if (frame.imuSamples.isEmpty()) {
         frame.hasCompleteImuCoverage = false;
+        stats_.imuCoverageGapNs = frame.frameEndNs - frame.frameStartNs;
         return false;
     }
 
-    bool padded = false;
-    if (frame.imuSamples.first().timestampNs > frame.frameStartNs) {
-        const int64_t startGapNs = frame.imuSamples.first().timestampNs - frame.frameStartNs;
-        if (!allowStartPadding || startGapNs > kMaxImuStartPadNs) {
-            frame.hasCompleteImuCoverage = false;
-            stats_.imuCoverageGapNs = startGapNs;
-            return false;
-        }
-        SlamImuSample paddedSample = frame.imuSamples.first();
-        paddedSample.timestampNs = frame.frameStartNs;
-        frame.imuSamples.prepend(paddedSample);
-        ++stats_.paddedImuSampleCount;
-        padded = true;
-    }
-
-    if (frame.imuSamples.last().timestampNs < frame.frameEndNs) {
-        const int64_t tailGapNs = frame.frameEndNs - frame.imuSamples.last().timestampNs;
-        if (tailGapNs > kMaxImuTailPadNs) {
-            frame.hasCompleteImuCoverage = false;
-            stats_.imuCoverageGapNs = tailGapNs;
-            return false;
-        }
-        SlamImuSample paddedSample = frame.imuSamples.last();
-        paddedSample.timestampNs = frame.frameEndNs;
-        frame.imuSamples.push_back(paddedSample);
-        ++stats_.paddedImuSampleCount;
-        padded = true;
-    }
-
-    frame.hasCompleteImuCoverage =
-        frame.imuSamples.first().timestampNs <= frame.frameStartNs &&
-        frame.imuSamples.last().timestampNs >= frame.frameEndNs;
-    if (frame.hasCompleteImuCoverage && padded) {
-        ++stats_.paddedImuFrameCount;
-    }
-    return frame.hasCompleteImuCoverage;
+    frame.hasCompleteImuCoverage = true;
+    state.lastSubmittedImuTimestampNs = frame.frameEndNs;
+    state.hasLastSubmittedImuTimestamp = true;
+    return true;
 }
 
 void LiveLidarSlamSource::insertImuSampleLocked(const SlamImuSample& sample)

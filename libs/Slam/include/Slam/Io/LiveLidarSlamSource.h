@@ -97,6 +97,8 @@ private:
         bool hasLatestImuTimestamp = false;
         int64_t latestPointTimestampNs = 0;
         int64_t latestImuTimestampNs = 0;
+        bool hasLastSubmittedImuTimestamp = false;
+        int64_t lastSubmittedImuTimestampNs = 0;
         int consecutiveTimestampJumpCount = 0;
         int consecutiveTimeTypeMismatchCount = 0;
     };
@@ -122,7 +124,7 @@ private:
                                       const QString& message);
     void moveCurrentFrameToPendingLocked();
     void tryFinalizePendingFramesLocked();
-    bool attachImuSamplesLocked(SlamInputFrame& frame, bool allowStartPadding);
+    bool attachImuSamplesLocked(SlamInputFrame& frame);
     void insertImuSampleLocked(const SlamImuSample& sample);
     void pruneImuBufferLocked(int64_t latestTimestampNs);
     void updatePendingWaitStatusLocked(const SlamInputFrame& frame, int64_t latestImuTimestampNs);
