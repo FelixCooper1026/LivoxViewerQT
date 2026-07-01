@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
     VERSION 2.0.0
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 # =============================================================================
@@ -160,6 +160,16 @@ find_package(OpenMP REQUIRED COMPONENTS CXX)
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
 message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
+
+# 第三方轻量库
+set(THIRD_PARTY_LZ4_DIR "${THIRD_PARTY_ROOT}/lz4-1.10.0")
+add_library(third_party_lz4 STATIC
+    ${THIRD_PARTY_LZ4_DIR}/lz4.c
+    ${THIRD_PARTY_LZ4_DIR}/lz4frame.c
+    ${THIRD_PARTY_LZ4_DIR}/lz4hc.c
+    ${THIRD_PARTY_LZ4_DIR}/xxhash.c
+)
+target_include_directories(third_party_lz4 PUBLIC ${THIRD_PARTY_LZ4_DIR})
 
 # 基础源文件
 set(SOURCES
@@ -524,7 +534,7 @@ else()
     message(WARNING "Livox SDK library not linked - application may not function properly")
 endif()
 
-target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
 
 # 平台特定的系统库
 if(IS_LINUX)
@@ -608,7 +618,7 @@ else()
     target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core Qt5::Sql)
 endif()
 
-target_link_libraries(SlamPhase4Replay PRIVATE OpenMP::OpenMP_CXX)
+target_link_libraries(SlamPhase4Replay PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(SlamPhase4Replay PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)

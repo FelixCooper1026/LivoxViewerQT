@@ -1,5 +1,25 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-07-01 ROS1 bag XYZ-only PointCloud2 播放支持
+
+- 问题：`E:\1. Document\产品资料\览沃\5. 点云数据\wanjee_wlr722_16\final_bag.bag` 可在 Foxglove 播放，但本项目打开失败；诊断显示该包只有 `/vanjee_points722h(sensor_msgs/PointCloud2)` 和 `/tf_static(tf2_msgs/TFMessage)`，没有 IMU topic，离线 SLAM 路径因缺 IMU 失败是预期行为。
+- 分析：该 bag 的 PointCloud2 字段只有 `x/y/z(float32)`，`point_step=16`，最后 4 字节为 padding；不包含 `intensity/ring/time/tag/line/timestamp`。Foxglove 作为纯显示工具只需要 XYZ，本项目普通 ROSbag 播放复用了 `RosbagSlamSource` 的点云转换，原逻辑要求 Livox 或 timed PointCloud2 字段，因此误拒绝纯 XYZ 点云。
+- 实现：`RosbagSlamSource` 新增 `Generic PointCloud2 x/y/z` 模式；在允许合成点内时间的路径下，按帧间隔合成 `offset_time`，强度默认 0，线号默认 0 且 `hasLine=false`。普通播放路径 `RosbagPlaybackSource` 已设置 `requireImu=false` 和 `synthesizePointOffsetTime=true`，因此可用于纯 XYZ ROSbag；离线 SLAM 仍需 IMU，不把无 IMU bag 误判为可建图数据。
+- 实现：`SlamPhase4Replay --diagnose` 新增 `--source-only` 诊断开关，只加载数据源并输出帧统计，不启动 FAST-LIO 后端；该模式用于复验无 IMU ROSbag 的普通点云播放加载路径。
+- 验证：2026-07-01 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程 `Responding=True`，最近 Windows Application 日志未查询到新的 `LivoxViewerQT`/`SlamPhase4Replay` 崩溃事件。
+- 验证：使用 `SlamPhase4Replay.exe --diagnose --source-only --max-frames 10 E:\1. Document\产品资料\览沃\5. 点云数据\wanjee_wlr722_16\final_bag.bag` 复验通过；识别为 ROS1 bag、`/vanjee_points722h` 为 `Generic PointCloud2 x/y/z`、点内时间为 `Synthesized offset_time(ns)`，加载 1967 帧、17,027,802 点、0 个 IMU 样本；前 10 帧源加载统计成功，`SOURCE_ONLY_OK`。该文件无 IMU，普通点云播放可用，离线 SLAM 仍不应进入 FAST-LIO 建图。
+
+## 2026-07-01 ROS1 bag lz4 chunk 播放支持
+
+- 问题：播放 `E:\览沃客户问题汇总\非新品\1. 客户问题数据\井松Mid-360旋转分层\排查旋转点云问题\20260611_104024_0.bag` 时，`RosbagReader` 遇到 `compression=lz4` 的 ROS1 chunk 直接报错；现有实现仅支持 `compression=none`，导致普通离线点云播放和 ROSbag 离线 SLAM 都无法加载该文件。
+- 分析：该 bag 的首个 chunk header 中 `compression=lz4`，压缩数据前缀为 `04 22 4D 18`，对应标准 LZ4 frame magic；chunk header 的 `size` 字段提供了解压后的 ROS inner record 总长度，可用于解压结果校验。
+- 实现：新增官方 LZ4 1.10.0 最小源码到 `third-party/lz4-1.10.0`，CMake 新增 `third_party_lz4` 静态库并同时链接 `LivoxViewerQT` 与 `SlamPhase4Replay`；项目语言启用 C/CXX，以官方 C 实现编译，避免手写 LZ4 解压兼容层。
+- 实现：`libs/Rosbag/src/RosbagReader.cpp` 对 ROS1 chunk 增加 `lz4` 分支，使用 `LZ4F_decompress` 解压标准 LZ4 frame，并按 chunk `size` 校验解压长度；`none` 路径保持原逻辑，其它压缩格式继续明确报不支持。
+- 进一步问题：LZ4 解压通过后，该 bag 的 `/points_raw` 是 `sensor_msgs/PointCloud2` 通用布局，字段为 `x/y/z/intensity(float32) + ring(uint16) + time(float64)`，不属于既有 Livox driver1/driver2 PointCloud2 布局，因此继续报字段不匹配。
+- 实现：`RosbagSlamSource` 新增 `Generic PointCloud2 x/y/z/intensity/ring/time` 模式，`ring` 映射为点线号，`time` 作为点内相对时间；首帧 `time` 最大值大于 1 时按毫秒转纳秒，否则按秒转纳秒。当前 bag 的 `time` 最大约 101.755，按毫秒处理。
+- 验证：2026-07-01 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程 `Responding=True`，最近 Windows Application 日志未查询到新的 `LivoxViewerQT`/`SlamPhase4Replay` 崩溃事件。
+- 验证：使用 `SlamPhase4Replay.exe --diagnose --max-frames 10 E:\览沃客户问题汇总\非新品\1. 客户问题数据\井松Mid-360旋转分层\排查旋转点云问题\20260611_104024_0.bag` 复验通过；识别为 ROS1 bag、`/points_raw` 为 `Generic PointCloud2 x/y/z/intensity/ring/time`、点内时间为 `PointCloud2 relative time(ms)`，加载 344 帧、5,734,453 点、1,730 个 IMU 样本，完整 IMU 覆盖 343/344；前 10 帧后端处理成功，`BACKEND_OK`。
+
 ## 2026-07-01 CloudCompare 三投影模式对齐
 
 - 对照结论：CloudCompare 的“正射投影”对应当前 `PointCloudView::ProjectionMode::Orthographic`；“以对象为中心的视点”对应当前默认 `Perspective`，其模型视图矩阵以 `m_target` 为观察中心并用 `m_distance` 做 orbit；“基于观察者的视角”此前缺失。

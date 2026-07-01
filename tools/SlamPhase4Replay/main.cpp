@@ -183,6 +183,7 @@ struct DiagnosticSource {
 
 bool loadDiagnosticSource(const QString& filePath,
                           const SlamRuntimeConfig& config,
+                          bool requireImu,
                           DiagnosticSource* source,
                           QString* error)
 {
@@ -207,6 +208,8 @@ bool loadDiagnosticSource(const QString& filePath,
         rosbagConfig.allowLivoxDriverPointCloud2SynthesizedTime =
             config.allowRosbagDriverPointCloud2SynthesizedTime;
         rosbagConfig.lidarToImuTimeOffsetNs = config.lidarToImuTimeOffsetNs;
+        rosbagConfig.requireImu = requireImu;
+        rosbagConfig.synthesizePointOffsetTime = true;
         RosbagSlamSource rosbagSource(rosbagConfig);
         if (!rosbagSource.load(filePath, error)) {
             source->kind = QStringLiteral("rosbag");
@@ -407,7 +410,7 @@ void printSourceSummary(const QString& text, QTextStream& out)
     }
 }
 
-int runDiagnostic(const QStringList& inputPaths, int maxFrames, QTextStream& out)
+int runDiagnostic(const QStringList& inputPaths, int maxFrames, bool sourceOnly, QTextStream& out)
 {
     bool allOk = true;
     for (const QString& inputPath : inputPaths) {
@@ -422,7 +425,7 @@ int runDiagnostic(const QStringList& inputPaths, int maxFrames, QTextStream& out
 
         QString error;
         DiagnosticSource source;
-        if (!loadDiagnosticSource(filePath, config, &source, &error)) {
+        if (!loadDiagnosticSource(filePath, config, !sourceOnly, &source, &error)) {
             allOk = false;
             out << "SOURCE_FAILED path=" << filePath << " error=" << error << "\n";
             if (!source.summaryText.isEmpty()) {
@@ -453,6 +456,16 @@ int runDiagnostic(const QStringList& inputPaths, int maxFrames, QTextStream& out
             << " minDurationNs=" << stats.minDurationNs
             << " maxDurationNs=" << stats.maxDurationNs << "\n";
         out.flush();
+
+        if (sourceOnly) {
+            out << "SOURCE_ONLY_OK"
+                << " path=" << filePath
+                << " frames=" << stats.frames
+                << " points=" << stats.points << "\n";
+            out << "DIAG_END path=" << filePath << " ok=1\n";
+            out.flush();
+            continue;
+        }
 
         const ReplaySummary replay = runFrames(source.frames, config);
         if (!replay.ok) {
@@ -490,7 +503,7 @@ void printUsage(QTextStream& out)
 {
     out << "Usage:\n";
     out << "  SlamPhase4Replay <with_imu.pcap> <no_imu.pcap>\n";
-    out << "  SlamPhase4Replay --diagnose [--max-frames N] <pcap|bag|db3|metadata.yaml|directory> [...]\n";
+    out << "  SlamPhase4Replay --diagnose [--source-only] [--max-frames N] <pcap|bag|db3|metadata.yaml|directory> [...]\n";
 }
 
 } // namespace
@@ -503,8 +516,13 @@ int main(int argc, char* argv[])
 
     if (args.size() >= 3 && args.at(1) == QStringLiteral("--diagnose")) {
         int maxFrames = 0;
+        bool sourceOnly = false;
         QStringList inputPaths;
         for (int i = 2; i < args.size(); ++i) {
+            if (args.at(i) == QStringLiteral("--source-only")) {
+                sourceOnly = true;
+                continue;
+            }
             if (args.at(i) == QStringLiteral("--max-frames") && i + 1 < args.size()) {
                 maxFrames = args.at(++i).toInt();
                 continue;
@@ -515,7 +533,7 @@ int main(int argc, char* argv[])
             printUsage(out);
             return 2;
         }
-        return runDiagnostic(inputPaths, maxFrames, out);
+        return runDiagnostic(inputPaths, maxFrames, sourceOnly, out);
     }
 
     if (argc == 3) {

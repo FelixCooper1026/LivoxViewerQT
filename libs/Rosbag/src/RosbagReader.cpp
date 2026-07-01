@@ -4,8 +4,12 @@
 #include <QFile>
 #include <QStringList>
 
+#include <lz4frame.h>
+
 #include <algorithm>
 #include <cstring>
+#include <limits>
+#include <memory>
 
 namespace {
 
@@ -201,6 +205,90 @@ QString topicListText(const QVector<Rosbag::Connection>& connections)
     return topics.join(QStringLiteral(", "));
 }
 
+struct Lz4DecompressionContextDeleter {
+    void operator()(LZ4F_dctx* context) const
+    {
+        if (context != nullptr) {
+            LZ4F_freeDecompressionContext(context);
+        }
+    }
+};
+
+bool decompressLz4Frame(const QByteArray& compressed,
+                        uint32_t uncompressedSize,
+                        QByteArray* decompressed,
+                        QString* error)
+{
+    if (uncompressedSize > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：lz4 chunk 解压后大小超过当前进程可分配范围。");
+        }
+        return false;
+    }
+
+    LZ4F_decompressionContext_t rawContext = nullptr;
+    size_t result = LZ4F_createDecompressionContext(&rawContext, LZ4F_VERSION);
+    if (LZ4F_isError(result)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：创建 lz4 解压上下文失败：%1。")
+                         .arg(QString::fromLatin1(LZ4F_getErrorName(result)));
+        }
+        return false;
+    }
+    std::unique_ptr<LZ4F_dctx, Lz4DecompressionContextDeleter> context(rawContext);
+
+    QByteArray output;
+    output.resize(static_cast<int>(uncompressedSize));
+    const char* source = compressed.constData();
+    char* destination = output.data();
+    const size_t sourceSize = static_cast<size_t>(compressed.size());
+    const size_t destinationSize = static_cast<size_t>(output.size());
+    size_t sourceOffset = 0;
+    size_t destinationOffset = 0;
+
+    while (sourceOffset < sourceSize) {
+        size_t sourceChunkSize = sourceSize - sourceOffset;
+        size_t destinationChunkSize = destinationSize - destinationOffset;
+        result = LZ4F_decompress(context.get(),
+                                 destination + destinationOffset,
+                                 &destinationChunkSize,
+                                 source + sourceOffset,
+                                 &sourceChunkSize,
+                                 nullptr);
+        if (LZ4F_isError(result)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("ROSbag 加载失败：lz4 chunk 解压失败：%1。")
+                             .arg(QString::fromLatin1(LZ4F_getErrorName(result)));
+            }
+            return false;
+        }
+
+        sourceOffset += sourceChunkSize;
+        destinationOffset += destinationChunkSize;
+        if (result == 0) {
+            break;
+        }
+        if (sourceChunkSize == 0 && destinationChunkSize == 0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("ROSbag 加载失败：lz4 chunk 解压未能继续推进。");
+            }
+            return false;
+        }
+    }
+
+    if (result != 0 || sourceOffset != sourceSize || destinationOffset != destinationSize) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：lz4 chunk 解压大小不匹配，期望 %1 字节，实际 %2 字节。")
+                         .arg(uncompressedSize)
+                         .arg(static_cast<qulonglong>(destinationOffset));
+        }
+        return false;
+    }
+
+    *decompressed = std::move(output);
+    return true;
+}
+
 } // namespace
 
 namespace Rosbag {
@@ -273,16 +361,31 @@ bool Reader::read(const QString& filePath, QString* error)
         }
         case kOpChunk: {
             const QString compression = readFieldString(record.header, QStringLiteral("compression"));
-            if (compression != QStringLiteral("none")) {
+            uint32_t uncompressedSize = 0;
+            if (!readFieldU32(record.header, QStringLiteral("size"), &uncompressedSize)) {
                 if (error != nullptr) {
-                    *error = QStringLiteral("ROSbag 加载失败：不支持压缩 chunk '%1'。当前第一版仅支持 uncompressed ROS1 bag。")
+                    *error = QStringLiteral("ROSbag 加载失败：chunk record 缺少 size 字段。");
+                }
+                return false;
+            }
+
+            QByteArray chunkData;
+            if (compression == QStringLiteral("none")) {
+                chunkData = record.data;
+            } else if (compression == QStringLiteral("lz4")) {
+                if (!decompressLz4Frame(record.data, uncompressedSize, &chunkData, error)) {
+                    return false;
+                }
+            } else {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROSbag 加载失败：不支持压缩 chunk '%1'。当前支持 uncompressed 和 lz4 ROS1 bag。")
                                  .arg(compression);
                 }
                 return false;
             }
 
             QBuffer buffer;
-            buffer.setData(record.data);
+            buffer.setData(chunkData);
             if (!buffer.open(QIODevice::ReadOnly)) {
                 if (error != nullptr) {
                     *error = QStringLiteral("ROSbag 加载失败：无法读取 chunk。");

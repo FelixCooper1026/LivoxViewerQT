@@ -14,6 +14,23 @@
 namespace {
 
 constexpr int64_t kPointCloud2TimestampRoundingToleranceNs = int64_t{1000000};
+constexpr uint8_t kPointFieldUint8 = 2;
+constexpr uint8_t kPointFieldUint16 = 4;
+constexpr uint8_t kPointFieldFloat32 = 7;
+constexpr uint8_t kPointFieldFloat64 = 8;
+
+enum class PointCloud2FrameTiming {
+    Driver2AbsoluteNs,
+    RelativeSeconds,
+    RelativeMilliseconds,
+    Synthesized
+};
+
+enum class PointCloud2PointLayout {
+    Livox,
+    GenericTimed,
+    GenericXyz
+};
 
 bool isLivoxCustomMsgType(const QString& type)
 {
@@ -192,16 +209,36 @@ qsizetype pointFieldDatatypeSize(uint8_t datatype)
     }
 }
 
+bool pointFieldFits(const Rosbag::PointCloud2Msg& cloud, const Rosbag::PointField& field)
+{
+    if (field.count != 1) {
+        return false;
+    }
+    const qsizetype size = pointFieldDatatypeSize(field.datatype);
+    return size > 0 &&
+           field.offset <= cloud.pointStep &&
+           size <= qsizetype(cloud.pointStep) - qsizetype(field.offset);
+}
+
 bool pointFieldMatchesTypeAndFits(const Rosbag::PointCloud2Msg& cloud, const QString& name, uint8_t datatype)
 {
     const Rosbag::PointField* field = pointFieldByName(cloud, name);
-    if (field == nullptr || field->datatype != datatype || field->count != 1) {
+    if (field == nullptr || field->datatype != datatype) {
         return false;
     }
-    const qsizetype size = pointFieldDatatypeSize(field->datatype);
-    return size > 0 &&
-           field->offset <= cloud.pointStep &&
-           size <= qsizetype(cloud.pointStep) - qsizetype(field->offset);
+    return pointFieldFits(cloud, *field);
+}
+
+bool pointFieldMatchesFloatAndFits(const Rosbag::PointCloud2Msg& cloud, const QString& name)
+{
+    return pointFieldMatchesTypeAndFits(cloud, name, kPointFieldFloat32) ||
+           pointFieldMatchesTypeAndFits(cloud, name, kPointFieldFloat64);
+}
+
+bool pointFieldMatchesLineAndFits(const Rosbag::PointCloud2Msg& cloud, const QString& name)
+{
+    return pointFieldMatchesTypeAndFits(cloud, name, kPointFieldUint8) ||
+           pointFieldMatchesTypeAndFits(cloud, name, kPointFieldUint16);
 }
 
 bool isLivoxDriver2PointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
@@ -209,13 +246,13 @@ bool isLivoxDriver2PointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
     return !cloud.isBigEndian &&
            cloud.height == 1 &&
            cloud.pointStep > 0 &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("intensity"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("tag"), 2) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("line"), 2) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("timestamp"), 8);
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("intensity"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("tag"), kPointFieldUint8) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("line"), kPointFieldUint8) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("timestamp"), kPointFieldFloat64);
 }
 
 bool isLivoxDriverPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
@@ -223,21 +260,45 @@ bool isLivoxDriverPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
     return !cloud.isBigEndian &&
            cloud.height == 1 &&
            cloud.pointStep > 0 &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("intensity"), 7) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("tag"), 2) &&
-           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("line"), 2) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("intensity"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("tag"), kPointFieldUint8) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("line"), kPointFieldUint8) &&
            !hasPointField(cloud, QStringLiteral("timestamp")) &&
            !hasPointField(cloud, QStringLiteral("time")) &&
            !hasPointField(cloud, QStringLiteral("offset_time"));
 }
 
+bool isGenericTimedPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
+{
+    return !cloud.isBigEndian &&
+           cloud.height == 1 &&
+           cloud.pointStep > 0 &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("intensity"), kPointFieldFloat32) &&
+           (pointFieldMatchesLineAndFits(cloud, QStringLiteral("ring")) ||
+            pointFieldMatchesLineAndFits(cloud, QStringLiteral("line"))) &&
+           pointFieldMatchesFloatAndFits(cloud, QStringLiteral("time"));
+}
+
+bool isGenericXyzPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
+{
+    return !cloud.isBigEndian &&
+           cloud.height == 1 &&
+           cloud.pointStep > 0 &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
+           pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32);
+}
+
 bool readPointBytes(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, const char** out)
 {
     const qsizetype offset = qsizetype(pointIndex) * qsizetype(cloud.pointStep) + qsizetype(field.offset);
-    const qsizetype size = field.datatype == 8 ? 8 : (field.datatype == 7 ? 4 : 1);
+    const qsizetype size = pointFieldDatatypeSize(field.datatype);
     if (offset < 0 || size <= 0 || offset > cloud.data.size() || size > cloud.data.size() - offset) {
         return false;
     }
@@ -248,7 +309,7 @@ bool readPointBytes(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const R
 bool readPointFloat(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, float* value)
 {
     const char* bytes = nullptr;
-    if (field.datatype != 7 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
+    if (field.datatype != kPointFieldFloat32 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
         return false;
     }
     std::memcpy(value, bytes, sizeof(float));
@@ -258,7 +319,7 @@ bool readPointFloat(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const R
 bool readPointDouble(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, double* value)
 {
     const char* bytes = nullptr;
-    if (field.datatype != 8 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
+    if (field.datatype != kPointFieldFloat64 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
         return false;
     }
     std::memcpy(value, bytes, sizeof(double));
@@ -268,10 +329,46 @@ bool readPointDouble(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const 
 bool readPointU8(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, uint8_t* value)
 {
     const char* bytes = nullptr;
-    if (field.datatype != 2 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
+    if (field.datatype != kPointFieldUint8 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
         return false;
     }
     *value = uint8_t(*bytes);
+    return true;
+}
+
+bool readPointU16(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, uint16_t* value)
+{
+    const char* bytes = nullptr;
+    if (field.datatype != kPointFieldUint16 || !readPointBytes(cloud, pointIndex, field, &bytes)) {
+        return false;
+    }
+    std::memcpy(value, bytes, sizeof(uint16_t));
+    return true;
+}
+
+bool readPointLine(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, uint8_t* value)
+{
+    if (field.datatype == kPointFieldUint8) {
+        return readPointU8(cloud, pointIndex, field, value);
+    }
+    uint16_t line = 0;
+    if (field.datatype != kPointFieldUint16 || !readPointU16(cloud, pointIndex, field, &line)) {
+        return false;
+    }
+    *value = uint8_t(std::min<uint16_t>(line, 255));
+    return true;
+}
+
+bool readPointFloatOrDouble(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, double* value)
+{
+    if (field.datatype == kPointFieldFloat64) {
+        return readPointDouble(cloud, pointIndex, field, value);
+    }
+    float floatValue = 0.0f;
+    if (field.datatype != kPointFieldFloat32 || !readPointFloat(cloud, pointIndex, field, &floatValue)) {
+        return false;
+    }
+    *value = double(floatValue);
     return true;
 }
 
@@ -288,12 +385,53 @@ int64_t pointCloud2PointCount(const Rosbag::PointCloud2Msg& cloud)
     return int64_t(cloud.width) * int64_t(std::max<uint32_t>(1, cloud.height));
 }
 
+bool inferGenericPointCloud2Timing(const Rosbag::PointCloud2Msg& cloud,
+                                   PointCloud2FrameTiming* timing,
+                                   QString* error)
+{
+    const Rosbag::PointField* timeField = pointFieldByName(cloud, QStringLiteral("time"));
+    if (timeField == nullptr) {
+        if (error != nullptr) {
+            *error = QStringLiteral("PointCloud2 缺少 time 字段。");
+        }
+        return false;
+    }
+
+    const int64_t pointCount64 = pointCloud2PointCount(cloud);
+    if (pointCount64 <= 0 || pointCount64 > std::numeric_limits<int>::max()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("PointCloud2 点数无效：%1。").arg(pointCount64);
+        }
+        return false;
+    }
+
+    double maxTime = 0.0;
+    for (int i = 0; i < int(pointCount64); ++i) {
+        double timeValue = 0.0;
+        if (!readPointFloatOrDouble(cloud, i, *timeField, &timeValue) ||
+            !std::isfinite(timeValue) ||
+            timeValue < 0.0) {
+            if (error != nullptr) {
+                *error = QStringLiteral("PointCloud2 第 %1 个点 time 无效。").arg(i);
+            }
+            return false;
+        }
+        maxTime = std::max(maxTime, timeValue);
+    }
+
+    *timing = maxTime > 1.0
+        ? PointCloud2FrameTiming::RelativeMilliseconds
+        : PointCloud2FrameTiming::RelativeSeconds;
+    return true;
+}
+
 bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
                            const QString& filePath,
                            uint64_t sequence,
                            int64_t fallbackFrameStartNs,
                            int64_t nextFrameStartNs,
-                           bool useDriver2Timestamp,
+                           PointCloud2PointLayout pointLayout,
+                           PointCloud2FrameTiming timing,
                            int fallbackFrameDurationMs,
                            SlamInputFrame* frame,
                            QString* error)
@@ -304,12 +442,26 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
     const Rosbag::PointField* intensityField = pointFieldByName(cloud, QStringLiteral("intensity"));
     const Rosbag::PointField* tagField = pointFieldByName(cloud, QStringLiteral("tag"));
     const Rosbag::PointField* lineField = pointFieldByName(cloud, QStringLiteral("line"));
+    if (lineField == nullptr) {
+        lineField = pointFieldByName(cloud, QStringLiteral("ring"));
+    }
     const Rosbag::PointField* timestampField = pointFieldByName(cloud, QStringLiteral("timestamp"));
+    const Rosbag::PointField* timeField = pointFieldByName(cloud, QStringLiteral("time"));
+    const bool useDriver2Timestamp = timing == PointCloud2FrameTiming::Driver2AbsoluteNs;
+    const bool useRelativeTime = timing == PointCloud2FrameTiming::RelativeSeconds ||
+                                 timing == PointCloud2FrameTiming::RelativeMilliseconds;
+    const bool useGenericXyz = pointLayout == PointCloud2PointLayout::GenericXyz;
+    const bool requireLivoxFields = pointLayout == PointCloud2PointLayout::Livox;
+    const bool requireGenericTimedFields = pointLayout == PointCloud2PointLayout::GenericTimed;
     if (xField == nullptr || yField == nullptr || zField == nullptr ||
-        intensityField == nullptr || tagField == nullptr || lineField == nullptr ||
-        (useDriver2Timestamp && timestampField == nullptr)) {
+        ((requireLivoxFields || requireGenericTimedFields) && intensityField == nullptr) ||
+        ((requireLivoxFields || requireGenericTimedFields) && lineField == nullptr) ||
+        (requireLivoxFields && tagField == nullptr) ||
+        (useDriver2Timestamp && timestampField == nullptr) ||
+        (useRelativeTime && timeField == nullptr) ||
+        (timing == PointCloud2FrameTiming::Synthesized && requireLivoxFields && tagField == nullptr)) {
         if (error != nullptr) {
-            *error = QStringLiteral("PointCloud2 缺少 Livox 必需字段。");
+            *error = QStringLiteral("PointCloud2 缺少当前布局必需字段。");
         }
         return false;
     }
@@ -345,9 +497,9 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
     frame->deviceType = 0;
     frame->frameStartNs = frameStartNs;
     frame->frameEndNs = frameStartNs;
-    frame->timeSource = useDriver2Timestamp
-        ? SlamTimeSource::LivoxPacketTimestamp
-        : SlamTimeSource::SynthesizedFromPacketInterval;
+    frame->timeSource = timing == PointCloud2FrameTiming::Synthesized
+        ? SlamTimeSource::SynthesizedFromPacketInterval
+        : SlamTimeSource::LivoxPacketTimestamp;
     frame->hasPointOffsetTime = true;
     frame->sourceName = filePath;
     frame->points.reserve(pointCount);
@@ -361,12 +513,27 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
         uint8_t line = 0;
         if (!readPointFloat(cloud, i, *xField, &x) ||
             !readPointFloat(cloud, i, *yField, &y) ||
-            !readPointFloat(cloud, i, *zField, &z) ||
-            !readPointFloat(cloud, i, *intensityField, &intensity) ||
-            !readPointU8(cloud, i, *tagField, &tag) ||
-            !readPointU8(cloud, i, *lineField, &line)) {
+            !readPointFloat(cloud, i, *zField, &z)) {
             if (error != nullptr) {
                 *error = QStringLiteral("PointCloud2 第 %1 个点读取失败。").arg(i);
+            }
+            return false;
+        }
+        if (intensityField != nullptr && !readPointFloat(cloud, i, *intensityField, &intensity)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("PointCloud2 第 %1 个点 intensity 读取失败。").arg(i);
+            }
+            return false;
+        }
+        if (lineField != nullptr && !readPointLine(cloud, i, *lineField, &line)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("PointCloud2 第 %1 个点 line/ring 读取失败。").arg(i);
+            }
+            return false;
+        }
+        if (tagField != nullptr && !readPointU8(cloud, i, *tagField, &tag)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("PointCloud2 第 %1 个点 tag 读取失败。").arg(i);
             }
             return false;
         }
@@ -391,6 +558,20 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
                 }
                 return false;
             }
+        } else if (useRelativeTime) {
+            double relativeTime = 0.0;
+            if (!readPointFloatOrDouble(cloud, i, *timeField, &relativeTime) ||
+                !std::isfinite(relativeTime) ||
+                relativeTime < 0.0) {
+                if (error != nullptr) {
+                    *error = QStringLiteral("PointCloud2 第 %1 个点 time 无效。").arg(i);
+                }
+                return false;
+            }
+            const double scale = timing == PointCloud2FrameTiming::RelativeMilliseconds
+                ? 1000000.0
+                : 1000000000.0;
+            offsetNs = int64_t(std::llround(relativeTime * scale));
         } else {
             const int64_t divisor = static_cast<int64_t>(std::max<int>(1, pointCount));
             offsetNs = int64_t(i) * synthesizedFrameDurationNs / divisor;
@@ -403,7 +584,7 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
         point.reflectivity = reflectivityFromFloat(intensity);
         point.tag = tag;
         point.line = line;
-        point.hasLine = true;
+        point.hasLine = !useGenericXyz || lineField != nullptr;
         point.offsetNs = offsetNs;
         point.hasOffsetTime = true;
         frame->frameEndNs = std::max<int64_t>(frame->frameEndNs, frameStartNs + offsetNs);
@@ -672,7 +853,10 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         enum class PointCloud2Mode {
             Unknown,
             Driver2Timestamp,
-            DriverSynthesized
+            DriverSynthesized,
+            GenericRelativeSeconds,
+            GenericRelativeMilliseconds,
+            GenericSynthesized
         };
         PointCloud2Mode pointCloud2Mode = PointCloud2Mode::Unknown;
 
@@ -737,8 +921,41 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
                     summary_.lidarFormat = QStringLiteral("Livox driver PointCloud2");
                     summary_.pointTimeMode = QStringLiteral("Synthesized offset_time(ns)");
                     summary_.messages.push_back(QStringLiteral("ROSbag 提示：livox_ros_driver PointCloud2 不包含真实点内时间，已按帧周期合成 offset_time，建图精度可能低于 CustomMsg。"));
+                } else if (isGenericTimedPointCloud2Layout(cloud)) {
+                    PointCloud2FrameTiming genericTiming = PointCloud2FrameTiming::Synthesized;
+                    QString timingError;
+                    if (!inferGenericPointCloud2Timing(cloud, &genericTiming, &timingError)) {
+                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 通用 PointCloud2 time 字段解析失败：%2")
+                                            .arg(lidarConnection->topic, timingError);
+                        if (error != nullptr) {
+                            *error = errorMessage_;
+                        }
+                        return false;
+                    }
+                    if (genericTiming == PointCloud2FrameTiming::RelativeMilliseconds) {
+                        pointCloud2Mode = PointCloud2Mode::GenericRelativeMilliseconds;
+                        summary_.pointTimeMode = QStringLiteral("PointCloud2 relative time(ms)");
+                    } else {
+                        pointCloud2Mode = PointCloud2Mode::GenericRelativeSeconds;
+                        summary_.pointTimeMode = QStringLiteral("PointCloud2 relative time(s)");
+                    }
+                    summary_.lidarFormat = QStringLiteral("Generic PointCloud2 x/y/z/intensity/ring/time");
+                } else if (isGenericXyzPointCloud2Layout(cloud)) {
+                    if (!config_.allowLivoxDriverPointCloud2SynthesizedTime &&
+                        !config_.synthesizePointOffsetTime) {
+                        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是通用 PointCloud2 x/y/z，但消息不包含点内时间，且当前运行配置未允许合成点内时间。")
+                                            .arg(lidarConnection->topic);
+                        if (error != nullptr) {
+                            *error = errorMessage_;
+                        }
+                        return false;
+                    }
+                    pointCloud2Mode = PointCloud2Mode::GenericSynthesized;
+                    summary_.lidarFormat = QStringLiteral("Generic PointCloud2 x/y/z");
+                    summary_.pointTimeMode = QStringLiteral("Synthesized offset_time(ns)");
+                    summary_.messages.push_back(QStringLiteral("ROSbag 提示：通用 PointCloud2 仅包含 x/y/z，已按帧周期合成 offset_time，并使用默认强度和线号；该模式用于点云播放，离线 SLAM 仍需要有效 IMU。"));
                 } else {
-                    errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 sensor_msgs/PointCloud2，但字段不匹配已支持的 Livox 布局。driver2 需要 x/y/z/intensity/tag/line/timestamp；driver1 需要 x/y/z/intensity/tag/line。")
+                    errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 sensor_msgs/PointCloud2，但字段不匹配已支持的布局。driver2 需要 x/y/z/intensity/tag/line/timestamp；driver1 需要 x/y/z/intensity/tag/line；通用 timed PointCloud2 需要 x/y/z/intensity/ring/time；通用播放 PointCloud2 至少需要 x/y/z。")
                                         .arg(lidarConnection->topic);
                     if (error != nullptr) {
                         *error = errorMessage_;
@@ -747,9 +964,13 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
                 }
             }
 
-            const bool useDriver2Timestamp = pointCloud2Mode == PointCloud2Mode::Driver2Timestamp;
-            if ((useDriver2Timestamp && !isLivoxDriver2PointCloud2Layout(cloud)) ||
-                (!useDriver2Timestamp && !isLivoxDriverPointCloud2Layout(cloud))) {
+            if ((pointCloud2Mode == PointCloud2Mode::Driver2Timestamp && !isLivoxDriver2PointCloud2Layout(cloud)) ||
+                (pointCloud2Mode == PointCloud2Mode::DriverSynthesized && !isLivoxDriverPointCloud2Layout(cloud)) ||
+                ((pointCloud2Mode == PointCloud2Mode::GenericRelativeSeconds ||
+                  pointCloud2Mode == PointCloud2Mode::GenericRelativeMilliseconds) &&
+                 !isGenericTimedPointCloud2Layout(cloud)) ||
+                (pointCloud2Mode == PointCloud2Mode::GenericSynthesized &&
+                 !isGenericXyzPointCloud2Layout(cloud))) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 的 PointCloud2 字段布局在同一 bag 中发生变化。")
                                     .arg(lidarConnection->topic);
                 if (error != nullptr) {
@@ -758,14 +979,34 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
                 return false;
             }
 
+            PointCloud2FrameTiming frameTiming = PointCloud2FrameTiming::Synthesized;
+            if (pointCloud2Mode == PointCloud2Mode::Driver2Timestamp) {
+                frameTiming = PointCloud2FrameTiming::Driver2AbsoluteNs;
+            } else if (pointCloud2Mode == PointCloud2Mode::GenericRelativeSeconds) {
+                frameTiming = PointCloud2FrameTiming::RelativeSeconds;
+            } else if (pointCloud2Mode == PointCloud2Mode::GenericRelativeMilliseconds) {
+                frameTiming = PointCloud2FrameTiming::RelativeMilliseconds;
+            }
+            PointCloud2PointLayout pointLayout = PointCloud2PointLayout::Livox;
+            if (pointCloud2Mode == PointCloud2Mode::GenericRelativeSeconds ||
+                pointCloud2Mode == PointCloud2Mode::GenericRelativeMilliseconds) {
+                pointLayout = PointCloud2PointLayout::GenericTimed;
+            } else if (pointCloud2Mode == PointCloud2Mode::GenericSynthesized) {
+                pointLayout = PointCloud2PointLayout::GenericXyz;
+            }
+
             SlamInputFrame frame;
-            const int64_t nextFrameStartNs = useDriver2Timestamp ? 0 : nextPointCloud2FrameStartNs(i);
+            const int64_t nextFrameStartNs = (pointCloud2Mode == PointCloud2Mode::DriverSynthesized ||
+                                              pointCloud2Mode == PointCloud2Mode::GenericSynthesized)
+                ? nextPointCloud2FrameStartNs(i)
+                : 0;
             if (!buildPointCloud2Frame(cloud,
                                        filePath,
                                        nextSequence++,
                                        message->timestampNs,
                                        nextFrameStartNs,
-                                       useDriver2Timestamp,
+                                       pointLayout,
+                                       frameTiming,
                                        config_.frameDurationMs,
                                        &frame,
                                        &parseError)) {
