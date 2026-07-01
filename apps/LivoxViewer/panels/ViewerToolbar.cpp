@@ -1072,11 +1072,23 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QActionGroup* projectionModeGroup = new QActionGroup(projectionGroup);
     projectionModeGroup->setExclusive(true);
 
-    QAction* perspectiveProjectionAction = new QAction(QIcon(":/icons/projection_perspective.svg"), "透视投影", this);
+    QAction* orthographicProjectionAction = new QAction(QIcon(":/icons/projection_orthographic.svg"), "正射投影", this);
+    ThemeIconUtils::setThemedSvgIcon(orthographicProjectionAction, QStringLiteral(":/icons/projection_orthographic.svg"));
+    orthographicProjectionAction->setCheckable(true);
+    orthographicProjectionAction->setToolTip("正射投影");
+    projectionModeGroup->addAction(orthographicProjectionAction);
+    connect(orthographicProjectionAction, &QAction::triggered, this, [this]() {
+        forEachPointCloudView([](PointCloudView* view) {
+            view->setProjectionMode(PointCloudView::ProjectionMode::Orthographic);
+        });
+    });
+    projectionGroup->addPrimaryWidget(createIconButton(orthographicProjectionAction, projectionGroup, toolbarIconSize));
+
+    QAction* perspectiveProjectionAction = new QAction(QIcon(":/icons/projection_perspective.svg"), "对象中心视点", this);
     ThemeIconUtils::setThemedSvgIcon(perspectiveProjectionAction, QStringLiteral(":/icons/projection_perspective.svg"));
     perspectiveProjectionAction->setCheckable(true);
     perspectiveProjectionAction->setChecked(true);
-    perspectiveProjectionAction->setToolTip("透视投影");
+    perspectiveProjectionAction->setToolTip("以对象为中心的透视视点");
     projectionModeGroup->addAction(perspectiveProjectionAction);
     connect(perspectiveProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
@@ -1085,19 +1097,20 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     projectionGroup->addPrimaryWidget(createIconButton(perspectiveProjectionAction, projectionGroup, toolbarIconSize));
 
-    QAction* orthographicProjectionAction = new QAction(QIcon(":/icons/projection_orthographic.svg"), "正交投影", this);
-    ThemeIconUtils::setThemedSvgIcon(orthographicProjectionAction, QStringLiteral(":/icons/projection_orthographic.svg"));
-    orthographicProjectionAction->setCheckable(true);
-    orthographicProjectionAction->setToolTip("正交投影");
-    projectionModeGroup->addAction(orthographicProjectionAction);
-    connect(orthographicProjectionAction, &QAction::triggered, this, [this]() {
+    QAction* observerProjectionAction = new QAction(QIcon(":/icons/projection_observer.svg"), "观察者视角", this);
+    ThemeIconUtils::setThemedSvgIcon(observerProjectionAction, QStringLiteral(":/icons/projection_observer.svg"));
+    observerProjectionAction->setCheckable(true);
+    observerProjectionAction->setToolTip("基于观察者相机位置的透视视角");
+    projectionModeGroup->addAction(observerProjectionAction);
+    connect(observerProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
-            view->setProjectionMode(PointCloudView::ProjectionMode::Orthographic);
+            view->setProjectionMode(PointCloudView::ProjectionMode::ObserverPerspective);
         });
     });
-    projectionGroup->addPrimaryWidget(createIconButton(orthographicProjectionAction, projectionGroup, toolbarIconSize));
-    projectionGroup->moreMenu()->addAction(perspectiveProjectionAction);
+    projectionGroup->addPrimaryWidget(createIconButton(observerProjectionAction, projectionGroup, toolbarIconSize));
     projectionGroup->moreMenu()->addAction(orthographicProjectionAction);
+    projectionGroup->moreMenu()->addAction(perspectiveProjectionAction);
+    projectionGroup->moreMenu()->addAction(observerProjectionAction);
     toolbarLayout->addWidget(projectionGroup);
 
     ToolbarGroup* viewGroup = new ToolbarGroup("视角控制", viewerToolbar);

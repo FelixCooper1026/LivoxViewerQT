@@ -1,5 +1,21 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-07-01 CloudCompare 三投影模式对齐
+
+- 对照结论：CloudCompare 的“正射投影”对应当前 `PointCloudView::ProjectionMode::Orthographic`；“以对象为中心的视点”对应当前默认 `Perspective`，其模型视图矩阵以 `m_target` 为观察中心并用 `m_distance` 做 orbit；“基于观察者的视角”此前缺失。
+- 实现：新增 `ProjectionMode::ObserverPerspective` 和独立 `m_viewerPosition`，渲染时使用 `R * T(-viewerPosition)` 构建观察者相机矩阵；进入观察者视角时从当前 orbit 相机位置同步，离开时把 orbit 目标同步到相机前方，避免切换时画面突跳。
+- 交互：观察者视角下左键旋转变为改变相机朝向，中键/右键平移移动相机位置，滚轮沿当前视线方向前后推进；双击点云时沿拾取射线推进到目标附近。对象中心视点和正射投影保留原交互语义。
+- UI：投影控制改为三项，按 CloudCompare 语义显示为“正射投影 / 对象中心视点 / 观察者视角”，默认仍为对象中心视点；新增 `projection_observer.svg` 并加入 `icons.qrc`。
+- 验证：2026-07-01 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程 `Responding=True`，最近 Windows Application 日志未查询到新的 `LivoxViewerQT` 崩溃事件。仍需手动复验三种投影的视觉效果与切换连续性。
+
+## 2026-07-01 点云测距 overlay 近距离视角裁剪修复
+
+- 问题：点云测距时，相机推进到近距离后，测距端点可能越过视锥或近裁剪面；原测距 overlay 在投影失败时返回固定屏幕坐标 `(-10000, -10000)`，但后续仍绘制端点、连线和距离文字，导致测距线和标签被拉到屏幕外。
+- 修复：`PointCloudView` 新增测距线段专用齐次裁剪投影，先按 OpenGL clip volume 裁剪 3D 测距线段，再转换为屏幕坐标；端点标记只在端点自身可见时绘制，连线只绘制视口内可见部分。
+- 修复：距离文字改为以裁剪后可见线段的屏幕中点为基准，并按当前 widget 边界钳制标签矩形，避免文字在近距离视角或边缘视角下落到屏幕外。
+- 验证：2026-07-01 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程 `Responding=True`，最近 Windows Application 日志未出现新的 `LivoxViewerQT` 崩溃事件。
+- 验证缺口：仍需手动复验测距模式下近距离推进、旋转视角、端点在屏幕边缘和端点被近裁剪面裁掉的场景，确认连线裁剪和文字钳制符合视觉预期。
+
 ## 2026-07-01 对齐原版 FAST-LIO 在线 IMU buffer 语义
 
 - 背景：实时 SLAM 和离线 PCAP SLAM 在剧烈运动下漂移已有改善但仍可能出现；对照原版 FAST-LIO `sync_packages()` 后确认，原版在线路径先等待 `last_timestamp_imu >= lidar_end_time`，随后只把 IMU buffer 中 `<= lidar_end_time` 的样本交给 `MeasureGroup` 并弹出已消费 IMU，不会复制 IMU 样本补帧首/帧尾，也不会把帧尾后的第一个 IMU 样本放入当前帧。

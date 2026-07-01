@@ -66,7 +66,8 @@ public:
 
     enum class ProjectionMode {
         Perspective = 0,
-        Orthographic = 1
+        Orthographic = 1,
+        ObserverPerspective = 2
     };
 
     struct GridConfig {
@@ -202,6 +203,12 @@ private:
     void setupStlModelBuffers();
     void uploadStlModelVertices();
     PointCloudCrossSection::Camera crossSectionCamera() const;
+    QVector3D cameraForward() const;
+    QVector3D cameraRight() const;
+    QVector3D cameraUp() const;
+    QVector3D orbitCameraPosition() const;
+    void syncViewerPositionFromOrbit();
+    void syncOrbitTargetFromViewer();
 
     QOpenGLShaderProgram *m_program;
     QOpenGLShaderProgram* m_backgroundProgram = nullptr;
@@ -309,6 +316,7 @@ private:
     QVector3D m_rotation;
     QQuaternion m_orientation;
     QVector3D m_target;
+    QVector3D m_viewerPosition;
     Qt::MouseButton m_activeButton;
     QPoint m_lastMousePos;
     bool m_mousePressed;

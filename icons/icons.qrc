@@ -12,6 +12,7 @@
     <file>projection_spherical.svg</file>
     <file>projection_planar.svg</file>
     <file>projection_perspective.svg</file>
+    <file>projection_observer.svg</file>
     <file>projection_orthographic.svg</file>
     <file>view_top.svg</file>
     <file>view_front.svg</file>

@@ -6,6 +6,8 @@
 #include <utility>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointF>
+#include <QRectF>
 #include <QLinearGradient>
 #include <QMatrix3x3>
 #include <QCoreApplication>
@@ -241,6 +243,77 @@ struct ProjectedScreenPoint {
     float y = 0.0f;
 };
 
+float clipPlaneDistance(const QVector4D& point, int plane)
+{
+    switch (plane) {
+    case 0:
+        return point.x() + point.w();
+    case 1:
+        return point.w() - point.x();
+    case 2:
+        return point.y() + point.w();
+    case 3:
+        return point.w() - point.y();
+    case 4:
+        return point.z() + point.w();
+    case 5:
+        return point.w() - point.z();
+    default:
+        return -1.0f;
+    }
+}
+
+bool clipHomogeneousSegment(QVector4D& a, QVector4D& b)
+{
+    for (int plane = 0; plane < 6; ++plane) {
+        float da = clipPlaneDistance(a, plane);
+        float db = clipPlaneDistance(b, plane);
+        if (da < 0.0f && db < 0.0f) {
+            return false;
+        }
+        if (da < 0.0f || db < 0.0f) {
+            const float t = da / (da - db);
+            const QVector4D p = a + (b - a) * t;
+            if (da < 0.0f) {
+                a = p;
+            } else {
+                b = p;
+            }
+        }
+    }
+    return a.w() > 0.0f && b.w() > 0.0f;
+}
+
+QPointF clipToScreenPoint(const QVector4D& clip, int viewportW, int viewportH)
+{
+    const QVector3D ndc = clip.toVector3DAffine();
+    return QPointF((ndc.x() * 0.5f + 0.5f) * float(viewportW),
+                   (1.0f - (ndc.y() * 0.5f + 0.5f)) * float(viewportH));
+}
+
+bool projectClippedSegmentToScreen(const QVector3D& worldA,
+                                   const QVector3D& worldB,
+                                   const QMatrix4x4& mvp,
+                                   int viewportW,
+                                   int viewportH,
+                                   QPointF& screenA,
+                                   QPointF& screenB)
+{
+    if (viewportW <= 0 || viewportH <= 0) {
+        return false;
+    }
+
+    QVector4D clipA = mvp * QVector4D(worldA, 1.0f);
+    QVector4D clipB = mvp * QVector4D(worldB, 1.0f);
+    if (!clipHomogeneousSegment(clipA, clipB)) {
+        return false;
+    }
+
+    screenA = clipToScreenPoint(clipA, viewportW, viewportH);
+    screenB = clipToScreenPoint(clipB, viewportW, viewportH);
+    return true;
+}
+
 bool projectVisiblePointToScreen(const QVector4D& hp,
                                  const QMatrix4x4& mvp,
                                  int viewportW,
@@ -316,6 +389,7 @@ PointCloudView::PointCloudView(QWidget *parent)
     , m_rotation(0, 0, 0)
     , m_orientation() // identity
     , m_target(0, 0, 0)
+    , m_viewerPosition(0, 0, 25)
     , m_activeButton(Qt::NoButton)
     , m_mousePressed(false)
     , m_pointSize(2.0f)
@@ -330,6 +404,7 @@ PointCloudView::PointCloudView(QWidget *parent)
     // 默认视角：X 向上、Y 向左、Z 向外（斜45°视角看向Z轴）
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
                 * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
+    syncViewerPositionFromOrbit();
 
     m_crossSectionClipDebounceTimer = new QTimer(this);
     m_crossSectionClipDebounceTimer->setSingleShot(true);
@@ -439,6 +514,17 @@ void PointCloudView::mouseDoubleClickEvent(QMouseEvent *event)
         
         // 调用你现有的拾取函数
         if (pickNearestPoint(event->pos(), pickedWorld, pickedScreen)) {
+            if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+                const QVector3D toPoint = pickedWorld - m_viewerPosition;
+                const float pickedDistance = toPoint.length();
+                if (pickedDistance > 1e-3f) {
+                    m_distance = qMax(1.0f, pickedDistance * 0.5f);
+                    m_viewerPosition = pickedWorld - toPoint.normalized() * m_distance;
+                    m_target = pickedWorld;
+                    update();
+                }
+                return;
+            }
             // 核心改变：将双击的点设为新的旋转和缩放中心
             m_target = pickedWorld;
             
@@ -1001,6 +1087,36 @@ QVector3D PointCloudView::mapToArcball(const QPoint& p) const
     return QVector3D(x, y, z).normalized();
 }
 
+QVector3D PointCloudView::cameraForward() const
+{
+    return m_orientation.conjugated().rotatedVector(QVector3D(0.0f, 0.0f, -1.0f));
+}
+
+QVector3D PointCloudView::cameraRight() const
+{
+    return m_orientation.conjugated().rotatedVector(QVector3D(1.0f, 0.0f, 0.0f));
+}
+
+QVector3D PointCloudView::cameraUp() const
+{
+    return m_orientation.conjugated().rotatedVector(QVector3D(0.0f, 1.0f, 0.0f));
+}
+
+QVector3D PointCloudView::orbitCameraPosition() const
+{
+    return m_target + m_orientation.conjugated().rotatedVector(QVector3D(0.0f, 0.0f, m_distance));
+}
+
+void PointCloudView::syncViewerPositionFromOrbit()
+{
+    m_viewerPosition = orbitCameraPosition();
+}
+
+void PointCloudView::syncOrbitTargetFromViewer()
+{
+    m_target = m_viewerPosition + cameraForward() * m_distance;
+}
+
 void PointCloudView::paintGL()
 {
     if (m_backgroundTopColor == m_backgroundBottomColor) {
@@ -1043,6 +1159,11 @@ void PointCloudView::paintGL()
 
     // 动作 1：首先，把我们要观察的“目标点”移动到世界坐标系的原点 (Translation)
     m_modelView.translate(-m_target);
+    if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+        m_modelView.setToIdentity();
+        m_modelView = m_modelView * rot;
+        m_modelView.translate(-m_viewerPosition);
+    }
 
     // 设置基础投影矩阵    
     m_projection.setToIdentity();
@@ -1052,7 +1173,7 @@ void PointCloudView::paintGL()
     float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
     const float fovY = 45.0f;
     const float aspect = float(qMax(1, width())) / float(qMax(1, height()));
-    if (m_projectionMode == ProjectionMode::Perspective) {
+    if (m_projectionMode != ProjectionMode::Orthographic) {
         m_projection.perspective(fovY, aspect, nearPlane, farPlane);
     } else {
         const float halfHeight = m_distance * std::tan((fovY * float(M_PI) / 180.0f) * 0.5f);
@@ -1322,29 +1443,52 @@ void PointCloudView::paintGL()
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(QPen(QColor(255,0,0), 2));
-        auto drawPoint = [&](const QPoint& s) {
+        const QMatrix4x4 mvp = m_projection * m_modelView;
+        auto drawPoint = [&](const QPointF& s) {
             painter.setBrush(QColor(255,0,0));
             painter.drawEllipse(s, 4, 4);
         };
-        auto projectToScreen = [&](const QVector3D& w) -> QPoint {
+        auto projectToScreen = [&](const QVector3D& w, QPointF& screen) -> bool {
             QVector4D hp(w, 1.0f);
             ProjectedScreenPoint projected;
             if (!projectVisiblePointToScreen(hp, m_projection * m_modelView, width(), height(), projected)) {
-                return QPoint(-10000, -10000);
+                return false;
             }
-            return QPoint(int(std::round(projected.x)), int(std::round(projected.y)));
+            screen = QPointF(projected.x, projected.y);
+            return true;
         };
-        QPoint p1s = m_haveP1 ? projectToScreen(m_p1) : QPoint();
-        QPoint p2s = m_haveP2 ? projectToScreen(m_p2) : QPoint();
-        if (m_haveP1) drawPoint(p1s);
-        if (m_haveP2) drawPoint(p2s);
+        QPointF p1s;
+        QPointF p2s;
+        const bool p1Visible = m_haveP1 && projectToScreen(m_p1, p1s);
+        const bool p2Visible = m_haveP2 && projectToScreen(m_p2, p2s);
+        if (p1Visible) drawPoint(p1s);
+        if (p2Visible) drawPoint(p2s);
         if (m_haveP1 && m_haveP2) {
-            painter.drawLine(p1s, p2s);
-            // 中点标注距离（米）
-            QPoint mid((p1s.x()+p2s.x())/2, (p1s.y()+p2s.y())/2);
-            double dist = (m_p2 - m_p1).length();
-            painter.setPen(QPen(QColor(255,0,0)));
-            painter.drawText(mid + QPoint(8,-8), QString::number(dist, 'f', 3) + " m");
+            QPointF lineA;
+            QPointF lineB;
+            if (projectClippedSegmentToScreen(m_p1, m_p2, mvp, width(), height(), lineA, lineB)) {
+                painter.drawLine(lineA, lineB);
+                const QPointF mid = (lineA + lineB) * 0.5;
+                const QString label = QString::number((m_p2 - m_p1).length(), 'f', 3) + " m";
+                const QFontMetrics fm(painter.font());
+                QRectF labelRect(mid + QPointF(8.0, -8.0 - fm.ascent()),
+                                 QSizeF(fm.horizontalAdvance(label) + 8, fm.height() + 4));
+                const QRectF bounds = rect().adjusted(4, 4, -4, -4);
+                if (labelRect.right() > bounds.right()) {
+                    labelRect.moveRight(bounds.right());
+                }
+                if (labelRect.left() < bounds.left()) {
+                    labelRect.moveLeft(bounds.left());
+                }
+                if (labelRect.bottom() > bounds.bottom()) {
+                    labelRect.moveBottom(bounds.bottom());
+                }
+                if (labelRect.top() < bounds.top()) {
+                    labelRect.moveTop(bounds.top());
+                }
+                painter.setPen(QPen(QColor(255,0,0)));
+                painter.drawText(labelRect, Qt::AlignCenter, label);
+            }
         }
     }
 
@@ -1617,12 +1761,17 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
 
         // 计算相机当前在世界坐标系下的局部坐标轴（右方向和上方向）
         // 这里使用 m_orientation 的共轭来获取逆变换方向
-        QVector3D cameraRight = m_orientation.conjugated().rotatedVector(QVector3D(1, 0, 0));
-        QVector3D cameraUp    = m_orientation.conjugated().rotatedVector(QVector3D(0, 1, 0));
+        QVector3D cameraRight = this->cameraRight();
+        QVector3D cameraUp = this->cameraUp();
 
-        // 更新 m_target：鼠标向右，目标向左移；鼠标向上，目标向下移
-        m_target -= cameraRight * (delta.x() * worldPerPixelX);
-        m_target += cameraUp * (delta.y() * worldPerPixelY);
+        // 更新观察中心或观察者相机位置
+        const QVector3D cameraDelta = -cameraRight * (delta.x() * worldPerPixelX)
+                                    + cameraUp * (delta.y() * worldPerPixelY);
+        if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+            m_viewerPosition += cameraDelta;
+        } else {
+            m_target += cameraDelta;
+        }
     }
     
     m_lastMousePos = event->pos();
@@ -1665,8 +1814,12 @@ void PointCloudView::leaveEvent(QEvent *event)
 
 void PointCloudView::wheelEvent(QWheelEvent *event)
 {
+    const float oldDistance = m_distance;
     const float factor = 1.0f - event->angleDelta().y() * 0.001f; // 每格约 1.5% 的比例变化
     m_distance = qMax(0.1f, m_distance * factor);                  // 最小距离 0.1
+    if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+        m_viewerPosition += cameraForward() * (oldDistance - m_distance);
+    }
     update();
 }
 
@@ -2761,6 +2914,7 @@ void PointCloudView::resetView()
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
                 * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
     m_target = QVector3D(0, 0, 0); // 重置观察中心
+    syncViewerPositionFromOrbit();
     update();
 }
 
@@ -2779,6 +2933,14 @@ void PointCloudView::setBackgroundColors(const QColor& topColor, const QColor& b
 
 void PointCloudView::setProjectionMode(ProjectionMode mode)
 {
+    if (m_projectionMode == mode) {
+        return;
+    }
+    if (mode == ProjectionMode::ObserverPerspective) {
+        syncViewerPositionFromOrbit();
+    } else if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+        syncOrbitTargetFromViewer();
+    }
     m_projectionMode = mode;
     update();
 }
@@ -2840,6 +3002,7 @@ void PointCloudView::setViewPreset(ViewPreset preset)
     }
     m_distance = 25.0f;
     m_target = QVector3D(0, 0, 0);
+    syncViewerPositionFromOrbit();
     update();
 }
 
