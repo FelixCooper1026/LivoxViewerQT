@@ -26,7 +26,7 @@ struct SlamRuntimeConfig {
     double detRangeM = 100.0;
     double fovDegree = 360.0;
     double blindMinRangeM = 0.5;
-    int pointFilterNum = 3;
+    int pointFilterNum = 1;
     double gyrCov = 0.1;
     double accCov = 0.1;
     double bGyrCov = 0.0001;

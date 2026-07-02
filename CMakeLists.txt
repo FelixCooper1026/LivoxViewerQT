@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 2.0.0
+    VERSION 2.1.0
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -239,6 +239,7 @@ set(SOURCES
     libs/Rosbag/src/RosMessageParsers.cpp
     libs/Rosbag/src/RosbagPlaybackSource.cpp
     libs/Slam/src/Core/ISlamBackend.cpp
+    libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
@@ -311,8 +312,9 @@ set(SOURCES
     libs/Rosbag/include/Rosbag/RosMessageParsers.h
     libs/Rosbag/include/Rosbag/RosbagPlaybackController.h
     libs/Rosbag/include/Rosbag/RosbagPlaybackSource.h
-    libs/Slam/include/Slam/Core/ISlamBackend.h
-    libs/Slam/include/Slam/Core/SlamInputQueue.h
+     libs/Slam/include/Slam/Core/ISlamBackend.h
+     libs/Slam/include/Slam/Core/FastLioInputSynchronizer.h
+     libs/Slam/include/Slam/Core/SlamInputQueue.h
     libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
     libs/Slam/include/Slam/Core/SlamTypes.h
     libs/Slam/include/Slam/Backends/FastLio/FastLioSlamBackend.h
@@ -585,6 +587,7 @@ set(SLAM_PHASE4_REPLAY_SOURCES
     libs/Rosbag/src/Ros2BagReader.cpp
     libs/Rosbag/src/RosMessageParsers.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
+    libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp

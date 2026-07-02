@@ -1,13 +1,13 @@
 #ifndef SLAM_IO_LIVELIDARSLAMSOURCE_H
 #define SLAM_IO_LIVELIDARSLAMSOURCE_H
 
+#include "Slam/Core/FastLioInputSynchronizer.h"
 #include "Slam/Core/SlamInputQueue.h"
 #include "livox_lidar_def.h"
 
 #include <QElapsedTimer>
 #include <QHash>
 #include <QMutex>
-#include <QQueue>
 #include <QString>
 #include <QVector>
 
@@ -97,8 +97,6 @@ private:
         bool hasLatestImuTimestamp = false;
         int64_t latestPointTimestampNs = 0;
         int64_t latestImuTimestampNs = 0;
-        bool hasLastSubmittedImuTimestamp = false;
-        int64_t lastSubmittedImuTimestampNs = 0;
         int consecutiveTimestampJumpCount = 0;
         int consecutiveTimeTypeMismatchCount = 0;
     };
@@ -124,16 +122,11 @@ private:
                                       const QString& message);
     void moveCurrentFrameToPendingLocked();
     void tryFinalizePendingFramesLocked();
-    bool attachImuSamplesLocked(SlamInputFrame& frame);
-    void insertImuSampleLocked(const SlamImuSample& sample);
-    void pruneImuBufferLocked(int64_t latestTimestampNs);
     void updatePendingWaitStatusLocked(const SlamInputFrame& frame, int64_t latestImuTimestampNs);
-    int64_t latestObservedTimestampLocked(uint32_t handle) const;
 
     mutable QMutex mutex_;
     SlamInputQueue queue_;
-    QVector<SlamImuSample> imuBuffer_;
-    QQueue<SlamInputFrame> pendingFrames_;
+    FastLioInputSynchronizer synchronizer_;
     SlamInputFrame currentFrame_;
     bool hasCurrentFrame_ = false;
     uint64_t nextSequence_ = 0;

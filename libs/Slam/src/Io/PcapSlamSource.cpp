@@ -6,6 +6,7 @@
 #include "Pcap/PcapUdpPacket.h"
 #include "Pcap/PointParser.h"
 #include "Pcap/PushMsgParser.h"
+#include "Slam/Core/FastLioInputSynchronizer.h"
 #include "livox_lidar_def.h"
 
 #include <pcap.h>
@@ -406,38 +407,6 @@ void parseImuPayload(const uint8_t* payload,
     summary.imuSampleCount += header.dotNum;
 }
 
-void attachImuSamples(QVector<SlamInputFrame>& frames,
-                      const QVector<SlamImuSample>& imuSamples,
-                      PcapSlamSourceSummary& summary)
-{
-    QVector<SlamImuSample> sortedSamples = imuSamples;
-    std::sort(sortedSamples.begin(), sortedSamples.end(), [](const SlamImuSample& lhs, const SlamImuSample& rhs) {
-        return lhs.timestampNs < rhs.timestampNs;
-    });
-
-    auto nextImu = sortedSamples.begin();
-    const int64_t latestImuTimestampNs = sortedSamples.isEmpty() ? 0 : sortedSamples.last().timestampNs;
-    for (SlamInputFrame& frame : frames) {
-        const auto attachEnd = std::upper_bound(nextImu,
-                                                sortedSamples.end(),
-                                                frame.frameEndNs,
-                                                [](int64_t timestampNs, const SlamImuSample& sample) {
-                                                    return timestampNs < sample.timestampNs;
-                                                });
-        for (auto it = nextImu; it != attachEnd; ++it) {
-            frame.imuSamples.push_back(*it);
-        }
-        nextImu = attachEnd;
-
-        frame.hasCompleteImuCoverage =
-            !frame.imuSamples.isEmpty() &&
-            latestImuTimestampNs >= frame.frameEndNs;
-        if (frame.hasCompleteImuCoverage) {
-            summary.framesWithCompleteImuCoverage++;
-        }
-    }
-}
-
 void finalizeSummary(QVector<SlamInputFrame>& frames,
                      const QVector<SlamImuSample>& imuSamples,
                      PcapSlamSourceSummary& summary)
@@ -445,11 +414,17 @@ void finalizeSummary(QVector<SlamInputFrame>& frames,
     summary.frameCount = frames.size();
     summary.hasImu = !imuSamples.isEmpty();
     summary.hasPointOffsetTime = summary.missingPointOffsetPacketCount == 0;
+    summary.framesWithCompleteImuCoverage = 0;
+    summary.pointCount = 0;
 
     if (!frames.isEmpty()) {
         summary.startTimestampNs = frames.first().frameStartNs;
         summary.endTimestampNs = frames.first().frameEndNs;
         for (const SlamInputFrame& frame : frames) {
+            summary.pointCount += uint64_t(frame.points.size());
+            if (frame.hasCompleteImuCoverage) {
+                ++summary.framesWithCompleteImuCoverage;
+            }
             if (frame.frameStartNs < summary.startTimestampNs) {
                 summary.startTimestampNs = frame.frameStartNs;
             }
@@ -638,7 +613,7 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
         return false;
     }
 
-    attachImuSamples(frames_, imuSamples, summary_);
+    frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);
     finalizeSummary(frames_, imuSamples, summary_);
     return true;
 }

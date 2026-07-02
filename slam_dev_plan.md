@@ -1,5 +1,12 @@
 # LivoxViewerQT SLAM 集成开发计划
 
+## 2026-07-02 README 与关于页描述更新
+
+- 背景：ROSbag 播放能力已扩展到 ROS1 lz4 chunk、通用 `x/y/z/intensity/ring/time` PointCloud2 和普通播放用纯 `x/y/z` PointCloud2，README 与“帮助-关于”页面仍停留在旧描述，容易误导为 ROS1 bag 仅支持未压缩、PointCloud2 仅支持 Livox 布局。
+- 更新：`README.md` 同步功能概览、项目结构、构建依赖、`SlamPhase4Replay --source-only` 用法和数据源支持矩阵，明确普通播放可无 IMU、离线 SLAM 仍要求有效 IMU 覆盖。
+- 更新：帮助菜单“关于 LivoxViewerQT”描述改为覆盖设备接入、点云查看、数据采集、LVX2/PCAP/ROSbag 回放、ROS1 lz4、通用 PointCloud2 和在线/离线 FAST_LIO SLAM。
+- 验证：2026-07-02 执行 `git diff --check` 通过，仅有既有 LF/CRLF 提示；执行 `scripts/dev_build_run.bat Release` 返回 0，`LivoxViewerQT` 启动后进程 `Responding=True`，最近 Windows Application 日志未查询到新的 `LivoxViewerQT`/`SlamPhase4Replay` 崩溃事件。
+
 ## 2026-07-01 ROS1 bag XYZ-only PointCloud2 播放支持
 
 - 问题：`E:\1. Document\产品资料\览沃\5. 点云数据\wanjee_wlr722_16\final_bag.bag` 可在 Foxglove 播放，但本项目打开失败；诊断显示该包只有 `/vanjee_points722h(sensor_msgs/PointCloud2)` 和 `/tf_static(tf2_msgs/TFMessage)`，没有 IMU topic，离线 SLAM 路径因缺 IMU 失败是预期行为。

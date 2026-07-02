@@ -3,6 +3,7 @@
 #include "Rosbag/RosMessageParsers.h"
 #include "Rosbag/Ros2BagReader.h"
 #include "Rosbag/RosbagReader.h"
+#include "Slam/Core/FastLioInputSynchronizer.h"
 
 #include <QFileInfo>
 
@@ -606,39 +607,6 @@ SlamImuSample toSlamImuSample(const Rosbag::ImuMsg& source, int64_t offsetNs)
     return sample;
 }
 
-void attachImuSamples(QVector<SlamInputFrame>& frames,
-                      const QVector<SlamImuSample>& imuSamples,
-                      RosbagSlamSourceSummary& summary)
-{
-    QVector<SlamImuSample> sortedSamples = imuSamples;
-    std::sort(sortedSamples.begin(), sortedSamples.end(), [](const SlamImuSample& lhs, const SlamImuSample& rhs) {
-        return lhs.timestampNs < rhs.timestampNs;
-    });
-
-    auto nextImu = sortedSamples.begin();
-    const int64_t latestImuTimestampNs = sortedSamples.isEmpty() ? 0 : sortedSamples.last().timestampNs;
-    for (SlamInputFrame& frame : frames) {
-        const auto attachEnd = std::upper_bound(nextImu,
-                                                sortedSamples.end(),
-                                                frame.frameEndNs,
-                                                [](int64_t timestampNs, const SlamImuSample& sample) {
-                                                    return timestampNs < sample.timestampNs;
-                                                });
-        for (auto it = nextImu; it != attachEnd; ++it) {
-            frame.imuSamples.push_back(*it);
-        }
-        nextImu = attachEnd;
-
-        frame.hasCompleteImuCoverage =
-            !frame.imuSamples.isEmpty() &&
-            latestImuTimestampNs >= frame.frameEndNs;
-        if (frame.hasCompleteImuCoverage) {
-            summary.framesWithCompleteImuCoverage++;
-        }
-    }
-    summary.hasCompleteImuCoverage = summary.framesWithCompleteImuCoverage == summary.frameCount && summary.frameCount > 0;
-}
-
 void finalizeTimestampRange(const QVector<SlamInputFrame>& frames, RosbagSlamSourceSummary& summary)
 {
     if (frames.isEmpty()) {
@@ -1051,9 +1019,20 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         return false;
     }
 
-    if (!imuSamples.isEmpty()) {
-        attachImuSamples(frames_, imuSamples, summary_);
-    } else {
+    if (!imuSamples.isEmpty() && config_.requireImu) {
+        frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);
+        summary_.frameCount = frames_.size();
+        summary_.framesWithCompleteImuCoverage = 0;
+        summary_.pointCount = 0;
+        for (const SlamInputFrame& frame : frames_) {
+            summary_.pointCount += uint64_t(frame.points.size());
+            if (frame.hasCompleteImuCoverage) {
+                ++summary_.framesWithCompleteImuCoverage;
+            }
+        }
+        summary_.hasCompleteImuCoverage =
+            summary_.framesWithCompleteImuCoverage == summary_.frameCount && summary_.frameCount > 0;
+    } else if (imuSamples.isEmpty()) {
         summary_.messages.push_back(QStringLiteral("ROSbag 未包含 IMU topic，普通点云播放将仅显示点云。"));
     }
     if (config_.requireImu && summary_.framesWithCompleteImuCoverage == 0) {

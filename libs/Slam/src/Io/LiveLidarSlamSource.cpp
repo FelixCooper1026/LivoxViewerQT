@@ -14,8 +14,6 @@ namespace {
 
 constexpr int64_t kLivoxTimeIntervalUnitNs = 100;
 constexpr int64_t kNsPerMs = 1000000;
-constexpr int64_t kImuRetentionNs = 5000000000;
-constexpr int64_t kMaxPendingFrameWaitNs = 500000000;
 constexpr int64_t kSmallTimestampBackstepNs = 5000000;
 constexpr int64_t kTimestampJumpResetNs = 1000000000;
 constexpr int64_t kTimeTypeMismatchRawDeltaNs = 200000000;
@@ -27,7 +25,6 @@ bool hasOffsetTime(uint16_t dotNum, uint16_t timeIntervalRaw)
 {
     return dotNum <= 1 || timeIntervalRaw != 0;
 }
-
 int64_t sampleIntervalNs(uint16_t timeIntervalRaw, uint16_t dotNum)
 {
     if (dotNum == 0) {
@@ -212,8 +209,7 @@ void LiveLidarSlamSource::reset()
 {
     QMutexLocker locker(&mutex_);
     queue_.clear();
-    imuBuffer_.clear();
-    pendingFrames_.clear();
+    synchronizer_.reset();
     timingByHandle_.clear();
     currentFrame_ = SlamInputFrame();
     hasCurrentFrame_ = false;
@@ -396,7 +392,7 @@ bool LiveLidarSlamSource::appendImuPacket(uint32_t handle, const LivoxLidarEther
         sample.accelRaw[0] = points[i].acc_x;
         sample.accelRaw[1] = points[i].acc_y;
         sample.accelRaw[2] = points[i].acc_z;
-        insertImuSampleLocked(sample);
+        synchronizer_.pushImuSample(sample);
         latestSampleTimestampNs = sample.timestampNs;
     }
 
@@ -407,7 +403,6 @@ bool LiveLidarSlamSource::appendImuPacket(uint32_t handle, const LivoxLidarEther
     }
     stats_.latestImuTimestampNs = state.latestImuTimestampNs;
     stats_.imuTimeType = packet->time_type;
-    pruneImuBufferLocked(state.latestImuTimestampNs);
     ++stats_.imuPacketCount;
     stats_.imuSampleCount += packet->dot_num;
     tryFinalizePendingFramesLocked();
@@ -431,7 +426,7 @@ LiveLidarSlamSourceStats LiveLidarSlamSource::stats() const
     const SlamInputQueueStats queueStats = queue_.stats();
     result.queueCapacity = queueStats.capacity;
     result.queueSize = queueStats.size;
-    result.pendingFrameCount = pendingFrames_.size();
+    result.pendingFrameCount = synchronizer_.pendingLidarFrameCount();
     result.droppedFrameCount = queueStats.droppedFrameCount + stats_.droppedPendingFrameCount;
     const qint64 elapsedMs = statsTimer_.elapsed();
     if (elapsedMs > 0) {
@@ -623,8 +618,7 @@ void LiveLidarSlamSource::resetLiveTimelineLocked(uint32_t handle,
     const int64_t resetLastRawTimestampNs = stats_.lastRawTimestampNs;
     const int64_t resetJumpNs = stats_.lastTimestampJumpNs;
     queue_.clear();
-    imuBuffer_.clear();
-    pendingFrames_.clear();
+    synchronizer_.reset();
     currentFrame_ = SlamInputFrame();
     hasCurrentFrame_ = false;
     timingByHandle_.clear();
@@ -669,7 +663,7 @@ void LiveLidarSlamSource::noteInputTimelineResetLocked(uint32_t handle,
 {
     currentFrame_ = SlamInputFrame();
     hasCurrentFrame_ = false;
-    pendingFrames_.clear();
+    synchronizer_.reset();
     ++stats_.timeResetCount;
     ++stats_.inputTimelineResetGeneration;
     stats_.status = status;
@@ -697,83 +691,30 @@ void LiveLidarSlamSource::moveCurrentFrameToPendingLocked()
         return;
     }
 
-    pendingFrames_.enqueue(std::move(currentFrame_));
+    synchronizer_.pushLidarFrame(std::move(currentFrame_));
     currentFrame_ = SlamInputFrame();
     hasCurrentFrame_ = false;
-    stats_.pendingFrameCount = pendingFrames_.size();
+    stats_.pendingFrameCount = synchronizer_.pendingLidarFrameCount();
 }
 
 void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
 {
-    while (!pendingFrames_.isEmpty()) {
-        const SlamInputFrame& pendingFrame = pendingFrames_.head();
-        const auto stateIt = timingByHandle_.constFind(pendingFrame.sourceId);
-        const int64_t latestObservedNs = latestObservedTimestampLocked(pendingFrame.sourceId);
-        if (stateIt == timingByHandle_.constEnd() || !stateIt->hasLatestImuTimestamp) {
-            if (latestObservedNs - pendingFrame.frameEndNs >= kMaxPendingFrameWaitNs) {
-                const int64_t frameStartNs = pendingFrame.frameStartNs;
-                const int64_t frameEndNs = pendingFrame.frameEndNs;
-                const uint32_t sourceId = pendingFrame.sourceId;
-                pendingFrames_.dequeue();
-                ++stats_.droppedPendingFrameCount;
-                ++stats_.warmupDroppedFrameCount;
-                ++stats_.incompleteImuCoverageFrameCount;
-                stats_.pendingFrameCount = pendingFrames_.size();
-                stats_.status = SlamStatusCode::InitializingImu;
-                stats_.message = QStringLiteral(
-                    "实时 SLAM 暖机中：丢弃缺少 IMU 的点云帧，frameStart=%1ms, frameEnd=%2ms, handle=%3。")
-                                      .arg(nsToMsText(frameStartNs))
-                                      .arg(nsToMsText(frameEndNs))
-                                      .arg(sourceId);
-                continue;
-            }
-            updatePendingWaitStatusLocked(pendingFrame, 0);
-            break;
-        }
-
-        const int64_t latestImuNs = stateIt->latestImuTimestampNs;
-        if (latestImuNs < pendingFrame.frameEndNs) {
-            if (latestObservedNs - pendingFrame.frameEndNs >= kMaxPendingFrameWaitNs) {
-                const int64_t frameStartNs = pendingFrame.frameStartNs;
-                const int64_t frameEndNs = pendingFrame.frameEndNs;
-                const uint8_t timeType = pendingFrame.timeType;
-                const uint32_t sourceId = pendingFrame.sourceId;
-                pendingFrames_.dequeue();
-                ++stats_.droppedPendingFrameCount;
-                ++stats_.incompleteImuCoverageFrameCount;
-                stats_.pendingFrameCount = pendingFrames_.size();
-                stats_.status = SlamStatusCode::InitializingImu;
-                stats_.message = QStringLiteral(
-                    "等待 IMU 覆盖超时，已丢弃点云帧：frameStart=%1ms, frameEnd=%2ms, latestImu=%3ms, tailGap=%4ms, time_type=%5, handle=%6。")
-                                      .arg(nsToMsText(frameStartNs))
-                                      .arg(nsToMsText(frameEndNs))
-                                      .arg(nsToMsText(latestImuNs))
-                                      .arg(nsToMsText(frameEndNs - latestImuNs))
-                                      .arg(int(timeType))
-                                      .arg(sourceId);
-                continue;
-            }
-            updatePendingWaitStatusLocked(pendingFrame, latestImuNs);
-            break;
-        }
-
-        SlamInputFrame frame = std::move(pendingFrames_.head());
-        pendingFrames_.dequeue();
-        if (!attachImuSamplesLocked(frame)) {
+    SlamInputFrame frame;
+    while (synchronizer_.trySync(&frame)) {
+        if (!frame.hasCompleteImuCoverage) {
             ++stats_.droppedPendingFrameCount;
             ++stats_.incompleteImuCoverageFrameCount;
             if (stats_.inputFrameCount == 0) {
                 ++stats_.warmupDroppedFrameCount;
             }
-            stats_.pendingFrameCount = pendingFrames_.size();
+            stats_.pendingFrameCount = synchronizer_.pendingLidarFrameCount();
             stats_.status = SlamStatusCode::InitializingImu;
-            stats_.message = QStringLiteral(
-                "实时 SLAM 暖机中：丢弃无法形成 FAST_LIO IMU 包的点云帧，frameStart=%1ms, frameEnd=%2ms, latestImu=%3ms, time_type=%4, handle=%5。")
-                                  .arg(nsToMsText(frame.frameStartNs))
-                                  .arg(nsToMsText(frame.frameEndNs))
-                                  .arg(nsToMsText(latestImuNs))
-                                  .arg(int(frame.timeType))
-                                  .arg(frame.sourceId);
+            stats_.message = QStringLiteral("FAST_LIO sync output has no IMU samples: frameStart=%1ms, frameEnd=%2ms, latestImu=%3ms, time_type=%4, handle=%5.")
+                                 .arg(nsToMsText(frame.frameStartNs))
+                                 .arg(nsToMsText(frame.frameEndNs))
+                                 .arg(nsToMsText(synchronizer_.latestImuTimestampNs()))
+                                 .arg(int(frame.timeType))
+                                 .arg(frame.sourceId);
             continue;
         }
 
@@ -781,80 +722,23 @@ void LiveLidarSlamSource::tryFinalizePendingFramesLocked()
         stats_.lastFrameEndNs = frame.frameEndNs;
         queue_.push(std::move(frame));
         ++stats_.inputFrameCount;
-        stats_.pendingFrameCount = pendingFrames_.size();
+        stats_.pendingFrameCount = synchronizer_.pendingLidarFrameCount();
         stats_.imuCoverageGapNs = 0;
         stats_.waitingFrameStartNs = 0;
         stats_.waitingFrameEndNs = 0;
         stats_.status = SlamStatusCode::Running;
         stats_.message.clear();
     }
-}
 
-bool LiveLidarSlamSource::attachImuSamplesLocked(SlamInputFrame& frame)
-{
-    frame.imuSamples.clear();
-    auto stateIt = timingByHandle_.find(frame.sourceId);
-    if (stateIt == timingByHandle_.end() ||
-        !stateIt->hasLatestImuTimestamp ||
-        stateIt->latestImuTimestampNs < frame.frameEndNs) {
-        frame.hasCompleteImuCoverage = false;
-        const int64_t latestImuNs = stateIt == timingByHandle_.end() || !stateIt->hasLatestImuTimestamp
-            ? 0
-            : stateIt->latestImuTimestampNs;
-        stats_.imuCoverageGapNs = frame.frameEndNs - latestImuNs;
-        return false;
+    if (synchronizer_.pendingLidarFrameCount() > 0) {
+        SlamInputFrame waitingFrame;
+        waitingFrame.frameStartNs = synchronizer_.waitingFrameStartNs();
+        waitingFrame.frameEndNs = synchronizer_.waitingFrameEndNs();
+        waitingFrame.timeType = stats_.pointTimeType;
+        waitingFrame.sourceId = activeHandle_;
+        updatePendingWaitStatusLocked(waitingFrame, synchronizer_.latestImuTimestampNs());
     }
 
-    HandleTimingState& state = stateIt.value();
-    auto attachBegin = imuBuffer_.begin();
-    if (state.hasLastSubmittedImuTimestamp) {
-        attachBegin = std::upper_bound(imuBuffer_.begin(),
-                                       imuBuffer_.end(),
-                                       state.lastSubmittedImuTimestampNs,
-                                       [](int64_t timestampNs, const SlamImuSample& sample) {
-                                           return timestampNs < sample.timestampNs;
-                                       });
-    }
-
-    for (auto it = attachBegin; it != imuBuffer_.end() && it->timestampNs <= frame.frameEndNs; ++it) {
-        if (it->lidarId == frame.sourceId) {
-            frame.imuSamples.push_back(*it);
-        }
-    }
-
-    if (frame.imuSamples.isEmpty()) {
-        frame.hasCompleteImuCoverage = false;
-        stats_.imuCoverageGapNs = frame.frameEndNs - frame.frameStartNs;
-        return false;
-    }
-
-    frame.hasCompleteImuCoverage = true;
-    state.lastSubmittedImuTimestampNs = frame.frameEndNs;
-    state.hasLastSubmittedImuTimestamp = true;
-    return true;
-}
-
-void LiveLidarSlamSource::insertImuSampleLocked(const SlamImuSample& sample)
-{
-    const auto insertIt = std::upper_bound(imuBuffer_.begin(),
-                                           imuBuffer_.end(),
-                                           sample.timestampNs,
-                                           [](int64_t timestampNs, const SlamImuSample& existing) {
-                                               return timestampNs < existing.timestampNs;
-                                           });
-    imuBuffer_.insert(insertIt, sample);
-}
-
-void LiveLidarSlamSource::pruneImuBufferLocked(int64_t latestTimestampNs)
-{
-    const int64_t keepAfterNs = latestTimestampNs - kImuRetentionNs;
-    int removeCount = 0;
-    while (removeCount < imuBuffer_.size() && imuBuffer_.at(removeCount).timestampNs < keepAfterNs) {
-        ++removeCount;
-    }
-    if (removeCount > 0) {
-        imuBuffer_.remove(0, removeCount);
-    }
 }
 
 void LiveLidarSlamSource::updatePendingWaitStatusLocked(const SlamInputFrame& frame, int64_t latestImuTimestampNs)
@@ -871,21 +755,4 @@ void LiveLidarSlamSource::updatePendingWaitStatusLocked(const SlamInputFrame& fr
                          .arg(latestImuTimestampNs > 0 ? nsToMsText(frame.frameEndNs - latestImuTimestampNs) : QStringLiteral("n/a"))
                          .arg(int(frame.timeType))
                          .arg(frame.sourceId);
-}
-
-int64_t LiveLidarSlamSource::latestObservedTimestampLocked(uint32_t handle) const
-{
-    const auto stateIt = timingByHandle_.constFind(handle);
-    if (stateIt == timingByHandle_.constEnd()) {
-        return 0;
-    }
-
-    int64_t latest = 0;
-    if (stateIt->hasLatestPointTimestamp) {
-        latest = stateIt->latestPointTimestampNs;
-    }
-    if (stateIt->hasLatestImuTimestamp && stateIt->latestImuTimestampNs > latest) {
-        latest = stateIt->latestImuTimestampNs;
-    }
-    return latest;
 }

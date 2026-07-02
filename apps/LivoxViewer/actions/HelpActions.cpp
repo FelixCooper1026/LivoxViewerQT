@@ -96,7 +96,7 @@ void LivoxViewerWindow::createHelpActions()
         titleFont.setBold(true);
         titleLabel->setFont(titleFont);
         QLabel* descriptionLabel = createAboutMutedLabel(
-            QStringLiteral("集 Livox 设备接入、点云查看、参数调试、数据采集、离线回放与设备维护于一体的桌面工具。"),
+            QStringLiteral("集 Livox 设备接入、点云查看、参数调试、数据采集、离线回放、ROSbag 解析与 FAST_LIO SLAM 于一体的桌面工具。"),
             infoFrame);
         titleLayout->addWidget(titleLabel);
         titleLayout->addWidget(descriptionLabel);
@@ -120,12 +120,13 @@ void LivoxViewerWindow::createHelpActions()
         addAboutInfoRow(infoLayout, 3, QStringLiteral("Livox SDK"), LidarSdkService::versionString(), infoFrame);
         addAboutInfoRow(infoLayout, 4, QStringLiteral("作者"), QStringLiteral("FelixCooper1026"), infoFrame);
         addAboutInfoRow(infoLayout, 5, QStringLiteral("主要能力"),
-            QStringLiteral("设备接入：发现设备、选择网卡、配置主机 IP\n"
+            QStringLiteral("设备接入：发现设备、自动配置主机IP\n"
                            "点云查看：实时渲染、着色、投影、视角控制\n"
-                           "点云分析：测距、框选、点属性、Cross Section\n"
-                           "参数调试：基础、网络、FOV、外参与状态参数\n"
+                           "点云分析：测距、框选、点属性、点云裁切\n"
+                           "参数配置：基础、网络、FOV、外参与状态参数\n"
                            "数据采集：点云录制、PCD/LAS 导出、IMU/LOG/Debug 采集\n"
-                           "离线工具：LVX2/PCAP 回放、LVX2 格式转换、固件维护与 HMS 诊断"),
+                           "离线工具：LVX2/PCAP/ROSbag 回放、LVX2/PCD/LAS/TXT 点云格式转换\n"
+                           "SLAM集成：在线/离线建图、轨迹显示/导出、地图显示/导出、性能诊断"),
             infoFrame);
         frameLayout->addLayout(infoLayout);
         rootLayout->addWidget(infoFrame);

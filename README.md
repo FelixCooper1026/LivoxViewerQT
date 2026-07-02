@@ -9,7 +9,7 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 - 设备参数查询/下发、网络参数、FOV、外参和状态管理
 - LOG / Debug 采集、LVX2 录制、PCD/LAS 导出、IMU CSV 保存
 - LVX2、PCAP/PCAPNG/CAP、ROS1 bag、ROS2 db3/metadata.yaml 离线点云播放
-- ROSbag 普通播放复用现有播放条、离线点云 tab、IMU 曲线和着色管线
+- ROSbag 普通播放支持 ROS1 uncompressed/lz4 chunk、Livox CustomMsg、Livox/通用 PointCloud2 和无 IMU 纯 XYZ 点云
 - 在线 SLAM 与离线 SLAM，后端为移植后的 FAST_LIO 流程
 - SLAM 轨迹显示、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 地图导出
 - 命令行离线 SLAM 诊断工具 `SlamPhase4Replay`
@@ -62,6 +62,7 @@ LivoxViewerQT/
   livox_sdk_qt/                          项目内 Livox SDK 头文件与库
   third-party/
     eigen-3.4.0/                         本地 Eigen 头文件，脚本安装产物
+    lz4-1.10.0/                          官方 LZ4 最小源码，用于 ROS1 bag lz4 chunk 解压
     npcap-sdk-1.16/                      Windows PCAP 构建所需 Npcap SDK
   build/                                 本地构建目录，不应提交
   dist/                                  本地打包输出目录，不应提交
@@ -71,9 +72,11 @@ LivoxViewerQT/
 
 - CMake `>= 3.16`
 - C++17 编译器
+- C 编译器，用于构建项目内官方 LZ4 源码
 - Qt `>= 6.2`，CMake 中保留 Qt 5.15 回退
 - Qt 模块：Core、Widgets、OpenGL、OpenGLWidgets、SerialPort、Charts、Network、Svg、Concurrent、Sql
 - Eigen 3.4.0 headers，安装到 `third-party/eigen-3.4.0`
+- LZ4 1.10.0 源码，随项目放在 `third-party/lz4-1.10.0`
 - OpenMP C++ runtime/compiler support
 - Windows：MSVC、Npcap Runtime、`third-party/npcap-sdk-1.16`
 - Linux：Qt 开发包、OpenMP、`libpcap-dev`、`pthread`、`dl`、`m`
@@ -135,9 +138,10 @@ Linux 下可执行文件会优先从 `./livox_sdk_qt/lib` 查找 Livox SDK 动�
 ```bat
 build\cmd-msvc-Release\Release\SlamPhase4Replay.exe with_imu.pcap no_imu.pcap
 build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --max-frames 300 path\to\data.bag
+build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --source-only --max-frames 10 path\to\pointcloud_only.bag
 ```
 
-`--diagnose` 支持 `.pcap/.pcapng/.bag/.db3/.yaml/.yml`，会输出数据源摘要、帧/点/IMU 覆盖统计和 FAST_LIO 后端处理结果。`--max-frames N` 只限制后端处理帧数，数据源仍完整加载并统计。
+`--diagnose` 支持 `.pcap/.pcapng/.bag/.db3/.yaml/.yml`，会输出数据源摘要、帧/点/IMU 覆盖统计和 FAST_LIO 后端处理结果。`--max-frames N` 只限制后端处理帧数，数据源仍完整加载并统计。`--source-only` 只加载数据源并输出帧统计，不启动 FAST_LIO，适合复验无 IMU 的普通点云播放文件。
 
 ## 支持的数据源
 
@@ -145,10 +149,10 @@ build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --max-frames 300 
 |---|---|---|---|
 | LVX2 | 支持 | 不作为 SLAM 输入 | 现有回放与转换链路 |
 | PCAP/PCAPNG/CAP | 支持 | 支持 | SLAM 要求 IMU 和点内时间覆盖 |
-| ROS1 `.bag` | 支持 | 支持 | 仅支持未压缩 ROS1 bag |
+| ROS1 `.bag` | 支持 | 支持 | 支持 uncompressed 和 lz4 chunk；SLAM 仍要求 IMU 覆盖 |
 | ROS2 `.db3` / `metadata.yaml` | 支持 | 支持 | 仅支持 SQLite3 storage，不支持 MCAP |
 
-ROSbag LiDAR topic 当前支持 Livox CustomMsg、Livox driver2 PointCloud2，以及允许合成点内时间的旧 driver PointCloud2。普通播放可无 IMU，SLAM 模式仍要求有效 IMU 覆盖。
+ROSbag LiDAR topic 当前支持 Livox CustomMsg、Livox driver2 PointCloud2、允许合成点内时间的旧 driver PointCloud2、通用 `x/y/z/intensity/ring/time` PointCloud2，以及普通播放用的纯 `x/y/z` PointCloud2。普通播放可无 IMU；SLAM 模式仍要求有效 IMU 覆盖和合理点内时间。
 
 ## 开发文档
 

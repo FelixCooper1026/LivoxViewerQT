@@ -116,7 +116,7 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     assignTemplateDefaultExtrinsic(config, lidarTemplate);
     config.cubeSideLengthM = 1000.0;
     config.maxIterations = 3;
-    config.pointFilterNum = 3;
+    config.pointFilterNum = 1;
     config.filterSizeSurfM = 0.5;
     config.filterSizeMapM = 0.5;
     if (lidarTemplate == SlamLidarTemplate::Avia) {
