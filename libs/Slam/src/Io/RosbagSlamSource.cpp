@@ -242,11 +242,19 @@ bool pointFieldMatchesLineAndFits(const Rosbag::PointCloud2Msg& cloud, const QSt
            pointFieldMatchesTypeAndFits(cloud, name, kPointFieldUint16);
 }
 
+bool hasPointCloud2ReadableShape(const Rosbag::PointCloud2Msg& cloud)
+{
+    const uint64_t rowPointBytes = uint64_t(cloud.width) * uint64_t(cloud.pointStep);
+    return !cloud.isBigEndian &&
+           cloud.width > 0 &&
+           cloud.height > 0 &&
+           cloud.pointStep > 0 &&
+           cloud.rowStep >= rowPointBytes;
+}
+
 bool isLivoxDriver2PointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 {
-    return !cloud.isBigEndian &&
-           cloud.height == 1 &&
-           cloud.pointStep > 0 &&
+    return hasPointCloud2ReadableShape(cloud) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
@@ -258,9 +266,7 @@ bool isLivoxDriver2PointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 
 bool isLivoxDriverPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 {
-    return !cloud.isBigEndian &&
-           cloud.height == 1 &&
-           cloud.pointStep > 0 &&
+    return hasPointCloud2ReadableShape(cloud) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
@@ -274,9 +280,7 @@ bool isLivoxDriverPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 
 bool isGenericTimedPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 {
-    return !cloud.isBigEndian &&
-           cloud.height == 1 &&
-           cloud.pointStep > 0 &&
+    return hasPointCloud2ReadableShape(cloud) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32) &&
@@ -288,9 +292,7 @@ bool isGenericTimedPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 
 bool isGenericXyzPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 {
-    return !cloud.isBigEndian &&
-           cloud.height == 1 &&
-           cloud.pointStep > 0 &&
+    return hasPointCloud2ReadableShape(cloud) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("x"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("y"), kPointFieldFloat32) &&
            pointFieldMatchesTypeAndFits(cloud, QStringLiteral("z"), kPointFieldFloat32);
@@ -298,12 +300,16 @@ bool isGenericXyzPointCloud2Layout(const Rosbag::PointCloud2Msg& cloud)
 
 bool readPointBytes(const Rosbag::PointCloud2Msg& cloud, int pointIndex, const Rosbag::PointField& field, const char** out)
 {
-    const qsizetype offset = qsizetype(pointIndex) * qsizetype(cloud.pointStep) + qsizetype(field.offset);
-    const qsizetype size = pointFieldDatatypeSize(field.datatype);
-    if (offset < 0 || size <= 0 || offset > cloud.data.size() || size > cloud.data.size() - offset) {
+    const uint32_t row = uint32_t(pointIndex) / cloud.width;
+    const uint32_t column = uint32_t(pointIndex) % cloud.width;
+    const uint64_t offset = uint64_t(row) * uint64_t(cloud.rowStep) +
+                            uint64_t(column) * uint64_t(cloud.pointStep) +
+                            uint64_t(field.offset);
+    const uint64_t size = uint64_t(pointFieldDatatypeSize(field.datatype));
+    if (size == 0 || offset > uint64_t(cloud.data.size()) || size > uint64_t(cloud.data.size()) - offset) {
         return false;
     }
-    *out = cloud.data.constData() + offset;
+    *out = cloud.data.constData() + qsizetype(offset);
     return true;
 }
 
@@ -383,7 +389,16 @@ uint8_t reflectivityFromFloat(float value)
 
 int64_t pointCloud2PointCount(const Rosbag::PointCloud2Msg& cloud)
 {
-    return int64_t(cloud.width) * int64_t(std::max<uint32_t>(1, cloud.height));
+    return int64_t(cloud.width) * int64_t(cloud.height);
+}
+
+uint64_t pointCloud2RequiredDataBytes(const Rosbag::PointCloud2Msg& cloud)
+{
+    if (cloud.height == 0) {
+        return 0;
+    }
+    return uint64_t(cloud.rowStep) * uint64_t(cloud.height - 1) +
+           uint64_t(cloud.pointStep) * uint64_t(cloud.width);
 }
 
 bool inferGenericPointCloud2Timing(const Rosbag::PointCloud2Msg& cloud,
@@ -475,11 +490,11 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
         return false;
     }
     const int pointCount = int(pointCount64);
-    const qsizetype requiredBytes = qsizetype(pointCount) * qsizetype(cloud.pointStep);
-    if (requiredBytes > cloud.data.size()) {
+    const uint64_t requiredBytes = pointCloud2RequiredDataBytes(cloud);
+    if (requiredBytes > uint64_t(cloud.data.size())) {
         if (error != nullptr) {
             *error = QStringLiteral("PointCloud2 data 长度不足：需要 %1 字节，实际 %2 字节。")
-                         .arg(requiredBytes)
+                         .arg(QString::number(requiredBytes))
                          .arg(cloud.data.size());
         }
         return false;
@@ -519,6 +534,9 @@ bool buildPointCloud2Frame(const Rosbag::PointCloud2Msg& cloud,
                 *error = QStringLiteral("PointCloud2 第 %1 个点读取失败。").arg(i);
             }
             return false;
+        }
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
+            continue;
         }
         if (intensityField != nullptr && !readPointFloat(cloud, i, *intensityField, &intensity)) {
             if (error != nullptr) {
