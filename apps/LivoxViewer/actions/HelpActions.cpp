@@ -125,7 +125,7 @@ void LivoxViewerWindow::createHelpActions()
                            "点云分析：测距、框选、点属性、点云裁切\n"
                            "参数配置：基础、网络、FOV、外参与状态参数\n"
                            "数据采集：点云录制、PCD/LAS 导出、IMU/LOG/Debug 采集\n"
-                           "离线工具：LVX2/PCAP/ROSbag 回放、LVX2/PCD/LAS/TXT 点云格式转换\n"
+                           "离线工具：LVX/LVX2/PCAP/ROSbag 回放、LVX2/PCD/LAS/TXT 点云格式转换\n"
                            "SLAM集成：在线/离线建图、轨迹显示/导出、地图显示/导出、性能诊断"),
             infoFrame);
         frameLayout->addLayout(infoLayout);

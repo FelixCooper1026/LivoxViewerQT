@@ -328,20 +328,30 @@ void LivoxViewerWindow::playbackShowNextFrame()
 
 void LivoxViewerWindow::playbackShortcutPreviousFrame()
 {
-    if (!playbackState.active || playbackState.frameCount <= 0) {
+    if (!playbackState.active || playbackState.frameCount <= 0 || !playbackState.source) {
         return;
     }
-    setLvx2PlaybackPlaying(false);
-    showLvx2PlaybackFrame(std::max(0, playbackState.frame - 2));
+
+    const int displayFrameCount = displayPlaybackFrameCount(playbackState.source.get());
+    const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
+    const int displayFrameIndex = std::clamp(displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex) - 1,
+                                            0,
+                                            std::max(0, displayFrameCount - 1));
+    playbackSeekToDisplayFrame(std::max(0, displayFrameIndex - 1));
 }
 
 void LivoxViewerWindow::playbackShortcutNextFrame()
 {
-    if (!playbackState.active || playbackState.frameCount <= 0) {
+    if (!playbackState.active || playbackState.frameCount <= 0 || !playbackState.source) {
         return;
     }
-    setLvx2PlaybackPlaying(false);
-    showLvx2PlaybackFrame(std::min(playbackState.frameCount - 1, playbackState.frame + 2));
+
+    const int displayFrameCount = displayPlaybackFrameCount(playbackState.source.get());
+    const int rawEndIndex = playbackRawEndIndexForFrame(playbackState.frame, playbackState.mode, frameIntervalMs);
+    const int displayFrameIndex = std::clamp(displayFrameNumberForRawEndIndex(playbackState.source.get(), rawEndIndex) - 1,
+                                            0,
+                                            std::max(0, displayFrameCount - 1));
+    playbackSeekToDisplayFrame(std::min(std::max(0, displayFrameCount - 1), displayFrameIndex + 1));
 }
 
 void LivoxViewerWindow::playbackShowLastFrame()
