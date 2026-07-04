@@ -526,7 +526,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     connect(slamPointCloudView, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
     connect(slamPointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
         if (crossSectionModeActive && statusLabelBar) {
-            statusLabelBar->setText(QString("Cross Section: %1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
+            statusLabelBar->setText(QString("点云裁切：%1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
         }
     });
 

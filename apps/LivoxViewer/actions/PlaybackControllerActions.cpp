@@ -1,6 +1,7 @@
 ﻿#include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 
+#include "Lvx/LvxReader.h"
 #include "Lvx2/Lvx2Reader.h"
 #include "Pcap/PcapPlaybackController.h"
 #include "Pcap/PushMsgParser.h"
@@ -190,6 +191,8 @@ static QString formatPlaybackTimeNs(uint64_t timeNs, uint64_t durationNs)
 static QString playbackSourceDisplayName(Playback::SourceKind kind)
 {
     switch (kind) {
+    case Playback::SourceKind::Lvx:
+        return QStringLiteral("LVX");
     case Playback::SourceKind::Pcap:
         return QStringLiteral("Pcap");
     case Playback::SourceKind::Rosbag:
@@ -508,6 +511,50 @@ bool LivoxViewerWindow::loadLvx2PlaybackFile(const QString& filePath)
     return true;
 }
 
+bool LivoxViewerWindow::loadLvxPlaybackFile(const QString& filePath)
+{
+    const int tabId = createOfflinePointCloudTab(filePath);
+
+    playbackState.loading = true;
+    playbackState.path = filePath;
+    playbackState.loadToken++;
+    const quint64 currentToken = playbackState.loadToken;
+
+    setLvx2PlaybackPlaying(false);
+    updateLvx2PlaybackUi();
+    if (statusLabelBar) {
+        statusLabelBar->setText(QString("正在加载LVX: %1").arg(QFileInfo(filePath).fileName()));
+    }
+    saveBoundPlaybackState();
+
+    std::thread([this, filePath, tabId, currentToken]() {
+        auto source = std::make_shared<Lvx::LvxReader>();
+        const bool ok = source->load(filePath);
+        const QString errorMessage = source->errorMessage();
+
+        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage]() {
+            PlaybackControllerState* state = playbackStateForTab(tabId);
+            if (!state || currentToken != state->loadToken) {
+                return;
+            }
+
+            state->loading = false;
+            if (!ok) {
+                state->path.clear();
+                updateLvx2PlaybackUi();
+                updateStatus();
+                QMessageBox::warning(this, "播放LVX点云", errorMessage);
+                closeVisualizationTab(tabId);
+                return;
+            }
+
+            finishPlaybackSourceLoad(tabId, source);
+        }, Qt::QueuedConnection);
+    }).detach();
+
+    return true;
+}
+
 bool LivoxViewerWindow::loadRosbagPlaybackFile(const QString& filePath)
 {
     const int tabId = createOfflinePointCloudTab(filePath);
@@ -785,6 +832,9 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
             pointCloudView->updatePointCloud(std::move(frame));
         }
     }
+    if (pointCloudView) {
+        pointCloudView->applyPendingFitViewRequest();
+    }
     if (playbackSourceProvidesImu(playbackState.source->kind())) {
         const bool rebuildImuHistory = previousPlaybackFrame < 0 || playbackFrameIndex != previousPlaybackFrame + 1;
         const uint64_t imuStartTimestamp =
@@ -806,7 +856,14 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
 QString LivoxViewerWindow::lvx2DeviceTypeToModel(uint8_t deviceType) const
 {
     switch (deviceType) {
+    case kLivoxLidarTypeHub: return "LiDAR Hub";
+    case kLivoxLidarTypeMid40: return "Mid-40";
+    case kLivoxLidarTypeTele: return "Tele-15";
+    case kLivoxLidarTypeHorizon: return "Horizon";
+    case kLivoxLidarTypeMid70: return "Mid-70";
+    case kLivoxLidarTypeAvia: return "Avia";
     case kLivoxLidarTypeMid360: return "Mid360";
+    case kLivoxLidarTypeIndustrialHAP: return "Industrial HAP";
     case kLivoxLidarTypeMid360s: return "Mid360s";
     case kLivoxLidarTypeMid360l: return "Mid360l";
     case kLivoxLidarTypeAvia2: return "Avia2";
@@ -899,8 +956,11 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
         const auto& info = playbackState.devices[row];
         const QString modelName =
             info.modelDisplay.isEmpty() ? lvx2DeviceTypeToModel(info.deviceType) : info.modelDisplay;
-        const QString lidarIp = PushMsgParser::lidarIdToIpString(info.lidarId);
-        const QString deviceTip = QString("型号: %1\nSN: %2\nIP: %3").arg(modelName, info.lidarSn, lidarIp);
+        const bool lvxSource = playbackState.source && playbackState.source->kind() == Playback::SourceKind::Lvx;
+        const QString deviceIdText = lvxSource
+            ? QStringLiteral("设备索引: %1").arg(info.lidarId)
+            : QStringLiteral("IP: %1").arg(PushMsgParser::lidarIdToIpString(info.lidarId));
+        const QString deviceTip = QString("型号: %1\nSN: %2\n%3").arg(modelName, info.lidarSn, deviceIdText);
         const uint32_t lidarId = info.lidarId;
 
         QFrame* card = new QFrame(lvx2DeviceListWidget);
@@ -936,7 +996,7 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
         cardLayout->addLayout(headerLayout);
 
         QLabel* snLabel = new QLabel(QStringLiteral("SN: %1").arg(info.lidarSn), card);
-        QLabel* ipLabel = new QLabel(QStringLiteral("IP: %1").arg(lidarIp), card);
+        QLabel* ipLabel = new QLabel(deviceIdText, card);
         for (QLabel* label : {snLabel, ipLabel}) {
             label->setToolTip(deviceTip);
             label->setWordWrap(true);
@@ -1332,6 +1392,10 @@ void LivoxViewerWindow::onLvx2PlaybackFileDropped(const QString& filePath)
     }
     if (RosbagPlayback::isSupportedFile(filePath)) {
         loadRosbagPlaybackFile(filePath);
+        return;
+    }
+    if (filePath.endsWith(QStringLiteral(".lvx"), Qt::CaseInsensitive)) {
+        loadLvxPlaybackFile(filePath);
         return;
     }
     loadLvx2PlaybackFile(filePath);

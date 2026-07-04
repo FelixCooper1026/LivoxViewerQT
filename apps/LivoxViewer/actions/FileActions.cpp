@@ -75,7 +75,8 @@ void LivoxViewerWindow::openPointCloudPlaybackFileDialog()
         this,
         "选择点云回放文件",
         lastDir,
-        "点云回放文件 (*.lvx2 *.pcap *.pcapng *.cap *.bag *.db3 *.yaml *.yml);;"
+        "点云回放文件 (*.lvx *.lvx2 *.pcap *.pcapng *.cap *.bag *.db3 *.yaml *.yml);;"
+        "LVX文件 (*.lvx);;"
         "LVX2文件 (*.lvx2);;"
         "Pcap文件 (*.pcap *.pcapng *.cap);;"
         "ROS1 Bag文件 (*.bag);;"
@@ -90,6 +91,8 @@ void LivoxViewerWindow::openPointCloudPlaybackFileDialog()
         loadRosbagPlaybackFile(filePath);
     } else if (PcapPlayback::isSupportedFile(filePath)) {
         loadPcapPlaybackFile(filePath);
+    } else if (filePath.endsWith(QStringLiteral(".lvx"), Qt::CaseInsensitive)) {
+        loadLvxPlaybackFile(filePath);
     } else {
         loadLvx2PlaybackFile(filePath);
     }

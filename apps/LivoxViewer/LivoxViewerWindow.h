@@ -263,6 +263,7 @@ private:
     void presentPointCloudFrame(const PointCloudFrame& frame);
     void applyPointCloudPipeline(PointCloudFrame& frame, PointCloudView* targetView = nullptr);
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
+    bool loadLvxPlaybackFile(const QString& filePath);
     bool loadLvx2PlaybackFile(const QString& filePath);
     bool loadPcapPlaybackFile(const QString& filePath);
     bool loadRosbagPlaybackFile(const QString& filePath);

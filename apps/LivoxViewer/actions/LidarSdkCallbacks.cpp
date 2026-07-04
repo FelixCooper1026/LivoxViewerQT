@@ -19,7 +19,14 @@ constexpr double kImuChartRetentionSec = 60.0;
 QString lidarTypeName(uint8_t devType)
 {
     switch (devType) {
+    case kLivoxLidarTypeHub: return "LiDAR Hub";
+    case kLivoxLidarTypeMid40: return "Mid-40";
+    case kLivoxLidarTypeTele: return "Tele-15";
+    case kLivoxLidarTypeHorizon: return "Horizon";
+    case kLivoxLidarTypeMid70: return "Mid-70";
+    case kLivoxLidarTypeAvia: return "Avia";
     case kLivoxLidarTypeMid360: return "Mid360";
+    case kLivoxLidarTypeIndustrialHAP: return "Industrial HAP";
     case kLivoxLidarTypeMid360s: return "Mid360s";
     case kLivoxLidarTypeMid360l: return "Mid360l";
     case kLivoxLidarTypeAvia2: return "Avia2";

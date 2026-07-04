@@ -936,11 +936,11 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->addPrimaryWidget(createIconButton(selectionAction, toolsGroup, toolbarIconSize));
     toolsGroup->moreMenu()->addAction(selectionAction);
 
-    QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "Cross Section", this);
+    QAction* crossSectionAction = new QAction(QIcon(":/icons/cross_section.svg"), "点云裁切", this);
     ThemeIconUtils::setThemedSvgIcon(crossSectionAction, QStringLiteral(":/icons/cross_section.svg"));
     pointCloudCrossSectionAction = crossSectionAction;
     crossSectionAction->setCheckable(true);
-    crossSectionAction->setToolTip("Cross Section");
+    crossSectionAction->setToolTip("点云裁切");
     QAction* crossSectionControlsAction = new QAction("显示交互控件", this);
     crossSectionControlsAction->setCheckable(true);
     crossSectionControlsAction->setChecked(true);
@@ -951,7 +951,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     crossSectionControlsSwitch->setEnabled(false);
     crossSectionControlsSwitch->setVisible(false);
     crossSectionControlsSwitch->setProperty("toolbarOptionalHidden", true);
-    crossSectionControlsSwitch->setToolTip("显示/隐藏Cross Section交互控件");
+    crossSectionControlsSwitch->setToolTip("显示/隐藏点云裁切交互控件");
     connect(crossSectionControlsAction, &QAction::toggled, crossSectionControlsSwitch, [crossSectionControlsSwitch](bool checked) {
         QSignalBlocker blocker(crossSectionControlsSwitch);
         crossSectionControlsSwitch->setChecked(checked);
@@ -996,8 +996,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 selectionAction->setEnabled(true);
                 QSignalBlocker blocker(crossSectionAction);
                 crossSectionAction->setChecked(false);
-                statusLabelBar->setText("Cross Section: 当前点云为空");
-                logMessage("Cross Section未启动：当前点云为空");
+                statusLabelBar->setText("点云裁切：当前点云为空");
+                logMessage("点云裁切未启动：当前点云为空");
                 return;
             }
             forEachPointCloudView([this](PointCloudView* view) {
@@ -1019,8 +1019,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 QSignalBlocker blocker(crossSectionControlsSwitch);
                 crossSectionControlsSwitch->setChecked(true);
             }
-            statusLabelBar->setText("Cross Section: 拖动箭头/面/圆环调整裁剪盒");
-            logMessage("进入Cross Section");
+            statusLabelBar->setText("点云裁切：拖动箭头/面/圆环调整裁剪盒");
+            logMessage("进入点云裁切");
         } else {
             forEachPointCloudView([](PointCloudView* view) {
                 view->setCrossSectionModeEnabled(false);
@@ -1031,7 +1031,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             selectionAction->setEnabled(true);
             updateLvx2PlaybackUi();
             updateStatus();
-            logMessage("退出Cross Section，已恢复点云显示");
+            logMessage("退出点云裁切，已恢复点云显示");
             crossSectionControlsAction->setEnabled(false);
             crossSectionControlsSwitch->setEnabled(false);
             crossSectionControlsAction->setVisible(false);
@@ -1052,7 +1052,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     connect(pointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
         if (crossSectionModeActive && statusLabelBar) {
-            statusLabelBar->setText(QString("Cross Section: %1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
+            statusLabelBar->setText(QString("点云裁切：%1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
         }
     });
     connect(crossSectionControlsAction, &QAction::toggled, this, [this](bool visible) {
@@ -1075,7 +1075,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QAction* orthographicProjectionAction = new QAction(QIcon(":/icons/projection_orthographic.svg"), "正射投影", this);
     ThemeIconUtils::setThemedSvgIcon(orthographicProjectionAction, QStringLiteral(":/icons/projection_orthographic.svg"));
     orthographicProjectionAction->setCheckable(true);
-    orthographicProjectionAction->setToolTip("正射投影");
+    orthographicProjectionAction->setToolTip("无透视缩放，便于测量对齐");
     projectionModeGroup->addAction(orthographicProjectionAction);
     connect(orthographicProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
@@ -1088,7 +1088,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ThemeIconUtils::setThemedSvgIcon(perspectiveProjectionAction, QStringLiteral(":/icons/projection_perspective.svg"));
     perspectiveProjectionAction->setCheckable(true);
     perspectiveProjectionAction->setChecked(true);
-    perspectiveProjectionAction->setToolTip("以对象为中心的透视视点");
+    perspectiveProjectionAction->setToolTip("围绕点云中心旋转的透视视角");
     projectionModeGroup->addAction(perspectiveProjectionAction);
     connect(perspectiveProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
@@ -1100,7 +1100,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     QAction* observerProjectionAction = new QAction(QIcon(":/icons/projection_observer.svg"), "观察者视角", this);
     ThemeIconUtils::setThemedSvgIcon(observerProjectionAction, QStringLiteral(":/icons/projection_observer.svg"));
     observerProjectionAction->setCheckable(true);
-    observerProjectionAction->setToolTip("基于观察者相机位置的透视视角");
+    observerProjectionAction->setToolTip("从当前位置自由观察的透视视角");
     projectionModeGroup->addAction(observerProjectionAction);
     connect(observerProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
@@ -1113,7 +1113,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     projectionGroup->moreMenu()->addAction(observerProjectionAction);
     toolbarLayout->addWidget(projectionGroup);
 
-    ToolbarGroup* viewGroup = new ToolbarGroup("视角控制", viewerToolbar);
+    ToolbarGroup* viewGroup = new ToolbarGroup("视图控制", viewerToolbar);
     viewGroup->setCompactPriority(1);
     auto applyViewPreset = [this](int index) {
         PointCloudView::ViewPreset preset = PointCloudView::ViewPreset::Top;

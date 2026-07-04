@@ -14,6 +14,7 @@
 namespace Playback {
 
 enum class SourceKind {
+    Lvx,
     Lvx2,
     Pcap,
     Rosbag

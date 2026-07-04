@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 2.1.0
+    VERSION 2.1.1
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -226,6 +226,8 @@ set(SOURCES
     libs/PointCloud/src/PointCloudProjection.cpp
     libs/PointCloud/src/PointCloudCrossSection.cpp
     plugins/StlModel/StlModelLoader.cpp
+    libs/Lvx/src/LvxReader.cpp
+    libs/Lvx/src/LvxPointParser.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/ImuParser.cpp
@@ -294,6 +296,9 @@ set(SOURCES
     libs/PointCloud/include/PointCloud/PointCloudPersistence.h
     plugins/StlModel/StlModelLoader.h
     libs/Playback/include/Playback/PlaybackSource.h
+    libs/Lvx/include/Lvx/LvxTypes.h
+    libs/Lvx/include/Lvx/LvxReader.h
+    libs/Lvx/include/Lvx/LvxPointParser.h
     libs/Lvx2/include/Lvx2/Lvx2Types.h
     libs/Lvx2/include/Lvx2/Lvx2Reader.h
     libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
@@ -433,6 +438,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include

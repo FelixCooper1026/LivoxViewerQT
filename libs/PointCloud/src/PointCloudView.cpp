@@ -17,6 +17,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QPointer>
+#include <QStringList>
 #include <QThread>
 #include <QUrl>
 #include <QVector4D>
@@ -50,13 +51,23 @@ private:
 };
 
 constexpr float kModelMillimetersToMeters = 0.001f;
+constexpr float kDefaultCameraDistance = 25.0f;
+constexpr float kMinimumCameraFitDistance = 1.0f;
+constexpr float kCameraFitPadding = 1.25f;
+constexpr float kCameraFovYDegrees = 45.0f;
+constexpr int kViewFitSampleLimit = 10000;
+constexpr int kRobustBoundsMinPointCount = 64;
+constexpr float kRobustBoundsLowerQuantile = 0.02f;
+constexpr float kRobustBoundsUpperQuantile = 0.98f;
+constexpr float kMinimumViewBoundsExtent = 1.0f;
 constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
 
 bool isSupportedPlaybackDropFile(const QString& filePath)
 {
-    return filePath.endsWith(QStringLiteral(".lvx2"), Qt::CaseInsensitive) ||
+    return filePath.endsWith(QStringLiteral(".lvx"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".lvx2"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".pcap"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".pcapng"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive) ||
@@ -64,6 +75,26 @@ bool isSupportedPlaybackDropFile(const QString& filePath)
            filePath.endsWith(QStringLiteral(".db3"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".yaml"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".yml"), Qt::CaseInsensitive);
+}
+
+QStringList supportedPlaybackDropFiles(const QMimeData* mimeData)
+{
+    QStringList files;
+    if (!mimeData || !mimeData->hasUrls()) {
+        return files;
+    }
+
+    const QList<QUrl> urls = mimeData->urls();
+    for (const QUrl& url : urls) {
+        if (!url.isLocalFile()) {
+            continue;
+        }
+        const QString localFile = url.toLocalFile();
+        if (isSupportedPlaybackDropFile(localFile)) {
+            files.append(localFile);
+        }
+    }
+    return files;
 }
 
 StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
@@ -379,13 +410,147 @@ int zeroPointCount(const QVector<PointCloudPoint>& points)
     return count;
 }
 
+bool isOriginPoint(const PointCloudPoint& point)
+{
+    return point.x == 0.0f && point.y == 0.0f && point.z == 0.0f;
+}
+
+bool isFinitePoint(const PointCloudPoint& point)
+{
+    return std::isfinite(point.x) && std::isfinite(point.y) && std::isfinite(point.z);
+}
+
+struct BoundsAccumulator {
+    bool hasPoint = false;
+    QVector3D minPoint;
+    QVector3D maxPoint;
+
+    void include(const QVector3D& point)
+    {
+        if (!hasPoint) {
+            minPoint = point;
+            maxPoint = point;
+            hasPoint = true;
+            return;
+        }
+
+        minPoint.setX(std::min(minPoint.x(), point.x()));
+        minPoint.setY(std::min(minPoint.y(), point.y()));
+        minPoint.setZ(std::min(minPoint.z(), point.z()));
+        maxPoint.setX(std::max(maxPoint.x(), point.x()));
+        maxPoint.setY(std::max(maxPoint.y(), point.y()));
+        maxPoint.setZ(std::max(maxPoint.z(), point.z()));
+    }
+};
+
+struct ViewFitSamples {
+    QVector<float> x;
+    QVector<float> y;
+    QVector<float> z;
+    int pointCount = 0;
+
+    void reserve()
+    {
+        x.reserve(kViewFitSampleLimit);
+        y.reserve(kViewFitSampleLimit);
+        z.reserve(kViewFitSampleLimit);
+    }
+
+    int size() const
+    {
+        return x.size();
+    }
+};
+
+uint64_t splitmix64(uint64_t value)
+{
+    value += 0x9e3779b97f4a7c15ULL;
+    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+    return value ^ (value >> 31);
+}
+
+void includeViewFitSample(ViewFitSamples& samples, const QVector3D& point)
+{
+    ++samples.pointCount;
+    if (samples.size() < kViewFitSampleLimit) {
+        samples.x.append(point.x());
+        samples.y.append(point.y());
+        samples.z.append(point.z());
+        return;
+    }
+
+    const uint64_t candidate = splitmix64(uint64_t(samples.pointCount));
+    const int index = int(candidate % uint64_t(samples.pointCount));
+    if (index >= kViewFitSampleLimit) {
+        return;
+    }
+    samples.x[index] = point.x();
+    samples.y[index] = point.y();
+    samples.z[index] = point.z();
+}
+
+float quantileValue(QVector<float>& values, float quantile)
+{
+    std::sort(values.begin(), values.end());
+    const float position = quantile * float(values.size() - 1);
+    const int lower = int(std::floor(position));
+    const int upper = int(std::ceil(position));
+    const float t = position - float(lower);
+    return values.at(lower) * (1.0f - t) + values.at(upper) * t;
+}
+
+void enforceMinimumBoundsExtent(QVector3D& minPoint, QVector3D& maxPoint)
+{
+    auto expandAxis = [](float& minValue, float& maxValue) {
+        const float extent = maxValue - minValue;
+        if (extent >= kMinimumViewBoundsExtent) {
+            return;
+        }
+        const float center = (minValue + maxValue) * 0.5f;
+        minValue = center - kMinimumViewBoundsExtent * 0.5f;
+        maxValue = center + kMinimumViewBoundsExtent * 0.5f;
+    };
+
+    float minX = minPoint.x();
+    float minY = minPoint.y();
+    float minZ = minPoint.z();
+    float maxX = maxPoint.x();
+    float maxY = maxPoint.y();
+    float maxZ = maxPoint.z();
+    expandAxis(minX, maxX);
+    expandAxis(minY, maxY);
+    expandAxis(minZ, maxZ);
+    minPoint = QVector3D(minX, minY, minZ);
+    maxPoint = QVector3D(maxX, maxY, maxZ);
+}
+
+bool robustBoundsFromSamples(const ViewFitSamples& samples, QVector3D& minPoint, QVector3D& maxPoint)
+{
+    if (samples.pointCount < kRobustBoundsMinPointCount || samples.size() < kRobustBoundsMinPointCount) {
+        return false;
+    }
+
+    QVector<float> xValues = samples.x;
+    QVector<float> yValues = samples.y;
+    QVector<float> zValues = samples.z;
+    minPoint = QVector3D(quantileValue(xValues, kRobustBoundsLowerQuantile),
+                         quantileValue(yValues, kRobustBoundsLowerQuantile),
+                         quantileValue(zValues, kRobustBoundsLowerQuantile));
+    maxPoint = QVector3D(quantileValue(xValues, kRobustBoundsUpperQuantile),
+                         quantileValue(yValues, kRobustBoundsUpperQuantile),
+                         quantileValue(zValues, kRobustBoundsUpperQuantile));
+    enforceMinimumBoundsExtent(minPoint, maxPoint);
+    return true;
+}
+
 } // namespace
 
 // PointCloudView 实现
 PointCloudView::PointCloudView(QWidget *parent)
     : QOpenGLWidget(parent)
     , m_program(nullptr)
-    , m_distance(25.0f)
+    , m_distance(kDefaultCameraDistance)
     , m_rotation(0, 0, 0)
     , m_orientation() // identity
     , m_target(0, 0, 0)
@@ -1825,40 +1990,29 @@ void PointCloudView::wheelEvent(QWheelEvent *event)
 
 void PointCloudView::dragEnterEvent(QDragEnterEvent* event)
 {
-    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) {
+    if (!event) {
         return;
     }
 
-    const QList<QUrl> urls = event->mimeData()->urls();
-    for (const QUrl& url : urls) {
-        if (!url.isLocalFile()) {
-            continue;
-        }
-        const QString localFile = url.toLocalFile();
-        if (isSupportedPlaybackDropFile(localFile)) {
-            event->acceptProposedAction();
-            return;
-        }
+    if (!supportedPlaybackDropFiles(event->mimeData()).isEmpty()) {
+        event->acceptProposedAction();
     }
 }
 
 void PointCloudView::dropEvent(QDropEvent* event)
 {
-    if (!event || !event->mimeData() || !event->mimeData()->hasUrls()) {
+    if (!event) {
         return;
     }
 
-    const QList<QUrl> urls = event->mimeData()->urls();
-    for (const QUrl& url : urls) {
-        const QString localFile = url.toLocalFile();
-        if (!url.isLocalFile()) {
-            continue;
-        }
-        if (isSupportedPlaybackDropFile(localFile)) {
-            emit lvx2FileDropped(localFile);
-            event->acceptProposedAction();
-            return;
-        }
+    const QStringList files = supportedPlaybackDropFiles(event->mimeData());
+    if (files.isEmpty()) {
+        return;
+    }
+
+    event->acceptProposedAction();
+    for (const QString& file : files) {
+        emit lvx2FileDropped(file);
     }
 }
 
@@ -2256,6 +2410,91 @@ bool PointCloudView::pointCloudSegmentSourceBounds(QVector3D& minPoint, QVector3
         }
     }
     return hasPoint;
+}
+
+bool PointCloudView::displayedPointBounds(QVector3D& minPoint, QVector3D& maxPoint) const
+{
+    BoundsAccumulator anyBounds;
+    BoundsAccumulator nonOriginBounds;
+    ViewFitSamples anySamples;
+    ViewFitSamples nonOriginSamples;
+    anySamples.reserve();
+    nonOriginSamples.reserve();
+
+    forEachDisplayedPoint([&](const PointCloudPoint& point) {
+        if (!isFinitePoint(point)) {
+            return true;
+        }
+        const QVector3D current(point.x, point.y, point.z);
+        anyBounds.include(current);
+        includeViewFitSample(anySamples, current);
+        if (!isOriginPoint(point)) {
+            nonOriginBounds.include(current);
+            includeViewFitSample(nonOriginSamples, current);
+        }
+        return true;
+    });
+
+    const ViewFitSamples& samples = nonOriginBounds.hasPoint ? nonOriginSamples : anySamples;
+    if (robustBoundsFromSamples(samples, minPoint, maxPoint)) {
+        return true;
+    }
+
+    const BoundsAccumulator& fallbackBounds = nonOriginBounds.hasPoint ? nonOriginBounds : anyBounds;
+    if (fallbackBounds.hasPoint) {
+        minPoint = fallbackBounds.minPoint;
+        maxPoint = fallbackBounds.maxPoint;
+        enforceMinimumBoundsExtent(minPoint, maxPoint);
+        return true;
+    }
+    return false;
+}
+
+float PointCloudView::cameraDistanceForBounds(const QVector3D& minPoint, const QVector3D& maxPoint) const
+{
+    const QVector3D center = (minPoint + maxPoint) * 0.5f;
+    const QVector3D right = cameraRight().normalized();
+    const QVector3D up = cameraUp().normalized();
+    const QVector3D forward = cameraForward().normalized();
+    float halfWidth = 0.0f;
+    float halfHeight = 0.0f;
+    float halfDepth = 0.0f;
+
+    for (int xi = 0; xi < 2; ++xi) {
+        for (int yi = 0; yi < 2; ++yi) {
+            for (int zi = 0; zi < 2; ++zi) {
+                const QVector3D corner(xi == 0 ? minPoint.x() : maxPoint.x(),
+                                       yi == 0 ? minPoint.y() : maxPoint.y(),
+                                       zi == 0 ? minPoint.z() : maxPoint.z());
+                const QVector3D relative = corner - center;
+                halfWidth = std::max(halfWidth, std::abs(QVector3D::dotProduct(relative, right)));
+                halfHeight = std::max(halfHeight, std::abs(QVector3D::dotProduct(relative, up)));
+                halfDepth = std::max(halfDepth, std::abs(QVector3D::dotProduct(relative, forward)));
+            }
+        }
+    }
+
+    const float aspect = float(qMax(1, width())) / float(qMax(1, height()));
+    const float verticalTan = std::tan((kCameraFovYDegrees * float(M_PI) / 180.0f) * 0.5f);
+    const float horizontalTan = verticalTan * aspect;
+    const float fitByHeight = halfHeight / std::max(verticalTan, 0.001f);
+    const float fitByWidth = halfWidth / std::max(horizontalTan, 0.001f);
+    const float distance = (std::max(fitByHeight, fitByWidth) + halfDepth) * kCameraFitPadding;
+    return std::max(kMinimumCameraFitDistance, distance);
+}
+
+void PointCloudView::fitViewToDisplayedPoints(float fallbackDistance)
+{
+    QVector3D minPoint;
+    QVector3D maxPoint;
+    if (!displayedPointBounds(minPoint, maxPoint)) {
+        m_target = QVector3D(0, 0, 0);
+        m_distance = fallbackDistance;
+        return;
+    }
+
+    m_target = (minPoint + maxPoint) * 0.5f;
+    m_distance = cameraDistanceForBounds(minPoint, maxPoint);
 }
 
 void PointCloudView::forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const
@@ -2811,9 +3050,11 @@ void PointCloudView::updatePointCloud(const PointCloudFrame& frame)
         m_crossSectionState.sourcePoints = frame.points;
         m_crossSectionState.clippedPoints.clear();
         requestCrossSectionClip(true);
+        applyPendingFitViewRequest();
         return;
     }
     uploadPointCloudPoints(QVector<PointCloudPoint>(frame.points));
+    applyPendingFitViewRequest();
     if (m_selectionLocked && m_selectionRegion.valid) {
         requestSelectionUpdate();
     }
@@ -2825,9 +3066,11 @@ void PointCloudView::updatePointCloud(PointCloudFrame&& frame)
         m_crossSectionState.sourcePoints = std::move(frame.points);
         m_crossSectionState.clippedPoints.clear();
         requestCrossSectionClip(true);
+        applyPendingFitViewRequest();
         return;
     }
     uploadPointCloudPoints(std::move(frame.points));
+    applyPendingFitViewRequest();
     if (m_selectionLocked && m_selectionRegion.valid) {
         requestSelectionUpdate();
     }
@@ -2910,12 +3153,33 @@ void PointCloudView::clearPointCloud()
 
 void PointCloudView::resetView()
 {
-    m_distance = 25.0f;
-    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -60.0f)
+    m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -45.0f)
                 * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
-    m_target = QVector3D(0, 0, 0); // 重置观察中心
+    m_target = QVector3D(0, 0, 0);
+    m_distance = kDefaultCameraDistance;
     syncViewerPositionFromOrbit();
     update();
+}
+
+void PointCloudView::requestFitViewOnNextPointCloudUpdate()
+{
+    m_fitViewOnNextPointCloudUpdate = true;
+}
+
+void PointCloudView::applyPendingFitViewRequest()
+{
+    if (!m_fitViewOnNextPointCloudUpdate) {
+        return;
+    }
+
+    QVector3D minPoint;
+    QVector3D maxPoint;
+    if (!displayedPointBounds(minPoint, maxPoint)) {
+        return;
+    }
+
+    m_fitViewOnNextPointCloudUpdate = false;
+    resetView();
 }
 
 void PointCloudView::setPointSize(float sizePixels)
@@ -2965,7 +3229,7 @@ void PointCloudView::setLegend(int mode,
 
 void PointCloudView::setTopDownView()
 {
-    setViewPreset(ViewPreset::World);
+    setViewPreset(ViewPreset::Top);
 }
 
 void PointCloudView::setViewPreset(ViewPreset preset)
@@ -3000,8 +3264,7 @@ void PointCloudView::setViewPreset(ViewPreset preset)
         m_orientation = qTop;
         break;
     }
-    m_distance = 25.0f;
-    m_target = QVector3D(0, 0, 0);
+    fitViewToDisplayedPoints(kDefaultCameraDistance);
     syncViewerPositionFromOrbit();
     update();
 }
