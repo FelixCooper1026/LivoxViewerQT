@@ -294,6 +294,10 @@ private:
                          Lvx2ConvertMode mode,
                          Lvx2ConvertFormat format,
                          const std::function<void(int, int)>& progress);
+    bool convertRosbagToPcdFile(const QString& sourcePath,
+                                const QString& outputPathNoExt,
+                                Lvx2ConvertMode mode,
+                                const std::function<void(int, int)>& progress);
     bool savePointCloudAsCSV(const QString& filePath, const QVector<PointCloudPoint>& points);
     bool savePointCloudAsTXT(const QString& filePath, const QVector<PointCloudPoint>& points);
     void handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs);

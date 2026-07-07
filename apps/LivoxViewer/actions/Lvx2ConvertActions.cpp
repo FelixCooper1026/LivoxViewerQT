@@ -3,10 +3,12 @@
 #include "Export/PointCloudExport.h"
 #include "LivoxCore/LidarModelUtils.h"
 #include "Lvx2/Lvx2PointParser.h"
+#include "Rosbag/RosbagPlaybackSource.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QMap>
 #include <QTextStream>
 #include <QtEndian>
 
@@ -31,6 +33,105 @@ bool LivoxViewerWindow::savePointCloudAsCSV(const QString& filePath, const QVect
 bool LivoxViewerWindow::savePointCloudAsTXT(const QString& filePath, const QVector<PointCloudPoint>& points)
 {
     return PointCloudExport::saveAsTXT(filePath, points);
+}
+
+bool LivoxViewerWindow::convertRosbagToPcdFile(const QString& sourcePath,
+                                               const QString& outputPathNoExt,
+                                               Lvx2ConvertMode mode,
+                                               const std::function<void(int, int)>& progress)
+{
+    RosbagPlaybackSource source(static_cast<int>(frameIntervalMs));
+    if (!source.load(sourcePath)) {
+        return false;
+    }
+
+    QMap<uint32_t, bool> deviceVisibility;
+    for (const Playback::DeviceInfo& device : source.devices()) {
+        deviceVisibility.insert(device.lidarId, true);
+    }
+
+    const int total = source.frameCount();
+    if (mode == Lvx2ConvertMode::SplitBy100ms) {
+        for (int i = 0; i < total; ++i) {
+            PointCloudFrame frame;
+            if (!source.readFrame(i, deviceVisibility, frame)) {
+                return false;
+            }
+            const QString filePath = QString("%1_%2.pcd").arg(outputPathNoExt).arg(i + 1, 5, 10, QChar('0'));
+            if (!PointCloudExport::saveAsPCD(filePath, frame.points)) {
+                return false;
+            }
+            if (progress) {
+                progress(i + 1, total);
+            }
+            QCoreApplication::processEvents();
+        }
+        return true;
+    }
+
+    const QString outPath = outputPathNoExt + ".pcd";
+    const QFileInfo fi(outPath);
+    QFile pcdTmpFile(fi.absolutePath() + "/" + fi.completeBaseName() + ".pcd.tmp_points");
+    if (!pcdTmpFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return false;
+    }
+
+    qint64 pointCount = 0;
+    for (int i = 0; i < total; ++i) {
+        PointCloudFrame frame;
+        if (!source.readFrame(i, deviceVisibility, frame)) {
+            pcdTmpFile.close();
+            pcdTmpFile.remove();
+            return false;
+        }
+        for (const PointCloudPoint& point : frame.points) {
+            if (!PointCloudExport::writePcdPoint(pcdTmpFile, point)) {
+                pcdTmpFile.close();
+                pcdTmpFile.remove();
+                return false;
+            }
+            ++pointCount;
+        }
+        if (progress) {
+            progress(i + 1, total);
+        }
+        QCoreApplication::processEvents();
+    }
+    pcdTmpFile.close();
+
+    QFile outFile(outPath);
+    if (!outFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        pcdTmpFile.remove();
+        return false;
+    }
+    if (!PointCloudExport::writePcdHeader(outFile, pointCount)) {
+        outFile.close();
+        pcdTmpFile.remove();
+        return false;
+    }
+    if (!pcdTmpFile.open(QIODevice::ReadOnly)) {
+        outFile.close();
+        pcdTmpFile.remove();
+        return false;
+    }
+    while (!pcdTmpFile.atEnd()) {
+        const QByteArray chunk = pcdTmpFile.read(1 << 20);
+        if (chunk.isEmpty() && pcdTmpFile.error() != QFile::NoError) {
+            outFile.close();
+            pcdTmpFile.close();
+            pcdTmpFile.remove();
+            return false;
+        }
+        if (outFile.write(chunk) != chunk.size()) {
+            outFile.close();
+            pcdTmpFile.close();
+            pcdTmpFile.remove();
+            return false;
+        }
+    }
+    pcdTmpFile.close();
+    pcdTmpFile.remove();
+    return true;
 }
 
 bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,

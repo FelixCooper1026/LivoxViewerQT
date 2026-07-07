@@ -47,6 +47,7 @@ constexpr int kOptionRowHeight = 36;
 constexpr int kOptionLabelSpacing = 6;
 constexpr int kOptionRadioSpacing = 14;
 constexpr int kTableFramePadding = 1;
+constexpr int kRosbagToPcdFormatId = 100;
 
 enum class JobState {
     Pending = 0,
@@ -66,6 +67,7 @@ struct ConvertDialogState : QObject {
     QSet<QString> addedPaths;
     Lvx2Convert::Format currentFormat = Lvx2Convert::Format::PCD;
     Lvx2Convert::Mode currentMode = Lvx2Convert::Mode::MergeAllToOne;
+    bool currentRosbagToPcd = false;
 };
 
 QString normalizedPathKey(const QString& path)
@@ -99,7 +101,7 @@ QString formatFileSize(qint64 bytes)
 QString modeText(Lvx2Convert::Mode mode)
 {
     return mode == Lvx2Convert::Mode::SplitBy100ms
-        ? QString("按 100ms 拆分")
+        ? QString("按单帧拆分")
         : QString("合并为单个文件");
 }
 
@@ -113,6 +115,39 @@ QStringList selectLvx2Files(QWidget* parent, const QString& startDir)
         return {};
     }
     return dialog.selectedFiles();
+}
+
+QStringList selectRosbagFiles(QWidget* parent, const QString& startDir)
+{
+    QFileDialog dialog(parent, QStringLiteral("添加 ROSbag 文件"), startDir);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setFileMode(QFileDialog::ExistingFiles);
+    dialog.setNameFilter(QStringLiteral("ROSbag (*.bag *.db3 *.yaml *.yml)"));
+    if (dialog.exec() != QDialog::Accepted) {
+        return {};
+    }
+    return dialog.selectedFiles();
+}
+
+bool isRosbagConvertFile(const QFileInfo& info)
+{
+    const QString suffix = info.suffix();
+    return suffix.compare(QStringLiteral("bag"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("db3"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("yaml"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("yml"), Qt::CaseInsensitive) == 0;
+}
+
+QStringList folderFilters(bool rosbagToPcd)
+{
+    return rosbagToPcd
+        ? QStringList{QStringLiteral("*.bag"), QStringLiteral("*.db3"), QStringLiteral("*.yaml"), QStringLiteral("*.yml")}
+        : QStringList{QStringLiteral("*.lvx2")};
+}
+
+QString addFilePrompt(bool rosbagToPcd)
+{
+    return rosbagToPcd ? QStringLiteral("请添加 ROSbag 文件") : QStringLiteral("请添加 LVX2 文件");
 }
 
 QString selectFolder(QWidget* parent, const QString& startDir, const QString& title)
@@ -458,7 +493,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
 {
     QDialog* dlg = new QDialog(this);
     ConvertDialogState* state = new ConvertDialogState(dlg);
-    dlg->setWindowTitle("LVX2 格式转换");
+    dlg->setWindowTitle(QStringLiteral("格式转换"));
     dlg->setWindowModality(Qt::NonModal);
     DialogWindowUtils::enableTopLevelWindowControls(dlg);
     dlg->resize(1140, 680);
@@ -486,15 +521,18 @@ void LivoxViewerWindow::showFormatConvertDialog()
     QPushButton* lasButton = createNavButton("LVX2 转 LAS", navPanel);
     QPushButton* csvButton = createNavButton("LVX2 转 CSV", navPanel);
     QPushButton* txtButton = createNavButton("LVX2 转 TXT", navPanel);
+    QPushButton* rosbagPcdButton = createNavButton(QStringLiteral("ROSbag 转 PCD"), navPanel);
     formatGroup->addButton(pcdButton, int(Lvx2Convert::Format::PCD));
     formatGroup->addButton(lasButton, int(Lvx2Convert::Format::LAS));
     formatGroup->addButton(csvButton, int(Lvx2Convert::Format::CSV));
     formatGroup->addButton(txtButton, int(Lvx2Convert::Format::TXT));
+    formatGroup->addButton(rosbagPcdButton, kRosbagToPcdFormatId);
     pcdButton->setChecked(true);
     navLayout->addWidget(pcdButton);
     navLayout->addWidget(lasButton);
     navLayout->addWidget(csvButton);
     navLayout->addWidget(txtButton);
+    navLayout->addWidget(rosbagPcdButton);
     navLayout->addStretch();
     navPanel->setStyleSheet(
         "#ConvertNavPanel {"
@@ -584,7 +622,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     modeLayout->setContentsMargins(0, 0, 0, 0);
     modeLayout->setSpacing(kOptionRadioSpacing);
     QRadioButton* mergeModeButton = new QRadioButton("合并为单个文件", modeRow);
-    QRadioButton* splitModeButton = new QRadioButton("按 100ms 拆分", modeRow);
+    QRadioButton* splitModeButton = new QRadioButton("按单帧拆分", modeRow);
     mergeModeButton->setChecked(true);
     modeLayout->addWidget(mergeModeButton, 0, Qt::AlignVCenter);
     modeLayout->addWidget(splitModeButton, 0, Qt::AlignVCenter);
@@ -705,9 +743,12 @@ void LivoxViewerWindow::showFormatConvertDialog()
 
     auto addPaths = [table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, selectedMode, updateStartEnabled](const QStringList& paths) {
         bool addedAny = false;
+        const bool rosbagToPcd = state->currentRosbagToPcd;
         for (const QString& path : paths) {
             const QFileInfo info(path);
-            if (!info.exists() || info.suffix().compare("lvx2", Qt::CaseInsensitive) != 0) {
+            if (!info.exists() ||
+                (!rosbagToPcd && info.suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) != 0) ||
+                (rosbagToPcd && !isRosbagConvertFile(info))) {
                 continue;
             }
             const int before = table->rowCount();
@@ -729,12 +770,23 @@ void LivoxViewerWindow::showFormatConvertDialog()
         updateStartEnabled();
     };
 
-    QObject::connect(formatGroup, &QButtonGroup::idClicked, dlg, [table, dialogStatusLabel, state](int id) {
-        const auto nextFormat = static_cast<Lvx2Convert::Format>(id);
-        if (state->currentFormat != nextFormat) {
+    QObject::connect(formatGroup, &QButtonGroup::idClicked, dlg, [table, dialogStatusLabel, state, updateStartEnabled](int id) {
+        const bool nextRosbagToPcd = id == kRosbagToPcdFormatId;
+        const auto nextFormat = nextRosbagToPcd
+            ? Lvx2Convert::Format::PCD
+            : static_cast<Lvx2Convert::Format>(id);
+        if (state->currentFormat != nextFormat || state->currentRosbagToPcd != nextRosbagToPcd) {
+            const bool inputTypeChanged = state->currentRosbagToPcd != nextRosbagToPcd;
             state->currentFormat = nextFormat;
-            resetJobStatuses(table);
-            dialogStatusLabel->setText(table->rowCount() > 0 ? "已添加任务" : "请添加 LVX2 文件");
+            state->currentRosbagToPcd = nextRosbagToPcd;
+            if (inputTypeChanged) {
+                table->setRowCount(0);
+                state->addedPaths.clear();
+            } else {
+                resetJobStatuses(table);
+            }
+            updateStartEnabled();
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
         }
     });
     QObject::connect(mergeModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state](bool checked) {
@@ -742,7 +794,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
             state->currentMode = Lvx2Convert::Mode::MergeAllToOne;
             updateModeText(table, state->currentMode);
             resetJobStatuses(table);
-            dialogStatusLabel->setText(table->rowCount() > 0 ? "已添加任务" : "请添加 LVX2 文件");
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
         }
     });
     QObject::connect(splitModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state](bool checked) {
@@ -750,22 +802,26 @@ void LivoxViewerWindow::showFormatConvertDialog()
             state->currentMode = Lvx2Convert::Mode::SplitBy100ms;
             updateModeText(table, state->currentMode);
             resetJobStatuses(table);
-            dialogStatusLabel->setText(table->rowCount() > 0 ? "已添加任务" : "请添加 LVX2 文件");
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
         }
     });
     QObject::connect(addFilesButton, &QToolButton::clicked, dlg, [dlg, state, addPaths]() {
         const QString startDir = state->settings.value("convert/lastSourceDir", QDir::homePath()).toString();
-        addPaths(selectLvx2Files(dlg, startDir));
+        addPaths(state->currentRosbagToPcd ? selectRosbagFiles(dlg, startDir) : selectLvx2Files(dlg, startDir));
     });
     QObject::connect(addFolderButton, &QToolButton::clicked, dlg, [dlg, state, addPaths]() {
         const QString startDir = state->settings.value("convert/lastSourceDir", QDir::homePath()).toString();
-        const QString folder = selectFolder(dlg, startDir, "添加 LVX2 文件夹");
+        const QString folder = selectFolder(dlg,
+                                            startDir,
+                                            state->currentRosbagToPcd
+                                                ? QStringLiteral("添加 ROSbag 文件夹")
+                                                : QStringLiteral("添加 LVX2 文件夹"));
         if (folder.isEmpty()) {
             return;
         }
         state->settings.setValue("convert/lastSourceDir", folder);
         QDir dir(folder);
-        const QFileInfoList files = dir.entryInfoList({"*.lvx2"}, QDir::Files | QDir::Readable, QDir::Name);
+        const QFileInfoList files = dir.entryInfoList(folderFilters(state->currentRosbagToPcd), QDir::Files | QDir::Readable, QDir::Name);
         QStringList paths;
         paths.reserve(files.size());
         for (const QFileInfo& file : files) {
@@ -790,10 +846,10 @@ void LivoxViewerWindow::showFormatConvertDialog()
             state->settings.setValue("convert/lastOutputDir", folder);
         }
     });
-    QObject::connect(table->model(), &QAbstractItemModel::rowsRemoved, dlg, [table, dialogStatusLabel, updateStartEnabled]() {
+    QObject::connect(table->model(), &QAbstractItemModel::rowsRemoved, dlg, [table, dialogStatusLabel, state, updateStartEnabled]() {
         updateStartEnabled();
         if (table->rowCount() == 0) {
-            dialogStatusLabel->setText("请添加 LVX2 文件");
+            dialogStatusLabel->setText(addFilePrompt(state->currentRosbagToPcd));
         }
     });
 
@@ -805,6 +861,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
         lasButton,
         csvButton,
         txtButton,
+        rosbagPcdButton,
         mergeModeButton,
         splitModeButton,
         sameSourceOutputRadio,
@@ -816,7 +873,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
 
     QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, lockedControls, updateStartEnabled]() {
         if (table->rowCount() == 0) {
-            dialogStatusLabel->setText("请先添加 LVX2 文件");
+            dialogStatusLabel->setText(state->currentRosbagToPcd ? QStringLiteral("请先添加 ROSbag 文件") : QStringLiteral("请先添加 LVX2 文件"));
             return;
         }
         const bool useSourceDir = sameSourceOutputRadio->isChecked();
@@ -849,7 +906,13 @@ void LivoxViewerWindow::showFormatConvertDialog()
 
             setStatusProgress(table, row, 0);
             QApplication::processEvents();
-            const bool ok = convertLvx2File(srcPath, outputNoExt, state->currentMode, state->currentFormat, [table, row](int done, int total) {
+            const bool ok = state->currentRosbagToPcd
+                ? convertRosbagToPcdFile(srcPath, outputNoExt, state->currentMode, [table, row](int done, int total) {
+                    const int value = total > 0 ? done * 100 / total : 0;
+                    setStatusProgress(table, row, value);
+                    QApplication::processEvents();
+                })
+                : convertLvx2File(srcPath, outputNoExt, state->currentMode, state->currentFormat, [table, row](int done, int total) {
                 const int value = total > 0 ? done * 100 / total : 0;
                 setStatusProgress(table, row, value);
                 QApplication::processEvents();
