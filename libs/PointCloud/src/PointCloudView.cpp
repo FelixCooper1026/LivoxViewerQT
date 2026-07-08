@@ -1154,15 +1154,17 @@ void PointCloudView::setupGridBuffers()
 
     const float range = std::max(1.0f, m_gridConfig.range);
     const float step = std::max(0.1f, m_gridConfig.step);
-    const float r = float(m_gridConfig.color.redF());
-    const float g = float(m_gridConfig.color.greenF());
-    const float b = float(m_gridConfig.color.blueF());
+    const QVector3D gridColor(float(m_gridConfig.color.redF()),
+                              float(m_gridConfig.color.greenF()),
+                              float(m_gridConfig.color.blueF()));
+    const QVector3D xAxisColor(1.0f, 0.12f, 0.10f);
+    const QVector3D yAxisColor(0.10f, 0.80f, 0.20f);
     const int ringSegments = 96;
     const float pi = 3.14159265358979323846f;
 
-    auto addLine = [&](const QVector3D& p1, const QVector3D& p2) {
-        gridVertices.push_back({p1.x(), p1.y(), p1.z(), r, g, b});
-        gridVertices.push_back({p2.x(), p2.y(), p2.z(), r, g, b});
+    auto addLine = [&](const QVector3D& p1, const QVector3D& p2, const QVector3D& color) {
+        gridVertices.push_back({p1.x(), p1.y(), p1.z(), color.x(), color.y(), color.z()});
+        gridVertices.push_back({p2.x(), p2.y(), p2.z(), color.x(), color.y(), color.z()});
     };
 
     const bool drawSquareGrid =
@@ -1174,22 +1176,26 @@ void PointCloudView::setupGridBuffers()
 
     if (drawSquareGrid) {
         for (float i = -range; i <= range + 1e-4f; i += step) {
-            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f));
-            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f));
+            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f), gridColor);
+            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f), gridColor);
         }
     }
 
     if (drawConcentricCircles) {
-        addLine(QVector3D(-range, 0.0f, 0.0f), QVector3D(range, 0.0f, 0.0f));
-        addLine(QVector3D(0.0f, -range, 0.0f), QVector3D(0.0f, range, 0.0f));
         for (float radius = step; radius <= range + 1e-4f; radius += step) {
             for (int i = 0; i < ringSegments; ++i) {
                 const float a0 = (2.0f * pi * float(i)) / float(ringSegments);
                 const float a1 = (2.0f * pi * float(i + 1)) / float(ringSegments);
                 addLine(QVector3D(radius * std::cos(a0), radius * std::sin(a0), 0.0f),
-                        QVector3D(radius * std::cos(a1), radius * std::sin(a1), 0.0f));
+                        QVector3D(radius * std::cos(a1), radius * std::sin(a1), 0.0f),
+                        gridColor);
             }
         }
+    }
+
+    if (drawSquareGrid || drawConcentricCircles) {
+        addLine(QVector3D(-range, 0.0f, 0.0f), QVector3D(range, 0.0f, 0.0f), xAxisColor);
+        addLine(QVector3D(0.0f, -range, 0.0f), QVector3D(0.0f, range, 0.0f), yAxisColor);
     }
 
     m_gridVertexCount = int(gridVertices.size());
