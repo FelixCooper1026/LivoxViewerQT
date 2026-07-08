@@ -1,9 +1,9 @@
-#include "Slam/Io/RosbagSlamSource.h"
+#include "Io/RosbagSlamSource.h"
 
-#include "Rosbag/RosMessageParsers.h"
-#include "Rosbag/Ros2BagReader.h"
-#include "Rosbag/RosbagReader.h"
-#include "Slam/Core/FastLioInputSynchronizer.h"
+#include "RosMessageParsers.h"
+#include "Ros2BagReader.h"
+#include "RosbagReader.h"
+#include "Core/FastLioInputSynchronizer.h"
 
 #include <QFileInfo>
 

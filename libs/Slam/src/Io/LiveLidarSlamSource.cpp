@@ -1,7 +1,7 @@
-#include "Slam/Io/LiveLidarSlamSource.h"
+#include "Io/LiveLidarSlamSource.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "LivoxCore/LidarPacketUtils.h"
+#include "LidarModelUtils.h"
+#include "LidarPacketUtils.h"
 
 #include <QMutexLocker>
 

@@ -1,4 +1,4 @@
-#include "Slam/Core/FastLioInputSynchronizer.h"
+#include "Core/FastLioInputSynchronizer.h"
 
 #include <algorithm>
 #include <cmath>

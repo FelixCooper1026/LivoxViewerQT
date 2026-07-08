@@ -1,4 +1,4 @@
-#include "AppConfig/NetworkInterfaceService.h"
+#include "NetworkInterfaceService.h"
 
 #include <QAbstractSocket>
 #include <QHostAddress>

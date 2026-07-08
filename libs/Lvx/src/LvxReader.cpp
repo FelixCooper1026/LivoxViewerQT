@@ -1,8 +1,8 @@
-#include "Lvx/LvxReader.h"
+#include "LvxReader.h"
 
-#include "LivoxCore/LidarPacketUtils.h"
-#include "LivoxCore/LidarSdkTypes.h"
-#include "Lvx/LvxPointParser.h"
+#include "LidarPacketUtils.h"
+#include "LidarSdkTypes.h"
+#include "LvxPointParser.h"
 
 #include <QFile>
 

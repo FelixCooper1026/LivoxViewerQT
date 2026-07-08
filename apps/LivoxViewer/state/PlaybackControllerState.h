@@ -8,9 +8,9 @@
 #include <cstdint>
 #include <memory>
 
-#include "Lvx2/Lvx2PlaybackController.h"
-#include "Playback/PlaybackSource.h"
-#include "PointCloud/PointCloudFrame.h"
+#include "Lvx2PlaybackController.h"
+#include "PlaybackSource.h"
+#include "PointCloudFrame.h"
 
 class QLabel;
 class QPushButton;

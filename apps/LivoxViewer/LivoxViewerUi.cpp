@@ -1,6 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
-#include "LivoxCore/LidarDiagnostics.h"
+#include "LidarDiagnostics.h"
 #include <QApplication>
 #include <QGuiApplication>
 #include <QSplitter>

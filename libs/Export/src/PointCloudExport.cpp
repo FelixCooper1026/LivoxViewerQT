@@ -1,4 +1,4 @@
-#include "Export/PointCloudExport.h"
+#include "PointCloudExport.h"
 
 #include <QFile>
 #include <QTextStream>

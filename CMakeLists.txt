@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 2.1.1
+    VERSION 2.1.2
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -274,66 +274,66 @@ set(SOURCES
      apps/LivoxViewer/slam/SlamUiBridge.h
      apps/LivoxViewer/dialogs/DialogWindowUtils.h
      apps/LivoxViewer/dialogs/ImuVisualizationDialog.h
-     apps/LivoxViewer/imu/ImuAttitudeEstimator.h
-     apps/LivoxViewer/utils/DeviceModelResource.h
-     libs/LivoxCore/include/LivoxCore/LidarDiscoveryService.h
-    libs/LivoxCore/include/LivoxCore/LidarDeviceInfo.h
-    libs/LivoxCore/include/LivoxCore/LidarDiagnostics.h
-    libs/LivoxCore/include/LivoxCore/LidarPacketUtils.h
-    libs/LivoxCore/include/LivoxCore/LidarParameterService.h
-    libs/LivoxCore/include/LivoxCore/LidarSdkService.h
-    libs/LivoxCore/include/LivoxCore/LidarSdkTypes.h
-    libs/LivoxCore/include/LivoxCore/Lvx2Types.h
-    libs/PointCloud/include/PointCloud/PointCloudTypes.h
-    libs/PointCloud/include/PointCloud/PointCloudFrame.h
-    libs/PointCloud/include/PointCloud/PointCloudView.h
-    libs/PointCloud/include/PointCloud/PointCloudDecoder.h
-    libs/PointCloud/include/PointCloud/PointCloudColorizer.h
-    libs/PointCloud/include/PointCloud/PointCloudFilter.h
-    libs/PointCloud/include/PointCloud/PointCloudProjection.h
-    libs/PointCloud/include/PointCloud/PointCloudCrossSection.h
-    libs/PointCloud/include/PointCloud/PointCloudPipeline.h
-    libs/PointCloud/include/PointCloud/PointCloudPersistence.h
+    apps/LivoxViewer/imu/ImuAttitudeEstimator.h
+    apps/LivoxViewer/utils/DeviceModelResource.h
+    libs/LivoxCore/include/LidarDiscoveryService.h
+    libs/LivoxCore/include/LidarDeviceInfo.h
+    libs/LivoxCore/include/LidarDiagnostics.h
+    libs/LivoxCore/include/LidarModelUtils.h
+    libs/LivoxCore/include/LidarPacketUtils.h
+    libs/LivoxCore/include/LidarParameterService.h
+    libs/LivoxCore/include/LidarSdkService.h
+    libs/LivoxCore/include/LidarSdkTypes.h
+    libs/PointCloud/include/PointCloudTypes.h
+    libs/PointCloud/include/PointCloudFrame.h
+    libs/PointCloud/include/PointCloudView.h
+    libs/PointCloud/include/PointCloudDecoder.h
+    libs/PointCloud/include/PointCloudColorizer.h
+    libs/PointCloud/include/PointCloudFilter.h
+    libs/PointCloud/include/PointCloudProjection.h
+    libs/PointCloud/include/PointCloudCrossSection.h
+    libs/PointCloud/include/PointCloudPipeline.h
+    libs/PointCloud/include/PointCloudPersistence.h
     plugins/StlModel/StlModelLoader.h
-    libs/Playback/include/Playback/PlaybackSource.h
-    libs/Lvx/include/Lvx/LvxTypes.h
-    libs/Lvx/include/Lvx/LvxReader.h
-    libs/Lvx/include/Lvx/LvxPointParser.h
-    libs/Lvx2/include/Lvx2/Lvx2Types.h
-    libs/Lvx2/include/Lvx2/Lvx2Reader.h
-    libs/Lvx2/include/Lvx2/Lvx2PlaybackController.h
-    libs/Lvx2/include/Lvx2/Lvx2Converter.h
-    libs/Lvx2/include/Lvx2/Lvx2PointParser.h
-    libs/Pcap/include/Pcap/ImuParser.h
-    libs/Pcap/include/Pcap/PcapParser.h
-    libs/Pcap/include/Pcap/PcapReader.h
-    libs/Pcap/include/Pcap/PcapUdpPacket.h
-    libs/Pcap/include/Pcap/PointParser.h
-    libs/Pcap/include/Pcap/PushMsgParser.h
-    libs/Pcap/include/Pcap/PcapPlaybackController.h
-    libs/Rosbag/include/Rosbag/RosbagTypes.h
-    libs/Rosbag/include/Rosbag/RosbagReader.h
-    libs/Rosbag/include/Rosbag/Ros2BagReader.h
-    libs/Rosbag/include/Rosbag/RosMessageParsers.h
-    libs/Rosbag/include/Rosbag/RosbagPlaybackController.h
-    libs/Rosbag/include/Rosbag/RosbagPlaybackSource.h
-     libs/Slam/include/Slam/Core/ISlamBackend.h
-     libs/Slam/include/Slam/Core/FastLioInputSynchronizer.h
-     libs/Slam/include/Slam/Core/SlamInputQueue.h
-    libs/Slam/include/Slam/Core/SlamRuntimeConfig.h
-    libs/Slam/include/Slam/Core/SlamTypes.h
-    libs/Slam/include/Slam/Backends/FastLio/FastLioSlamBackend.h
-    libs/Slam/include/Slam/Export/SlamMapExport.h
-    libs/Slam/include/Slam/Export/SlamTrajectoryExport.h
-    libs/Slam/include/Slam/Io/LiveLidarSlamSource.h
-    libs/Slam/include/Slam/Io/PcapSlamSource.h
-    libs/Slam/include/Slam/Io/RosbagSlamSource.h
-    libs/Slam/include/Slam/Visualization/SlamRenderSnapshot.h
-    libs/Export/include/Export/PointCloudExport.h
-    libs/AppConfig/include/AppConfig/AppSettings.h
-    libs/AppConfig/include/AppConfig/LidarConfigService.h
-    libs/AppConfig/include/AppConfig/ConfigJsonService.h
-    libs/AppConfig/include/AppConfig/NetworkInterfaceService.h
+    libs/Playback/include/PlaybackSource.h
+    libs/Lvx/include/LvxTypes.h
+    libs/Lvx/include/LvxReader.h
+    libs/Lvx/include/LvxPointParser.h
+    libs/Lvx2/include/Lvx2Types.h
+    libs/Lvx2/include/Lvx2Reader.h
+    libs/Lvx2/include/Lvx2PlaybackController.h
+    libs/Lvx2/include/Lvx2Converter.h
+    libs/Lvx2/include/Lvx2PointParser.h
+    libs/Pcap/include/ImuParser.h
+    libs/Pcap/include/PcapParser.h
+    libs/Pcap/include/PcapReader.h
+    libs/Pcap/include/PcapUdpPacket.h
+    libs/Pcap/include/PointParser.h
+    libs/Pcap/include/PushMsgParser.h
+    libs/Pcap/include/PcapPlaybackController.h
+    libs/Rosbag/include/RosbagTypes.h
+    libs/Rosbag/include/RosbagReader.h
+    libs/Rosbag/include/Ros2BagReader.h
+    libs/Rosbag/include/RosMessageParsers.h
+    libs/Rosbag/include/RosbagPlaybackController.h
+    libs/Rosbag/include/RosbagPlaybackSource.h
+    libs/Slam/include/Core/ISlamBackend.h
+    libs/Slam/include/Core/FastLioInputSynchronizer.h
+    libs/Slam/include/Core/SlamInputQueue.h
+    libs/Slam/include/Core/SlamRuntimeConfig.h
+    libs/Slam/include/Core/SlamTypes.h
+    libs/Slam/include/Backends/FastLio/FastLioSlamBackend.h
+    libs/Slam/include/Export/SlamMapExport.h
+    libs/Slam/include/Export/SlamTrajectoryExport.h
+    libs/Slam/include/Io/LiveLidarSlamSource.h
+    libs/Slam/include/Io/PcapSlamSource.h
+    libs/Slam/include/Io/RosbagSlamSource.h
+    libs/Slam/include/Visualization/SlamRenderSnapshot.h
+    libs/Export/include/PointCloudExport.h
+    libs/AppConfig/include/AppSettings.h
+    libs/AppConfig/include/LidarConfigService.h
+    libs/AppConfig/include/ConfigJsonService.h
+    libs/AppConfig/include/NetworkInterfaceService.h
 )
 
 # 资源文件：Qt 内部资源，用于运行时窗口图标、按钮图标等
@@ -583,8 +583,8 @@ elseif(IS_WINDOWS)
     endif()
 endif()
 
-set(SLAM_PHASE4_REPLAY_SOURCES
-    tools/SlamPhase4Replay/main.cpp
+set(SLAM_REPLAY_TOOL_SOURCES
+    tools/SlamReplayTool/main.cpp
     libs/Pcap/src/ImuParser.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
@@ -600,9 +600,9 @@ set(SLAM_PHASE4_REPLAY_SOURCES
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
 )
 
-add_executable(SlamPhase4Replay ${SLAM_PHASE4_REPLAY_SOURCES})
+add_executable(SlamReplayTool ${SLAM_REPLAY_TOOL_SOURCES})
 
-target_include_directories(SlamPhase4Replay PRIVATE
+target_include_directories(SlamReplayTool PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
@@ -618,32 +618,32 @@ target_include_directories(SlamPhase4Replay PRIVATE
 )
 
 if(LIVOX_SDK_AVAILABLE AND EXISTS "${LIVOX_INCLUDE_PATH}")
-    target_include_directories(SlamPhase4Replay PRIVATE "${LIVOX_INCLUDE_PATH}")
+    target_include_directories(SlamReplayTool PRIVATE "${LIVOX_INCLUDE_PATH}")
 endif()
 
 if(QT_VERSION_MAJOR EQUAL 6)
-    target_link_libraries(SlamPhase4Replay PRIVATE Qt6::Core Qt6::Sql)
+    target_link_libraries(SlamReplayTool PRIVATE Qt6::Core Qt6::Sql)
 else()
-    target_link_libraries(SlamPhase4Replay PRIVATE Qt5::Core Qt5::Sql)
+    target_link_libraries(SlamReplayTool PRIVATE Qt5::Core Qt5::Sql)
 endif()
 
-target_link_libraries(SlamPhase4Replay PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
+target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(SlamPhase4Replay PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
-    target_compile_definitions(SlamPhase4Replay PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_options(SlamReplayTool PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
+    target_compile_definitions(SlamReplayTool PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 
 if(IS_LINUX)
-    target_link_libraries(SlamPhase4Replay PRIVATE pthread dl m)
+    target_link_libraries(SlamReplayTool PRIVATE pthread dl m)
     if(PCAP_LIBRARY)
-        target_link_libraries(SlamPhase4Replay PRIVATE ${PCAP_LIBRARY})
+        target_link_libraries(SlamReplayTool PRIVATE ${PCAP_LIBRARY})
     endif()
 elseif(IS_WINDOWS)
-    target_link_libraries(SlamPhase4Replay PRIVATE ws2_32 winmm)
+    target_link_libraries(SlamReplayTool PRIVATE ws2_32 winmm)
     if(EXISTS "${NPCAP_SDK_DIR}/Include/pcap.h")
-        target_include_directories(SlamPhase4Replay PRIVATE "${NPCAP_SDK_DIR}/Include")
-        target_link_libraries(SlamPhase4Replay PRIVATE
+        target_include_directories(SlamReplayTool PRIVATE "${NPCAP_SDK_DIR}/Include")
+        target_link_libraries(SlamReplayTool PRIVATE
             "${NPCAP_SDK_DIR}/Lib/x64/wpcap.lib"
             "${NPCAP_SDK_DIR}/Lib/x64/Packet.lib"
         )

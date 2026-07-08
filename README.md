@@ -4,15 +4,15 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 
 ## 功能概览
 
-- 实时设备发现与 Livox SDK 初始化
-- 实时点云显示、着色、选择、测距和截面查看
-- 设备参数查询/下发、网络参数、FOV、外参和状态管理
-- LOG / Debug 采集、LVX2 录制、PCD/LAS 导出、IMU CSV 保存
-- LVX2、PCAP/PCAPNG/CAP、ROS1 bag、ROS2 db3/metadata.yaml 离线点云播放
-- ROSbag 普通播放支持 ROS1 uncompressed/lz4 chunk、Livox CustomMsg、Livox/通用 PointCloud2 和无 IMU 纯 XYZ 点云
-- 在线 SLAM 与离线 SLAM，后端为移植后的 FAST_LIO 流程
-- SLAM 轨迹显示、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 地图导出
-- 命令行离线 SLAM 诊断工具 `SlamPhase4Replay`
+- 实时设备自动发现与连接
+- 实时点云显示、着色、框选、测距和裁切
+- 设备参数查询/控制命令下发、固件升级
+- LOG / Debug 信息采集、LVX2 录制、PCD/LAS 导出、IMU 数据保存
+- LVX、LVX2、PCAP/PCAPNG/CAP、ROS1 bag、ROS2 db3/metadata.yaml 离线点云回放
+- ROSbag 播放支持 ROS1 uncompressed/lz4 chunk、Livox CustomMsg、Livox/通用 PointCloud2 和无 IMU 纯 XYZ 点云
+- 剪枝移植后的 FAST_LIO 后端，支持在线 SLAM 与离线 SLAM
+- SLAM 功能包含轨迹、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 全局地图导出
+- 命令行离线 SLAM 诊断工具 `SlamReplayTool`
 
 ## 项目文件结构
 
@@ -20,10 +20,6 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 LivoxViewerQT/
   CMakeLists.txt                         根 CMake 工程，直接维护应用、库和工具目标
   README.md                              项目概览、构建方式和目录说明
-  slam_dev_plan.md                       SLAM 集成主开发记录和复验结论
-  fastlio_migration_audit.md             FAST_LIO 移植流程、参数和发布语义审计
-  rosbag_slam_source_development_plan.md ROSbag 作为离线 SLAM 数据源的开发方案
-  rosbag_offline_playback_plan.md        ROSbag 接入普通离线点云播放的开发方案与实施记录
   apps/
     LivoxViewer/                         Qt 主程序
       actions/                           菜单、播放、点云、IMU、SDK、参数等动作实现
@@ -34,11 +30,11 @@ LivoxViewerQT/
       state/                             运行时状态结构
       utils/                             应用层工具函数
       widgets/                           自定义 Qt 控件
-      window/                            主窗口拆分实现
   libs/
     AppConfig/                           应用配置、配置 JSON、网卡服务
     Export/                              通用点云导出
     LivoxCore/                           Livox SDK 封装、设备发现、参数服务
+    Lvx/                                 LVX 读取和点云包解析
     Lvx2/                                LVX2 读取、解析和 Playback::Source 实现
     Pcap/                                PCAP 解析、IMU/点云 payload 解析和 Playback::Source 实现
     Playback/                            LVX2/PCAP/ROSbag 共用离线播放抽象
@@ -53,19 +49,15 @@ LivoxViewerQT/
   icons/                                 应用图标
   pics/                                  README/界面相关图片资源
   scripts/
-    dev_build_run.bat                    当前 Windows 开发构建/启动脚本
     setup_third_party.ps1                Windows 第三方头文件安装脚本
     setup_third_party.sh                 Linux/macOS 第三方头文件安装脚本
-    package_windows_release*.bat         Windows 打包脚本
   tools/
-    SlamPhase4Replay/                    离线 SLAM 回归与诊断命令行工具
-  livox_sdk_qt/                          项目内 Livox SDK 头文件与库
+    SlamReplayTool/                      离线 SLAM 回归与诊断命令行工具
+  livox_sdk_qt/                          项目内嵌 modified Livox SDK 头文件与库
   third-party/
-    eigen-3.4.0/                         本地 Eigen 头文件，脚本安装产物
+    eigen-3.4.0/                         Eigen 头文件
     lz4-1.10.0/                          官方 LZ4 最小源码，用于 ROS1 bag lz4 chunk 解压
     npcap-sdk-1.16/                      Windows PCAP 构建所需 Npcap SDK
-  build/                                 本地构建目录，不应提交
-  dist/                                  本地打包输出目录，不应提交
 ```
 
 ## 构建依赖
@@ -81,7 +73,7 @@ LivoxViewerQT/
 - Windows：MSVC、Npcap Runtime、`third-party/npcap-sdk-1.16`
 - Linux：Qt 开发包、OpenMP、`libpcap-dev`、`pthread`、`dl`、`m`
 
-不需要安装完整 Boost 或完整 PCL。当前 FAST_LIO 固定状态类型已去除 Boost 预处理依赖，PCL 相关类型由项目内 `fast_lio_compat` 最小兼容头层提供。
+不需要安装完整 Boost 或完整 PCL。FAST_LIO 固定状态类型已去除 Boost 预处理依赖，PCL 相关类型由项目内 `fast_lio_compat` 最小兼容头层提供。
 
 ## 第三方头文件安装
 
@@ -105,19 +97,15 @@ bash scripts/setup_third_party.sh --force
 
 ## 编译与运行
 
-当前 Windows 开发首选脚本：
-
-```bat
-scripts\dev_build_run.bat Release
-```
-
-该脚本会配置/构建 `LivoxViewerQT`，并启动主程序。当前本地脚本也会同步构建 `SlamPhase4Replay`，但 `scripts/*` 默认被 `.gitignore` 忽略；若需要团队共享脚本规则，应先调整 `.gitignore`。
-
-手动 Windows 构建：
+Windows 构建：
 
 ```powershell
-cmake -S . -B build\cmd-msvc-Release -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="S:\Qt\6.5.3\msvc2019_64"
-cmake --build build\cmd-msvc-Release --config Release --target LivoxViewerQT SlamPhase4Replay --parallel
+$buildDir = "build\cmd-msvc-Release"
+$qtDir = $env:QT_DIR
+if (-not $qtDir) { $qtDir = Split-Path (Split-Path (Get-Command qmake).Source) }
+cmake -S . -B $buildDir -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$qtDir"
+cmake --build $buildDir --config Release --target LivoxViewerQT SlamReplayTool --parallel
+& "$buildDir\Release\LivoxViewerQT.exe"
 ```
 
 Linux 构建：
@@ -133,33 +121,26 @@ Linux 下可执行文件会优先从 `./livox_sdk_qt/lib` 查找 Livox SDK 动�
 
 ## 离线 SLAM 诊断
 
-`SlamPhase4Replay` 支持两类用法：
+`SlamReplayTool` 支持两类用法：
 
 ```bat
-build\cmd-msvc-Release\Release\SlamPhase4Replay.exe with_imu.pcap no_imu.pcap
-build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --max-frames 300 path\to\data.bag
-build\cmd-msvc-Release\Release\SlamPhase4Replay.exe --diagnose --source-only --max-frames 10 path\to\pointcloud_only.bag
+build\cmd-msvc-Release\Release\SlamReplayTool.exe with_imu.pcap no_imu.pcap
+build\cmd-msvc-Release\Release\SlamReplayTool.exe --diagnose --max-frames 300 path\to\data.bag
+build\cmd-msvc-Release\Release\SlamReplayTool.exe --diagnose --source-only --max-frames 10 path\to\pointcloud_only.bag
 ```
 
-`--diagnose` 支持 `.pcap/.pcapng/.bag/.db3/.yaml/.yml`，会输出数据源摘要、帧/点/IMU 覆盖统计和 FAST_LIO 后端处理结果。`--max-frames N` 只限制后端处理帧数，数据源仍完整加载并统计。`--source-only` 只加载数据源并输出帧统计，不启动 FAST_LIO，适合复验无 IMU 的普通点云播放文件。
+`--diagnose` 支持 `.pcap/.pcapng/.bag/.db3/.yaml/.yml`，会输出数据源摘要、帧/点/IMU 覆盖统计和 FAST_LIO 后端处理结果。`--max-frames N` 只限制后端处理帧数，数据源仍完整加载并统计。`--source-only` 只加载数据源并输出帧统计，不启动 FAST_LIO，适合复验无 IMU 的普通点云文件播放。
 
 ## 支持的数据源
 
 | 数据源 | 普通离线播放 | 离线 SLAM | 说明 |
 |---|---|---|---|
-| LVX2 | 支持 | 不作为 SLAM 输入 | 现有回放与转换链路 |
+| LVX2 | 支持 | 不作为 SLAM 输入 | LVX2 文件仅包含点云，无 IMU 数据 |
 | PCAP/PCAPNG/CAP | 支持 | 支持 | SLAM 要求 IMU 和点内时间覆盖 |
-| ROS1 `.bag` | 支持 | 支持 | 支持 uncompressed 和 lz4 chunk；SLAM 仍要求 IMU 覆盖 |
-| ROS2 `.db3` / `metadata.yaml` | 支持 | 支持 | 仅支持 SQLite3 storage，不支持 MCAP |
+| ROS1 `.bag` | 支持 | 支持 | 支持 uncompressed 和 lz4 chunk |
+| ROS2 `.db3` / `metadata.yaml` | 支持 | 支持 | 支持 SQLite3 storage |
 
-ROSbag LiDAR topic 当前支持 Livox CustomMsg、Livox driver2 PointCloud2、允许合成点内时间的旧 driver PointCloud2、通用 `x/y/z/intensity/ring/time` PointCloud2，以及普通播放用的纯 `x/y/z` PointCloud2。普通播放可无 IMU；SLAM 模式仍要求有效 IMU 覆盖和合理点内时间。
-
-## 开发文档
-
-- [slam_dev_plan.md](slam_dev_plan.md)：SLAM 集成主线、编译规则、复验结果和当前风险记录
-- [fastlio_migration_audit.md](fastlio_migration_audit.md)：FAST_LIO 原版流程与当前移植状态审计
-- [rosbag_slam_source_development_plan.md](rosbag_slam_source_development_plan.md)：ROSbag 作为 SLAM 输入源的实现计划
-- [rosbag_offline_playback_plan.md](rosbag_offline_playback_plan.md)：ROSbag 普通离线点云播放接入计划与实施记录
+ROSbag LiDAR topic 支持 Livox CustomMsg、Livox driver2 PointCloud2、允许合成点内时间的旧 driver PointCloud2、通用 `x/y/z/intensity/ring/time` PointCloud2，以及普通播放用的纯 `x/y/z` PointCloud2。离线播放可无 IMU；SLAM 模式要求有效 IMU 覆盖和合理点内时间。
 
 ## 许可证
 

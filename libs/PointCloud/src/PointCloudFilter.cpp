@@ -1,4 +1,4 @@
-#include "PointCloud/PointCloudFilter.h"
+#include "PointCloudFilter.h"
 
 namespace PointCloudFilter {
 

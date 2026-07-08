@@ -1,4 +1,4 @@
-#include "PointCloud/PointCloudColorizer.h"
+#include "PointCloudColorizer.h"
 
 #include <algorithm>
 #include <array>

@@ -1,6 +1,6 @@
 ﻿#include "LivoxViewerWindow.h"
 
-#include "Pcap/PcapReader.h"
+#include "PcapReader.h"
 
 #include <QFileInfo>
 #include <QMessageBox>

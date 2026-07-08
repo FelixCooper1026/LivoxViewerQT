@@ -1,6 +1,6 @@
 #include "LivoxViewerWindow.h"
 
-#include "Export/PointCloudExport.h"
+#include "PointCloudExport.h"
 #include "widgets/ParameterOptionButtons.h"
 
 #include <QDateTime>

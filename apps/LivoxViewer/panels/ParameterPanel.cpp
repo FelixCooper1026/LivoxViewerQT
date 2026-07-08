@@ -1,5 +1,5 @@
 #include "LivoxViewerWindow.h"
-#include "AppConfig/NetworkInterfaceService.h"
+#include "NetworkInterfaceService.h"
 #include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
 #include <QAbstractSpinBox>

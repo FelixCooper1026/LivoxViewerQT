@@ -1,6 +1,6 @@
-#include "Slam/Export/SlamMapExport.h"
+#include "Export/SlamMapExport.h"
 
-#include "Export/PointCloudExport.h"
+#include "PointCloudExport.h"
 
 #include <QFile>
 

@@ -1,4 +1,4 @@
-#include "LivoxCore/LidarDiscoveryService.h"
+#include "LidarDiscoveryService.h"
 
 namespace {
 

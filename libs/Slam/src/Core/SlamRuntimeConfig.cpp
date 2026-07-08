@@ -1,4 +1,4 @@
-#include "Slam/Core/SlamRuntimeConfig.h"
+#include "Core/SlamRuntimeConfig.h"
 
 #include <QVariant>
 

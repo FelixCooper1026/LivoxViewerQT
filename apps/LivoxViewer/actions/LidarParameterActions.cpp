@@ -1,6 +1,6 @@
 #include "LivoxViewerWindow.h"
-#include "LivoxCore/LidarParameterService.h"
-#include "LivoxCore/LidarSdkService.h"
+#include "LidarParameterService.h"
+#include "LidarSdkService.h"
 #include "widgets/ParameterOptionButtons.h"
 #include <QRegularExpression>
 #include <QDir>

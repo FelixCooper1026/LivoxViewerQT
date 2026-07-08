@@ -1,6 +1,6 @@
 #include "LivoxViewerWindow.h"
-#include "Pcap/PcapPlaybackController.h"
-#include "Rosbag/RosbagPlaybackController.h"
+#include "PcapPlaybackController.h"
+#include "RosbagPlaybackController.h"
 #include "ThemeIconUtils.h"
 
 #include <QDir>

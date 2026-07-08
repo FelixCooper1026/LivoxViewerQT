@@ -4,7 +4,7 @@
 #include "slam/SlamUiBridge.h"
 #include "widgets/SwitchCheckBox.h"
 
-#include "PointCloud/PointCloudColorizer.h"
+#include "PointCloudColorizer.h"
 
 #include <QAbstractButton>
 #include <QAbstractItemView>

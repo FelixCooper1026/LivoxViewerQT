@@ -1,4 +1,4 @@
-#include "PointCloud/PointCloudView.h"
+#include "PointCloudView.h"
 
 #include <algorithm>
 #include <cmath>

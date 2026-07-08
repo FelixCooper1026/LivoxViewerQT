@@ -1,9 +1,9 @@
 #include "LivoxViewerWindow.h"
 
-#include "AppConfig/LidarConfigService.h"
-#include "AppConfig/NetworkInterfaceService.h"
-#include "LivoxCore/LidarDiscoveryService.h"
-#include "LivoxCore/LidarSdkService.h"
+#include "LidarConfigService.h"
+#include "NetworkInterfaceService.h"
+#include "LidarDiscoveryService.h"
+#include "LidarSdkService.h"
 
 #include <QApplication>
 #include <QFile>

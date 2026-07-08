@@ -1,8 +1,8 @@
 #ifndef LIVOXVIEWER_SLAMUIBRIDGE_H
 #define LIVOXVIEWER_SLAMUIBRIDGE_H
 
-#include "Slam/Core/SlamTypes.h"
-#include "Slam/Visualization/SlamRenderSnapshot.h"
+#include "Core/SlamTypes.h"
+#include "Visualization/SlamRenderSnapshot.h"
 
 #include <QColor>
 #include <QObject>

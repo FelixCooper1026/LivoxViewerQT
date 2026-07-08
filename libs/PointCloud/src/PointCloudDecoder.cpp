@@ -1,7 +1,7 @@
-#include "PointCloud/PointCloudDecoder.h"
+#include "PointCloudDecoder.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "LivoxCore/LidarPacketUtils.h"
+#include "LidarModelUtils.h"
+#include "LidarPacketUtils.h"
 
 namespace PointCloudDecoder {
 

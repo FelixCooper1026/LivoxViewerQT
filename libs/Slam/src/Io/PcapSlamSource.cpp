@@ -1,12 +1,12 @@
-#include "Slam/Io/PcapSlamSource.h"
+#include "Io/PcapSlamSource.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "LivoxCore/LidarPacketUtils.h"
-#include "Pcap/ImuParser.h"
-#include "Pcap/PcapUdpPacket.h"
-#include "Pcap/PointParser.h"
-#include "Pcap/PushMsgParser.h"
-#include "Slam/Core/FastLioInputSynchronizer.h"
+#include "LidarModelUtils.h"
+#include "LidarPacketUtils.h"
+#include "ImuParser.h"
+#include "PcapUdpPacket.h"
+#include "PointParser.h"
+#include "PushMsgParser.h"
+#include "Core/FastLioInputSynchronizer.h"
 #include "livox_lidar_def.h"
 
 #include <pcap.h>

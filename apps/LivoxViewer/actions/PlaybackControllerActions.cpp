@@ -1,13 +1,13 @@
 ﻿#include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 
-#include "Lvx/LvxReader.h"
-#include "Lvx2/Lvx2Reader.h"
-#include "Pcap/PcapPlaybackController.h"
-#include "Pcap/PushMsgParser.h"
-#include "PointCloud/PointCloudColorizer.h"
-#include "Rosbag/RosbagPlaybackController.h"
-#include "Rosbag/RosbagPlaybackSource.h"
+#include "LvxReader.h"
+#include "Lvx2Reader.h"
+#include "PcapPlaybackController.h"
+#include "PushMsgParser.h"
+#include "PointCloudColorizer.h"
+#include "RosbagPlaybackController.h"
+#include "RosbagPlaybackSource.h"
 
 #include <QDir>
 #include <QFileInfo>

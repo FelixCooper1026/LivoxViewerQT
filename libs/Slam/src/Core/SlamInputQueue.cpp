@@ -1,4 +1,4 @@
-#include "Slam/Core/SlamInputQueue.h"
+#include "Core/SlamInputQueue.h"
 
 #include <QMutexLocker>
 

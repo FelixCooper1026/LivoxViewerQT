@@ -1,4 +1,4 @@
-#include "Rosbag/RosbagPlaybackSource.h"
+#include "RosbagPlaybackSource.h"
 
 #include <algorithm>
 #include <cmath>

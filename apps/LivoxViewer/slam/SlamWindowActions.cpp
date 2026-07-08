@@ -1,10 +1,10 @@
 #include "LivoxViewerWindow.h"
 
-#include "Slam/Backends/FastLio/FastLioSlamBackend.h"
-#include "Slam/Export/SlamMapExport.h"
-#include "Slam/Export/SlamTrajectoryExport.h"
-#include "Slam/Io/PcapSlamSource.h"
-#include "Slam/Io/RosbagSlamSource.h"
+#include "Backends/FastLio/FastLioSlamBackend.h"
+#include "Export/SlamMapExport.h"
+#include "Export/SlamTrajectoryExport.h"
+#include "Io/PcapSlamSource.h"
+#include "Io/RosbagSlamSource.h"
 #include "slam/SlamControlDialog.h"
 #include "slam/SlamUiBridge.h"
 

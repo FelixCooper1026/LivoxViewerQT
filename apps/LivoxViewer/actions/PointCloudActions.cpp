@@ -1,7 +1,7 @@
 #include "LivoxViewerWindow.h"
 #include "ThemeIconUtils.h"
 
-#include "PointCloud/PointCloudColorizer.h"
+#include "PointCloudColorizer.h"
 
 #include <QIcon>
 #include <QSignalBlocker>

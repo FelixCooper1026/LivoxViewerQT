@@ -1,7 +1,7 @@
-#include "Lvx2/Lvx2Reader.h"
+#include "Lvx2Reader.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "Lvx2/Lvx2PointParser.h"
+#include "LidarModelUtils.h"
+#include "Lvx2PointParser.h"
 
 #include <QFile>
 #include <QtEndian>

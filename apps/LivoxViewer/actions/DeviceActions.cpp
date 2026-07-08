@@ -1,5 +1,5 @@
 #include "LivoxViewerWindow.h"
-#include "LivoxCore/LidarSdkService.h"
+#include "LidarSdkService.h"
 
 namespace {
 

@@ -1,4 +1,4 @@
-#include "PointCloud/PointCloudCrossSection.h"
+#include "PointCloudCrossSection.h"
 
 #include <algorithm>
 #include <cmath>

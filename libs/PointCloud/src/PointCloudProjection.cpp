@@ -1,4 +1,4 @@
-#include "PointCloud/PointCloudProjection.h"
+#include "PointCloudProjection.h"
 
 #include <cmath>
 

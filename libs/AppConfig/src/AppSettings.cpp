@@ -1,1 +1,1 @@
-#include "AppConfig/AppSettings.h"
+#include "AppSettings.h"

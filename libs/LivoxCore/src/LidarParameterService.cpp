@@ -1,6 +1,6 @@
-#include "LivoxCore/LidarParameterService.h"
+#include "LidarParameterService.h"
 
-#include "LivoxCore/LidarSdkTypes.h"
+#include "LidarSdkTypes.h"
 
 #include <QByteArray>
 #include <QChar>

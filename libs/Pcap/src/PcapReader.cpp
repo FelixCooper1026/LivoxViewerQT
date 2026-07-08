@@ -1,8 +1,8 @@
-#include "Pcap/PcapReader.h"
+#include "PcapReader.h"
 
-#include "Lvx2/Lvx2PointParser.h"
-#include "Pcap/PcapParser.h"
-#include "Pcap/PushMsgParser.h"
+#include "Lvx2PointParser.h"
+#include "PcapParser.h"
+#include "PushMsgParser.h"
 
 #include <algorithm>
 

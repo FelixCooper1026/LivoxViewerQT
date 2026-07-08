@@ -1,9 +1,9 @@
 #include "LivoxViewerWindow.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "PointCloud/PointCloudColorizer.h"
-#include "PointCloud/PointCloudDecoder.h"
-#include "PointCloud/PointCloudFilter.h"
+#include "LidarModelUtils.h"
+#include "PointCloudColorizer.h"
+#include "PointCloudDecoder.h"
+#include "PointCloudFilter.h"
 
 void LivoxViewerWindow::decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet)
 {

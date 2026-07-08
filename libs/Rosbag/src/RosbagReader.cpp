@@ -1,4 +1,4 @@
-#include "Rosbag/RosbagReader.h"
+#include "RosbagReader.h"
 
 #include <QBuffer>
 #include <QFile>

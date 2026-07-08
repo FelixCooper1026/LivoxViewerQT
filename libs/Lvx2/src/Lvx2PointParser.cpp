@@ -1,7 +1,7 @@
-#include "Lvx2/Lvx2PointParser.h"
+#include "Lvx2PointParser.h"
 
-#include "LivoxCore/LidarModelUtils.h"
-#include "LivoxCore/LidarSdkTypes.h"
+#include "LidarModelUtils.h"
+#include "LidarSdkTypes.h"
 
 #include <QVector4D>
 

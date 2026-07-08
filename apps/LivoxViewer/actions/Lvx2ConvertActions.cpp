@@ -1,9 +1,9 @@
 #include "LivoxViewerWindow.h"
 
-#include "Export/PointCloudExport.h"
-#include "LivoxCore/LidarModelUtils.h"
-#include "Lvx2/Lvx2PointParser.h"
-#include "Rosbag/RosbagPlaybackSource.h"
+#include "PointCloudExport.h"
+#include "LidarModelUtils.h"
+#include "Lvx2PointParser.h"
+#include "RosbagPlaybackSource.h"
 
 #include <QCoreApplication>
 #include <QFile>

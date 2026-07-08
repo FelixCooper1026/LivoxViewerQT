@@ -1,7 +1,7 @@
-#include "AppConfig/LidarConfigService.h"
+#include "LidarConfigService.h"
 
-#include "AppConfig/NetworkInterfaceService.h"
-#include "LivoxCore/LidarSdkTypes.h"
+#include "NetworkInterfaceService.h"
+#include "LidarSdkTypes.h"
 
 #include <QCoreApplication>
 #include <QDir>
