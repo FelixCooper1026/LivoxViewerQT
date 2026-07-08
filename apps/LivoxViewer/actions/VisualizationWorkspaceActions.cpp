@@ -184,7 +184,7 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     view->setPointSize(pointSizePx);
     view->setMeasurementModeEnabled(measurementModeActive);
     view->setSelectionModeEnabled(selectionRealtimeEnabled);
-    view->requestFitViewOnNextPointCloudUpdate();
+    view->resetView();
     connect(view, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
     connect(view, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
     connect(view, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {

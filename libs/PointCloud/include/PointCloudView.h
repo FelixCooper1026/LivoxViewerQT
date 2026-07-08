@@ -98,8 +98,6 @@ public:
     void recolorCurrentPointCloud(const std::function<void(QVector<PointCloudPoint>&)>& colorize);
     void clearPointCloud();
     void resetView();
-    void requestFitViewOnNextPointCloudUpdate();
-    void applyPendingFitViewRequest();
     void setPointSize(float sizePixels);
     void setBackgroundColors(const QColor& topColor, const QColor& bottomColor);
     void setLegend(int mode,
@@ -188,9 +186,6 @@ private:
     void syncPendingPointCloudBuffers();
     void destroyPointCloudSegments();
     bool pointCloudSegmentSourceBounds(QVector3D& minPoint, QVector3D& maxPoint) const;
-    bool displayedPointBounds(QVector3D& minPoint, QVector3D& maxPoint) const;
-    float cameraDistanceForBounds(const QVector3D& minPoint, const QVector3D& maxPoint) const;
-    void fitViewToDisplayedPoints(float fallbackDistance);
     void forEachDisplayedPoint(const std::function<bool(const PointCloudPoint&)>& visitor) const;
     void updateCrossSectionPointCloud();
     void requestCrossSectionClip(bool immediate);
@@ -296,7 +291,6 @@ private:
     qsizetype m_selectionBufferCapacityBytes = 0;
     int m_selectionPointCount = 0;
     bool m_pointCloudGpuUploadPending = false;
-    bool m_fitViewOnNextPointCloudUpdate = false;
 
     SelectionRegion m_selectionRegion;
     QTimer* m_crossSectionClipDebounceTimer = nullptr;

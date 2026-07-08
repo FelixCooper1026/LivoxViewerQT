@@ -842,9 +842,6 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
             pointCloudView->updatePointCloud(std::move(frame));
         }
     }
-    if (pointCloudView) {
-        pointCloudView->applyPendingFitViewRequest();
-    }
     if (playbackSourceProvidesImu(playbackState.source->kind())) {
         const bool rebuildImuHistory = previousPlaybackFrame < 0 || playbackFrameIndex != previousPlaybackFrame + 1;
         const uint64_t imuStartTimestamp =
