@@ -1303,7 +1303,8 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
                                            slamRuntimeConfig.publishWorldFrameCloud && slamWorldCurrentFrameVisible,
                                            slamRuntimeConfig.publishWorldFrameCloud &&
                                                slamRuntimeConfig.publishBodyFrameCloud &&
-                                               slamBodyFrameVisible);
+                                               slamBodyFrameVisible,
+                                           slamRuntimeConfig.dynamicObjectDetectionEnabled);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryFromDialog()

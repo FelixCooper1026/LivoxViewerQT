@@ -28,6 +28,9 @@ public:
         QString worldFramePoints;
         QString bodyFramePoints;
         QString globalMapPoints;
+        QString dynamicMode;
+        QString dynamicPoints;
+        QString dynamicDetectorMs;
         QString error;
     };
 
@@ -51,7 +54,8 @@ public slots:
     void setRenderLayerVisibility(bool trajectoryVisible,
                                   bool poseAxisVisible,
                                   bool worldFrameVisible,
-                                  bool bodyFrameVisible);
+                                  bool bodyFrameVisible,
+                                  bool dynamicObjectVisible);
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
@@ -82,6 +86,7 @@ private:
     QColor m_trajectoryColor = QColor(26, 191, 255);
     float m_worldFramePointSizePx = 2.0f;
     float m_bodyFramePointSizePx = 2.5f;
+    float m_dynamicObjectPointSizePx = 4.0f;
     float m_trajectoryLineWidthPx = 2.0f;
     float m_poseAxisLengthM = 0.8f;
     float m_poseAxisLineWidthPx = 3.0f;
@@ -89,6 +94,7 @@ private:
     bool m_poseAxisVisible = true;
     bool m_worldFrameVisible = true;
     bool m_bodyFrameVisible = true;
+    bool m_dynamicObjectVisible = true;
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

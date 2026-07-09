@@ -25,6 +25,35 @@ struct SlamPoint {
     bool hasOffsetTime = false;
 };
 
+enum class SlamDynamicPointLabel : uint8_t {
+    Static = 0,
+    Case1 = 1,
+    Case2 = 2,
+    Case3 = 3,
+    Invalid = 255
+};
+
+struct SlamDynamicPoint {
+    float x = 0.0f;
+    float y = 0.0f;
+    float z = 0.0f;
+    uint8_t reflectivity = 0;
+    SlamDynamicPointLabel label = SlamDynamicPointLabel::Static;
+};
+
+struct SlamDynamicObjectStats {
+    bool enabled = false;
+    bool clusterEnabled = false;
+    int staticPointCount = 0;
+    int dynamicPointCount = 0;
+    int case1PointCount = 0;
+    int case2PointCount = 0;
+    int case3PointCount = 0;
+    int invalidPointCount = 0;
+    int historyDepthMapCount = 0;
+    double detectorMs = 0.0;
+};
+
 struct SlamImuSample {
     uint32_t lidarId = 0;
     int64_t timestampNs = 0;
@@ -93,7 +122,9 @@ struct SlamOutput {
     QVector<SlamTrajectoryPoint> newTrajectoryPoints;
     QVector<SlamPoint> publishedWorldFramePoints;
     QVector<SlamPoint> publishedBodyFramePoints;
+    QVector<SlamDynamicPoint> dynamicWorldFramePoints;
     QVector<SlamPoint> newGlobalMapPoints;
+    SlamDynamicObjectStats dynamicObjectStats;
     QString message;
     double inputFps = 0.0;
     double backendMs = 0.0;

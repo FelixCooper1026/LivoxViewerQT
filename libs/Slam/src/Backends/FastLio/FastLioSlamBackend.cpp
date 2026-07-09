@@ -15,6 +15,7 @@
 
 #include <pcl/filters/voxel_grid.h>
 
+#include "DynamicObjectDetector.h"
 #include "IMU_Processing.hpp"
 #include "ikd-Tree/ikd_Tree.h"
 #include "use-ikfom.hpp"
@@ -97,6 +98,15 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
     return true;
 }
 
+DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConfig& config)
+{
+    DynamicObjectDetectorConfig detectorConfig;
+    detectorConfig.minRangeM = config.blindMinRangeM;
+    detectorConfig.maxRangeM = config.detRangeM;
+    detectorConfig.clusterEnabled = config.dynamicObjectClusterEnabled;
+    return detectorConfig;
+}
+
 struct FastLioAlgorithmState {
     explicit FastLioAlgorithmState(const SlamRuntimeConfig& runtimeConfig)
         : config(runtimeConfig),
@@ -137,6 +147,10 @@ struct FastLioAlgorithmState {
         imuProcessor->set_gyr_bias_cov(V3D(config.bGyrCov, config.bGyrCov, config.bGyrCov));
         imuProcessor->set_acc_bias_cov(V3D(config.bAccCov, config.bAccCov, config.bAccCov));
         imuProcessor->lidar_type = AVIA;
+        if (config.dynamicObjectDetectionEnabled) {
+            dynamicObjectDetector = std::make_unique<DynamicObjectDetector>(
+                dynamicObjectConfigFromRuntime(config));
+        }
 
         double epsi[23] = {};
         std::fill(epsi, epsi + 23, 0.001);
@@ -189,6 +203,7 @@ struct FastLioAlgorithmState {
     std::vector<char> pointSelectedSurf;
     std::vector<float> resLast;
     std::unique_ptr<ImuProcess> imuProcessor;
+    std::unique_ptr<DynamicObjectDetector> dynamicObjectDetector;
 
     static void hShareModel(state_ikfom& s, esekfom::dyn_share_datastruct<double>& ekfomData);
 };
@@ -307,6 +322,23 @@ SlamPoint toSlamPoint(const PointType& sourcePoint)
     targetPoint.reflectivity = static_cast<uint8_t>(std::clamp(sourcePoint.intensity, 0.0f, 255.0f));
     targetPoint.hasOffsetTime = false;
     return targetPoint;
+}
+
+SlamDynamicPointLabel toSlamDynamicPointLabel(DynamicObjectLabel label)
+{
+    switch (label) {
+    case DynamicObjectLabel::Case1:
+        return SlamDynamicPointLabel::Case1;
+    case DynamicObjectLabel::Case2:
+        return SlamDynamicPointLabel::Case2;
+    case DynamicObjectLabel::Case3:
+        return SlamDynamicPointLabel::Case3;
+    case DynamicObjectLabel::Invalid:
+        return SlamDynamicPointLabel::Invalid;
+    case DynamicObjectLabel::Static:
+    default:
+        return SlamDynamicPointLabel::Static;
+    }
 }
 
 void collectRemovedPoints(FastLioAlgorithmState& state)
@@ -596,6 +628,59 @@ void appendGlobalMapOutput(FastLioAlgorithmState& state, SlamOutput* output)
     state.globalMapPointCount += output->newGlobalMapPoints.size();
 }
 
+void appendDynamicObjectOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t timestampNs)
+{
+    if (output == nullptr) {
+        return;
+    }
+
+    output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
+    output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
+    if (!state.config.dynamicObjectDetectionEnabled || !state.dynamicObjectDetector) {
+        return;
+    }
+
+    DynamicObjectDetectionFrame detectorFrame;
+    detectorFrame.timestampNs = timestampNs;
+    detectorFrame.worldFromBodyRotation = Eigen::Quaterniond(state.statePoint.rot.toRotationMatrix());
+    detectorFrame.worldFromBodyTranslation =
+        Eigen::Vector3d(state.statePoint.pos(0), state.statePoint.pos(1), state.statePoint.pos(2));
+    detectorFrame.points.reserve(static_cast<int>(state.featsUndistort->points.size()));
+
+    PointType bodyImuPoint;
+    for (const PointType& bodyLidarPoint : state.featsUndistort->points) {
+        pointBodyLidarToImu(&bodyLidarPoint, &bodyImuPoint, state.statePoint);
+        DynamicObjectPoint detectorPoint;
+        detectorPoint.x = bodyImuPoint.x;
+        detectorPoint.y = bodyImuPoint.y;
+        detectorPoint.z = bodyImuPoint.z;
+        detectorPoint.reflectivity = static_cast<uint8_t>(std::clamp(bodyImuPoint.intensity, 0.0f, 255.0f));
+        detectorFrame.points.push_back(detectorPoint);
+    }
+
+    const DynamicObjectDetectionResult detection = state.dynamicObjectDetector->processFrame(detectorFrame);
+    output->dynamicObjectStats.staticPointCount = detection.stats.staticPointCount;
+    output->dynamicObjectStats.dynamicPointCount = detection.stats.dynamicPointCount;
+    output->dynamicObjectStats.case1PointCount = detection.stats.case1PointCount;
+    output->dynamicObjectStats.case2PointCount = detection.stats.case2PointCount;
+    output->dynamicObjectStats.case3PointCount = detection.stats.case3PointCount;
+    output->dynamicObjectStats.invalidPointCount = detection.stats.invalidPointCount;
+    output->dynamicObjectStats.historyDepthMapCount = detection.stats.historyDepthMapCount;
+    output->dynamicObjectStats.detectorMs = detection.stats.detectorMs;
+    output->dynamicObjectStats.clusterEnabled = detection.stats.clusterEnabled;
+    output->dynamicWorldFramePoints.reserve(detection.dynamicPoints.size());
+
+    for (const DynamicObjectPoint& detectorPoint : detection.dynamicPoints) {
+        SlamDynamicPoint outputPoint;
+        outputPoint.x = detectorPoint.worldX;
+        outputPoint.y = detectorPoint.worldY;
+        outputPoint.z = detectorPoint.worldZ;
+        outputPoint.reflectivity = detectorPoint.reflectivity;
+        outputPoint.label = toSlamDynamicPointLabel(detectorPoint.label);
+        output->dynamicWorldFramePoints.push_back(outputPoint);
+    }
+}
+
 void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t timestampNs, double backendMs)
 {
     if (output == nullptr) {
@@ -609,6 +694,8 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
     output->globalMapPointCount = state.globalMapPointCount;
     output->trajectoryPointCount = state.trajectoryPointCount;
     output->currentPose = toSlamPose(state, timestampNs);
+    output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
+    output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
 }
 
 } // namespace
@@ -743,6 +830,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
             state.ikdtree.Build(state.featsDownWorld->points);
         }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
+        appendDynamicObjectOutput(state, output, frame.frameEndNs);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());
@@ -751,6 +839,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
 
     if (state.featsDownSize < kMinMapInitPoints) {
         appendTrajectoryOutput(state, output, frame.frameEndNs);
+        appendDynamicObjectOutput(state, output, frame.frameEndNs);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());
@@ -778,6 +867,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     appendTrajectoryOutput(state, output, frame.frameEndNs);
     appendPublishedWorldFrameOutput(state, output);
     appendPublishedBodyFrameOutput(state, output);
+    appendDynamicObjectOutput(state, output, frame.frameEndNs);
     appendGlobalMapOutput(state, output);
     fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
     status_ = SlamStatusCode::Running;

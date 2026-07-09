@@ -925,6 +925,13 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamBodyFrameVao,
                            m_slamBodyFrameBufferCapacityBytes,
                            m_slamBodyFrameVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           m_slamRenderSnapshot.dynamicObjectVertices,
+                           m_slamDynamicObjectVbo,
+                           m_slamDynamicObjectVao,
+                           m_slamDynamicObjectBufferCapacityBytes,
+                           m_slamDynamicObjectVertexCount);
     m_slamRenderUploadPending = false;
 }
 
@@ -934,6 +941,8 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamWorldFrameVao.destroy();
     m_slamBodyFrameVbo.destroy();
     m_slamBodyFrameVao.destroy();
+    m_slamDynamicObjectVbo.destroy();
+    m_slamDynamicObjectVao.destroy();
     m_slamPoseAxisVbo.destroy();
     m_slamPoseAxisVao.destroy();
     m_slamTrajectoryVbo.destroy();
@@ -942,10 +951,12 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamPoseAxisBufferCapacityBytes = 0;
     m_slamWorldFrameBufferCapacityBytes = 0;
     m_slamBodyFrameBufferCapacityBytes = 0;
+    m_slamDynamicObjectBufferCapacityBytes = 0;
     m_slamTrajectoryVertexCount = 0;
     m_slamPoseAxisVertexCount = 0;
     m_slamWorldFrameVertexCount = 0;
     m_slamBodyFrameVertexCount = 0;
+    m_slamDynamicObjectVertexCount = 0;
 }
 
 void PointCloudView::setupStlModelBuffers()
@@ -1334,6 +1345,13 @@ void PointCloudView::paintGL()
         m_slamBodyFrameVao.bind();
         glDrawArrays(GL_POINTS, 0, m_slamBodyFrameVertexCount);
         m_slamBodyFrameVao.release();
+        m_program->setUniformValue("uPointSize", m_pointSize);
+    }
+    if (m_slamDynamicObjectVertexCount > 0 && m_slamDynamicObjectVao.isCreated()) {
+        m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.dynamicObjectPointSizePx);
+        m_slamDynamicObjectVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamDynamicObjectVertexCount);
+        m_slamDynamicObjectVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
     if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {

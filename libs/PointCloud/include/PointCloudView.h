@@ -238,6 +238,10 @@ private:
     QOpenGLVertexArrayObject m_slamBodyFrameVao;
     qsizetype m_slamBodyFrameBufferCapacityBytes = 0;
     int m_slamBodyFrameVertexCount = 0;
+    QOpenGLBuffer m_slamDynamicObjectVbo;
+    QOpenGLVertexArrayObject m_slamDynamicObjectVao;
+    qsizetype m_slamDynamicObjectBufferCapacityBytes = 0;
+    int m_slamDynamicObjectVertexCount = 0;
     SlamRenderSnapshot m_slamRenderSnapshot;
     bool m_slamRenderUploadPending = false;
 

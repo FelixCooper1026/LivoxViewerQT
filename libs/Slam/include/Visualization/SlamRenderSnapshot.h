@@ -16,6 +16,7 @@ struct SlamRenderVertex {
 struct SlamRenderSnapshot {
     float worldFramePointSizePx = 2.0f;
     float bodyFramePointSizePx = 2.5f;
+    float dynamicObjectPointSizePx = 4.0f;
     float trajectoryLineWidthPx = 2.0f;
     float poseAxisLengthM = 0.8f;
     float poseAxisLineWidthPx = 3.0f;
@@ -23,6 +24,7 @@ struct SlamRenderSnapshot {
     QVector<SlamRenderVertex> poseAxisVertices;
     QVector<SlamRenderVertex> worldFrameVertices;
     QVector<SlamRenderVertex> bodyFrameVertices;
+    QVector<SlamRenderVertex> dynamicObjectVertices;
 };
 
 Q_DECLARE_METATYPE(SlamRenderSnapshot)

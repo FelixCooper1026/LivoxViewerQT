@@ -61,6 +61,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("IMU 状态"));
     addField(form, QStringLiteral("输入 FPS"));
     addField(form, QStringLiteral("后端耗时"));
+    addField(form, QStringLiteral("动态检测耗时"));
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
@@ -68,6 +69,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("世界系点云总数"));
     addField(form, QStringLiteral("机体系当前帧点数"));
     addField(form, QStringLiteral("完整全局地图点数"));
+    addField(form, QStringLiteral("动态检测模式"));
+    addField(form, QStringLiteral("动态目标点"));
     addField(form, QStringLiteral("错误信息"));
     layout->addLayout(form, 1);
 
@@ -145,6 +148,7 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("IMU 状态"))->setText(state.imuState);
     m_fields.value(QStringLiteral("输入 FPS"))->setText(state.inputFps);
     m_fields.value(QStringLiteral("后端耗时"))->setText(QStringLiteral("%1 ms").arg(state.backendMs));
+    m_fields.value(QStringLiteral("动态检测耗时"))->setText(QStringLiteral("%1 ms").arg(state.dynamicDetectorMs));
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
@@ -152,6 +156,8 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("世界系点云总数"))->setText(state.worldFramePoints);
     m_fields.value(QStringLiteral("机体系当前帧点数"))->setText(state.bodyFramePoints);
     m_fields.value(QStringLiteral("完整全局地图点数"))->setText(state.globalMapPoints);
+    m_fields.value(QStringLiteral("动态检测模式"))->setText(state.dynamicMode);
+    m_fields.value(QStringLiteral("动态目标点"))->setText(state.dynamicPoints);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);
 }
 

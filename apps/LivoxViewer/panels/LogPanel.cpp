@@ -256,6 +256,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     QFrame* performanceGroup = createSlamStatusGroup(QStringLiteral("性能统计"), fieldFrame, &performanceBody);
     addField(performanceBody, performanceGroup, QStringLiteral("输入 FPS"));
     addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
+    addField(performanceBody, performanceGroup, QStringLiteral("动态检测耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
     addField(performanceBody, performanceGroup, QStringLiteral("内存占用"));
     performanceBody->addStretch(1);
@@ -266,6 +267,8 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(mapBody, mapGroup, QStringLiteral("世界系点云总数"));
     addField(mapBody, mapGroup, QStringLiteral("机体系当前帧点数"));
     addField(mapBody, mapGroup, QStringLiteral("完整全局地图点数"));
+    addField(mapBody, mapGroup, QStringLiteral("动态检测模式"));
+    addField(mapBody, mapGroup, QStringLiteral("动态目标点"));
     mapBody->addStretch(1);
 
     QVBoxLayout* poseBody = nullptr;
@@ -393,6 +396,7 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     setField(QStringLiteral("IMU 状态"), state.imuState);
     setField(QStringLiteral("输入 FPS"), state.inputFps);
     setField(QStringLiteral("后端耗时"), QStringLiteral("%1 ms").arg(state.backendMs));
+    setField(QStringLiteral("动态检测耗时"), QStringLiteral("%1 ms").arg(state.dynamicDetectorMs));
     setField(QStringLiteral("丢帧数"), state.droppedFrames);
     setField(QStringLiteral("当前位姿"), state.currentPose);
     quint64 displayCacheBytes = 0;
@@ -410,5 +414,7 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     setField(QStringLiteral("世界系点云总数"), state.worldFramePoints);
     setField(QStringLiteral("机体系当前帧点数"), state.bodyFramePoints);
     setField(QStringLiteral("完整全局地图点数"), state.globalMapPoints);
+    setField(QStringLiteral("动态检测模式"), state.dynamicMode);
+    setField(QStringLiteral("动态目标点"), state.dynamicPoints);
     setField(QStringLiteral("错误信息"), state.error);
 }

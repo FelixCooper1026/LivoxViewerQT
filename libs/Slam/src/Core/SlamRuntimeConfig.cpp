@@ -222,6 +222,10 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
                                                    config.publishDenseFrameCloud).toBool();
     config.publishBodyFrameCloud = settings.value(key(prefix, QStringLiteral("publishBodyFrameCloud")),
                                                   config.publishBodyFrameCloud).toBool();
+    config.dynamicObjectDetectionEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")),
+                                                          config.dynamicObjectDetectionEnabled).toBool();
+    config.dynamicObjectClusterEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")),
+                                                        config.dynamicObjectClusterEnabled).toBool();
     config.mapVoxelSizeM = settings.value(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM).toDouble();
     config.maxMapPoints = settings.value(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints).toInt();
     config.maxTrajectoryPoints = settings.value(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints).toInt();
@@ -269,6 +273,8 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("publishWorldFrameCloud")), config.publishWorldFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")), config.dynamicObjectDetectionEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")), config.dynamicObjectClusterEnabled);
     settings.setValue(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints);
     settings.setValue(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints);

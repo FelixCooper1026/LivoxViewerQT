@@ -40,6 +40,22 @@ SlamRenderVertex renderSlamPoint(const SlamPoint& point, const QColor& color)
     return {point.x, point.y, point.z, color.redF(), color.greenF(), color.blueF()};
 }
 
+SlamRenderVertex renderDynamicPoint(const SlamDynamicPoint& point)
+{
+    switch (point.label) {
+    case SlamDynamicPointLabel::Case1:
+        return {point.x, point.y, point.z, 1.0f, 0.08f, 0.08f};
+    case SlamDynamicPointLabel::Case2:
+        return {point.x, point.y, point.z, 1.0f, 0.72f, 0.06f};
+    case SlamDynamicPointLabel::Case3:
+        return {point.x, point.y, point.z, 0.0f, 0.92f, 0.95f};
+    case SlamDynamicPointLabel::Static:
+    case SlamDynamicPointLabel::Invalid:
+    default:
+        return {point.x, point.y, point.z, 1.0f, 0.08f, 0.08f};
+    }
+}
+
 QVector3D posePosition(const SlamPose& pose)
 {
     return QVector3D(float(pose.tx), float(pose.ty), float(pose.tz));
@@ -293,18 +309,21 @@ void SlamUiBridge::setPoseAxisLineWidth(float widthPx)
 void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible,
                                             bool poseAxisVisible,
                                             bool worldFrameVisible,
-                                            bool bodyFrameVisible)
+                                            bool bodyFrameVisible,
+                                            bool dynamicObjectVisible)
 {
     if (m_trajectoryVisible == trajectoryVisible &&
         m_poseAxisVisible == poseAxisVisible &&
         m_worldFrameVisible == worldFrameVisible &&
-        m_bodyFrameVisible == bodyFrameVisible) {
+        m_bodyFrameVisible == bodyFrameVisible &&
+        m_dynamicObjectVisible == dynamicObjectVisible) {
         return;
     }
     m_trajectoryVisible = trajectoryVisible;
     m_poseAxisVisible = poseAxisVisible;
     m_worldFrameVisible = worldFrameVisible;
     m_bodyFrameVisible = bodyFrameVisible;
+    m_dynamicObjectVisible = dynamicObjectVisible;
     refreshStatus();
 }
 
@@ -337,8 +356,10 @@ void SlamUiBridge::clearDisplay()
     m_worldFramePointTotal = 0;
     m_latestOutput.publishedWorldFramePoints.clear();
     m_latestOutput.publishedBodyFramePoints.clear();
+    m_latestOutput.dynamicWorldFramePoints.clear();
     m_latestOutput.newGlobalMapPoints.clear();
     m_latestOutput.globalMapPointCount = 0;
+    m_latestOutput.dynamicObjectStats = SlamDynamicObjectStats();
     m_errorMessage.clear();
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
@@ -360,18 +381,34 @@ void SlamUiBridge::refreshStatus()
         vectorBytes(snapshot.trajectoryVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.poseAxisVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.worldFrameVertices.size(), sizeof(SlamRenderVertex)) +
-        vectorBytes(snapshot.bodyFrameVertices.size(), sizeof(SlamRenderVertex));
+        vectorBytes(snapshot.bodyFrameVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.dynamicObjectVertices.size(), sizeof(SlamRenderVertex));
     const quint64 uiBytes =
         vectorBytes(m_trajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_latestOutput.dynamicWorldFramePoints.size(), sizeof(SlamDynamicPoint)) +
         snapshotBytes;
     m_displayState.memoryUsage = QStringLiteral("UI %1").arg(formatMemoryBytes(uiBytes));
     m_displayState.mapPoints = QString::number(m_latestOutput.mapPointCount);
     m_displayState.worldFramePoints = QString::number(m_worldFramePointTotal);
     m_displayState.bodyFramePoints = QString::number(m_latestOutput.publishedBodyFramePoints.size());
     m_displayState.globalMapPoints = QString::number(m_globalMapPoints.size());
+    m_displayState.dynamicMode = m_latestOutput.dynamicObjectStats.enabled
+        ? (m_latestOutput.dynamicObjectStats.clusterEnabled ? QStringLiteral("有聚类") : QStringLiteral("无聚类"))
+        : QStringLiteral("关闭");
+    m_displayState.dynamicPoints = m_latestOutput.dynamicObjectStats.enabled
+        ? QStringLiteral("%1 / 静态 %2 / C1 %3 C2 %4 C3 %5")
+              .arg(m_latestOutput.dynamicObjectStats.dynamicPointCount)
+              .arg(m_latestOutput.dynamicObjectStats.staticPointCount)
+              .arg(m_latestOutput.dynamicObjectStats.case1PointCount)
+              .arg(m_latestOutput.dynamicObjectStats.case2PointCount)
+              .arg(m_latestOutput.dynamicObjectStats.case3PointCount)
+        : QStringLiteral("0");
+    m_displayState.dynamicDetectorMs = m_latestOutput.dynamicObjectStats.enabled
+        ? QString::number(m_latestOutput.dynamicObjectStats.detectorMs, 'f', 2)
+        : QStringLiteral("0.00");
     m_displayState.error = m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
@@ -389,6 +426,7 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     SlamRenderSnapshot snapshot;
     snapshot.worldFramePointSizePx = m_worldFramePointSizePx;
     snapshot.bodyFramePointSizePx = m_bodyFramePointSizePx;
+    snapshot.dynamicObjectPointSizePx = m_dynamicObjectPointSizePx;
     snapshot.trajectoryLineWidthPx = m_trajectoryLineWidthPx;
     snapshot.poseAxisLengthM = m_poseAxisLengthM;
     snapshot.poseAxisLineWidthPx = m_poseAxisLineWidthPx;
@@ -448,6 +486,12 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
         snapshot.bodyFrameVertices.reserve(m_latestOutput.publishedBodyFramePoints.size());
         for (const SlamPoint& point : m_latestOutput.publishedBodyFramePoints) {
             snapshot.bodyFrameVertices.push_back(renderSlamPoint(point, m_bodyFrameColor));
+        }
+    }
+    if (m_dynamicObjectVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.dynamicObjectVertices.reserve(m_latestOutput.dynamicWorldFramePoints.size());
+        for (const SlamDynamicPoint& point : m_latestOutput.dynamicWorldFramePoints) {
+            snapshot.dynamicObjectVertices.push_back(renderDynamicPoint(point));
         }
     }
     return snapshot;

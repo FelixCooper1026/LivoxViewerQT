@@ -1463,6 +1463,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
+    SwitchCheckBox* slamDynamicDetectionCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectDetectionEnabled);
     QWidget* slamWorldCurrentFrameColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamWorldCurrentFrameColorRow);
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
@@ -1571,6 +1572,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamPublishDenseCheck->setChecked(runtimeDefaults.publishDenseFrameCloud);
         slamPublishBodyCheck->setChecked(runtimeDefaults.publishBodyFrameCloud);
         slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
+        slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicObjectDetectionEnabled);
         syncSlamPublishControls();
     };
     auto slamRuntimeConfigFromControls = [&](SlamLidarTemplate lidarTemplate) {
@@ -1604,6 +1606,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
         config.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
         config.saveMap = slamSaveMapCheck->isChecked();
+        config.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
+        config.dynamicObjectClusterEnabled = false;
         return config;
     };
     QHash<int, SlamRuntimeConfig> editedSlamTemplateConfigs;
@@ -1829,12 +1833,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* slamImuNoiseTab = createSlamSettingsTab(QStringLiteral("IMU 噪声"));
     QWidget* slamExtrinsicTab = createSlamSettingsTab(QStringLiteral("LiDAR-IMU 外参"));
     QWidget* slamPublishTab = createSlamSettingsTab(QStringLiteral("点云输出"));
+    QWidget* slamDynamicTab = createSlamSettingsTab(QStringLiteral("动态检测"));
     QWidget* slamVisualTab = createSlamSettingsTab(QStringLiteral("显示样式"));
 
     QVBoxLayout* slamBackendTabLayout = qobject_cast<QVBoxLayout*>(slamBackendTab->layout());
     QVBoxLayout* slamImuNoiseTabLayout = qobject_cast<QVBoxLayout*>(slamImuNoiseTab->layout());
     QVBoxLayout* slamExtrinsicTabLayout = qobject_cast<QVBoxLayout*>(slamExtrinsicTab->layout());
     QVBoxLayout* slamPublishTabLayout = qobject_cast<QVBoxLayout*>(slamPublishTab->layout());
+    QVBoxLayout* slamDynamicTabLayout = qobject_cast<QVBoxLayout*>(slamDynamicTab->layout());
     QVBoxLayout* slamVisualTabLayout = qobject_cast<QVBoxLayout*>(slamVisualTab->layout());
 
     QFrame* slamBackendSection = createPreferenceSection(slamBackendTab);
@@ -1940,6 +1946,14 @@ void LivoxViewerWindow::showPreferencesDialog()
                      slamSaveMapCheck);
     slamPublishTabLayout->addWidget(slamPublishSection);
     slamPublishTabLayout->addStretch();
+
+    QFrame* slamDynamicSection = createPreferenceSection(slamDynamicTab);
+    addPreferenceRow(slamDynamicSection,
+                     "启用动态检测",
+                     "dynamicObjectDetectionEnabled，启用 M-detector 无聚类核心版，对去畸变当前帧生成动态点 overlay 和统计信息",
+                     slamDynamicDetectionCheck);
+    slamDynamicTabLayout->addWidget(slamDynamicSection);
+    slamDynamicTabLayout->addStretch();
 
     QFrame* slamVisualSection = createPreferenceSection(slamVisualTab);
     addPreferenceRow(slamVisualSection,
@@ -2050,6 +2064,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
     const bool previousSlamSaveMap = slamRuntimeConfig.saveMap;
+    const bool previousSlamDynamicDetection = slamRuntimeConfig.dynamicObjectDetectionEnabled;
     const bool previousSlamExtrinsicEstimationEnabled = slamRuntimeConfig.extrinsicEstimationEnabled;
     const std::array<double, 3> previousSlamExtrinsicT = {
         slamRuntimeConfig.extrinsicT_L_I[0],
@@ -2105,6 +2120,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
+    slamRuntimeConfig.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
+    slamRuntimeConfig.dynamicObjectClusterEnabled = false;
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
     slamTrajectoryColor = selectedSlamTrajectoryColor;
@@ -2184,6 +2201,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
         slamRuntimeConfig.saveMap != previousSlamSaveMap ||
+        slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
         slamTrajectoryColor != previousSlamTrajectoryColor ||

@@ -245,6 +245,7 @@ set(SOURCES
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    libs/DynamicObject/src/DynamicObjectDetector.cpp
     libs/Slam/src/Export/SlamMapExport.cpp
     libs/Slam/src/Export/SlamTrajectoryExport.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
@@ -323,6 +324,7 @@ set(SOURCES
     libs/Slam/include/Core/SlamRuntimeConfig.h
     libs/Slam/include/Core/SlamTypes.h
     libs/Slam/include/Backends/FastLio/FastLioSlamBackend.h
+    libs/DynamicObject/include/DynamicObjectDetector.h
     libs/Slam/include/Export/SlamMapExport.h
     libs/Slam/include/Export/SlamTrajectoryExport.h
     libs/Slam/include/Io/LiveLidarSlamSource.h
@@ -443,6 +445,7 @@ target_include_directories(LivoxViewerQT PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/DynamicObject/include
     ${SLAM_FAST_LIO_COMPAT_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/src
@@ -595,6 +598,7 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    libs/DynamicObject/src/DynamicObjectDetector.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
@@ -611,6 +615,7 @@ target_include_directories(SlamReplayTool PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/DynamicObject/include
     ${SLAM_FAST_LIO_COMPAT_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/include
     ${SLAM_FAST_LIO_ROOT}/src

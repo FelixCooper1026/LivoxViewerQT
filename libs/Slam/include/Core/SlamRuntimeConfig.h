@@ -41,6 +41,8 @@ struct SlamRuntimeConfig {
     bool publishWorldFrameCloud = true;
     bool publishDenseFrameCloud = true;
     bool publishBodyFrameCloud = true;
+    bool dynamicObjectDetectionEnabled = false;
+    bool dynamicObjectClusterEnabled = false;
     double mapVoxelSizeM = 0.1;
     int maxMapPoints = 2000000;
     int maxTrajectoryPoints = 200000;
