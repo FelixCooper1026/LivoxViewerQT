@@ -119,16 +119,58 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.pointFilterNum = 1;
     config.filterSizeSurfM = 0.5;
     config.filterSizeMapM = 0.5;
+    config.dynamicObjectBufferDelaySec = 0.1;
+    config.dynamicObjectMaxDepthMaps = 5;
+    config.dynamicObjectMinHistoryMaps = 2;
+    config.dynamicObjectHorizontalResolutionRad = 0.005;
+    config.dynamicObjectVerticalResolutionRad = 0.01;
+    config.dynamicObjectNeighborPixelRadius = 1;
+    config.dynamicObjectClusterGroundDistanceThresholdM = 0.1;
+    config.dynamicObjectClusterGroundMaxAngleDeg = 30.0;
     if (lidarTemplate == SlamLidarTemplate::Avia) {
         config.detRangeM = 450.0;
         config.fovDegree = 90.0;
         config.blindMinRangeM = 4.0;
+        config.dynamicObjectDepthMapDurationSec = 0.2;
+        config.dynamicObjectVerticalFovDownDeg = -38.6;
+        config.dynamicObjectVerticalFovUpDeg = 38.6;
+        config.dynamicObjectHorizontalFovRightDeg = -34.0;
+        config.dynamicObjectHorizontalFovLeftDeg = 34.0;
+        config.dynamicObjectMinRangeM = 0.5;
+        config.dynamicObjectMaxRangeM = 450.0;
+        config.dynamicObjectCase1DepthMarginM = 0.15;
+        config.dynamicObjectCase2DepthMarginM = 0.15;
+        config.dynamicObjectCase3DepthMarginM = 0.15;
+        config.dynamicObjectCase1VoteThreshold = 2;
+        config.dynamicObjectCase2VoteThreshold = 2;
+        config.dynamicObjectCase3VoteThreshold = 2;
+        config.dynamicObjectClusterVoxelSizeM = 0.3;
+        config.dynamicObjectClusterExtendVoxel = 5;
+        config.dynamicObjectClusterMinVoxelCount = 2;
+        config.dynamicObjectClusterTrustThreshold = 0.1;
         return;
     }
 
     config.detRangeM = 100.0;
     config.fovDegree = 360.0;
     config.blindMinRangeM = 0.5;
+    config.dynamicObjectDepthMapDurationSec = 0.4;
+    config.dynamicObjectVerticalFovDownDeg = -7.0;
+    config.dynamicObjectVerticalFovUpDeg = 52.0;
+    config.dynamicObjectHorizontalFovRightDeg = -180.0;
+    config.dynamicObjectHorizontalFovLeftDeg = 180.0;
+    config.dynamicObjectMinRangeM = 0.3;
+    config.dynamicObjectMaxRangeM = 100.0;
+    config.dynamicObjectCase1DepthMarginM = 0.5;
+    config.dynamicObjectCase2DepthMarginM = 0.3;
+    config.dynamicObjectCase3DepthMarginM = 0.15;
+    config.dynamicObjectCase1VoteThreshold = 3;
+    config.dynamicObjectCase2VoteThreshold = 3;
+    config.dynamicObjectCase3VoteThreshold = 3;
+    config.dynamicObjectClusterVoxelSizeM = 0.1;
+    config.dynamicObjectClusterExtendVoxel = 3;
+    config.dynamicObjectClusterMinVoxelCount = 1;
+    config.dynamicObjectClusterTrustThreshold = 0.1;
 }
 
 namespace {
@@ -226,6 +268,76 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
                                                           config.dynamicObjectDetectionEnabled).toBool();
     config.dynamicObjectClusterEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")),
                                                         config.dynamicObjectClusterEnabled).toBool();
+    config.dynamicObjectClusterVoxelSizeM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterVoxelSizeM")), config.dynamicObjectClusterVoxelSizeM).toDouble(),
+        config.dynamicObjectClusterVoxelSizeM);
+    config.dynamicObjectClusterExtendVoxel = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterExtendVoxel")), config.dynamicObjectClusterExtendVoxel).toInt(),
+        config.dynamicObjectClusterExtendVoxel);
+    config.dynamicObjectClusterMinVoxelCount = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterMinVoxelCount")), config.dynamicObjectClusterMinVoxelCount).toInt(),
+        config.dynamicObjectClusterMinVoxelCount);
+    config.dynamicObjectClusterTrustThreshold = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterTrustThreshold")), config.dynamicObjectClusterTrustThreshold).toDouble(),
+        config.dynamicObjectClusterTrustThreshold);
+    config.dynamicObjectClusterGroundDistanceThresholdM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterGroundDistanceThresholdM")), config.dynamicObjectClusterGroundDistanceThresholdM).toDouble(),
+        config.dynamicObjectClusterGroundDistanceThresholdM);
+    config.dynamicObjectClusterGroundMaxAngleDeg = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectClusterGroundMaxAngleDeg")), config.dynamicObjectClusterGroundMaxAngleDeg).toDouble(),
+        config.dynamicObjectClusterGroundMaxAngleDeg);
+    config.dynamicObjectBufferDelaySec = validNonNegativeDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectBufferDelaySec")), config.dynamicObjectBufferDelaySec).toDouble(),
+        config.dynamicObjectBufferDelaySec);
+    config.dynamicObjectDepthMapDurationSec = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectDepthMapDurationSec")), config.dynamicObjectDepthMapDurationSec).toDouble(),
+        config.dynamicObjectDepthMapDurationSec);
+    config.dynamicObjectMaxDepthMaps = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectMaxDepthMaps")), config.dynamicObjectMaxDepthMaps).toInt(),
+        config.dynamicObjectMaxDepthMaps);
+    config.dynamicObjectMinHistoryMaps = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectMinHistoryMaps")), config.dynamicObjectMinHistoryMaps).toInt(),
+        config.dynamicObjectMinHistoryMaps);
+    config.dynamicObjectHorizontalResolutionRad = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectHorizontalResolutionRad")), config.dynamicObjectHorizontalResolutionRad).toDouble(),
+        config.dynamicObjectHorizontalResolutionRad);
+    config.dynamicObjectVerticalResolutionRad = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectVerticalResolutionRad")), config.dynamicObjectVerticalResolutionRad).toDouble(),
+        config.dynamicObjectVerticalResolutionRad);
+    config.dynamicObjectVerticalFovDownDeg = settings.value(
+        key(prefix, QStringLiteral("dynamicObjectVerticalFovDownDeg")), config.dynamicObjectVerticalFovDownDeg).toDouble();
+    config.dynamicObjectVerticalFovUpDeg = settings.value(
+        key(prefix, QStringLiteral("dynamicObjectVerticalFovUpDeg")), config.dynamicObjectVerticalFovUpDeg).toDouble();
+    config.dynamicObjectHorizontalFovRightDeg = settings.value(
+        key(prefix, QStringLiteral("dynamicObjectHorizontalFovRightDeg")), config.dynamicObjectHorizontalFovRightDeg).toDouble();
+    config.dynamicObjectHorizontalFovLeftDeg = settings.value(
+        key(prefix, QStringLiteral("dynamicObjectHorizontalFovLeftDeg")), config.dynamicObjectHorizontalFovLeftDeg).toDouble();
+    config.dynamicObjectMinRangeM = validNonNegativeDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectMinRangeM")), config.dynamicObjectMinRangeM).toDouble(),
+        config.dynamicObjectMinRangeM);
+    config.dynamicObjectMaxRangeM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectMaxRangeM")), config.dynamicObjectMaxRangeM).toDouble(),
+        config.dynamicObjectMaxRangeM);
+    config.dynamicObjectNeighborPixelRadius = settings.value(
+        key(prefix, QStringLiteral("dynamicObjectNeighborPixelRadius")), config.dynamicObjectNeighborPixelRadius).toInt();
+    config.dynamicObjectCase1DepthMarginM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase1DepthMarginM")), config.dynamicObjectCase1DepthMarginM).toDouble(),
+        config.dynamicObjectCase1DepthMarginM);
+    config.dynamicObjectCase2DepthMarginM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase2DepthMarginM")), config.dynamicObjectCase2DepthMarginM).toDouble(),
+        config.dynamicObjectCase2DepthMarginM);
+    config.dynamicObjectCase3DepthMarginM = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase3DepthMarginM")), config.dynamicObjectCase3DepthMarginM).toDouble(),
+        config.dynamicObjectCase3DepthMarginM);
+    config.dynamicObjectCase1VoteThreshold = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase1VoteThreshold")), config.dynamicObjectCase1VoteThreshold).toInt(),
+        config.dynamicObjectCase1VoteThreshold);
+    config.dynamicObjectCase2VoteThreshold = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase2VoteThreshold")), config.dynamicObjectCase2VoteThreshold).toInt(),
+        config.dynamicObjectCase2VoteThreshold);
+    config.dynamicObjectCase3VoteThreshold = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase3VoteThreshold")), config.dynamicObjectCase3VoteThreshold).toInt(),
+        config.dynamicObjectCase3VoteThreshold);
     config.mapVoxelSizeM = settings.value(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM).toDouble();
     config.maxMapPoints = settings.value(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints).toInt();
     config.maxTrajectoryPoints = settings.value(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints).toInt();
@@ -275,6 +387,31 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")), config.dynamicObjectDetectionEnabled);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")), config.dynamicObjectClusterEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterVoxelSizeM")), config.dynamicObjectClusterVoxelSizeM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterExtendVoxel")), config.dynamicObjectClusterExtendVoxel);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterMinVoxelCount")), config.dynamicObjectClusterMinVoxelCount);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterTrustThreshold")), config.dynamicObjectClusterTrustThreshold);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterGroundDistanceThresholdM")), config.dynamicObjectClusterGroundDistanceThresholdM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterGroundMaxAngleDeg")), config.dynamicObjectClusterGroundMaxAngleDeg);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectBufferDelaySec")), config.dynamicObjectBufferDelaySec);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectDepthMapDurationSec")), config.dynamicObjectDepthMapDurationSec);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectMaxDepthMaps")), config.dynamicObjectMaxDepthMaps);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectMinHistoryMaps")), config.dynamicObjectMinHistoryMaps);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectHorizontalResolutionRad")), config.dynamicObjectHorizontalResolutionRad);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectVerticalResolutionRad")), config.dynamicObjectVerticalResolutionRad);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectVerticalFovDownDeg")), config.dynamicObjectVerticalFovDownDeg);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectVerticalFovUpDeg")), config.dynamicObjectVerticalFovUpDeg);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectHorizontalFovRightDeg")), config.dynamicObjectHorizontalFovRightDeg);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectHorizontalFovLeftDeg")), config.dynamicObjectHorizontalFovLeftDeg);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectMinRangeM")), config.dynamicObjectMinRangeM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectMaxRangeM")), config.dynamicObjectMaxRangeM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectNeighborPixelRadius")), config.dynamicObjectNeighborPixelRadius);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase1DepthMarginM")), config.dynamicObjectCase1DepthMarginM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase2DepthMarginM")), config.dynamicObjectCase2DepthMarginM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3DepthMarginM")), config.dynamicObjectCase3DepthMarginM);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase1VoteThreshold")), config.dynamicObjectCase1VoteThreshold);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase2VoteThreshold")), config.dynamicObjectCase2VoteThreshold);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3VoteThreshold")), config.dynamicObjectCase3VoteThreshold);
     settings.setValue(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints);
     settings.setValue(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints);

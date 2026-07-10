@@ -246,6 +246,7 @@ set(SOURCES
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     libs/DynamicObject/src/DynamicObjectDetector.cpp
+    libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Export/SlamMapExport.cpp
     libs/Slam/src/Export/SlamTrajectoryExport.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
@@ -325,6 +326,7 @@ set(SOURCES
     libs/Slam/include/Core/SlamTypes.h
     libs/Slam/include/Backends/FastLio/FastLioSlamBackend.h
     libs/DynamicObject/include/DynamicObjectDetector.h
+    libs/DynamicObject/include/DynamicObjectCluster.h
     libs/Slam/include/Export/SlamMapExport.h
     libs/Slam/include/Export/SlamTrajectoryExport.h
     libs/Slam/include/Io/LiveLidarSlamSource.h
@@ -599,6 +601,7 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     libs/DynamicObject/src/DynamicObjectDetector.cpp
+    libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp

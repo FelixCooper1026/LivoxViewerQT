@@ -31,6 +31,7 @@ public:
         QString dynamicMode;
         QString dynamicPoints;
         QString dynamicDetectorMs;
+        QString dynamicClusterMs;
         QString error;
     };
 

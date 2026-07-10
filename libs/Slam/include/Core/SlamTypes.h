@@ -46,12 +46,17 @@ struct SlamDynamicObjectStats {
     bool clusterEnabled = false;
     int staticPointCount = 0;
     int dynamicPointCount = 0;
+    int originDynamicPointCount = 0;
+    int clusterCount = 0;
+    int rejectedClusterCount = 0;
+    int groundRemovedPointCount = 0;
     int case1PointCount = 0;
     int case2PointCount = 0;
     int case3PointCount = 0;
     int invalidPointCount = 0;
     int historyDepthMapCount = 0;
     double detectorMs = 0.0;
+    double clusterMs = 0.0;
 };
 
 struct SlamImuSample {

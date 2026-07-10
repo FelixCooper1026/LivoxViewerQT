@@ -94,6 +94,34 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
         assignError(error, QStringLiteral("SLAM 外参配置无效：LiDAR-IMU 平移或旋转矩阵缺失/非法。"));
         return false;
     }
+    if (config.dynamicObjectDetectionEnabled &&
+        (!std::isfinite(config.dynamicObjectBufferDelaySec) || config.dynamicObjectBufferDelaySec < 0.0 ||
+         !std::isfinite(config.dynamicObjectDepthMapDurationSec) || config.dynamicObjectDepthMapDurationSec <= 0.0 ||
+         config.dynamicObjectMaxDepthMaps <= 0 || config.dynamicObjectMinHistoryMaps <= 0 ||
+         !std::isfinite(config.dynamicObjectHorizontalResolutionRad) || config.dynamicObjectHorizontalResolutionRad <= 0.0 ||
+         !std::isfinite(config.dynamicObjectVerticalResolutionRad) || config.dynamicObjectVerticalResolutionRad <= 0.0 ||
+         config.dynamicObjectVerticalFovDownDeg >= config.dynamicObjectVerticalFovUpDeg ||
+         config.dynamicObjectHorizontalFovRightDeg >= config.dynamicObjectHorizontalFovLeftDeg ||
+         config.dynamicObjectMinRangeM < 0.0 || config.dynamicObjectMinRangeM >= config.dynamicObjectMaxRangeM ||
+         config.dynamicObjectNeighborPixelRadius < 0 ||
+         config.dynamicObjectCase1DepthMarginM <= 0.0 ||
+         config.dynamicObjectCase2DepthMarginM <= 0.0 ||
+         config.dynamicObjectCase3DepthMarginM <= 0.0 ||
+         config.dynamicObjectCase1VoteThreshold <= 0 ||
+         config.dynamicObjectCase2VoteThreshold <= 0 ||
+         config.dynamicObjectCase3VoteThreshold <= 0 ||
+         (config.dynamicObjectClusterEnabled &&
+          (config.dynamicObjectClusterVoxelSizeM <= 0.0 ||
+           config.dynamicObjectClusterExtendVoxel <= 0 ||
+           config.dynamicObjectClusterMinVoxelCount <= 0 ||
+           config.dynamicObjectClusterTrustThreshold <= 0.0 ||
+           config.dynamicObjectClusterTrustThreshold > 1.0 ||
+           config.dynamicObjectClusterGroundDistanceThresholdM <= 0.0 ||
+           config.dynamicObjectClusterGroundMaxAngleDeg <= 0.0 ||
+           config.dynamicObjectClusterGroundMaxAngleDeg >= 90.0)))) {
+        assignError(error, QStringLiteral("SLAM 配置无效：动态检测时间窗口、球面深度图或 Case 阈值参数非法。"));
+        return false;
+    }
     assignError(error, QString());
     return true;
 }
@@ -101,9 +129,33 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
 DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConfig& config)
 {
     DynamicObjectDetectorConfig detectorConfig;
-    detectorConfig.minRangeM = config.blindMinRangeM;
-    detectorConfig.maxRangeM = config.detRangeM;
+    detectorConfig.horizontalResolutionRad = config.dynamicObjectHorizontalResolutionRad;
+    detectorConfig.verticalResolutionRad = config.dynamicObjectVerticalResolutionRad;
+    detectorConfig.verticalFovDownDeg = config.dynamicObjectVerticalFovDownDeg;
+    detectorConfig.verticalFovUpDeg = config.dynamicObjectVerticalFovUpDeg;
+    detectorConfig.horizontalFovRightDeg = config.dynamicObjectHorizontalFovRightDeg;
+    detectorConfig.horizontalFovLeftDeg = config.dynamicObjectHorizontalFovLeftDeg;
+    detectorConfig.minRangeM = config.dynamicObjectMinRangeM;
+    detectorConfig.maxRangeM = config.dynamicObjectMaxRangeM;
+    detectorConfig.bufferDelaySec = config.dynamicObjectBufferDelaySec;
+    detectorConfig.depthMapDurationSec = config.dynamicObjectDepthMapDurationSec;
+    detectorConfig.maxDepthMaps = config.dynamicObjectMaxDepthMaps;
+    detectorConfig.minHistoryMaps = config.dynamicObjectMinHistoryMaps;
+    detectorConfig.neighborPixelRadius = config.dynamicObjectNeighborPixelRadius;
+    detectorConfig.case1DepthMarginM = config.dynamicObjectCase1DepthMarginM;
+    detectorConfig.case2DepthMarginM = config.dynamicObjectCase2DepthMarginM;
+    detectorConfig.case3DepthMarginM = config.dynamicObjectCase3DepthMarginM;
+    detectorConfig.case1VoteThreshold = config.dynamicObjectCase1VoteThreshold;
+    detectorConfig.case2VoteThreshold = config.dynamicObjectCase2VoteThreshold;
+    detectorConfig.case3VoteThreshold = config.dynamicObjectCase3VoteThreshold;
     detectorConfig.clusterEnabled = config.dynamicObjectClusterEnabled;
+    detectorConfig.clusterVoxelSizeM = config.dynamicObjectClusterVoxelSizeM;
+    detectorConfig.clusterExtendVoxel = config.dynamicObjectClusterExtendVoxel;
+    detectorConfig.clusterMinVoxelCount = config.dynamicObjectClusterMinVoxelCount;
+    detectorConfig.clusterTrustThreshold = config.dynamicObjectClusterTrustThreshold;
+    detectorConfig.clusterGroundDistanceThresholdM =
+        config.dynamicObjectClusterGroundDistanceThresholdM;
+    detectorConfig.clusterGroundMaxAngleDeg = config.dynamicObjectClusterGroundMaxAngleDeg;
     return detectorConfig;
 }
 
@@ -661,12 +713,17 @@ void appendDynamicObjectOutput(FastLioAlgorithmState& state, SlamOutput* output,
     const DynamicObjectDetectionResult detection = state.dynamicObjectDetector->processFrame(detectorFrame);
     output->dynamicObjectStats.staticPointCount = detection.stats.staticPointCount;
     output->dynamicObjectStats.dynamicPointCount = detection.stats.dynamicPointCount;
+    output->dynamicObjectStats.originDynamicPointCount = detection.stats.originDynamicPointCount;
+    output->dynamicObjectStats.clusterCount = detection.stats.clusterCount;
+    output->dynamicObjectStats.rejectedClusterCount = detection.stats.rejectedClusterCount;
+    output->dynamicObjectStats.groundRemovedPointCount = detection.stats.groundRemovedPointCount;
     output->dynamicObjectStats.case1PointCount = detection.stats.case1PointCount;
     output->dynamicObjectStats.case2PointCount = detection.stats.case2PointCount;
     output->dynamicObjectStats.case3PointCount = detection.stats.case3PointCount;
     output->dynamicObjectStats.invalidPointCount = detection.stats.invalidPointCount;
     output->dynamicObjectStats.historyDepthMapCount = detection.stats.historyDepthMapCount;
     output->dynamicObjectStats.detectorMs = detection.stats.detectorMs;
+    output->dynamicObjectStats.clusterMs = detection.stats.clusterMs;
     output->dynamicObjectStats.clusterEnabled = detection.stats.clusterEnabled;
     output->dynamicWorldFramePoints.reserve(detection.dynamicPoints.size());
 

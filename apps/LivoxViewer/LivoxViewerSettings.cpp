@@ -1464,6 +1464,118 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
     SwitchCheckBox* slamDynamicDetectionCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectDetectionEnabled);
+    SwitchCheckBox* slamDynamicClusterCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectClusterEnabled);
+    QDoubleSpinBox* slamDynamicBufferDelaySpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectBufferDelaySec, 0.0, 5.0, 3, 0.01, QStringLiteral(" s"));
+    QDoubleSpinBox* slamDynamicDepthMapDurationSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectDepthMapDurationSec, 0.01, 10.0, 3, 0.05, QStringLiteral(" s"));
+    auto createSlamIntSpin = [&dlg](int value, int minValue, int maxValue) {
+        QSpinBox* spin = new QSpinBox(&dlg);
+        spin->setRange(minValue, maxValue);
+        spin->setValue(value);
+        spin->setFixedWidth(kPreferenceSpinBoxWidth);
+        usePreferenceControlColumn(spin);
+        return spin;
+    };
+    QDoubleSpinBox* slamDynamicClusterVoxelSizeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectClusterVoxelSizeM, 0.05, 2.0, 2, 0.05, QStringLiteral(" m"));
+    QSpinBox* slamDynamicClusterExtendVoxelSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectClusterExtendVoxel, 1, 10);
+    QSpinBox* slamDynamicClusterMinVoxelCountSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectClusterMinVoxelCount, 1, 100);
+    QDoubleSpinBox* slamDynamicClusterTrustThresholdSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectClusterTrustThreshold, 0.01, 1.0, 2, 0.05, QString());
+    QDoubleSpinBox* slamDynamicClusterGroundDistanceSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectClusterGroundDistanceThresholdM,
+        0.02, 1.0, 2, 0.01, QStringLiteral(" m"));
+    QDoubleSpinBox* slamDynamicClusterGroundMaxAngleSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectClusterGroundMaxAngleDeg,
+        1.0, 89.0, 1, 1.0, QStringLiteral(" °"));
+    QSpinBox* slamDynamicMaxDepthMapsSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectMaxDepthMaps, 1, 50);
+    QSpinBox* slamDynamicMinHistoryMapsSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectMinHistoryMaps, 1, slamRuntimeConfig.dynamicObjectMaxDepthMaps);
+    connect(slamDynamicMaxDepthMapsSpin, QOverload<int>::of(&QSpinBox::valueChanged), &dlg,
+            [slamDynamicMinHistoryMapsSpin](int value) {
+                slamDynamicMinHistoryMapsSpin->setMaximum(value);
+            });
+    QDoubleSpinBox* slamDynamicHorizontalResolutionSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectHorizontalResolutionRad, 0.0025, 0.2, 4, 0.0025, QStringLiteral(" rad"));
+    QDoubleSpinBox* slamDynamicVerticalResolutionSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectVerticalResolutionRad, 0.0025, 0.2, 4, 0.0025, QStringLiteral(" rad"));
+    QDoubleSpinBox* slamDynamicVerticalFovDownSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectVerticalFovDownDeg, -90.0, 89.9, 1, 1.0, QStringLiteral(" °"));
+    QDoubleSpinBox* slamDynamicVerticalFovUpSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectVerticalFovUpDeg, -89.9, 90.0, 1, 1.0, QStringLiteral(" °"));
+    connect(slamDynamicVerticalFovDownSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicVerticalFovUpSpin](double value) {
+                slamDynamicVerticalFovUpSpin->setMinimum(value + 0.1);
+            });
+    connect(slamDynamicVerticalFovUpSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicVerticalFovDownSpin](double value) {
+                slamDynamicVerticalFovDownSpin->setMaximum(value - 0.1);
+            });
+    QDoubleSpinBox* slamDynamicHorizontalFovRightSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectHorizontalFovRightDeg, -180.0, 179.9, 1, 1.0, QStringLiteral(" °"));
+    QDoubleSpinBox* slamDynamicHorizontalFovLeftSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectHorizontalFovLeftDeg, -179.9, 180.0, 1, 1.0, QStringLiteral(" °"));
+    connect(slamDynamicHorizontalFovRightSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicHorizontalFovLeftSpin](double value) {
+                slamDynamicHorizontalFovLeftSpin->setMinimum(value + 0.1);
+            });
+    connect(slamDynamicHorizontalFovLeftSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicHorizontalFovRightSpin](double value) {
+                slamDynamicHorizontalFovRightSpin->setMaximum(value - 0.1);
+            });
+    QDoubleSpinBox* slamDynamicMinRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectMinRangeM, 0.0, 1999.9, 2, 0.1, QStringLiteral(" m"));
+    QDoubleSpinBox* slamDynamicMaxRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectMaxRangeM, 0.1, 2000.0, 1, 10.0, QStringLiteral(" m"));
+    connect(slamDynamicMinRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicMaxRangeSpin](double value) {
+                slamDynamicMaxRangeSpin->setMinimum(value + 0.1);
+            });
+    connect(slamDynamicMaxRangeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dlg,
+            [slamDynamicMinRangeSpin](double value) {
+                slamDynamicMinRangeSpin->setMaximum(value - 0.1);
+            });
+    QSpinBox* slamDynamicNeighborPixelRadiusSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectNeighborPixelRadius, 0, 10);
+    QDoubleSpinBox* slamDynamicCase1DepthMarginSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectCase1DepthMarginM, 0.01, 10.0, 2, 0.05, QStringLiteral(" m"));
+    QDoubleSpinBox* slamDynamicCase2DepthMarginSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectCase2DepthMarginM, 0.01, 10.0, 2, 0.05, QStringLiteral(" m"));
+    QDoubleSpinBox* slamDynamicCase3DepthMarginSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.dynamicObjectCase3DepthMarginM, 0.01, 10.0, 2, 0.05, QStringLiteral(" m"));
+    QSpinBox* slamDynamicCase1VoteThresholdSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectCase1VoteThreshold, 1, 50);
+    QSpinBox* slamDynamicCase2VoteThresholdSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectCase2VoteThreshold, 1, 50);
+    QSpinBox* slamDynamicCase3VoteThresholdSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectCase3VoteThreshold, 1, 50);
+    const QVector<QWidget*> slamDynamicClusterControls = {
+        slamDynamicClusterVoxelSizeSpin,
+        slamDynamicClusterExtendVoxelSpin,
+        slamDynamicClusterMinVoxelCountSpin,
+        slamDynamicClusterTrustThresholdSpin,
+        slamDynamicClusterGroundDistanceSpin,
+        slamDynamicClusterGroundMaxAngleSpin
+    };
+    auto syncSlamDynamicControls = [slamDynamicDetectionCheck,
+                                    slamDynamicClusterCheck,
+                                    slamDynamicClusterControls]() {
+        const bool detectionEnabled = slamDynamicDetectionCheck->isChecked();
+        slamDynamicClusterCheck->setEnabled(detectionEnabled);
+        const bool clusterEnabled = detectionEnabled && slamDynamicClusterCheck->isChecked();
+        for (QWidget* control : slamDynamicClusterControls) {
+            control->setEnabled(clusterEnabled);
+        }
+    };
+    connect(slamDynamicDetectionCheck, &QCheckBox::toggled, &dlg,
+            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
+    connect(slamDynamicClusterCheck, &QCheckBox::toggled, &dlg,
+            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
+    syncSlamDynamicControls();
     QWidget* slamWorldCurrentFrameColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamWorldCurrentFrameColorRow);
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
@@ -1573,7 +1685,35 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamPublishBodyCheck->setChecked(runtimeDefaults.publishBodyFrameCloud);
         slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
         slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicObjectDetectionEnabled);
+        slamDynamicClusterCheck->setChecked(runtimeDefaults.dynamicObjectClusterEnabled);
+        slamDynamicClusterVoxelSizeSpin->setValue(runtimeDefaults.dynamicObjectClusterVoxelSizeM);
+        slamDynamicClusterExtendVoxelSpin->setValue(runtimeDefaults.dynamicObjectClusterExtendVoxel);
+        slamDynamicClusterMinVoxelCountSpin->setValue(runtimeDefaults.dynamicObjectClusterMinVoxelCount);
+        slamDynamicClusterTrustThresholdSpin->setValue(runtimeDefaults.dynamicObjectClusterTrustThreshold);
+        slamDynamicClusterGroundDistanceSpin->setValue(
+            runtimeDefaults.dynamicObjectClusterGroundDistanceThresholdM);
+        slamDynamicClusterGroundMaxAngleSpin->setValue(runtimeDefaults.dynamicObjectClusterGroundMaxAngleDeg);
+        slamDynamicBufferDelaySpin->setValue(runtimeDefaults.dynamicObjectBufferDelaySec);
+        slamDynamicDepthMapDurationSpin->setValue(runtimeDefaults.dynamicObjectDepthMapDurationSec);
+        slamDynamicMaxDepthMapsSpin->setValue(runtimeDefaults.dynamicObjectMaxDepthMaps);
+        slamDynamicMinHistoryMapsSpin->setValue(runtimeDefaults.dynamicObjectMinHistoryMaps);
+        slamDynamicHorizontalResolutionSpin->setValue(runtimeDefaults.dynamicObjectHorizontalResolutionRad);
+        slamDynamicVerticalResolutionSpin->setValue(runtimeDefaults.dynamicObjectVerticalResolutionRad);
+        slamDynamicVerticalFovDownSpin->setValue(runtimeDefaults.dynamicObjectVerticalFovDownDeg);
+        slamDynamicVerticalFovUpSpin->setValue(runtimeDefaults.dynamicObjectVerticalFovUpDeg);
+        slamDynamicHorizontalFovRightSpin->setValue(runtimeDefaults.dynamicObjectHorizontalFovRightDeg);
+        slamDynamicHorizontalFovLeftSpin->setValue(runtimeDefaults.dynamicObjectHorizontalFovLeftDeg);
+        slamDynamicMinRangeSpin->setValue(runtimeDefaults.dynamicObjectMinRangeM);
+        slamDynamicMaxRangeSpin->setValue(runtimeDefaults.dynamicObjectMaxRangeM);
+        slamDynamicNeighborPixelRadiusSpin->setValue(runtimeDefaults.dynamicObjectNeighborPixelRadius);
+        slamDynamicCase1DepthMarginSpin->setValue(runtimeDefaults.dynamicObjectCase1DepthMarginM);
+        slamDynamicCase2DepthMarginSpin->setValue(runtimeDefaults.dynamicObjectCase2DepthMarginM);
+        slamDynamicCase3DepthMarginSpin->setValue(runtimeDefaults.dynamicObjectCase3DepthMarginM);
+        slamDynamicCase1VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase1VoteThreshold);
+        slamDynamicCase2VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase2VoteThreshold);
+        slamDynamicCase3VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase3VoteThreshold);
         syncSlamPublishControls();
+        syncSlamDynamicControls();
     };
     auto slamRuntimeConfigFromControls = [&](SlamLidarTemplate lidarTemplate) {
         SlamRuntimeConfig config;
@@ -1607,7 +1747,33 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
         config.saveMap = slamSaveMapCheck->isChecked();
         config.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
-        config.dynamicObjectClusterEnabled = false;
+        config.dynamicObjectClusterEnabled =
+            config.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
+        config.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
+        config.dynamicObjectClusterExtendVoxel = slamDynamicClusterExtendVoxelSpin->value();
+        config.dynamicObjectClusterMinVoxelCount = slamDynamicClusterMinVoxelCountSpin->value();
+        config.dynamicObjectClusterTrustThreshold = slamDynamicClusterTrustThresholdSpin->value();
+        config.dynamicObjectClusterGroundDistanceThresholdM = slamDynamicClusterGroundDistanceSpin->value();
+        config.dynamicObjectClusterGroundMaxAngleDeg = slamDynamicClusterGroundMaxAngleSpin->value();
+        config.dynamicObjectBufferDelaySec = slamDynamicBufferDelaySpin->value();
+        config.dynamicObjectDepthMapDurationSec = slamDynamicDepthMapDurationSpin->value();
+        config.dynamicObjectMaxDepthMaps = slamDynamicMaxDepthMapsSpin->value();
+        config.dynamicObjectMinHistoryMaps = slamDynamicMinHistoryMapsSpin->value();
+        config.dynamicObjectHorizontalResolutionRad = slamDynamicHorizontalResolutionSpin->value();
+        config.dynamicObjectVerticalResolutionRad = slamDynamicVerticalResolutionSpin->value();
+        config.dynamicObjectVerticalFovDownDeg = slamDynamicVerticalFovDownSpin->value();
+        config.dynamicObjectVerticalFovUpDeg = slamDynamicVerticalFovUpSpin->value();
+        config.dynamicObjectHorizontalFovRightDeg = slamDynamicHorizontalFovRightSpin->value();
+        config.dynamicObjectHorizontalFovLeftDeg = slamDynamicHorizontalFovLeftSpin->value();
+        config.dynamicObjectMinRangeM = slamDynamicMinRangeSpin->value();
+        config.dynamicObjectMaxRangeM = slamDynamicMaxRangeSpin->value();
+        config.dynamicObjectNeighborPixelRadius = slamDynamicNeighborPixelRadiusSpin->value();
+        config.dynamicObjectCase1DepthMarginM = slamDynamicCase1DepthMarginSpin->value();
+        config.dynamicObjectCase2DepthMarginM = slamDynamicCase2DepthMarginSpin->value();
+        config.dynamicObjectCase3DepthMarginM = slamDynamicCase3DepthMarginSpin->value();
+        config.dynamicObjectCase1VoteThreshold = slamDynamicCase1VoteThresholdSpin->value();
+        config.dynamicObjectCase2VoteThreshold = slamDynamicCase2VoteThresholdSpin->value();
+        config.dynamicObjectCase3VoteThreshold = slamDynamicCase3VoteThresholdSpin->value();
         return config;
     };
     QHash<int, SlamRuntimeConfig> editedSlamTemplateConfigs;
@@ -1950,9 +2116,125 @@ void LivoxViewerWindow::showPreferencesDialog()
     QFrame* slamDynamicSection = createPreferenceSection(slamDynamicTab);
     addPreferenceRow(slamDynamicSection,
                      "启用动态检测",
-                     "dynamicObjectDetectionEnabled，启用 M-detector 无聚类核心版，对去畸变当前帧生成动态点 overlay 和统计信息",
+                     "dynamicObjectDetectionEnabled，启用 M-detector 点级检测，对去畸变当前帧生成动态事件和统计信息",
                      slamDynamicDetectionCheck);
+    addPreferenceRow(slamDynamicSection,
+                     "启用聚类增强",
+                     "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
+                     slamDynamicClusterCheck);
     slamDynamicTabLayout->addWidget(slamDynamicSection);
+
+    QFrame* slamDynamicClusterSection = createPreferenceSection(slamDynamicTab);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "聚类体素尺寸",
+                     "dynamicObjectClusterVoxelSizeM，事件点和原始点的稀疏体素边长",
+                     slamDynamicClusterVoxelSizeSpin);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "体素连接半径",
+                     "dynamicObjectClusterExtendVoxel，体素连通域搜索的整数半径",
+                     slamDynamicClusterExtendVoxelSpin);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "最小事件体素数",
+                     "dynamicObjectClusterMinVoxelCount，小于该事件体素数量的连通域会被过滤",
+                     slamDynamicClusterMinVoxelCountSpin);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "聚类可信度",
+                     "dynamicObjectClusterTrustThreshold，事件种子点数与最终回填点数的最小比例",
+                     slamDynamicClusterTrustThresholdSpin);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "地面距离阈值",
+                     "dynamicObjectClusterGroundDistanceThresholdM，点到估计地面小于该距离时从动态区域删除",
+                     slamDynamicClusterGroundDistanceSpin);
+    addPreferenceRow(slamDynamicClusterSection,
+                     "地面最大倾角",
+                     "dynamicObjectClusterGroundMaxAngleDeg，候选地面法向相对 IMU 世界竖直轴允许的最大夹角",
+                     slamDynamicClusterGroundMaxAngleSpin);
+    slamDynamicTabLayout->addWidget(slamDynamicClusterSection);
+
+    QFrame* slamDynamicHistorySection = createPreferenceSection(slamDynamicTab);
+    addPreferenceRow(slamDynamicHistorySection,
+                     "缓冲延迟",
+                     "dynamicObjectBufferDelaySec，当前帧经过该延迟后才进入历史深度图，避免过近时间片参与比较",
+                     slamDynamicBufferDelaySpin);
+    addPreferenceRow(slamDynamicHistorySection,
+                     "深度图时间片",
+                     "dynamicObjectDepthMapDurationSec，每张历史深度图聚合的时间跨度",
+                     slamDynamicDepthMapDurationSpin);
+    addPreferenceRow(slamDynamicHistorySection,
+                     "最大历史图数",
+                     "dynamicObjectMaxDepthMaps，保留的历史深度图时间片数量",
+                     slamDynamicMaxDepthMapsSpin);
+    addPreferenceRow(slamDynamicHistorySection,
+                     "最少历史图数",
+                     "dynamicObjectMinHistoryMaps，达到该历史深度图数量后才开始输出动态判定",
+                     slamDynamicMinHistoryMapsSpin);
+    slamDynamicTabLayout->addWidget(slamDynamicHistorySection);
+
+    QFrame* slamDynamicProjectionSection = createPreferenceSection(slamDynamicTab);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "水平角分辨率",
+                     "dynamicObjectHorizontalResolutionRad，球面深度图水平像素角度，越小越精细且内存占用越高",
+                     slamDynamicHorizontalResolutionSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "垂直角分辨率",
+                     "dynamicObjectVerticalResolutionRad，球面深度图垂直像素角度，越小越精细且内存占用越高",
+                     slamDynamicVerticalResolutionSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "垂直视场下界",
+                     "dynamicObjectVerticalFovDownDeg，低于该仰角的点不参与动态检测",
+                     slamDynamicVerticalFovDownSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "垂直视场上界",
+                     "dynamicObjectVerticalFovUpDeg，高于该仰角的点不参与动态检测",
+                     slamDynamicVerticalFovUpSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "水平视场右界",
+                     "dynamicObjectHorizontalFovRightDeg，水平视场的负角度边界，Avia 默认 -34°",
+                     slamDynamicHorizontalFovRightSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "水平视场左界",
+                     "dynamicObjectHorizontalFovLeftDeg，水平视场的正角度边界，Avia 默认 34°",
+                     slamDynamicHorizontalFovLeftSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "检测最近距离",
+                     "dynamicObjectMinRangeM，动态检测独立近距离盲区，不复用 FAST_LIO 匹配盲区",
+                     slamDynamicMinRangeSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "检测最远距离",
+                     "dynamicObjectMaxRangeM，超出该距离的点不写入动态检测深度图",
+                     slamDynamicMaxRangeSpin);
+    addPreferenceRow(slamDynamicProjectionSection,
+                     "邻域像素半径",
+                     "dynamicObjectNeighborPixelRadius，深度比较时在投影像素周围搜索的像素半径",
+                     slamDynamicNeighborPixelRadiusSpin);
+    slamDynamicTabLayout->addWidget(slamDynamicProjectionSection);
+
+    QFrame* slamDynamicCaseSection = createPreferenceSection(slamDynamicTab);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case1 深度阈值",
+                     "dynamicObjectCase1DepthMarginM，当前点比历史静态背景更近时所需的最小深度差",
+                     slamDynamicCase1DepthMarginSpin);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case1 投票阈值",
+                     "dynamicObjectCase1VoteThreshold，判定 Case1 所需的历史深度图命中数",
+                     slamDynamicCase1VoteThresholdSpin);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case2 深度阈值",
+                     "dynamicObjectCase2DepthMarginM，当前点比历史最远深度更远时所需的最小深度差",
+                     slamDynamicCase2DepthMarginSpin);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case2 投票阈值",
+                     "dynamicObjectCase2VoteThreshold，判定 Case2 所需的历史深度图命中数",
+                     slamDynamicCase2VoteThresholdSpin);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case3 深度阈值",
+                     "dynamicObjectCase3DepthMarginM，当前点比历史最近深度更近时所需的最小深度差",
+                     slamDynamicCase3DepthMarginSpin);
+    addPreferenceRow(slamDynamicCaseSection,
+                     "Case3 投票阈值",
+                     "dynamicObjectCase3VoteThreshold，判定 Case3 所需的历史深度图命中数",
+                     slamDynamicCase3VoteThresholdSpin);
+    slamDynamicTabLayout->addWidget(slamDynamicCaseSection);
     slamDynamicTabLayout->addStretch();
 
     QFrame* slamVisualSection = createPreferenceSection(slamVisualTab);
@@ -2044,6 +2326,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     pointCloudBackgroundPreset = selectedBackgroundPreset;
     themeMode = themeGroup->checkedId();
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
+    const SlamRuntimeConfig previousSlamRuntimeConfig = slamRuntimeConfig;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
     const SlamLidarTemplate previousSlamLidarTemplate = slamRuntimeConfig.lidarTemplate;
@@ -2121,7 +2404,33 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
     slamRuntimeConfig.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
-    slamRuntimeConfig.dynamicObjectClusterEnabled = false;
+    slamRuntimeConfig.dynamicObjectClusterEnabled =
+        slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
+    slamRuntimeConfig.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
+    slamRuntimeConfig.dynamicObjectClusterExtendVoxel = slamDynamicClusterExtendVoxelSpin->value();
+    slamRuntimeConfig.dynamicObjectClusterMinVoxelCount = slamDynamicClusterMinVoxelCountSpin->value();
+    slamRuntimeConfig.dynamicObjectClusterTrustThreshold = slamDynamicClusterTrustThresholdSpin->value();
+    slamRuntimeConfig.dynamicObjectClusterGroundDistanceThresholdM = slamDynamicClusterGroundDistanceSpin->value();
+    slamRuntimeConfig.dynamicObjectClusterGroundMaxAngleDeg = slamDynamicClusterGroundMaxAngleSpin->value();
+    slamRuntimeConfig.dynamicObjectBufferDelaySec = slamDynamicBufferDelaySpin->value();
+    slamRuntimeConfig.dynamicObjectDepthMapDurationSec = slamDynamicDepthMapDurationSpin->value();
+    slamRuntimeConfig.dynamicObjectMaxDepthMaps = slamDynamicMaxDepthMapsSpin->value();
+    slamRuntimeConfig.dynamicObjectMinHistoryMaps = slamDynamicMinHistoryMapsSpin->value();
+    slamRuntimeConfig.dynamicObjectHorizontalResolutionRad = slamDynamicHorizontalResolutionSpin->value();
+    slamRuntimeConfig.dynamicObjectVerticalResolutionRad = slamDynamicVerticalResolutionSpin->value();
+    slamRuntimeConfig.dynamicObjectVerticalFovDownDeg = slamDynamicVerticalFovDownSpin->value();
+    slamRuntimeConfig.dynamicObjectVerticalFovUpDeg = slamDynamicVerticalFovUpSpin->value();
+    slamRuntimeConfig.dynamicObjectHorizontalFovRightDeg = slamDynamicHorizontalFovRightSpin->value();
+    slamRuntimeConfig.dynamicObjectHorizontalFovLeftDeg = slamDynamicHorizontalFovLeftSpin->value();
+    slamRuntimeConfig.dynamicObjectMinRangeM = slamDynamicMinRangeSpin->value();
+    slamRuntimeConfig.dynamicObjectMaxRangeM = slamDynamicMaxRangeSpin->value();
+    slamRuntimeConfig.dynamicObjectNeighborPixelRadius = slamDynamicNeighborPixelRadiusSpin->value();
+    slamRuntimeConfig.dynamicObjectCase1DepthMarginM = slamDynamicCase1DepthMarginSpin->value();
+    slamRuntimeConfig.dynamicObjectCase2DepthMarginM = slamDynamicCase2DepthMarginSpin->value();
+    slamRuntimeConfig.dynamicObjectCase3DepthMarginM = slamDynamicCase3DepthMarginSpin->value();
+    slamRuntimeConfig.dynamicObjectCase1VoteThreshold = slamDynamicCase1VoteThresholdSpin->value();
+    slamRuntimeConfig.dynamicObjectCase2VoteThreshold = slamDynamicCase2VoteThresholdSpin->value();
+    slamRuntimeConfig.dynamicObjectCase3VoteThreshold = slamDynamicCase3VoteThresholdSpin->value();
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
     slamTrajectoryColor = selectedSlamTrajectoryColor;
@@ -2180,6 +2489,33 @@ void LivoxViewerWindow::showPreferencesDialog()
         }
         return false;
     }();
+    const bool slamDynamicConfigChanged =
+        slamRuntimeConfig.dynamicObjectClusterEnabled != previousSlamRuntimeConfig.dynamicObjectClusterEnabled ||
+        slamRuntimeConfig.dynamicObjectClusterVoxelSizeM != previousSlamRuntimeConfig.dynamicObjectClusterVoxelSizeM ||
+        slamRuntimeConfig.dynamicObjectClusterExtendVoxel != previousSlamRuntimeConfig.dynamicObjectClusterExtendVoxel ||
+        slamRuntimeConfig.dynamicObjectClusterMinVoxelCount != previousSlamRuntimeConfig.dynamicObjectClusterMinVoxelCount ||
+        slamRuntimeConfig.dynamicObjectClusterTrustThreshold != previousSlamRuntimeConfig.dynamicObjectClusterTrustThreshold ||
+        slamRuntimeConfig.dynamicObjectClusterGroundDistanceThresholdM != previousSlamRuntimeConfig.dynamicObjectClusterGroundDistanceThresholdM ||
+        slamRuntimeConfig.dynamicObjectClusterGroundMaxAngleDeg != previousSlamRuntimeConfig.dynamicObjectClusterGroundMaxAngleDeg ||
+        slamRuntimeConfig.dynamicObjectBufferDelaySec != previousSlamRuntimeConfig.dynamicObjectBufferDelaySec ||
+        slamRuntimeConfig.dynamicObjectDepthMapDurationSec != previousSlamRuntimeConfig.dynamicObjectDepthMapDurationSec ||
+        slamRuntimeConfig.dynamicObjectMaxDepthMaps != previousSlamRuntimeConfig.dynamicObjectMaxDepthMaps ||
+        slamRuntimeConfig.dynamicObjectMinHistoryMaps != previousSlamRuntimeConfig.dynamicObjectMinHistoryMaps ||
+        slamRuntimeConfig.dynamicObjectHorizontalResolutionRad != previousSlamRuntimeConfig.dynamicObjectHorizontalResolutionRad ||
+        slamRuntimeConfig.dynamicObjectVerticalResolutionRad != previousSlamRuntimeConfig.dynamicObjectVerticalResolutionRad ||
+        slamRuntimeConfig.dynamicObjectVerticalFovDownDeg != previousSlamRuntimeConfig.dynamicObjectVerticalFovDownDeg ||
+        slamRuntimeConfig.dynamicObjectVerticalFovUpDeg != previousSlamRuntimeConfig.dynamicObjectVerticalFovUpDeg ||
+        slamRuntimeConfig.dynamicObjectHorizontalFovRightDeg != previousSlamRuntimeConfig.dynamicObjectHorizontalFovRightDeg ||
+        slamRuntimeConfig.dynamicObjectHorizontalFovLeftDeg != previousSlamRuntimeConfig.dynamicObjectHorizontalFovLeftDeg ||
+        slamRuntimeConfig.dynamicObjectMinRangeM != previousSlamRuntimeConfig.dynamicObjectMinRangeM ||
+        slamRuntimeConfig.dynamicObjectMaxRangeM != previousSlamRuntimeConfig.dynamicObjectMaxRangeM ||
+        slamRuntimeConfig.dynamicObjectNeighborPixelRadius != previousSlamRuntimeConfig.dynamicObjectNeighborPixelRadius ||
+        slamRuntimeConfig.dynamicObjectCase1DepthMarginM != previousSlamRuntimeConfig.dynamicObjectCase1DepthMarginM ||
+        slamRuntimeConfig.dynamicObjectCase2DepthMarginM != previousSlamRuntimeConfig.dynamicObjectCase2DepthMarginM ||
+        slamRuntimeConfig.dynamicObjectCase3DepthMarginM != previousSlamRuntimeConfig.dynamicObjectCase3DepthMarginM ||
+        slamRuntimeConfig.dynamicObjectCase1VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase1VoteThreshold ||
+        slamRuntimeConfig.dynamicObjectCase2VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase2VoteThreshold ||
+        slamRuntimeConfig.dynamicObjectCase3VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase3VoteThreshold;
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
         slamRuntimeConfig.lidarTemplate != previousSlamLidarTemplate ||
@@ -2202,6 +2538,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
         slamRuntimeConfig.saveMap != previousSlamSaveMap ||
         slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection ||
+        slamDynamicConfigChanged ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
         slamTrajectoryColor != previousSlamTrajectoryColor ||

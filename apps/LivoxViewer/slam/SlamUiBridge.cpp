@@ -398,16 +398,32 @@ void SlamUiBridge::refreshStatus()
     m_displayState.dynamicMode = m_latestOutput.dynamicObjectStats.enabled
         ? (m_latestOutput.dynamicObjectStats.clusterEnabled ? QStringLiteral("有聚类") : QStringLiteral("无聚类"))
         : QStringLiteral("关闭");
-    m_displayState.dynamicPoints = m_latestOutput.dynamicObjectStats.enabled
-        ? QStringLiteral("%1 / 静态 %2 / C1 %3 C2 %4 C3 %5")
-              .arg(m_latestOutput.dynamicObjectStats.dynamicPointCount)
-              .arg(m_latestOutput.dynamicObjectStats.staticPointCount)
-              .arg(m_latestOutput.dynamicObjectStats.case1PointCount)
-              .arg(m_latestOutput.dynamicObjectStats.case2PointCount)
-              .arg(m_latestOutput.dynamicObjectStats.case3PointCount)
-        : QStringLiteral("0");
+    if (m_latestOutput.dynamicObjectStats.enabled) {
+        const SlamDynamicObjectStats& stats = m_latestOutput.dynamicObjectStats;
+        m_displayState.dynamicPoints = stats.clusterEnabled
+            ? QStringLiteral("聚类 %1 / 原始 %2 / 对象 %3 拒绝 %4 / 地面剔除 %5 / C1 %6 C2 %7 C3 %8")
+                  .arg(stats.dynamicPointCount)
+                  .arg(stats.originDynamicPointCount)
+                  .arg(stats.clusterCount)
+                  .arg(stats.rejectedClusterCount)
+                  .arg(stats.groundRemovedPointCount)
+                  .arg(stats.case1PointCount)
+                  .arg(stats.case2PointCount)
+                  .arg(stats.case3PointCount)
+            : QStringLiteral("%1 / 静态 %2 / C1 %3 C2 %4 C3 %5")
+                  .arg(stats.dynamicPointCount)
+                  .arg(stats.staticPointCount)
+                  .arg(stats.case1PointCount)
+                  .arg(stats.case2PointCount)
+                  .arg(stats.case3PointCount);
+    } else {
+        m_displayState.dynamicPoints = QStringLiteral("0");
+    }
     m_displayState.dynamicDetectorMs = m_latestOutput.dynamicObjectStats.enabled
         ? QString::number(m_latestOutput.dynamicObjectStats.detectorMs, 'f', 2)
+        : QStringLiteral("0.00");
+    m_displayState.dynamicClusterMs = m_latestOutput.dynamicObjectStats.clusterEnabled
+        ? QString::number(m_latestOutput.dynamicObjectStats.clusterMs, 'f', 2)
         : QStringLiteral("0.00");
     m_displayState.error = m_errorMessage;
 

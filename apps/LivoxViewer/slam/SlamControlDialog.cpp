@@ -62,6 +62,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("输入 FPS"));
     addField(form, QStringLiteral("后端耗时"));
     addField(form, QStringLiteral("动态检测耗时"));
+    addField(form, QStringLiteral("动态聚类耗时"));
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
@@ -149,6 +150,7 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("输入 FPS"))->setText(state.inputFps);
     m_fields.value(QStringLiteral("后端耗时"))->setText(QStringLiteral("%1 ms").arg(state.backendMs));
     m_fields.value(QStringLiteral("动态检测耗时"))->setText(QStringLiteral("%1 ms").arg(state.dynamicDetectorMs));
+    m_fields.value(QStringLiteral("动态聚类耗时"))->setText(QStringLiteral("%1 ms").arg(state.dynamicClusterMs));
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);

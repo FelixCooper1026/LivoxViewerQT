@@ -257,6 +257,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(performanceBody, performanceGroup, QStringLiteral("输入 FPS"));
     addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("动态检测耗时"));
+    addField(performanceBody, performanceGroup, QStringLiteral("动态聚类耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
     addField(performanceBody, performanceGroup, QStringLiteral("内存占用"));
     performanceBody->addStretch(1);
@@ -397,6 +398,7 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     setField(QStringLiteral("输入 FPS"), state.inputFps);
     setField(QStringLiteral("后端耗时"), QStringLiteral("%1 ms").arg(state.backendMs));
     setField(QStringLiteral("动态检测耗时"), QStringLiteral("%1 ms").arg(state.dynamicDetectorMs));
+    setField(QStringLiteral("动态聚类耗时"), QStringLiteral("%1 ms").arg(state.dynamicClusterMs));
     setField(QStringLiteral("丢帧数"), state.droppedFrames);
     setField(QStringLiteral("当前位姿"), state.currentPose);
     quint64 displayCacheBytes = 0;
