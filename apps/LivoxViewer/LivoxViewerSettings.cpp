@@ -913,6 +913,16 @@ void LivoxViewerWindow::loadViewPreferences()
         settings.value(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx).toFloat(),
         1.0f,
         10.0f);
+    slamDynamicObjectColor = settings.value(
+        QStringLiteral("slam/dynamicObjectColor"), slamDynamicObjectColor).value<QColor>();
+    if (!slamDynamicObjectColor.isValid()) {
+        slamDynamicObjectColor = QColor(239, 41, 41);
+    }
+    slamDynamicObjectPointSizePx = std::clamp(
+        settings.value(QStringLiteral("slam/dynamicObjectPointSizePx"),
+                       slamDynamicObjectPointSizePx).toFloat(),
+        1.0f,
+        10.0f);
     slamTrajectoryColor = settings.value(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor).value<QColor>();
     if (!slamTrajectoryColor.isValid()) {
         slamTrajectoryColor = QColor(26, 191, 255);
@@ -1046,6 +1056,8 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue(QStringLiteral("slam/worldCurrentFramePointSizePx"), slamWorldCurrentFramePointSizePx);
     settings.setValue(QStringLiteral("slam/bodyFrameColor"), slamBodyFrameColor);
     settings.setValue(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx);
+    settings.setValue(QStringLiteral("slam/dynamicObjectColor"), slamDynamicObjectColor);
+    settings.setValue(QStringLiteral("slam/dynamicObjectPointSizePx"), slamDynamicObjectPointSizePx);
     settings.setValue(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor);
     settings.setValue(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx);
     settings.setValue(QStringLiteral("slam/poseAxisLengthM"), slamPoseAxisLengthM);
@@ -1069,6 +1081,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QColor selectedColor = config.color;
     QColor selectedSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     QColor selectedSlamBodyFrameColor = slamBodyFrameColor;
+    QColor selectedSlamDynamicObjectColor = slamDynamicObjectColor;
     QColor selectedSlamTrajectoryColor = slamTrajectoryColor;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
@@ -1549,10 +1562,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.dynamicObjectCase3DepthMarginM, 0.01, 10.0, 2, 0.05, QStringLiteral(" m"));
     QSpinBox* slamDynamicCase1VoteThresholdSpin = createSlamIntSpin(
         slamRuntimeConfig.dynamicObjectCase1VoteThreshold, 1, 50);
-    QSpinBox* slamDynamicCase2VoteThresholdSpin = createSlamIntSpin(
-        slamRuntimeConfig.dynamicObjectCase2VoteThreshold, 1, 50);
-    QSpinBox* slamDynamicCase3VoteThresholdSpin = createSlamIntSpin(
-        slamRuntimeConfig.dynamicObjectCase3VoteThreshold, 1, 50);
+    QSpinBox* slamDynamicCase2OcclusionChainLengthSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectCase2OcclusionChainLength, 1, 50);
+    QSpinBox* slamDynamicCase3OcclusionChainLengthSpin = createSlamIntSpin(
+        slamRuntimeConfig.dynamicObjectCase3OcclusionChainLength, 1, 50);
     const QVector<QWidget*> slamDynamicClusterControls = {
         slamDynamicClusterVoxelSizeSpin,
         slamDynamicClusterExtendVoxelSpin,
@@ -1618,6 +1631,36 @@ void LivoxViewerWindow::showPreferencesDialog()
     });
     QDoubleSpinBox* slamBodyFramePointSizeSpin =
         createSlamDoubleSpin(slamBodyFramePointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QWidget* slamDynamicObjectColorRow = new QWidget(&dlg);
+    usePreferenceControlColumn(slamDynamicObjectColorRow);
+    QHBoxLayout* slamDynamicObjectColorLayout = new QHBoxLayout(slamDynamicObjectColorRow);
+    slamDynamicObjectColorLayout->setContentsMargins(0, 0, 0, 0);
+    slamDynamicObjectColorLayout->setSpacing(8);
+    QPushButton* slamDynamicObjectColorPreview =
+        createColorSwatchButton(slamDynamicObjectColorRow, selectedSlamDynamicObjectColor);
+    slamDynamicObjectColorLayout->addWidget(slamDynamicObjectColorPreview);
+    slamDynamicObjectColorLayout->addStretch();
+    connect(slamDynamicObjectColorPreview,
+            &QPushButton::clicked,
+            &dlg,
+            [&dlg, &selectedSlamDynamicObjectColor, slamDynamicObjectColorPreview]() {
+                QColor color = QColorDialog::getColor(selectedSlamDynamicObjectColor,
+                                                       &dlg,
+                                                       QStringLiteral("选择动态物体点云颜色"));
+                if (!color.isValid()) {
+                    return;
+                }
+                selectedSlamDynamicObjectColor = color;
+                updateColorSwatchButton(slamDynamicObjectColorPreview,
+                                        selectedSlamDynamicObjectColor);
+            });
+    QDoubleSpinBox* slamDynamicObjectPointSizeSpin =
+        createSlamDoubleSpin(slamDynamicObjectPointSizePx,
+                             1.0,
+                             10.0,
+                             1,
+                             0.5,
+                             QStringLiteral(" px"));
     QWidget* slamTrajectoryColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamTrajectoryColorRow);
     QHBoxLayout* slamTrajectoryColorLayout = new QHBoxLayout(slamTrajectoryColorRow);
@@ -1710,8 +1753,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicCase2DepthMarginSpin->setValue(runtimeDefaults.dynamicObjectCase2DepthMarginM);
         slamDynamicCase3DepthMarginSpin->setValue(runtimeDefaults.dynamicObjectCase3DepthMarginM);
         slamDynamicCase1VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase1VoteThreshold);
-        slamDynamicCase2VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase2VoteThreshold);
-        slamDynamicCase3VoteThresholdSpin->setValue(runtimeDefaults.dynamicObjectCase3VoteThreshold);
+        slamDynamicCase2OcclusionChainLengthSpin->setValue(
+            runtimeDefaults.dynamicObjectCase2OcclusionChainLength);
+        slamDynamicCase3OcclusionChainLengthSpin->setValue(
+            runtimeDefaults.dynamicObjectCase3OcclusionChainLength);
         syncSlamPublishControls();
         syncSlamDynamicControls();
     };
@@ -1772,8 +1817,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.dynamicObjectCase2DepthMarginM = slamDynamicCase2DepthMarginSpin->value();
         config.dynamicObjectCase3DepthMarginM = slamDynamicCase3DepthMarginSpin->value();
         config.dynamicObjectCase1VoteThreshold = slamDynamicCase1VoteThresholdSpin->value();
-        config.dynamicObjectCase2VoteThreshold = slamDynamicCase2VoteThresholdSpin->value();
-        config.dynamicObjectCase3VoteThreshold = slamDynamicCase3VoteThresholdSpin->value();
+        config.dynamicObjectCase2OcclusionChainLength =
+            slamDynamicCase2OcclusionChainLengthSpin->value();
+        config.dynamicObjectCase3OcclusionChainLength =
+            slamDynamicCase3OcclusionChainLengthSpin->value();
         return config;
     };
     QHash<int, SlamRuntimeConfig> editedSlamTemplateConfigs;
@@ -2223,17 +2270,17 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "dynamicObjectCase2DepthMarginM，当前点比历史最远深度更远时所需的最小深度差",
                      slamDynamicCase2DepthMarginSpin);
     addPreferenceRow(slamDynamicCaseSection,
-                     "Case2 投票阈值",
-                     "dynamicObjectCase2VoteThreshold，判定 Case2 所需的历史深度图命中数",
-                     slamDynamicCase2VoteThresholdSpin);
+                     "Case2 遮挡链长度",
+                     "dynamicObjectCase2OcclusionChainLength，Case2 需连续通过一致性、速度和加速度检查的遮挡段数",
+                     slamDynamicCase2OcclusionChainLengthSpin);
     addPreferenceRow(slamDynamicCaseSection,
                      "Case3 深度阈值",
                      "dynamicObjectCase3DepthMarginM，当前点比历史最近深度更近时所需的最小深度差",
                      slamDynamicCase3DepthMarginSpin);
     addPreferenceRow(slamDynamicCaseSection,
-                     "Case3 投票阈值",
-                     "dynamicObjectCase3VoteThreshold，判定 Case3 所需的历史深度图命中数",
-                     slamDynamicCase3VoteThresholdSpin);
+                     "Case3 遮挡链长度",
+                     "dynamicObjectCase3OcclusionChainLength，Case3 需连续通过一致性、速度和加速度检查的遮挡段数",
+                     slamDynamicCase3OcclusionChainLengthSpin);
     slamDynamicTabLayout->addWidget(slamDynamicCaseSection);
     slamDynamicTabLayout->addStretch();
 
@@ -2254,6 +2301,14 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "机体系当前帧点大小",
                      "slamBodyFramePointSizePx，IMU 机体系当前帧点大小，影响机体系当前帧点云显示醒目程度",
                      slamBodyFramePointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "动态物体颜色",
+                     "slamDynamicObjectColor，所有 Case 检出的动态物体统一使用该颜色显示",
+                     slamDynamicObjectColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "动态物体点大小",
+                     "slamDynamicObjectPointSizePx，动态物体点云的显示点大小",
+                     slamDynamicObjectPointSizeSpin);
     addPreferenceRow(slamVisualSection,
                      "轨迹颜色",
                      "slamTrajectoryColor，位姿轨迹线颜色，用于区分轨迹和点云",
@@ -2367,9 +2422,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     };
     const QColor previousSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
+    const QColor previousSlamDynamicObjectColor = slamDynamicObjectColor;
     const QColor previousSlamTrajectoryColor = slamTrajectoryColor;
     const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
     const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
+    const float previousSlamDynamicObjectPointSizePx = slamDynamicObjectPointSizePx;
     const float previousSlamTrajectoryLineWidthPx = slamTrajectoryLineWidthPx;
     const float previousSlamPoseAxisLengthM = slamPoseAxisLengthM;
     const float previousSlamPoseAxisLineWidthPx = slamPoseAxisLineWidthPx;
@@ -2429,13 +2486,18 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.dynamicObjectCase2DepthMarginM = slamDynamicCase2DepthMarginSpin->value();
     slamRuntimeConfig.dynamicObjectCase3DepthMarginM = slamDynamicCase3DepthMarginSpin->value();
     slamRuntimeConfig.dynamicObjectCase1VoteThreshold = slamDynamicCase1VoteThresholdSpin->value();
-    slamRuntimeConfig.dynamicObjectCase2VoteThreshold = slamDynamicCase2VoteThresholdSpin->value();
-    slamRuntimeConfig.dynamicObjectCase3VoteThreshold = slamDynamicCase3VoteThresholdSpin->value();
+    slamRuntimeConfig.dynamicObjectCase2OcclusionChainLength =
+        slamDynamicCase2OcclusionChainLengthSpin->value();
+    slamRuntimeConfig.dynamicObjectCase3OcclusionChainLength =
+        slamDynamicCase3OcclusionChainLengthSpin->value();
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
+    slamDynamicObjectColor = selectedSlamDynamicObjectColor;
     slamTrajectoryColor = selectedSlamTrajectoryColor;
     slamWorldCurrentFramePointSizePx = static_cast<float>(slamWorldCurrentFramePointSizeSpin->value());
     slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
+    slamDynamicObjectPointSizePx =
+        static_cast<float>(slamDynamicObjectPointSizeSpin->value());
     slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
     slamPoseAxisLengthM = static_cast<float>(slamPoseAxisLengthSpin->value());
     slamPoseAxisLineWidthPx = static_cast<float>(slamPoseAxisLineWidthSpin->value());
@@ -2449,9 +2511,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     if (slamUiBridge) {
         slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
         slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+        slamUiBridge->setDynamicObjectColor(slamDynamicObjectColor);
         slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
+        slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
         slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
         slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
         slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
@@ -2514,8 +2578,10 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.dynamicObjectCase2DepthMarginM != previousSlamRuntimeConfig.dynamicObjectCase2DepthMarginM ||
         slamRuntimeConfig.dynamicObjectCase3DepthMarginM != previousSlamRuntimeConfig.dynamicObjectCase3DepthMarginM ||
         slamRuntimeConfig.dynamicObjectCase1VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase1VoteThreshold ||
-        slamRuntimeConfig.dynamicObjectCase2VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase2VoteThreshold ||
-        slamRuntimeConfig.dynamicObjectCase3VoteThreshold != previousSlamRuntimeConfig.dynamicObjectCase3VoteThreshold;
+        slamRuntimeConfig.dynamicObjectCase2OcclusionChainLength !=
+            previousSlamRuntimeConfig.dynamicObjectCase2OcclusionChainLength ||
+        slamRuntimeConfig.dynamicObjectCase3OcclusionChainLength !=
+            previousSlamRuntimeConfig.dynamicObjectCase3OcclusionChainLength;
     if (slamRuntimeConfig.filterSizeSurfM != previousSlamFilterSurfM ||
         slamRuntimeConfig.filterSizeMapM != previousSlamFilterMapM ||
         slamRuntimeConfig.lidarTemplate != previousSlamLidarTemplate ||
@@ -2541,9 +2607,11 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicConfigChanged ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
+        slamDynamicObjectColor != previousSlamDynamicObjectColor ||
         slamTrajectoryColor != previousSlamTrajectoryColor ||
         slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
         slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx ||
+        slamDynamicObjectPointSizePx != previousSlamDynamicObjectPointSizePx ||
         slamTrajectoryLineWidthPx != previousSlamTrajectoryLineWidthPx ||
         slamPoseAxisLengthM != previousSlamPoseAxisLengthM ||
         slamPoseAxisLineWidthPx != previousSlamPoseAxisLineWidthPx) {

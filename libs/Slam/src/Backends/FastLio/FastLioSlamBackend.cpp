@@ -108,8 +108,8 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
          config.dynamicObjectCase2DepthMarginM <= 0.0 ||
          config.dynamicObjectCase3DepthMarginM <= 0.0 ||
          config.dynamicObjectCase1VoteThreshold <= 0 ||
-         config.dynamicObjectCase2VoteThreshold <= 0 ||
-         config.dynamicObjectCase3VoteThreshold <= 0 ||
+         config.dynamicObjectCase2OcclusionChainLength <= 0 ||
+         config.dynamicObjectCase3OcclusionChainLength <= 0 ||
          (config.dynamicObjectClusterEnabled &&
           (config.dynamicObjectClusterVoxelSizeM <= 0.0 ||
            config.dynamicObjectClusterExtendVoxel <= 0 ||
@@ -139,15 +139,33 @@ DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConf
     detectorConfig.maxRangeM = config.dynamicObjectMaxRangeM;
     detectorConfig.bufferDelaySec = config.dynamicObjectBufferDelaySec;
     detectorConfig.depthMapDurationSec = config.dynamicObjectDepthMapDurationSec;
+    detectorConfig.frameDurationSec = config.lidarTemplate == SlamLidarTemplate::Avia ? 0.1 : 0.02;
     detectorConfig.maxDepthMaps = config.dynamicObjectMaxDepthMaps;
+    detectorConfig.maxPointsPerPixel = config.lidarTemplate == SlamLidarTemplate::Avia ? 50 : 20;
     detectorConfig.minHistoryMaps = config.dynamicObjectMinHistoryMaps;
     detectorConfig.neighborPixelRadius = config.dynamicObjectNeighborPixelRadius;
     detectorConfig.case1DepthMarginM = config.dynamicObjectCase1DepthMarginM;
     detectorConfig.case2DepthMarginM = config.dynamicObjectCase2DepthMarginM;
     detectorConfig.case3DepthMarginM = config.dynamicObjectCase3DepthMarginM;
     detectorConfig.case1VoteThreshold = config.dynamicObjectCase1VoteThreshold;
-    detectorConfig.case2VoteThreshold = config.dynamicObjectCase2VoteThreshold;
-    detectorConfig.case3VoteThreshold = config.dynamicObjectCase3VoteThreshold;
+    detectorConfig.case2OcclusionChainLength = config.dynamicObjectCase2OcclusionChainLength;
+    detectorConfig.case3OcclusionChainLength = config.dynamicObjectCase3OcclusionChainLength;
+    if (config.lidarTemplate == SlamLidarTemplate::Avia) {
+        detectorConfig.case2MapConsistencyDepthM = 0.1;
+        detectorConfig.case2MapConsistencyHorizontalRad = 0.01;
+        detectorConfig.case2MapConsistencyVerticalRad = 0.01;
+        detectorConfig.case2OcclusionHorizontalRad = 0.02;
+        detectorConfig.case2OcclusionVerticalRad = 0.03;
+        detectorConfig.case2DepthConsistencyHorizontalRad = 0.01;
+        detectorConfig.case2DepthConsistencyVerticalRad = 0.01;
+        detectorConfig.case3MapConsistencyDepthM = 0.2;
+        detectorConfig.case3MapConsistencyHorizontalRad = 0.015;
+        detectorConfig.case3MapConsistencyVerticalRad = 0.015;
+        detectorConfig.case3OcclusionHorizontalRad = 0.01;
+        detectorConfig.case3OcclusionVerticalRad = 0.01;
+        detectorConfig.case3DepthConsistencyHorizontalRad = 0.01;
+        detectorConfig.case3DepthConsistencyVerticalRad = 0.01;
+    }
     detectorConfig.clusterEnabled = config.dynamicObjectClusterEnabled;
     detectorConfig.clusterVoxelSizeM = config.dynamicObjectClusterVoxelSizeM;
     detectorConfig.clusterExtendVoxel = config.dynamicObjectClusterExtendVoxel;

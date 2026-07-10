@@ -276,9 +276,11 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge = new SlamUiBridge(this);
     slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
+    slamUiBridge->setDynamicObjectColor(slamDynamicObjectColor);
     slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
     slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
     slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
+    slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
     slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
     slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
     slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);

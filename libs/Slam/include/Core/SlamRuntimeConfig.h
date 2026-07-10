@@ -66,8 +66,8 @@ struct SlamRuntimeConfig {
     double dynamicObjectCase2DepthMarginM = 0.3;
     double dynamicObjectCase3DepthMarginM = 0.15;
     int dynamicObjectCase1VoteThreshold = 3;
-    int dynamicObjectCase2VoteThreshold = 3;
-    int dynamicObjectCase3VoteThreshold = 3;
+    int dynamicObjectCase2OcclusionChainLength = 3;
+    int dynamicObjectCase3OcclusionChainLength = 3;
     double mapVoxelSizeM = 0.1;
     int maxMapPoints = 2000000;
     int maxTrajectoryPoints = 200000;

@@ -40,20 +40,9 @@ SlamRenderVertex renderSlamPoint(const SlamPoint& point, const QColor& color)
     return {point.x, point.y, point.z, color.redF(), color.greenF(), color.blueF()};
 }
 
-SlamRenderVertex renderDynamicPoint(const SlamDynamicPoint& point)
+SlamRenderVertex renderDynamicPoint(const SlamDynamicPoint& point, const QColor& color)
 {
-    switch (point.label) {
-    case SlamDynamicPointLabel::Case1:
-        return {point.x, point.y, point.z, 1.0f, 0.08f, 0.08f};
-    case SlamDynamicPointLabel::Case2:
-        return {point.x, point.y, point.z, 1.0f, 0.72f, 0.06f};
-    case SlamDynamicPointLabel::Case3:
-        return {point.x, point.y, point.z, 0.0f, 0.92f, 0.95f};
-    case SlamDynamicPointLabel::Static:
-    case SlamDynamicPointLabel::Invalid:
-    default:
-        return {point.x, point.y, point.z, 1.0f, 0.08f, 0.08f};
-    }
+    return {point.x, point.y, point.z, color.redF(), color.greenF(), color.blueF()};
 }
 
 QVector3D posePosition(const SlamPose& pose)
@@ -247,6 +236,15 @@ void SlamUiBridge::setBodyFrameColor(const QColor& color)
     refreshStatus();
 }
 
+void SlamUiBridge::setDynamicObjectColor(const QColor& color)
+{
+    if (!color.isValid() || m_dynamicObjectColor == color) {
+        return;
+    }
+    m_dynamicObjectColor = color;
+    refreshStatus();
+}
+
 void SlamUiBridge::setTrajectoryColor(const QColor& color)
 {
     if (!color.isValid() || m_trajectoryColor == color) {
@@ -273,6 +271,16 @@ void SlamUiBridge::setBodyFramePointSize(float sizePx)
         return;
     }
     m_bodyFramePointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setDynamicObjectPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_dynamicObjectPointSizePx == clampedSize) {
+        return;
+    }
+    m_dynamicObjectPointSizePx = clampedSize;
     refreshStatus();
 }
 
@@ -507,7 +515,7 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     if (m_dynamicObjectVisible && m_latestOutput.dynamicObjectStats.enabled) {
         snapshot.dynamicObjectVertices.reserve(m_latestOutput.dynamicWorldFramePoints.size());
         for (const SlamDynamicPoint& point : m_latestOutput.dynamicWorldFramePoints) {
-            snapshot.dynamicObjectVertices.push_back(renderDynamicPoint(point));
+            snapshot.dynamicObjectVertices.push_back(renderDynamicPoint(point, m_dynamicObjectColor));
         }
     }
     return snapshot;

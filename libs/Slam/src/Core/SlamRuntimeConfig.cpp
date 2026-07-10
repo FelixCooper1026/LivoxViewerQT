@@ -142,8 +142,8 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         config.dynamicObjectCase2DepthMarginM = 0.15;
         config.dynamicObjectCase3DepthMarginM = 0.15;
         config.dynamicObjectCase1VoteThreshold = 2;
-        config.dynamicObjectCase2VoteThreshold = 2;
-        config.dynamicObjectCase3VoteThreshold = 2;
+        config.dynamicObjectCase2OcclusionChainLength = 3;
+        config.dynamicObjectCase3OcclusionChainLength = 3;
         config.dynamicObjectClusterVoxelSizeM = 0.3;
         config.dynamicObjectClusterExtendVoxel = 5;
         config.dynamicObjectClusterMinVoxelCount = 2;
@@ -165,8 +165,8 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.dynamicObjectCase2DepthMarginM = 0.3;
     config.dynamicObjectCase3DepthMarginM = 0.15;
     config.dynamicObjectCase1VoteThreshold = 3;
-    config.dynamicObjectCase2VoteThreshold = 3;
-    config.dynamicObjectCase3VoteThreshold = 3;
+    config.dynamicObjectCase2OcclusionChainLength = 3;
+    config.dynamicObjectCase3OcclusionChainLength = 3;
     config.dynamicObjectClusterVoxelSizeM = 0.1;
     config.dynamicObjectClusterExtendVoxel = 3;
     config.dynamicObjectClusterMinVoxelCount = 1;
@@ -332,12 +332,14 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
     config.dynamicObjectCase1VoteThreshold = validPositiveInt(
         settings.value(key(prefix, QStringLiteral("dynamicObjectCase1VoteThreshold")), config.dynamicObjectCase1VoteThreshold).toInt(),
         config.dynamicObjectCase1VoteThreshold);
-    config.dynamicObjectCase2VoteThreshold = validPositiveInt(
-        settings.value(key(prefix, QStringLiteral("dynamicObjectCase2VoteThreshold")), config.dynamicObjectCase2VoteThreshold).toInt(),
-        config.dynamicObjectCase2VoteThreshold);
-    config.dynamicObjectCase3VoteThreshold = validPositiveInt(
-        settings.value(key(prefix, QStringLiteral("dynamicObjectCase3VoteThreshold")), config.dynamicObjectCase3VoteThreshold).toInt(),
-        config.dynamicObjectCase3VoteThreshold);
+    config.dynamicObjectCase2OcclusionChainLength = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase2OcclusionChainLength")),
+                       config.dynamicObjectCase2OcclusionChainLength).toInt(),
+        config.dynamicObjectCase2OcclusionChainLength);
+    config.dynamicObjectCase3OcclusionChainLength = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("dynamicObjectCase3OcclusionChainLength")),
+                       config.dynamicObjectCase3OcclusionChainLength).toInt(),
+        config.dynamicObjectCase3OcclusionChainLength);
     config.mapVoxelSizeM = settings.value(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM).toDouble();
     config.maxMapPoints = settings.value(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints).toInt();
     config.maxTrajectoryPoints = settings.value(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints).toInt();
@@ -410,8 +412,10 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase2DepthMarginM")), config.dynamicObjectCase2DepthMarginM);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3DepthMarginM")), config.dynamicObjectCase3DepthMarginM);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase1VoteThreshold")), config.dynamicObjectCase1VoteThreshold);
-    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase2VoteThreshold")), config.dynamicObjectCase2VoteThreshold);
-    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3VoteThreshold")), config.dynamicObjectCase3VoteThreshold);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase2OcclusionChainLength")),
+                      config.dynamicObjectCase2OcclusionChainLength);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3OcclusionChainLength")),
+                      config.dynamicObjectCase3OcclusionChainLength);
     settings.setValue(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints);
     settings.setValue(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints);

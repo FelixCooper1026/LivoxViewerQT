@@ -46,9 +46,11 @@ public slots:
     void receiveSlamOutput(const SlamOutput& output);
     void setWorldFrameColor(const QColor& color);
     void setBodyFrameColor(const QColor& color);
+    void setDynamicObjectColor(const QColor& color);
     void setTrajectoryColor(const QColor& color);
     void setWorldFramePointSize(float sizePx);
     void setBodyFramePointSize(float sizePx);
+    void setDynamicObjectPointSize(float sizePx);
     void setTrajectoryLineWidth(float widthPx);
     void setPoseAxisLength(float lengthM);
     void setPoseAxisLineWidth(float widthPx);
@@ -84,6 +86,7 @@ private:
     QString m_backend = QStringLiteral("FAST_LIO");
     QColor m_worldFrameColor = QColor(255, 255, 255);
     QColor m_bodyFrameColor = QColor(255, 140, 26);
+    QColor m_dynamicObjectColor = QColor(239, 41, 41);
     QColor m_trajectoryColor = QColor(26, 191, 255);
     float m_worldFramePointSizePx = 2.0f;
     float m_bodyFramePointSizePx = 2.5f;

@@ -457,9 +457,11 @@ private:
     uint64_t slamWorldDisplayWindowMs = 600000;
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
     QColor slamBodyFrameColor = QColor(255, 140, 26);
+    QColor slamDynamicObjectColor = QColor(239, 41, 41);
     QColor slamTrajectoryColor = QColor(26, 191, 255);
     float slamWorldCurrentFramePointSizePx = 2.0f;
     float slamBodyFramePointSizePx = 2.5f;
+    float slamDynamicObjectPointSizePx = 4.0f;
     float slamTrajectoryLineWidthPx = 2.0f;
     float slamPoseAxisLengthM = 0.8f;
     float slamPoseAxisLineWidthPx = 3.0f;
