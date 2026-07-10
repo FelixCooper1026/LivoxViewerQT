@@ -127,6 +127,7 @@ struct SlamOutput {
     QVector<SlamTrajectoryPoint> newTrajectoryPoints;
     QVector<SlamPoint> publishedWorldFramePoints;
     QVector<SlamPoint> publishedBodyFramePoints;
+    QVector<SlamPoint> dynamicDetectionFrameWorldPoints;
     QVector<SlamDynamicPoint> dynamicWorldFramePoints;
     QVector<SlamPoint> newGlobalMapPoints;
     SlamDynamicObjectStats dynamicObjectStats;

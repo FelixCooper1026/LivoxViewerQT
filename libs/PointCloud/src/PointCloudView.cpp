@@ -226,6 +226,54 @@ bool uploadSlamRenderBuffer(QOpenGLWidget* widget,
     return true;
 }
 
+QVector<SlamRenderVertex> clipSlamRenderVertices(
+    const QVector<SlamRenderVertex>& vertices,
+    const PointCloudCrossSection::State& state)
+{
+    QVector<SlamRenderVertex> clipped;
+    clipped.reserve(vertices.size());
+    for (const SlamRenderVertex& vertex : vertices) {
+        if (PointCloudCrossSection::containsPoint(QVector3D(vertex.x, vertex.y, vertex.z), state)) {
+            clipped.push_back(vertex);
+        }
+    }
+    return clipped;
+}
+
+bool slamWorldFrameBounds(const SlamRenderSnapshot& snapshot,
+                          QVector3D& minPoint,
+                          QVector3D& maxPoint)
+{
+    if (snapshot.worldFrameVertices.isEmpty()) {
+        return false;
+    }
+
+    const SlamRenderVertex& first = snapshot.worldFrameVertices.first();
+    minPoint = QVector3D(first.x, first.y, first.z);
+    maxPoint = minPoint;
+    for (const SlamRenderVertex& vertex : snapshot.worldFrameVertices) {
+        minPoint.setX(std::min(minPoint.x(), vertex.x));
+        minPoint.setY(std::min(minPoint.y(), vertex.y));
+        minPoint.setZ(std::min(minPoint.z(), vertex.z));
+        maxPoint.setX(std::max(maxPoint.x(), vertex.x));
+        maxPoint.setY(std::max(maxPoint.y(), vertex.y));
+        maxPoint.setZ(std::max(maxPoint.z(), vertex.z));
+    }
+    return true;
+}
+
+int clippedSlamWorldFramePointCount(const SlamRenderSnapshot& snapshot,
+                                    const PointCloudCrossSection::State& state)
+{
+    int count = 0;
+    for (const SlamRenderVertex& vertex : snapshot.worldFrameVertices) {
+        if (PointCloudCrossSection::containsPoint(QVector3D(vertex.x, vertex.y, vertex.z), state)) {
+            ++count;
+        }
+    }
+    return count;
+}
+
 struct SegmentPointSnapshot {
     quint64 segmentId = 0;
     bool singleBuffer = false;
@@ -483,6 +531,19 @@ void PointCloudView::setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot)
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_slamRenderSnapshot = snapshot;
     m_slamRenderUploadPending = true;
+    bool hasPrimaryPointCloud = false;
+    {
+        QMutexLocker locker(&m_pointsMutex);
+        hasPrimaryPointCloud = !m_points.isEmpty() || !m_pointCloudSegments.empty();
+    }
+    if (m_crossSectionState.enabled &&
+        m_crossSectionState.initialized &&
+        m_crossSectionState.sourcePoints.isEmpty() &&
+        !hasPrimaryPointCloud) {
+        emit crossSectionChanged(
+            clippedSlamWorldFramePointCount(m_slamRenderSnapshot, m_crossSectionState),
+            m_slamRenderSnapshot.worldFrameVertices.size());
+    }
     update();
 }
 
@@ -897,6 +958,25 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
         return;
     }
 
+    const bool crossSectionEnabled =
+        m_crossSectionState.enabled && m_crossSectionState.initialized;
+    QVector<SlamRenderVertex> clippedWorldFrameVertices;
+    QVector<SlamRenderVertex> clippedDynamicObjectVertices;
+    const QVector<SlamRenderVertex>* worldFrameVertices =
+        &m_slamRenderSnapshot.worldFrameVertices;
+    const QVector<SlamRenderVertex>* dynamicObjectVertices =
+        &m_slamRenderSnapshot.dynamicObjectVertices;
+    if (crossSectionEnabled) {
+        clippedWorldFrameVertices = clipSlamRenderVertices(
+            m_slamRenderSnapshot.worldFrameVertices,
+            m_crossSectionState);
+        clippedDynamicObjectVertices = clipSlamRenderVertices(
+            m_slamRenderSnapshot.dynamicObjectVertices,
+            m_crossSectionState);
+        worldFrameVertices = &clippedWorldFrameVertices;
+        dynamicObjectVertices = &clippedDynamicObjectVertices;
+    }
+
     uploadSlamRenderBuffer(this,
                            m_program,
                            m_slamRenderSnapshot.trajectoryVertices,
@@ -913,7 +993,7 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamPoseAxisVertexCount);
     uploadSlamRenderBuffer(this,
                            m_program,
-                           m_slamRenderSnapshot.worldFrameVertices,
+                           *worldFrameVertices,
                            m_slamWorldFrameVbo,
                            m_slamWorldFrameVao,
                            m_slamWorldFrameBufferCapacityBytes,
@@ -927,7 +1007,7 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamBodyFrameVertexCount);
     uploadSlamRenderBuffer(this,
                            m_program,
-                           m_slamRenderSnapshot.dynamicObjectVertices,
+                           *dynamicObjectVertices,
                            m_slamDynamicObjectVbo,
                            m_slamDynamicObjectVao,
                            m_slamDynamicObjectBufferCapacityBytes,
@@ -1903,17 +1983,9 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
     QMutexLocker locker(&m_pointsMutex);
     destroyPointCloudSegments();
     m_points = std::move(points);
-    uploadSelectionPoints(QVector<PointCloudPoint>());
-    int pointCount = m_points.size();
-    if (!uploadPointCloudBuffer(this,
-                                m_program,
-                                m_points,
-                                m_vbo,
-                                m_vao,
-                                m_pointCloudBufferCapacityBytes,
-                                pointCount)) {
-        m_pointCloudGpuUploadPending = true;
-    }
+    m_selectedPoints.clear();
+    m_selectionPointCount = 0;
+    m_pointCloudGpuUploadPending = true;
     update();
 }
 
@@ -1965,21 +2037,8 @@ void PointCloudView::uploadPointCloudSegmentSelection(PointCloudSegment& segment
 void PointCloudView::uploadSelectionPoints(QVector<PointCloudPoint>&& points)
 {
     m_selectedPoints = std::move(points);
-    QVector<PointCloudPoint> overlayPoints = m_selectedPoints;
-    for (PointCloudPoint& point : overlayPoints) {
-        point.r = 1.0f;
-        point.g = 0.0f;
-        point.b = 0.0f;
-    }
-    if (!uploadPointCloudBuffer(this,
-                                m_program,
-                                overlayPoints,
-                                m_selectionVbo,
-                                m_selectionVao,
-                                m_selectionBufferCapacityBytes,
-                                m_selectionPointCount)) {
-        m_pointCloudGpuUploadPending = true;
-    }
+    m_pointCloudGpuUploadPending = true;
+    update();
 }
 
 void PointCloudView::syncPendingPointCloudBuffers()
@@ -2153,7 +2212,7 @@ void PointCloudView::appendPointCloudSegment(QVector<PointCloudPoint>&& points)
         auto segment = std::make_unique<PointCloudSegment>();
         segment->id = m_nextPointCloudSegmentId++;
         segment->points = std::move(points);
-        uploadPointCloudSegment(*segment);
+        m_pointCloudGpuUploadPending = true;
         segmentId = segment->id;
         segmentPointsSnapshot = segment->points;
         m_pointCloudSegments.push_back(std::move(segment));
@@ -2406,6 +2465,15 @@ void PointCloudView::startCrossSectionClipJob()
     }
 
     if (snapshots.isEmpty()) {
+        if (state.sourcePoints.isEmpty() &&
+            !m_slamRenderSnapshot.worldFrameVertices.isEmpty()) {
+            m_slamRenderUploadPending = true;
+            emit crossSectionChanged(
+                clippedSlamWorldFramePointCount(m_slamRenderSnapshot, state),
+                m_slamRenderSnapshot.worldFrameVertices.size());
+            update();
+            return;
+        }
         if (state.sourcePoints.isEmpty()) {
             PointCloudCrossSection::updateClip(m_crossSectionState);
             uploadPointCloudPoints(QVector<PointCloudPoint>(m_crossSectionState.clippedPoints));
@@ -2879,7 +2947,7 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
                     continue;
                 }
                 colorize(segment->points);
-                uploadPointCloudSegment(*segment);
+                m_pointCloudGpuUploadPending = true;
                 segment->clippedPoints.clear();
                 segment->clippedPointCount = 0;
                 clearSegmentSelectionBuffers(*segment);
@@ -2906,7 +2974,7 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
                     continue;
                 }
                 colorize(segment->points);
-                uploadPointCloudSegment(*segment);
+                m_pointCloudGpuUploadPending = true;
                 if (selectionNeedsUpdate) {
                     segment->selectedPoints.clear();
                     segment->selectedPointCount = 0;
@@ -3092,6 +3160,21 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
         }
 
         QVector<PointCloudPoint> sourcePoints = currentPoints();
+        if (sourcePoints.isEmpty()) {
+            QVector3D minPoint;
+            QVector3D maxPoint;
+            if (!slamWorldFrameBounds(m_slamRenderSnapshot, minPoint, maxPoint)) {
+                m_crossSectionState.enabled = false;
+                emit crossSectionChanged(0, 0);
+                return;
+            }
+            PointCloudCrossSection::initializeBoxFromBounds(m_crossSectionState, minPoint, maxPoint);
+            m_slamRenderUploadPending = true;
+            emit crossSectionChanged(m_slamRenderSnapshot.worldFrameVertices.size(),
+                                     m_slamRenderSnapshot.worldFrameVertices.size());
+            update();
+            return;
+        }
         if (!PointCloudCrossSection::initializeBox(m_crossSectionState, sourcePoints)) {
             m_crossSectionState.enabled = false;
             emit crossSectionChanged(0, 0);
@@ -3133,6 +3216,16 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
         return;
     }
 
+    if (m_crossSectionState.sourcePoints.isEmpty() &&
+        !m_slamRenderSnapshot.worldFrameVertices.isEmpty()) {
+        const int pointCount = m_slamRenderSnapshot.worldFrameVertices.size();
+        m_crossSectionState = PointCloudCrossSection::State();
+        m_slamRenderUploadPending = true;
+        emit crossSectionChanged(pointCount, pointCount);
+        update();
+        return;
+    }
+
     QVector<PointCloudPoint> restored = std::move(m_crossSectionState.sourcePoints);
     const int restoredCount = restored.size();
     m_crossSectionState = PointCloudCrossSection::State();
@@ -3157,6 +3250,20 @@ void PointCloudView::resetCrossSectionBoxToCurrentCloud()
         }
         PointCloudCrossSection::initializeBoxFromBounds(m_crossSectionState, minPoint, maxPoint);
         updateCrossSectionPointCloud();
+        return;
+    }
+    if (m_crossSectionState.sourcePoints.isEmpty()) {
+        QVector3D minPoint;
+        QVector3D maxPoint;
+        if (!slamWorldFrameBounds(m_slamRenderSnapshot, minPoint, maxPoint)) {
+            emit crossSectionChanged(0, 0);
+            return;
+        }
+        PointCloudCrossSection::initializeBoxFromBounds(m_crossSectionState, minPoint, maxPoint);
+        m_slamRenderUploadPending = true;
+        emit crossSectionChanged(m_slamRenderSnapshot.worldFrameVertices.size(),
+                                 m_slamRenderSnapshot.worldFrameVertices.size());
+        update();
         return;
     }
     PointCloudCrossSection::initializeBox(m_crossSectionState, m_crossSectionState.sourcePoints);

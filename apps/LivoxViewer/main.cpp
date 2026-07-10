@@ -36,7 +36,8 @@ int main(int argc, char *argv[])
     QSurfaceFormat glFormat = QSurfaceFormat::defaultFormat();
     glFormat.setDepthBufferSize(24);
     glFormat.setStencilBufferSize(8);
-    glFormat.setSamples(4);
+    glFormat.setSamples(0);
+    glFormat.setSwapInterval(0);
     QSurfaceFormat::setDefaultFormat(glFormat);
 
     QApplication app(argc, argv);

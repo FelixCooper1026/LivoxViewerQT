@@ -250,6 +250,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(statusBody, statusGroup, QStringLiteral("模式"));
     addField(statusBody, statusGroup, QStringLiteral("后端"));
     addField(statusBody, statusGroup, QStringLiteral("IMU 状态"));
+    addField(statusBody, statusGroup, QStringLiteral("动态检测模式"));
     statusBody->addStretch(1);
 
     QVBoxLayout* performanceBody = nullptr;
@@ -258,7 +259,6 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("动态检测耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("动态聚类耗时"));
-    addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
     addField(performanceBody, performanceGroup, QStringLiteral("内存占用"));
     performanceBody->addStretch(1);
 
@@ -268,7 +268,6 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(mapBody, mapGroup, QStringLiteral("世界系点云总数"));
     addField(mapBody, mapGroup, QStringLiteral("机体系当前帧点数"));
     addField(mapBody, mapGroup, QStringLiteral("完整全局地图点数"));
-    addField(mapBody, mapGroup, QStringLiteral("动态检测模式"));
     addField(mapBody, mapGroup, QStringLiteral("动态目标点"));
     mapBody->addStretch(1);
 
@@ -284,6 +283,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     QLabel* errorValue = createSlamStatusTextValue(errorGroup);
     slamStatusFields.insert(QStringLiteral("错误信息"), errorValue);
     errorBody->addWidget(errorValue);
+    addField(errorBody, errorGroup, QStringLiteral("丢帧数"));
     errorBody->addStretch(1);
 
     QWidget* poseColumn = new QWidget(fieldFrame);

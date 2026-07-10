@@ -52,7 +52,7 @@ QVector3D posePosition(const SlamPose& pose)
 
 QString formatPose(const SlamPose& pose)
 {
-    return QStringLiteral("t=[%1, %2, %3], q=[%4, %5, %6, %7]")
+    return QStringLiteral("t=[%1, %2, %3]\nq=[%4, %5, %6, %7]")
         .arg(pose.tx, 0, 'f', 3)
         .arg(pose.ty, 0, 'f', 3)
         .arg(pose.tz, 0, 'f', 3)
@@ -364,6 +364,7 @@ void SlamUiBridge::clearDisplay()
     m_worldFramePointTotal = 0;
     m_latestOutput.publishedWorldFramePoints.clear();
     m_latestOutput.publishedBodyFramePoints.clear();
+    m_latestOutput.dynamicDetectionFrameWorldPoints.clear();
     m_latestOutput.dynamicWorldFramePoints.clear();
     m_latestOutput.newGlobalMapPoints.clear();
     m_latestOutput.globalMapPointCount = 0;
@@ -396,6 +397,7 @@ void SlamUiBridge::refreshStatus()
         vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_latestOutput.dynamicDetectionFrameWorldPoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.dynamicWorldFramePoints.size(), sizeof(SlamDynamicPoint)) +
         snapshotBytes;
     m_displayState.memoryUsage = QStringLiteral("UI %1").arg(formatMemoryBytes(uiBytes));
@@ -433,7 +435,7 @@ void SlamUiBridge::refreshStatus()
     m_displayState.dynamicClusterMs = m_latestOutput.dynamicObjectStats.clusterEnabled
         ? QString::number(m_latestOutput.dynamicObjectStats.clusterMs, 'f', 2)
         : QStringLiteral("0.00");
-    m_displayState.error = m_errorMessage;
+    m_displayState.error = m_errorMessage.isEmpty() ? QStringLiteral("无") : m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
                                    .arg(m_displayState.status,
@@ -499,9 +501,16 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
                            1.0f);
     }
 
-    if (m_worldFrameVisible) {
-        snapshot.worldFrameVertices.reserve(m_latestOutput.publishedWorldFramePoints.size());
-        for (const SlamPoint& point : m_latestOutput.publishedWorldFramePoints) {
+    const QVector<SlamPoint>* worldFramePoints = nullptr;
+    if (m_worldFrameVisible && !m_latestOutput.publishedWorldFramePoints.isEmpty()) {
+        worldFramePoints = &m_latestOutput.publishedWorldFramePoints;
+    } else if (m_latestOutput.publishedWorldFramePoints.isEmpty() &&
+               m_latestOutput.dynamicObjectStats.enabled) {
+        worldFramePoints = &m_latestOutput.dynamicDetectionFrameWorldPoints;
+    }
+    if (worldFramePoints) {
+        snapshot.worldFrameVertices.reserve(worldFramePoints->size());
+        for (const SlamPoint& point : *worldFramePoints) {
             snapshot.worldFrameVertices.push_back(renderSlamPoint(point, m_worldFrameColor));
         }
     }

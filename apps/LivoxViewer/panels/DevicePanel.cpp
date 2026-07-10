@@ -269,6 +269,12 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
                      slamBodyFrameVisible,
                      [this](bool visible) { setSlamBodyFrameVisible(visible); });
     }
+    if (slamRuntimeConfig.dynamicObjectDetectionEnabled) {
+        addLayerCard(QStringLiteral("动态目标点"),
+                     QStringLiteral("动态检测输出的目标点 overlay；关闭仅隐藏显示，不停止检测"),
+                     slamDynamicObjectVisible,
+                     [this](bool visible) { setSlamDynamicObjectVisible(visible); });
+    }
     addLayerCard(QStringLiteral("轨迹"),
                  QStringLiteral("SLAM 输出的位姿轨迹，用于观察运动路径和定位连续性"),
                  slamTrajectoryVisible,

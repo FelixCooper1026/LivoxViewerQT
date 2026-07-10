@@ -93,6 +93,7 @@
 QT_BEGIN_NAMESPACE
 class QChartView;
 class QChart;
+class QCloseEvent;
 class QDragEnterEvent;
 class QDropEvent;
 QT_END_NAMESPACE
@@ -233,6 +234,7 @@ private:
     void setSlamWorldFrameVisible(bool visible);
     void setSlamWorldCurrentFrameVisible(bool visible);
     void setSlamBodyFrameVisible(bool visible);
+    void setSlamDynamicObjectVisible(bool visible);
     void setSlamTrajectoryVisible(bool visible);
     void setSlamPoseAxisVisible(bool visible);
     void syncSlamRenderLayerVisibility();
@@ -468,6 +470,7 @@ private:
     bool slamWorldFrameVisible = true;
     bool slamWorldCurrentFrameVisible = true;
     bool slamBodyFrameVisible = true;
+    bool slamDynamicObjectVisible = true;
     bool slamTrajectoryVisible = true;
     bool slamPoseAxisVisible = true;
     QWidget* slamControlBar = nullptr;
@@ -755,6 +758,7 @@ private slots:
     void onLvx2PlaybackFileDropped(const QString& filePath);
 
 protected:
+    void closeEvent(QCloseEvent* event) override;
     QMenu* createPopupMenu() override;
     bool eventFilter(QObject* watched, QEvent* event) override;
     void changeEvent(QEvent* event) override;

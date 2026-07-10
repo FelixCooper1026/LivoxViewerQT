@@ -501,6 +501,18 @@ void setSourcePoints(State& state, const QVector<PointCloudPoint>& points)
     }
 }
 
+bool containsPoint(const QVector3D& point, const State& state)
+{
+    if (!state.enabled || !state.initialized) {
+        return true;
+    }
+
+    const QVector3D local = localFromWorld(state.box, point);
+    return std::abs(local.x()) <= state.box.halfExtents.x() &&
+           std::abs(local.y()) <= state.box.halfExtents.y() &&
+           std::abs(local.z()) <= state.box.halfExtents.z();
+}
+
 QVector<PointCloudPoint> clip(const QVector<PointCloudPoint>& points, const State& state)
 {
     if (!state.enabled || !state.initialized) {
@@ -509,19 +521,8 @@ QVector<PointCloudPoint> clip(const QVector<PointCloudPoint>& points, const Stat
 
     QVector<PointCloudPoint> clipped;
     clipped.reserve(points.size());
-    const QVector3D center = state.box.center;
-    const QVector3D half = state.box.halfExtents;
-    const QVector3D axisX = state.box.orientation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)).normalized();
-    const QVector3D axisY = state.box.orientation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)).normalized();
-    const QVector3D axisZ = state.box.orientation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)).normalized();
     for (const PointCloudPoint& point : points) {
-        const QVector3D delta(point.x - center.x(), point.y - center.y(), point.z - center.z());
-        const float localX = QVector3D::dotProduct(delta, axisX);
-        const float localY = QVector3D::dotProduct(delta, axisY);
-        const float localZ = QVector3D::dotProduct(delta, axisZ);
-        if (std::abs(localX) <= half.x() &&
-            std::abs(localY) <= half.y() &&
-            std::abs(localZ) <= half.z()) {
+        if (containsPoint(QVector3D(point.x, point.y, point.z), state)) {
             clipped.push_back(point);
         }
     }

@@ -716,16 +716,20 @@ void appendDynamicObjectOutput(FastLioAlgorithmState& state, SlamOutput* output,
     detectorFrame.worldFromBodyTranslation =
         Eigen::Vector3d(state.statePoint.pos(0), state.statePoint.pos(1), state.statePoint.pos(2));
     detectorFrame.points.reserve(static_cast<int>(state.featsUndistort->points.size()));
+    output->dynamicDetectionFrameWorldPoints.reserve(static_cast<int>(state.featsUndistort->points.size()));
 
     PointType bodyImuPoint;
+    PointType worldPoint;
     for (const PointType& bodyLidarPoint : state.featsUndistort->points) {
         pointBodyLidarToImu(&bodyLidarPoint, &bodyImuPoint, state.statePoint);
+        pointBodyToWorld(&bodyLidarPoint, &worldPoint, state.statePoint);
         DynamicObjectPoint detectorPoint;
         detectorPoint.x = bodyImuPoint.x;
         detectorPoint.y = bodyImuPoint.y;
         detectorPoint.z = bodyImuPoint.z;
         detectorPoint.reflectivity = static_cast<uint8_t>(std::clamp(bodyImuPoint.intensity, 0.0f, 255.0f));
         detectorFrame.points.push_back(detectorPoint);
+        output->dynamicDetectionFrameWorldPoints.push_back(toSlamPoint(worldPoint));
     }
 
     const DynamicObjectDetectionResult detection = state.dynamicObjectDetector->processFrame(detectorFrame);

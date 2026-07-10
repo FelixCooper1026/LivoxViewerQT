@@ -1131,7 +1131,9 @@ void LivoxViewerWindow::clearSlamDisplay()
 
 void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
 {
-    if (output.publishedWorldFramePoints.isEmpty() || !slamPointCloudView) {
+    if (!slamRuntimeConfig.publishWorldFrameCloud ||
+        output.publishedWorldFramePoints.isEmpty() ||
+        !slamPointCloudView) {
         return;
     }
 
@@ -1277,6 +1279,15 @@ void LivoxViewerWindow::setSlamBodyFrameVisible(bool visible)
     syncSlamRenderLayerVisibility();
 }
 
+void LivoxViewerWindow::setSlamDynamicObjectVisible(bool visible)
+{
+    if (slamDynamicObjectVisible == visible) {
+        return;
+    }
+    slamDynamicObjectVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
 void LivoxViewerWindow::setSlamTrajectoryVisible(bool visible)
 {
     if (slamTrajectoryVisible == visible) {
@@ -1306,7 +1317,8 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
                                            slamRuntimeConfig.publishWorldFrameCloud &&
                                                slamRuntimeConfig.publishBodyFrameCloud &&
                                                slamBodyFrameVisible,
-                                           slamRuntimeConfig.dynamicObjectDetectionEnabled);
+                                           slamRuntimeConfig.dynamicObjectDetectionEnabled &&
+                                               slamDynamicObjectVisible);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryFromDialog()

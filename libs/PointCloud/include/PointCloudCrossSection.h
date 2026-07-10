@@ -88,6 +88,7 @@ struct State {
 bool initializeBox(State& state, const QVector<PointCloudPoint>& points);
 bool initializeBoxFromBounds(State& state, const QVector3D& minPoint, const QVector3D& maxPoint);
 void setSourcePoints(State& state, const QVector<PointCloudPoint>& points);
+bool containsPoint(const QVector3D& point, const State& state);
 QVector<PointCloudPoint> clip(const QVector<PointCloudPoint>& points, const State& state);
 void updateClip(State& state);
 

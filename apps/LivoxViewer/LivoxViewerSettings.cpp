@@ -12,6 +12,7 @@
 #include <QButtonGroup>
 #include <QChildEvent>
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QColorDialog>
 #include <QComboBox>
 #include <QDialog>
@@ -547,7 +548,11 @@ void addPreferenceSectionTitle(QVBoxLayout* pageLayout, const QString& title)
     pageLayout->addWidget(label);
 }
 
-void addPreferenceRow(QFrame* section, const QString& title, const QString& description, QWidget* control)
+void addPreferenceRow(QFrame* section,
+                      const QString& title,
+                      const QString& description,
+                      QWidget* control,
+                      const QString& toolTip = QString())
 {
     QVBoxLayout* sectionLayout = qobject_cast<QVBoxLayout*>(section->layout());
     const int rowCount = section->property("rowCount").toInt();
@@ -560,6 +565,9 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
     }
 
     QWidget* row = new QWidget(section);
+    if (!toolTip.isEmpty()) {
+        row->setToolTip(toolTip);
+    }
     QHBoxLayout* rowLayout = new QHBoxLayout(row);
     rowLayout->setContentsMargins(0, 10, 0, 10);
     rowLayout->setSpacing(18);
@@ -569,10 +577,25 @@ void addPreferenceRow(QFrame* section, const QString& title, const QString& desc
     textLayout->setSpacing(4);
 
     QLabel* titleLabel = new QLabel(title, row);
+    if (!toolTip.isEmpty()) {
+        titleLabel->setToolTip(toolTip);
+    }
     setPreferenceFont(titleLabel, 9, QFont::Medium);
     textLayout->addWidget(titleLabel);
     if (!description.isEmpty()) {
-        textLayout->addWidget(createPreferenceDescription(description, row));
+        QLabel* descriptionLabel = createPreferenceDescription(description, row);
+        if (!toolTip.isEmpty()) {
+            descriptionLabel->setToolTip(toolTip);
+        }
+        textLayout->addWidget(descriptionLabel);
+    }
+
+    if (!toolTip.isEmpty()) {
+        control->setToolTip(toolTip);
+        const QList<QWidget*> controlChildren = control->findChildren<QWidget*>();
+        for (QWidget* child : controlChildren) {
+            child->setToolTip(toolTip);
+        }
     }
 
     rowLayout->addLayout(textLayout, 1);
@@ -805,6 +828,30 @@ LivoxViewerWindow::~LivoxViewerWindow()
 
     stopLidarDiscovery();
     shutdownLivoxSdk();
+}
+
+void LivoxViewerWindow::closeEvent(QCloseEvent* event)
+{
+    if (!shutting_down) {
+        shutting_down = true;
+        pointCloudCallbackEnabled = false;
+        if (renderTimer) {
+            renderTimer->stop();
+        }
+        if (paramQueryTimer) {
+            paramQueryTimer->stop();
+        }
+        if (captureState.timer) {
+            captureState.timer->stop();
+        }
+        if (playbackState.timer) {
+            playbackState.timer->stop();
+        }
+        stopLidarDiscovery();
+        shutdownLivoxSdk();
+        shutting_down = true;
+    }
+    QMainWindow::closeEvent(event);
 }
 
 bool LivoxViewerWindow::shouldUseDarkTheme() const
@@ -2160,127 +2207,170 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamPublishTabLayout->addWidget(slamPublishSection);
     slamPublishTabLayout->addStretch();
 
+    auto addDynamicPreferenceRow = [](QFrame* section,
+                                      const QString& title,
+                                      const QString& description,
+                                      QWidget* control,
+                                      const QString& tuningGuide) {
+        addPreferenceRow(section,
+                         title,
+                         description,
+                         control,
+                         QStringLiteral("<div style=\"width: 480px;\"><b>%1</b><br/>%2<br/><br/>"
+                                        "<b>调参建议：</b>%3</div>")
+                             .arg(title.toHtmlEscaped(),
+                                  description.toHtmlEscaped(),
+                                  tuningGuide.toHtmlEscaped()));
+    };
+
     QFrame* slamDynamicSection = createPreferenceSection(slamDynamicTab);
-    addPreferenceRow(slamDynamicSection,
+    addDynamicPreferenceRow(slamDynamicSection,
                      "启用动态检测",
                      "dynamicObjectDetectionEnabled，启用 M-detector 点级检测，对去畸变当前帧生成动态事件和统计信息",
-                     slamDynamicDetectionCheck);
-    addPreferenceRow(slamDynamicSection,
+                     slamDynamicDetectionCheck,
+                     "建议先关闭聚类增强，仅观察 Case1/2/3 原始点并校准投影、历史窗口和深度阈值。启用后会自动显示不累计的世界系当前帧背景，不需要开启世界系或机体系点云输出。");
+    addDynamicPreferenceRow(slamDynamicSection,
                      "启用聚类增强",
                      "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
-                     slamDynamicClusterCheck);
+                     slamDynamicClusterCheck,
+                     "先确保无聚类模式的事件点稳定，再开启聚类。开启后目标轮廓更完整，但会增加聚类耗时；若相邻目标被合并，优先减小体素尺寸或连接半径。");
     slamDynamicTabLayout->addWidget(slamDynamicSection);
 
     QFrame* slamDynamicClusterSection = createPreferenceSection(slamDynamicTab);
-    addPreferenceRow(slamDynamicClusterSection,
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "聚类体素尺寸",
                      "dynamicObjectClusterVoxelSizeM，事件点和原始点的稀疏体素边长",
-                     slamDynamicClusterVoxelSizeSpin);
-    addPreferenceRow(slamDynamicClusterSection,
+                     slamDynamicClusterVoxelSizeSpin,
+                     "减小可保留小目标和边缘细节，但体素数量与耗时会上升且区域更易碎裂；增大可抑制稀疏噪声，但可能合并相邻目标。建议从局部点间距的 1~2 倍开始。");
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "体素连接半径",
                      "dynamicObjectClusterExtendVoxel，体素连通域搜索的整数半径",
-                     slamDynamicClusterExtendVoxelSpin);
-    addPreferenceRow(slamDynamicClusterSection,
+                     slamDynamicClusterExtendVoxelSpin,
+                     "增大可跨越遮挡和稀疏间隙，目标回填更完整，但更容易把邻近物体连成一体；减小可分离近距离目标，但可能切碎单个目标。通常在 2~5 之间微调。");
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "最小事件体素数",
                      "dynamicObjectClusterMinVoxelCount，小于该事件体素数量的连通域会被过滤",
-                     slamDynamicClusterMinVoxelCountSpin);
-    addPreferenceRow(slamDynamicClusterSection,
+                     slamDynamicClusterMinVoxelCountSpin,
+                     "误检呈零散小块时增大；小目标或远距离目标被过滤时减小。应结合体素尺寸调节，体素越大，同一目标包含的事件体素通常越少。");
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "聚类可信度",
                      "dynamicObjectClusterTrustThreshold，事件种子点数与最终回填点数的最小比例",
-                     slamDynamicClusterTrustThresholdSpin);
-    addPreferenceRow(slamDynamicClusterSection,
+                     slamDynamicClusterTrustThresholdSpin,
+                     "增大可拒绝只有少量事件种子却回填很大区域的可疑聚类，误检更少但召回下降；减小可保留部分遮挡目标。建议先在 0.05~0.20 范围内调整。");
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "地面距离阈值",
                      "dynamicObjectClusterGroundDistanceThresholdM，点到估计地面小于该距离时从动态区域删除",
-                     slamDynamicClusterGroundDistanceSpin);
-    addPreferenceRow(slamDynamicClusterSection,
+                     slamDynamicClusterGroundDistanceSpin,
+                     "地面残留较多时增大；低矮目标、轮胎或脚部被削掉时减小。该值应略大于地面拟合噪声，不宜用来补偿明显错误的外参或姿态。");
+    addDynamicPreferenceRow(slamDynamicClusterSection,
                      "地面最大倾角",
                      "dynamicObjectClusterGroundMaxAngleDeg，候选地面法向相对 IMU 世界竖直轴允许的最大夹角",
-                     slamDynamicClusterGroundMaxAngleSpin);
+                     slamDynamicClusterGroundMaxAngleSpin,
+                     "坡道地面无法剔除时增大；墙面或目标表面被误当作地面时减小。平整场景可用较小角度，坡地场景再逐步放宽。");
     slamDynamicTabLayout->addWidget(slamDynamicClusterSection);
 
     QFrame* slamDynamicHistorySection = createPreferenceSection(slamDynamicTab);
-    addPreferenceRow(slamDynamicHistorySection,
+    addDynamicPreferenceRow(slamDynamicHistorySection,
                      "缓冲延迟",
                      "dynamicObjectBufferDelaySec，当前帧经过该延迟后才进入历史深度图，避免过近时间片参与比较",
-                     slamDynamicBufferDelaySpin);
-    addPreferenceRow(slamDynamicHistorySection,
+                     slamDynamicBufferDelaySpin,
+                     "增大可避免相邻帧过于相似造成的自比较，并扩大可观察位移，但检测预热更慢、历史更新滞后；减小响应更快。建议至少覆盖 1 个输入帧周期，再按目标速度调整。");
+    addDynamicPreferenceRow(slamDynamicHistorySection,
                      "深度图时间片",
                      "dynamicObjectDepthMapDurationSec，每张历史深度图聚合的时间跨度",
-                     slamDynamicDepthMapDurationSpin);
-    addPreferenceRow(slamDynamicHistorySection,
+                     slamDynamicDepthMapDurationSpin,
+                     "增大可提高单张图的覆盖密度、降低空洞，但运动目标会在同一图内拖影；减小时间分辨率更高，但历史图更稀疏。高速目标优先减小，稀疏点云可适当增大。");
+    addDynamicPreferenceRow(slamDynamicHistorySection,
                      "最大历史图数",
                      "dynamicObjectMaxDepthMaps，保留的历史深度图时间片数量",
-                     slamDynamicMaxDepthMapsSpin);
-    addPreferenceRow(slamDynamicHistorySection,
+                     slamDynamicMaxDepthMapsSpin,
+                     "增大可获得更长时间基线和更多 Case1 投票样本，但内存、比较耗时及旧场景残留都会增加；减小响应场景变化更快。历史跨度约为该值乘以深度图时间片。");
+    addDynamicPreferenceRow(slamDynamicHistorySection,
                      "最少历史图数",
                      "dynamicObjectMinHistoryMaps，达到该历史深度图数量后才开始输出动态判定",
-                     slamDynamicMinHistoryMapsSpin);
+                     slamDynamicMinHistoryMapsSpin,
+                     "增大可让背景建立更充分、降低启动阶段误检，但首次输出更晚；减小可更快开始检测。该值不能超过最大历史图数，通常取 2~3。");
     slamDynamicTabLayout->addWidget(slamDynamicHistorySection);
 
     QFrame* slamDynamicProjectionSection = createPreferenceSection(slamDynamicTab);
-    addPreferenceRow(slamDynamicProjectionSection,
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "水平角分辨率",
                      "dynamicObjectHorizontalResolutionRad，球面深度图水平像素角度，越小越精细且内存占用越高",
-                     slamDynamicHorizontalResolutionSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicHorizontalResolutionSpin,
+                     "减小可区分角度接近的目标和背景，但深度图更大、耗时和内存上升；增大可降耗并容忍轻微姿态误差，但细小目标可能落入同一像素。优先使用模板默认值。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "垂直角分辨率",
                      "dynamicObjectVerticalResolutionRad，球面深度图垂直像素角度，越小越精细且内存占用越高",
-                     slamDynamicVerticalResolutionSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicVerticalResolutionSpin,
+                     "减小可保留更多垂直结构细节，但增加深度图高度和计算量；增大可抑制稀疏扫描线空洞，但可能混合地面与目标。通常不应明显小于雷达实际垂直角间隔。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "垂直视场下界",
                      "dynamicObjectVerticalFovDownDeg，低于该仰角的点不参与动态检测",
-                     slamDynamicVerticalFovDownSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicVerticalFovDownSpin,
+                     "按雷达安装姿态和有效视场设置。提高下界可排除近场地面并降低计算量，但会漏掉低矮目标；降低下界可保留更多地面附近目标。必须小于上界。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "垂直视场上界",
                      "dynamicObjectVerticalFovUpDeg，高于该仰角的点不参与动态检测",
-                     slamDynamicVerticalFovUpSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicVerticalFovUpSpin,
+                     "按雷达实际有效视场设置。降低上界可去除天空、顶棚等无关区域并节省内存，但可能漏掉高处目标；提高上界会扩大检测区域。必须大于下界。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "水平视场右界",
                      "dynamicObjectHorizontalFovRightDeg，水平视场的负角度边界，Avia 默认 -34°",
-                     slamDynamicHorizontalFovRightSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicHorizontalFovRightSpin,
+                     "与雷达实际水平视场和安装朝向一致。向 0° 收窄可排除无效侧后方点，向 -180° 放宽可覆盖更多区域；设置过窄会直接漏检边缘目标。必须小于左界。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "水平视场左界",
                      "dynamicObjectHorizontalFovLeftDeg，水平视场的正角度边界，Avia 默认 34°",
-                     slamDynamicHorizontalFovLeftSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicHorizontalFovLeftSpin,
+                     "与右界共同定义有效水平区域。向 0° 收窄可减少无效点，向 180° 放宽可覆盖全周；边缘目标被截断时应放宽。必须大于右界。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "检测最近距离",
                      "dynamicObjectMinRangeM，动态检测独立近距离盲区，不复用 FAST_LIO 匹配盲区",
-                     slamDynamicMinRangeSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicMinRangeSpin,
+                     "近场噪声、机身或自反射产生误检时增大；需要检测贴近雷达的目标时减小。不要低于雷达可靠测距下限，并保持小于最远距离。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "检测最远距离",
                      "dynamicObjectMaxRangeM，超出该距离的点不写入动态检测深度图",
-                     slamDynamicMaxRangeSpin);
-    addPreferenceRow(slamDynamicProjectionSection,
+                     slamDynamicMaxRangeSpin,
+                     "减小可显著降低远距离稀疏噪声和计算量；增大可检测更远目标，但深度误差与配准误差更容易触发误检。建议按业务所需最远距离设置，而非直接使用雷达量程上限。");
+    addDynamicPreferenceRow(slamDynamicProjectionSection,
                      "邻域像素半径",
                      "dynamicObjectNeighborPixelRadius，深度比较时在投影像素周围搜索的像素半径",
-                     slamDynamicNeighborPixelRadiusSpin);
+                     slamDynamicNeighborPixelRadiusSpin,
+                     "增大可容忍姿态误差、扫描线错位和投影抖动，减少历史空洞，但会跨物体边界比较并增加耗时；减小边界更锐利但更易漏匹配。通常从 1 开始。");
     slamDynamicTabLayout->addWidget(slamDynamicProjectionSection);
 
     QFrame* slamDynamicCaseSection = createPreferenceSection(slamDynamicTab);
-    addPreferenceRow(slamDynamicCaseSection,
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case1 深度阈值",
                      "dynamicObjectCase1DepthMarginM，当前点比历史静态背景更近时所需的最小深度差",
-                     slamDynamicCase1DepthMarginSpin);
-    addPreferenceRow(slamDynamicCaseSection,
+                     slamDynamicCase1DepthMarginSpin,
+                     "误把配准抖动或表面噪声判为新前景时增大；慢速、小尺寸或远距离目标漏检时减小。应高于该距离段的测距噪声与位姿误差总量。");
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case1 投票阈值",
                      "dynamicObjectCase1VoteThreshold，判定 Case1 所需的历史深度图命中数",
-                     slamDynamicCase1VoteThresholdSpin);
-    addPreferenceRow(slamDynamicCaseSection,
+                     slamDynamicCase1VoteThresholdSpin,
+                     "增大要求更多历史图一致支持，误检更少但启动更慢、短时目标可能漏检；减小响应更快但对历史噪声更敏感。建议不高于常态下可用历史图数。");
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case2 深度阈值",
                      "dynamicObjectCase2DepthMarginM，当前点比历史最远深度更远时所需的最小深度差",
-                     slamDynamicCase2DepthMarginSpin);
-    addPreferenceRow(slamDynamicCaseSection,
+                     slamDynamicCase2DepthMarginSpin,
+                     "Case2 远侧显露误检较多时增大；离开视线的目标尾部漏检时减小。阈值还受时间差与最小速度约束，宜与帧率和目标速度一起评估。");
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case2 遮挡链长度",
                      "dynamicObjectCase2OcclusionChainLength，Case2 需连续通过一致性、速度和加速度检查的遮挡段数",
-                     slamDynamicCase2OcclusionChainLengthSpin);
-    addPreferenceRow(slamDynamicCaseSection,
+                     slamDynamicCase2OcclusionChainLengthSpin,
+                     "增大可强化时序一致性并降低偶发误检，但检测延迟增加且短轨迹目标易漏；减小响应更快。高速或短时目标可适当减小，静态场景误检多时增大。");
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case3 深度阈值",
                      "dynamicObjectCase3DepthMarginM，当前点比历史最近深度更近时所需的最小深度差",
-                     slamDynamicCase3DepthMarginSpin);
-    addPreferenceRow(slamDynamicCaseSection,
+                     slamDynamicCase3DepthMarginSpin,
+                     "Case3 新遮挡误检较多时增大；前景目标刚进入视线时漏检则减小。近距离点密集区域可略小，远距离或位姿噪声较大时应提高。");
+    addDynamicPreferenceRow(slamDynamicCaseSection,
                      "Case3 遮挡链长度",
                      "dynamicObjectCase3OcclusionChainLength，Case3 需连续通过一致性、速度和加速度检查的遮挡段数",
-                     slamDynamicCase3OcclusionChainLengthSpin);
+                     slamDynamicCase3OcclusionChainLengthSpin,
+                     "增大可减少单帧遮挡变化造成的误检，但会增加确认延迟；减小可更早发现进入视线的目标。建议先用 3，再根据误检和响应时间成对权衡。");
     slamDynamicTabLayout->addWidget(slamDynamicCaseSection);
     slamDynamicTabLayout->addStretch();
 
@@ -2519,6 +2609,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
         slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
         slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
+    }
+    if (previousSlamPublishWorld && !slamRuntimeConfig.publishWorldFrameCloud) {
+        clearSlamWorldPointCloud();
     }
     rebuildSlamInfoPanel();
     syncSlamRenderLayerVisibility();
