@@ -1,6 +1,6 @@
-# LivoxViewerQT
+# LivoxViewerQT 2.2.0
 
-LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制、离线播放和 SLAM 工具。已集成 FAST_LIO 风格后端，支持实时点云、LVX2/PCAP/ROSbag 离线播放，以及在线/离线 SLAM 复验。
+LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制、离线播放和 SLAM 工具。2.2.0 集成 FAST_LIO 风格后端与 M-detector 动态目标检测，支持实时点云、LVX2/PCAP/ROSbag 离线播放，以及在线/离线 SLAM 复验。
 
 ## 功能概览
 
@@ -12,6 +12,9 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 - ROSbag 播放支持 ROS1 uncompressed/lz4 chunk、Livox CustomMsg、Livox/通用 PointCloud2 和无 IMU 纯 XYZ 点云
 - 剪枝移植后的 FAST_LIO 后端，支持在线 SLAM 与离线 SLAM
 - SLAM 功能包含轨迹、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 全局地图导出
+- M-detector 动态目标检测，支持无聚类事件点模式与聚类增强模式，并提供逐项调参提示
+- 动态检测可独立显示瞬时世界系当前帧与动态目标点，不依赖历史地图点云累计
+- 点云裁切支持动态检测的瞬时世界系当前帧和动态目标 overlay
 - 命令行离线 SLAM 诊断工具 `SlamReplayTool`
 
 ## 项目文件结构
@@ -118,6 +121,10 @@ cmake --build build/cmd-linux-Release -j
 ```
 
 Linux 下可执行文件会优先从 `./livox_sdk_qt/lib` 查找 Livox SDK 动态库。
+
+## Windows Portable 包
+
+Windows x64 的 portable 包以 `LivoxViewerQT-2.2.0-win64-qt6.8.3-portable.zip` 发布，解压后直接运行 `LivoxViewerQT.exe`。包内包含 Qt 运行时、MSVC 运行库和项目所需的 Livox SDK 动态库；系统仍需安装 Npcap Runtime 才能读取 PCAP 或使用网络抓包能力。
 
 ## 离线 SLAM 诊断
 
