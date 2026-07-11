@@ -53,8 +53,8 @@ struct SlamRuntimeConfig {
     double dynamicObjectDepthMapDurationSec = 0.4;
     int dynamicObjectMaxDepthMaps = 5;
     int dynamicObjectMinHistoryMaps = 2;
-    double dynamicObjectHorizontalResolutionRad = 0.005;
-    double dynamicObjectVerticalResolutionRad = 0.01;
+    double dynamicObjectHorizontalResolutionRad = 0.025;
+    double dynamicObjectVerticalResolutionRad = 0.04;
     double dynamicObjectVerticalFovDownDeg = -7.0;
     double dynamicObjectVerticalFovUpDeg = 52.0;
     double dynamicObjectHorizontalFovRightDeg = -180.0;

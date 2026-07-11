@@ -122,12 +122,12 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.dynamicObjectBufferDelaySec = 0.1;
     config.dynamicObjectMaxDepthMaps = 5;
     config.dynamicObjectMinHistoryMaps = 2;
-    config.dynamicObjectHorizontalResolutionRad = 0.005;
-    config.dynamicObjectVerticalResolutionRad = 0.01;
     config.dynamicObjectNeighborPixelRadius = 1;
     config.dynamicObjectClusterGroundDistanceThresholdM = 0.1;
     config.dynamicObjectClusterGroundMaxAngleDeg = 30.0;
     if (lidarTemplate == SlamLidarTemplate::Avia) {
+        config.dynamicObjectHorizontalResolutionRad = 0.005;
+        config.dynamicObjectVerticalResolutionRad = 0.005;
         config.detRangeM = 450.0;
         config.fovDegree = 90.0;
         config.blindMinRangeM = 4.0;
@@ -141,7 +141,7 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         config.dynamicObjectCase1DepthMarginM = 0.15;
         config.dynamicObjectCase2DepthMarginM = 0.15;
         config.dynamicObjectCase3DepthMarginM = 0.15;
-        config.dynamicObjectCase1VoteThreshold = 2;
+        config.dynamicObjectCase1VoteThreshold = 3;
         config.dynamicObjectCase2OcclusionChainLength = 3;
         config.dynamicObjectCase3OcclusionChainLength = 3;
         config.dynamicObjectClusterVoxelSizeM = 0.3;
@@ -151,6 +151,8 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         return;
     }
 
+    config.dynamicObjectHorizontalResolutionRad = 0.025;
+    config.dynamicObjectVerticalResolutionRad = 0.04;
     config.detRangeM = 100.0;
     config.fovDegree = 360.0;
     config.blindMinRangeM = 0.5;
