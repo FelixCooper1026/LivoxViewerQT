@@ -35,6 +35,7 @@ LivoxViewerQT/
       widgets/                           自定义 Qt 控件
   libs/
     AppConfig/                           应用配置、配置 JSON、网卡服务
+    DynamicObject/                       M-detector 动态目标检测与聚类
     Export/                              通用点云导出
     LivoxCore/                           Livox SDK 封装、设备发现、参数服务
     Lvx/                                 LVX 读取和点云包解析
