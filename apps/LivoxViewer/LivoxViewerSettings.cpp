@@ -43,6 +43,7 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QStyleHints>
+#include <QStyleOption>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
@@ -184,6 +185,52 @@ protected:
             }
         }
         return text == QStringLiteral("-0") ? QStringLiteral("0") : text;
+    }
+};
+
+class CurrentPageHeightTabWidget : public QTabWidget
+{
+public:
+    explicit CurrentPageHeightTabWidget(QWidget* parent = nullptr)
+        : QTabWidget(parent)
+    {
+        connect(this, &QTabWidget::currentChanged, this, [this]() {
+            QTimer::singleShot(0, this, [this]() {
+                setMaximumHeight(sizeHint().height());
+                updateGeometry();
+            });
+        });
+    }
+
+    void syncCurrentPageHeight()
+    {
+        setMaximumHeight(sizeHint().height());
+    }
+
+    QSize sizeHint() const override
+    {
+        QWidget* page = currentWidget();
+        if (!page) {
+            return QTabWidget::sizeHint();
+        }
+
+        QStyleOptionTabWidgetFrame option;
+        initStyleOption(&option);
+        const QSize contentSize = page->sizeHint().expandedTo(tabBar()->sizeHint());
+        return style()->sizeFromContents(QStyle::CT_TabWidget, &option, contentSize, this);
+    }
+
+    QSize minimumSizeHint() const override
+    {
+        QWidget* page = currentWidget();
+        if (!page) {
+            return QTabWidget::minimumSizeHint();
+        }
+
+        QStyleOptionTabWidgetFrame option;
+        initStyleOption(&option);
+        const QSize contentSize = page->minimumSizeHint().expandedTo(tabBar()->minimumSizeHint());
+        return style()->sizeFromContents(QStyle::CT_TabWidget, &option, contentSize, this);
     }
 };
 
@@ -2054,8 +2101,9 @@ void LivoxViewerWindow::showPreferencesDialog()
                      slamTemplateRow);
     slamLayout->addWidget(slamTemplateSection);
 
-    QTabWidget* slamSettingsTabs = new QTabWidget(slamTab);
+    CurrentPageHeightTabWidget* slamSettingsTabs = new CurrentPageHeightTabWidget(slamTab);
     slamSettingsTabs->setObjectName(QStringLiteral("SlamSettingsTabs"));
+    slamSettingsTabs->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     slamSettingsTabs->setDocumentMode(true);
     slamSettingsTabs->tabBar()->setDrawBase(false);
     slamSettingsTabs->tabBar()->setExpanding(false);
@@ -2419,6 +2467,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamVisualTabLayout->addStretch();
 
     slamLayout->addWidget(slamSettingsTabs);
+    slamSettingsTabs->syncCurrentPageHeight();
     slamLayout->addStretch();
 
     const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景", "SLAM"};
