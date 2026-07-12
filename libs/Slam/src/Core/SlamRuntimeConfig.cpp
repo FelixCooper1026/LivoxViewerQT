@@ -268,6 +268,8 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
                                                   config.publishBodyFrameCloud).toBool();
     config.dynamicObjectDetectionEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")),
                                                           config.dynamicObjectDetectionEnabled).toBool();
+    config.dynamicObjectRemovalEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectRemovalEnabled")),
+                                                        config.dynamicObjectRemovalEnabled).toBool();
     config.dynamicObjectClusterEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")),
                                                         config.dynamicObjectClusterEnabled).toBool();
     config.dynamicObjectClusterVoxelSizeM = validPositiveDouble(
@@ -390,6 +392,7 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")), config.dynamicObjectDetectionEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicObjectRemovalEnabled")), config.dynamicObjectRemovalEnabled);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")), config.dynamicObjectClusterEnabled);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterVoxelSizeM")), config.dynamicObjectClusterVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterExtendVoxel")), config.dynamicObjectClusterExtendVoxel);

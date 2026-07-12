@@ -42,6 +42,7 @@ struct SlamRuntimeConfig {
     bool publishDenseFrameCloud = true;
     bool publishBodyFrameCloud = true;
     bool dynamicObjectDetectionEnabled = false;
+    bool dynamicObjectRemovalEnabled = false;
     bool dynamicObjectClusterEnabled = false;
     double dynamicObjectClusterVoxelSizeM = 0.1;
     int dynamicObjectClusterExtendVoxel = 3;

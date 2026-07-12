@@ -698,16 +698,18 @@ void appendGlobalMapOutput(FastLioAlgorithmState& state, SlamOutput* output)
     state.globalMapPointCount += output->newGlobalMapPoints.size();
 }
 
-void appendDynamicObjectOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t timestampNs)
+QVector<DynamicObjectLabel> appendDynamicObjectOutput(FastLioAlgorithmState& state,
+                                                      SlamOutput* output,
+                                                      int64_t timestampNs)
 {
     if (output == nullptr) {
-        return;
+        return {};
     }
 
     output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
     output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
     if (!state.config.dynamicObjectDetectionEnabled || !state.dynamicObjectDetector) {
-        return;
+        return {};
     }
 
     DynamicObjectDetectionFrame detectorFrame;
@@ -757,6 +759,50 @@ void appendDynamicObjectOutput(FastLioAlgorithmState& state, SlamOutput* output,
         outputPoint.reflectivity = detectorPoint.reflectivity;
         outputPoint.label = toSlamDynamicPointLabel(detectorPoint.label);
         output->dynamicWorldFramePoints.push_back(outputPoint);
+    }
+    return detection.clusterLabels;
+}
+
+bool isDynamicObjectLabel(DynamicObjectLabel label)
+{
+    return label == DynamicObjectLabel::Case1 ||
+        label == DynamicObjectLabel::Case2 ||
+        label == DynamicObjectLabel::Case3;
+}
+
+void removeDynamicPointsFromBackendFrame(FastLioAlgorithmState& state,
+                                         const QVector<DynamicObjectLabel>& labels)
+{
+    if (!state.config.dynamicObjectRemovalEnabled ||
+        labels.size() != static_cast<int>(state.featsUndistort->points.size())) {
+        return;
+    }
+
+    PointCloudXYZI::Ptr staticCloud(new PointCloudXYZI());
+    staticCloud->points.reserve(state.featsUndistort->points.size());
+    for (int index = 0; index < labels.size(); ++index) {
+        if (!isDynamicObjectLabel(labels.at(index))) {
+            staticCloud->points.push_back(state.featsUndistort->points[static_cast<std::size_t>(index)]);
+        }
+    }
+    staticCloud->width = static_cast<std::uint32_t>(staticCloud->points.size());
+    staticCloud->height = 1;
+    state.featsUndistort = std::move(staticCloud);
+
+    state.downSizeFilterSurf.setInputCloud(state.featsUndistort);
+    state.downSizeFilterSurf.filter(*state.featsDownBody);
+    state.featsDownSize = static_cast<int>(state.featsDownBody->points.size());
+    state.featsDownWorld->resize(static_cast<std::size_t>(state.featsDownSize));
+    state.nearestPoints.assign(static_cast<std::size_t>(state.featsDownSize), PointVector());
+    for (int index = 0; index < state.featsDownSize; ++index) {
+        pointBodyToWorld(&state.featsDownBody->points[static_cast<std::size_t>(index)],
+                         &state.featsDownWorld->points[static_cast<std::size_t>(index)],
+                         state.statePoint);
+        std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
+        state.ikdtree.Nearest_Search(state.featsDownWorld->points[static_cast<std::size_t>(index)],
+                                     NUM_MATCH_POINTS,
+                                     state.nearestPoints[static_cast<std::size_t>(index)],
+                                     pointSearchSqDis);
     }
 }
 
@@ -940,13 +986,16 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     state.eulerCur = SO3ToEuler(state.statePoint.rot);
     state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
 
+    const QVector<DynamicObjectLabel> dynamicLabels =
+        appendDynamicObjectOutput(state, output, frame.frameEndNs);
+    removeDynamicPointsFromBackendFrame(state, dynamicLabels);
+
     PointVector addedPoints;
     mapIncremental(state, addedPoints);
 
     appendTrajectoryOutput(state, output, frame.frameEndNs);
     appendPublishedWorldFrameOutput(state, output);
     appendPublishedBodyFrameOutput(state, output);
-    appendDynamicObjectOutput(state, output, frame.frameEndNs);
     appendGlobalMapOutput(state, output);
     fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
     status_ = SlamStatusCode::Running;
