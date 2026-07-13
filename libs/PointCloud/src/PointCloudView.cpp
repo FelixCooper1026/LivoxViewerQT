@@ -1262,6 +1262,11 @@ void PointCloudView::syncOrbitTargetFromViewer()
 
 void PointCloudView::paintGL()
 {
+    glEnable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
+    glClearDepth(1.0);
+
     if (m_backgroundTopColor == m_backgroundBottomColor) {
         glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1437,11 +1442,13 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("uPersistEnabled", 0);
     m_program->setUniformValue("uModelLighting", 0);
     if (m_slamWorldFrameVertexCount > 0 && m_slamWorldFrameVao.isCreated()) {
+        glDepthFunc(GL_LEQUAL);
         m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.worldFramePointSizePx);
         m_slamWorldFrameVao.bind();
         glDrawArrays(GL_POINTS, 0, m_slamWorldFrameVertexCount);
         m_slamWorldFrameVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
+        glDepthFunc(GL_LESS);
     }
     if (m_slamBodyFrameVertexCount > 0 && m_slamBodyFrameVao.isCreated()) {
         m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.bodyFramePointSizePx);
