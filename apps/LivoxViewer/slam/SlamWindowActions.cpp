@@ -10,6 +10,7 @@
 #include "slam/SlamUiBridge.h"
 
 #include <QDateTime>
+#include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileDialog>
@@ -20,10 +21,13 @@
 #include <QStatusBar>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QThread>
 
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#include <limits>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -81,12 +85,20 @@ public:
 
     void integratePendingSamples()
     {
+        integrateUntil(std::numeric_limits<int64_t>::max());
+    }
+
+    void integrateUntil(int64_t maximumTimestampNs)
+    {
         if (!initialized_ || lidarOnly_) {
             return;
         }
         for (const SlamImuSample& sample : history_) {
             if (sample.timestampNs <= timestampNs_) {
                 continue;
+            }
+            if (sample.timestampNs > maximumTimestampNs) {
+                break;
             }
             const double dt = double(sample.timestampNs - timestampNs_) * 1.0e-9;
             const Eigen::Vector3d gyro(sample.gyroRadPerSec[0],
@@ -527,6 +539,9 @@ QString LivoxViewerWindow::offlineSlamSourcePath() const
 
 void LivoxViewerWindow::toggleSlamPrimaryAction()
 {
+    if (slamWorkerStopping.load()) {
+        return;
+    }
     if (slamWorkerActive.load() && !slamWorkerPaused.load()) {
         pauseSlamProcessing();
         return;
@@ -722,6 +737,11 @@ void LivoxViewerWindow::startSlamProcessing()
     bridge->setModeAndBackend(isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM"),
                               slamBackendDisplayName(slamRuntimeConfig));
 
+    if (slamWorkerStopping.load()) {
+        postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 正在停止，请等待后端资源释放完成。"));
+        return;
+    }
+
     if (slamWorker.joinable() && !slamWorkerActive.load()) {
         slamWorker.join();
     }
@@ -744,6 +764,7 @@ void LivoxViewerWindow::startSlamProcessing()
         liveSlamSource.setQueueCapacity(config.maxInputQueueFrames);
         slamWorkerCancel.store(false);
         slamWorkerPaused.store(false);
+        slamWorkerStopping.store(false);
         slamWorkerActive.store(true);
         slamProgressValue = 0;
         slamProgressMaximum = 0;
@@ -780,7 +801,7 @@ void LivoxViewerWindow::startSlamProcessing()
             };
             auto postControlUpdate = [this]() {
                 QMetaObject::invokeMethod(this, [this]() {
-                    updateSlamControlBarUi();
+                    finishSlamWorkerUi();
                 }, Qt::QueuedConnection);
             };
             auto postSlamLog = [this](QString message) {
@@ -1004,9 +1025,7 @@ void LivoxViewerWindow::startSlamProcessing()
             postOnlineProgress(finalOutput.inputFps, processedFrames);
             postOutput(finalOutput);
             slamWorkerActive.store(false);
-            QMetaObject::invokeMethod(this, [this]() {
-                updateSlamControlBarUi();
-            }, Qt::QueuedConnection);
+            postControlUpdate();
         });
         return;
     }
@@ -1025,6 +1044,7 @@ void LivoxViewerWindow::startSlamProcessing()
     const SlamReplayMode replayMode = slamReplayMode;
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
+    slamWorkerStopping.store(false);
     slamWorkerActive.store(true);
     slamProgressValue = 0;
     slamProgressMaximum = 0;
@@ -1082,13 +1102,15 @@ void LivoxViewerWindow::startSlamProcessing()
         };
         auto postControlUpdate = [this]() {
             QMetaObject::invokeMethod(this, [this]() {
-                updateSlamControlBarUi();
+                finishSlamWorkerUi();
             }, Qt::QueuedConnection);
         };
 
         QString error;
         QVector<SlamInputFrame> frames;
+        std::unique_ptr<LvxSlamSource> lvxSource;
         QString summaryText;
+        int totalFrameCount = 0;
         if (sourceKind == SlamOfflineSourceKind::Pcap) {
             PcapSlamSource source(config.inputFrameDurationMs);
             if (!source.load(sourcePath, &error)) {
@@ -1099,6 +1121,7 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             frames = source.frames();
             summaryText = source.summaryText();
+            totalFrameCount = frames.size();
         } else if (sourceKind == SlamOfflineSourceKind::Rosbag) {
             RosbagSlamSourceConfig rosbagConfig;
             rosbagConfig.frameDurationMs = config.inputFrameDurationMs;
@@ -1116,6 +1139,7 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             frames = source.frames();
             summaryText = source.summaryText();
+            totalFrameCount = frames.size();
         } else if (sourceKind == SlamOfflineSourceKind::Lvx) {
             if (!isLidarOnlyConfig(config)) {
                 postOutput(statusOutput(SlamStatusCode::MissingImu,
@@ -1124,15 +1148,20 @@ void LivoxViewerWindow::startSlamProcessing()
                 postControlUpdate();
                 return;
             }
-            LvxSlamSource source(config.inputFrameDurationMs);
-            if (!source.load(sourcePath, &error)) {
+            lvxSource = std::make_unique<LvxSlamSource>(config.inputFrameDurationMs);
+            if (!lvxSource->open(sourcePath, &slamWorkerCancel, &error)) {
+                if (slamWorkerCancel.load()) {
+                    slamWorkerActive.store(false);
+                    postControlUpdate();
+                    return;
+                }
                 postOutput(statusOutput(SlamStatusCode::Failed, error));
                 slamWorkerActive.store(false);
                 postControlUpdate();
                 return;
             }
-            frames = source.frames();
-            summaryText = source.summaryText();
+            totalFrameCount = lvxSource->estimatedFrameCount();
+            summaryText = lvxSource->summaryText();
         } else {
             postOutput(statusOutput(SlamStatusCode::Failed, QStringLiteral("未知离线 SLAM 数据源类型。")));
             slamWorkerActive.store(false);
@@ -1141,7 +1170,7 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
         const QString sourceText = QDir::toNativeSeparators(sourcePath);
-        const int64_t firstFrameStartNs = frames.isEmpty()
+        int64_t firstFrameStartNs = frames.isEmpty()
             ? int64_t{0}
             : frames.first().frameStartNs;
 
@@ -1153,8 +1182,7 @@ void LivoxViewerWindow::startSlamProcessing()
             lastFrameEndNs = std::max<int64_t>(frames.last().frameEndNs, fallbackFrameEndNs);
         }
 
-        const uint64_t fallbackFrameCount =
-            static_cast<uint64_t>(std::max<qsizetype>(qsizetype{1}, frames.size()));
+        const uint64_t fallbackFrameCount = static_cast<uint64_t>(std::max(1, totalFrameCount));
         const uint64_t fallbackFrameDurationMs =
             static_cast<uint64_t>(std::max<int>(1, config.inputFrameDurationMs));
         const uint64_t totalDurationNs =
@@ -1170,7 +1198,12 @@ void LivoxViewerWindow::startSlamProcessing()
         auto makeFrameText = [](int value, int maximum) {
             return QStringLiteral("帧 %1 / %2").arg(value).arg(maximum);
         };
-        postProgress(0, frames.size(), false, sourceText, makeTimeText(0), makeFrameText(0, frames.size()));
+        postProgress(0,
+                     totalFrameCount,
+                     false,
+                     sourceText,
+                     makeTimeText(0),
+                     makeFrameText(0, totalFrameCount));
 
         FastLioSlamBackend backend;
         if (!backend.start(config, &error)) {
@@ -1185,11 +1218,16 @@ void LivoxViewerWindow::startSlamProcessing()
         int processedFrames = 0;
         int droppedFrames = 0;
         bool hasFirstFrameStart = false;
+        int64_t firstReplayFrameEndNs = 0;
+        int64_t lastVisitedFrameStartNs = 0;
         qint64 pausedReplayMs = 0;
         QElapsedTimer replayClock;
         SlamOutput lastOutput;
         bool hasLastOutput = false;
         int progressFrames = 0;
+        int vectorFrameIndex = 0;
+        QString sourceReadError;
+        HighRateOdometryPredictor offlineOdometryPredictor;
 
         auto waitUntilRunning = [this, &pausedReplayMs]() {
             if (!slamWorkerPaused.load()) {
@@ -1204,32 +1242,78 @@ void LivoxViewerWindow::startSlamProcessing()
             return !slamWorkerCancel.load();
         };
 
-        auto waitForReplayTarget = [this, &waitUntilRunning, &pausedReplayMs, &replayClock](qint64 targetMs) {
+        auto publishHighRatePose = [&postOutput,
+                                    &offlineOdometryPredictor,
+                                    &firstReplayFrameEndNs,
+                                    &config](qint64 replayElapsedMs) {
+            if (isLidarOnlyConfig(config) || !offlineOdometryPredictor.initialized()) {
+                return;
+            }
+            offlineOdometryPredictor.integrateUntil(
+                firstReplayFrameEndNs + int64_t(replayElapsedMs) * int64_t{1000000});
+            SlamOutput odometryOutput;
+            odometryOutput.status = SlamStatusCode::Running;
+            odometryOutput.currentPose = offlineOdometryPredictor.pose();
+            odometryOutput.currentPoseValid = true;
+            odometryOutput.imuHealthy = true;
+            odometryOutput.odometryOnly = true;
+            postOutput(std::move(odometryOutput));
+        };
+
+        auto waitForReplayTarget = [this,
+                                    &waitUntilRunning,
+                                    &pausedReplayMs,
+                                    &replayClock,
+                                    &publishHighRatePose](qint64 targetMs) {
             while (!slamWorkerCancel.load()) {
                 if (!waitUntilRunning()) {
                     return false;
                 }
-                const qint64 remainingMs = targetMs - (replayClock.elapsed() - pausedReplayMs);
+                const qint64 replayElapsedMs = replayClock.elapsed() - pausedReplayMs;
+                publishHighRatePose(replayElapsedMs);
+                const qint64 remainingMs = targetMs - replayElapsedMs;
                 if (remainingMs <= 0) {
                     return true;
                 }
-                const qint64 sleepMs = std::min<qint64>(remainingMs, qint64{10});
+                const qint64 sleepMs = std::min<qint64>(remainingMs, kOdometryPublishPeriod.count());
                 std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
             }
             return false;
         };
 
-        for (const SlamInputFrame& frame : frames) {
+        while (!slamWorkerCancel.load()) {
+            SlamInputFrame frame;
+            if (lvxSource) {
+                if (!lvxSource->readNextFrame(&frame, &slamWorkerCancel, &sourceReadError)) {
+                    break;
+                }
+            } else {
+                if (vectorFrameIndex >= frames.size()) {
+                    break;
+                }
+                frame = std::move(frames[vectorFrameIndex++]);
+            }
             if (slamWorkerCancel.load()) {
                 break;
             }
             ++progressFrames;
+            lastVisitedFrameStartNs = frame.frameStartNs;
             if (!hasFirstFrameStart) {
                 hasFirstFrameStart = true;
+                firstFrameStartNs = frame.frameStartNs;
+                firstReplayFrameEndNs = frame.frameEndNs > frame.frameStartNs
+                    ? frame.frameEndNs
+                    : frame.frameStartNs + int64_t(config.inputFrameDurationMs) * int64_t{1000000};
                 replayClock.start();
             }
+            if (!isLidarOnlyConfig(config)) {
+                offlineOdometryPredictor.appendSamples(frame.imuSamples);
+            }
+            const int64_t replayFrameEndNs = frame.frameEndNs > frame.frameStartNs
+                ? frame.frameEndNs
+                : frame.frameStartNs + int64_t(config.inputFrameDurationMs) * int64_t{1000000};
             if (replayMode == SlamReplayMode::Timed &&
-                !waitForReplayTarget(replayTargetMs(firstFrameStartNs, frame.frameStartNs))) {
+                !waitForReplayTarget(replayTargetMs(firstReplayFrameEndNs, replayFrameEndNs))) {
                 break;
             }
             if (!waitUntilRunning()) {
@@ -1240,11 +1324,11 @@ void LivoxViewerWindow::startSlamProcessing()
             if (!isLidarOnlyConfig(config) && !frame.hasCompleteImuCoverage) {
                 ++droppedFrames;
                 postProgress(progressFrames,
-                             frames.size(),
+                             totalFrameCount,
                              false,
                              sourceText,
                              makeTimeText(elapsedFrameNs),
-                             makeFrameText(progressFrames, frames.size()));
+                             makeFrameText(progressFrames, totalFrameCount));
                 continue;
             }
 
@@ -1261,12 +1345,18 @@ void LivoxViewerWindow::startSlamProcessing()
             lastOutput = output;
             hasLastOutput = true;
             postOutput(output);
+            if (!isLidarOnlyConfig(config)) {
+                const FastLioPredictionState correction = backend.predictionState(frame.frameEndNs);
+                if (correction.valid) {
+                    offlineOdometryPredictor.applyCorrection(correction);
+                }
+            }
             postProgress(progressFrames,
-                         frames.size(),
+                         totalFrameCount,
                          false,
                          sourceText,
                          makeTimeText(elapsedFrameNs),
-                         makeFrameText(progressFrames, frames.size()));
+                         makeFrameText(progressFrames, totalFrameCount));
 
             if (!accepted &&
                 output.status != SlamStatusCode::InitializingImu &&
@@ -1277,9 +1367,19 @@ void LivoxViewerWindow::startSlamProcessing()
 
         backend.stop();
         const bool cancelled = slamWorkerCancel.load();
+        const bool sourceReadFailed = !cancelled && !sourceReadError.isEmpty();
+        if (lvxSource) {
+            postLog(QStringLiteral("[SLAM] %1").arg(lvxSource->summaryText()));
+            if (!cancelled && !sourceReadFailed) {
+                totalFrameCount = progressFrames;
+            }
+        }
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
-        finalOutput.status = SlamStatusCode::Stopped;
-        finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("%1 SLAM 已完成。").arg(sourceDisplayName);
+        finalOutput.status = sourceReadFailed ? SlamStatusCode::Failed : SlamStatusCode::Stopped;
+        finalOutput.message = sourceReadFailed
+            ? sourceReadError
+            : (cancelled ? QStringLiteral("SLAM 已停止。")
+                         : QStringLiteral("%1 SLAM 已完成。").arg(sourceDisplayName));
         finalOutput.droppedFrameCount = droppedFrames;
         if (processedFrames > 0) {
             const double elapsedSec = qMax(0.001, double(elapsed.elapsed()) / 1000.0);
@@ -1287,34 +1387,35 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         finalOutput.newTrajectoryPoints.clear();
         finalOutput.newGlobalMapPoints.clear();
-        const int finalProgress = cancelled ? progressFrames : frames.size();
+        const int finalProgress = cancelled || sourceReadFailed ? progressFrames : totalFrameCount;
         uint64_t finalElapsedNs = totalDurationNs;
-        if (cancelled) {
+        if (cancelled || sourceReadFailed) {
             finalElapsedNs = 0;
-            if (progressFrames > 0 && progressFrames <= frames.size()) {
-                const int64_t elapsedNs = frames.at(progressFrames - 1).frameStartNs - firstFrameStartNs;
+            if (progressFrames > 0) {
+                const int64_t elapsedNs = lastVisitedFrameStartNs - firstFrameStartNs;
                 if (elapsedNs > 0) {
                     finalElapsedNs = std::min<uint64_t>(uint64_t(elapsedNs), totalDurationNs);
                 }
             }
         }
         postProgress(finalProgress,
-                     frames.size(),
+                     totalFrameCount,
                      false,
                      sourceText,
                      makeTimeText(finalElapsedNs),
-                     makeFrameText(finalProgress, frames.size()));
+                     makeFrameText(finalProgress, totalFrameCount));
         postOutput(finalOutput);
         slamWorkerActive.store(false);
-        QMetaObject::invokeMethod(this, [this]() {
-            updateSlamControlBarUi();
-        }, Qt::QueuedConnection);
+        postControlUpdate();
     });
 }
 
 void LivoxViewerWindow::pauseSlamProcessing()
 {
     ensureSlamUiBridge();
+    if (slamWorkerStopping.load()) {
+        return;
+    }
     if (!slamWorker.joinable() || !slamWorkerActive.load()) {
         postSlamStatus(SlamStatusCode::Paused, QStringLiteral("当前没有正在运行的 SLAM。"));
         updateSlamControlBarUi();
@@ -1327,23 +1428,48 @@ void LivoxViewerWindow::pauseSlamProcessing()
 
 void LivoxViewerWindow::stopSlamProcessing()
 {
-    SlamUiBridge* bridge = ensureSlamUiBridge();
+    ensureSlamUiBridge();
+    if (!slamWorker.joinable()) {
+        postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 已停止。"));
+        updateSlamControlBarUi();
+        return;
+    }
+    if (slamWorkerStopping.exchange(true)) {
+        return;
+    }
     slamWorkerCancel.store(true);
     slamWorkerPaused.store(false);
+    postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("正在停止 SLAM 并释放后端地图资源…"));
+    updateSlamControlBarUi();
+}
+
+void LivoxViewerWindow::finishSlamWorkerUi()
+{
+    Q_ASSERT(QThread::currentThread() == qApp->thread());
     if (slamWorker.joinable()) {
         slamWorker.join();
     }
-    slamWorkerActive.store(false);
-    postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 已停止。"));
-    QMetaObject::invokeMethod(this, [bridge]() {
-        bridge->resetCurrentPose();
-    }, Qt::QueuedConnection);
+    const bool stoppedByUser = slamWorkerStopping.exchange(false);
+    if (stoppedByUser) {
+        if (slamResetPending) {
+            slamResetPending = false;
+            clearSlamDisplay();
+            postSlamStatus(SlamStatusCode::Idle, QStringLiteral("SLAM 已重置。"));
+        } else {
+            postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 已停止。"));
+            ensureSlamUiBridge()->resetCurrentPose();
+        }
+    }
     updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::resetSlamProcessing()
 {
-    stopSlamProcessing();
+    if (slamWorker.joinable()) {
+        slamResetPending = true;
+        stopSlamProcessing();
+        return;
+    }
     clearSlamDisplay();
     postSlamStatus(SlamStatusCode::Idle, QStringLiteral("SLAM 已重置。"));
     updateSlamControlBarUi();

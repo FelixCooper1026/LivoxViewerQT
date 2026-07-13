@@ -3,6 +3,7 @@
 
 #include "PlaybackSource.h"
 
+#include <atomic>
 #include <memory>
 
 class QFile;
@@ -11,7 +12,8 @@ namespace Lvx {
 
 class LvxReader final : public Playback::Source {
 public:
-    LvxReader();
+    explicit LvxReader(bool frameCacheEnabled = true,
+                       const std::atomic_bool* cancellationRequested = nullptr);
     ~LvxReader() override;
 
     bool load(const QString& filePath) override;
@@ -41,6 +43,8 @@ private:
     uint64_t frameDurationNs_ = 50000000ULL;
     int frameHeaderSize_ = 0;
     bool legacyFloatPoints_ = false;
+    bool frameCacheEnabled_ = true;
+    const std::atomic_bool* cancellationRequested_ = nullptr;
 };
 
 } // namespace Lvx

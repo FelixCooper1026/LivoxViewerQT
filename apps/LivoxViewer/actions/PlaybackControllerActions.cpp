@@ -1153,8 +1153,12 @@ void LivoxViewerWindow::updateSlamControlBarUi()
     const bool active = slamWorkerActive.load();
     const bool hasWorker = slamWorker.joinable();
     const bool paused = active && slamWorkerPaused.load();
+    const bool stopping = slamWorkerStopping.load();
     if (slamStartButton) {
-        if (active && !paused) {
+        if (stopping) {
+            slamStartButton->setText(QStringLiteral("停止中…"));
+            slamStartButton->setToolTip(QStringLiteral("正在释放 SLAM 后端资源"));
+        } else if (active && !paused) {
             slamStartButton->setText(QStringLiteral("暂停"));
             slamStartButton->setToolTip(QStringLiteral("暂停 SLAM worker"));
         } else if (paused) {
@@ -1164,10 +1168,10 @@ void LivoxViewerWindow::updateSlamControlBarUi()
             slamStartButton->setText(QStringLiteral("开始"));
             slamStartButton->setToolTip(QStringLiteral("开始 SLAM worker"));
         }
-        slamStartButton->setEnabled(true);
+        slamStartButton->setEnabled(!stopping);
     }
     if (slamStopButton) {
-        slamStopButton->setEnabled(active || hasWorker);
+        slamStopButton->setEnabled(!stopping && (active || hasWorker));
     }
     if (slamClearButton) {
         slamClearButton->setEnabled(!active);

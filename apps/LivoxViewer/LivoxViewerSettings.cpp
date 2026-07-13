@@ -828,8 +828,10 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
 
 LivoxViewerWindow::~LivoxViewerWindow()
 {
-    if (slamUiBridge || slamWorker.joinable()) {
-        stopSlamProcessing();
+    slamWorkerCancel.store(true);
+    slamWorkerPaused.store(false);
+    if (slamWorker.joinable()) {
+        slamWorker.join();
     }
     if (slamMapExportWorker.joinable()) {
         slamMapExportWorker.join();

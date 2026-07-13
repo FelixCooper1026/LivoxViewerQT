@@ -226,6 +226,7 @@ private:
     void appendSlamWorldFramePoints(const SlamOutput& output);
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
+    void finishSlamWorkerUi();
     void showSlamInfoPanel();
     void rebuildSlamInfoPanel();
     void showSlamStatusPanel();
@@ -425,6 +426,8 @@ private:
     std::atomic_bool slamWorkerActive{false};
     std::atomic_bool slamWorkerCancel{false};
     std::atomic_bool slamWorkerPaused{false};
+    std::atomic_bool slamWorkerStopping{false};
+    bool slamResetPending = false;
     std::thread slamMapExportWorker;
     std::atomic_bool slamMapExportActive{false};
     SlamRuntimeConfig slamRuntimeConfig;

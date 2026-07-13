@@ -5,24 +5,28 @@
 #include "PlaybackSource.h"
 
 #include <QFileInfo>
-#include <QMap>
-#include <QStringList>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <utility>
 
 namespace {
 
-void flushFrame(QVector<SlamInputFrame>& frames, SlamInputFrame& frame)
+void initializeOutputFrame(SlamInputFrame& frame,
+                           int64_t frameStartNs,
+                           uint32_t sourceId,
+                           uint8_t deviceType,
+                           const QString& filePath)
 {
-    if (frame.points.isEmpty()) {
-        return;
-    }
-    frame.sequence = uint64_t(frames.size());
-    frame.frameEndNs = frame.frameStartNs + frame.points.last().offsetNs;
-    frames.push_back(std::move(frame));
     frame = SlamInputFrame();
+    frame.frameStartNs = frameStartNs;
+    frame.sourceId = sourceId;
+    frame.deviceType = deviceType;
+    frame.timeSource = SlamTimeSource::SynthesizedFromPacketInterval;
+    frame.hasPointOffsetTime = true;
+    frame.hasCompleteImuCoverage = false;
+    frame.sourceName = filePath;
 }
 
 SlamPoint toSlamPoint(const PointCloudPoint& source, int64_t offsetNs)
@@ -47,23 +51,35 @@ LvxSlamSource::LvxSlamSource(int frameDurationMs)
 {
 }
 
-bool LvxSlamSource::load(const QString& filePath, QString* error)
-{
-    frames_.clear();
-    summaryText_.clear();
+LvxSlamSource::~LvxSlamSource() = default;
 
-    const bool lvx2 = QFileInfo(filePath).suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) == 0;
-    std::unique_ptr<Playback::Source> source = lvx2
-        ? std::unique_ptr<Playback::Source>(new Lvx2::Lvx2Reader())
-        : std::unique_ptr<Playback::Source>(new Lvx::LvxReader());
-    if (!source->load(filePath)) {
+bool LvxSlamSource::open(const QString& filePath,
+                         const std::atomic_bool* cancellationRequested,
+                         QString* error)
+{
+    source_.reset();
+    visibility_.clear();
+    pendingFrame_ = SlamInputFrame();
+    filePath_ = filePath;
+    sourceFrameIndex_ = 0;
+    estimatedFrameCount_ = 0;
+    sourceId_ = 0;
+    deviceType_ = 0;
+    emittedFrameCount_ = 0;
+    pointCount_ = 0;
+
+    lvx2_ = QFileInfo(filePath).suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) == 0;
+    source_ = lvx2_
+        ? std::unique_ptr<Playback::Source>(new Lvx2::Lvx2Reader(false, cancellationRequested))
+        : std::unique_ptr<Playback::Source>(new Lvx::LvxReader(false, cancellationRequested));
+    if (!source_->load(filePath)) {
         if (error != nullptr) {
-            *error = source->errorMessage();
+            *error = source_->errorMessage();
         }
         return false;
     }
 
-    const QVector<Playback::DeviceInfo> devices = source->devices();
+    const QVector<Playback::DeviceInfo> devices = source_->devices();
     if (devices.size() != 1) {
         if (error != nullptr) {
             *error = QStringLiteral("离线 LO 仅支持单雷达 LVX/LVX2 文件。");
@@ -71,81 +87,107 @@ bool LvxSlamSource::load(const QString& filePath, QString* error)
         return false;
     }
 
-    QMap<uint32_t, bool> visibility;
-    visibility.insert(devices.first().lidarId, true);
-    const int64_t sourceFrameDurationNs = int64_t(source->nominalFrameDurationNs());
-    SlamInputFrame outputFrame;
-    uint64_t pointCount = 0;
-
-    for (int sourceFrameIndex = 0; sourceFrameIndex < source->frameCount(); ++sourceFrameIndex) {
-        PointCloudFrame sourceFrame;
-        if (!source->readFrame(sourceFrameIndex, visibility, sourceFrame)) {
-            if (error != nullptr) {
-                *error = source->errorMessage();
-            }
-            return false;
-        }
-        if (sourceFrame.points.isEmpty()) {
-            continue;
-        }
-
-        const int64_t sourceFrameEndNs = int64_t(sourceFrame.timestamp);
-        const int64_t sourceFrameStartNs = sourceFrameEndNs - sourceFrameDurationNs;
-        if (outputFrame.points.isEmpty()) {
-            outputFrame.frameStartNs = sourceFrameStartNs;
-            outputFrame.sourceId = devices.first().lidarId;
-            outputFrame.deviceType = devices.first().deviceType;
-            outputFrame.timeSource = SlamTimeSource::SynthesizedFromPacketInterval;
-            outputFrame.hasPointOffsetTime = true;
-            outputFrame.hasCompleteImuCoverage = false;
-            outputFrame.sourceName = filePath;
-        } else if (sourceFrameStartNs >= outputFrame.frameStartNs + frameDurationNs_) {
-            flushFrame(frames_, outputFrame);
-            outputFrame.frameStartNs = sourceFrameStartNs;
-            outputFrame.sourceId = devices.first().lidarId;
-            outputFrame.deviceType = devices.first().deviceType;
-            outputFrame.timeSource = SlamTimeSource::SynthesizedFromPacketInterval;
-            outputFrame.hasPointOffsetTime = true;
-            outputFrame.hasCompleteImuCoverage = false;
-            outputFrame.sourceName = filePath;
-        }
-
-        const int64_t sourceOffsetNs = sourceFrameStartNs - outputFrame.frameStartNs;
-        for (qsizetype pointIndex = 0; pointIndex < sourceFrame.points.size(); ++pointIndex) {
-            const int64_t pointOffsetNs = sourceOffsetNs +
-                int64_t(pointIndex) * sourceFrameDurationNs / int64_t(sourceFrame.points.size());
-            outputFrame.points.push_back(toSlamPoint(sourceFrame.points.at(pointIndex), pointOffsetNs));
-        }
-        pointCount += uint64_t(sourceFrame.points.size());
-    }
-    flushFrame(frames_, outputFrame);
-
-    if (frames_.isEmpty()) {
-        if (error != nullptr) {
-            *error = QStringLiteral("LVX/LVX2 未生成有效的离线 LO 点云帧。");
-        }
-        return false;
-    }
-
-    summaryText_ = QStringLiteral(
-        "%1 LO 输入摘要\n- 文件: %2\n- 帧数: %3\n- 点数: %4\n- IMU 样本数: 0\n- 聚帧周期: %5 ms\n- 点内时间: 按 LVX 包帧时间和点顺序重建")
-                       .arg(lvx2 ? QStringLiteral("LVX2") : QStringLiteral("LVX"),
-                            filePath,
-                            QString::number(frames_.size()),
-                            QString::number(pointCount),
-                            QString::number(frameDurationNs_ / int64_t{1000000}));
+    sourceId_ = devices.first().lidarId;
+    deviceType_ = devices.first().deviceType;
+    visibility_.insert(sourceId_, true);
+    sourceFrameDurationNs_ = int64_t(source_->nominalFrameDurationNs());
+    const uint64_t sourceDurationNs = uint64_t(std::max(0, source_->frameCount())) *
+                                      uint64_t(std::max<int64_t>(1, sourceFrameDurationNs_));
+    const uint64_t estimated = (sourceDurationNs + uint64_t(frameDurationNs_) - 1) /
+                               uint64_t(frameDurationNs_);
+    estimatedFrameCount_ = int(std::min<uint64_t>(
+        uint64_t(std::numeric_limits<int>::max()), std::max<uint64_t>(uint64_t{1}, estimated)));
     if (error != nullptr) {
         error->clear();
     }
     return true;
 }
 
-const QVector<SlamInputFrame>& LvxSlamSource::frames() const
+bool LvxSlamSource::readNextFrame(SlamInputFrame* frame,
+                                  const std::atomic_bool* cancellationRequested,
+                                  QString* error)
 {
-    return frames_;
+    if (frame == nullptr || !source_) {
+        if (error != nullptr) {
+            *error = QStringLiteral("LVX/LVX2 流式输入源尚未打开。");
+        }
+        return false;
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+
+    while (sourceFrameIndex_ < source_->frameCount()) {
+        if (cancellationRequested && cancellationRequested->load()) {
+            return false;
+        }
+        PointCloudFrame sourceFrame;
+        if (!source_->readFrame(sourceFrameIndex_, visibility_, sourceFrame)) {
+            if (error != nullptr) {
+                *error = source_->errorMessage();
+            }
+            return false;
+        }
+        ++sourceFrameIndex_;
+        if (sourceFrame.points.isEmpty()) {
+            continue;
+        }
+
+        const int64_t sourceFrameEndNs = int64_t(sourceFrame.timestamp);
+        const int64_t sourceFrameStartNs = sourceFrameEndNs - sourceFrameDurationNs_;
+        SlamInputFrame completedFrame;
+        const bool completesPendingFrame = !pendingFrame_.points.isEmpty() &&
+            sourceFrameStartNs >= pendingFrame_.frameStartNs + frameDurationNs_;
+        if (pendingFrame_.points.isEmpty()) {
+            initializeOutputFrame(pendingFrame_, sourceFrameStartNs, sourceId_, deviceType_, filePath_);
+        } else if (completesPendingFrame) {
+            completedFrame = std::move(pendingFrame_);
+            completedFrame.sequence = emittedFrameCount_++;
+            completedFrame.frameEndNs = completedFrame.frameStartNs + completedFrame.points.last().offsetNs;
+            initializeOutputFrame(pendingFrame_, sourceFrameStartNs, sourceId_, deviceType_, filePath_);
+        }
+
+        const int64_t sourceOffsetNs = sourceFrameStartNs - pendingFrame_.frameStartNs;
+        for (qsizetype pointIndex = 0; pointIndex < sourceFrame.points.size(); ++pointIndex) {
+            if ((pointIndex & qsizetype{4095}) == 0 &&
+                cancellationRequested && cancellationRequested->load()) {
+                return false;
+            }
+            const int64_t pointOffsetNs = sourceOffsetNs +
+                int64_t(pointIndex) * sourceFrameDurationNs_ / int64_t(sourceFrame.points.size());
+            pendingFrame_.points.push_back(toSlamPoint(sourceFrame.points.at(pointIndex), pointOffsetNs));
+        }
+        pointCount_ += uint64_t(sourceFrame.points.size());
+
+        if (completesPendingFrame) {
+            *frame = std::move(completedFrame);
+            return true;
+        }
+    }
+
+    if (!pendingFrame_.points.isEmpty()) {
+        pendingFrame_.sequence = emittedFrameCount_++;
+        pendingFrame_.frameEndNs = pendingFrame_.frameStartNs + pendingFrame_.points.last().offsetNs;
+        *frame = std::move(pendingFrame_);
+        pendingFrame_ = SlamInputFrame();
+        return true;
+    }
+    return false;
+}
+
+int LvxSlamSource::estimatedFrameCount() const
+{
+    return estimatedFrameCount_;
 }
 
 QString LvxSlamSource::summaryText() const
 {
-    return summaryText_;
+    return QStringLiteral(
+        "%1 LO 流式输入摘要\n- 文件: %2\n- 已生成帧数: %3（预计 %4）\n- 已读取点数: %5\n- IMU 样本数: 0\n- 聚帧周期: %6 ms\n- 点内时间: 按 LVX 包帧时间和点顺序重建")
+        .arg(lvx2_ ? QStringLiteral("LVX2") : QStringLiteral("LVX"),
+             filePath_,
+             QString::number(emittedFrameCount_),
+             QString::number(estimatedFrameCount_),
+             QString::number(pointCount_),
+             QString::number(frameDurationNs_ / int64_t{1000000}));
 }

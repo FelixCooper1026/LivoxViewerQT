@@ -14,6 +14,7 @@
     <file>projection_perspective.svg</file>
     <file>projection_observer.svg</file>
     <file>projection_orthographic.svg</file>
+    <file>projection_slam_follow.svg</file>
     <file>view_top.svg</file>
     <file>view_front.svg</file>
     <file>view_left.svg</file>

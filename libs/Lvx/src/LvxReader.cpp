@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace {
 
@@ -100,7 +101,11 @@ int detectFrameHeaderSize(QFile& file,
 
 namespace Lvx {
 
-LvxReader::LvxReader() = default;
+LvxReader::LvxReader(bool frameCacheEnabled, const std::atomic_bool* cancellationRequested)
+    : frameCacheEnabled_(frameCacheEnabled)
+    , cancellationRequested_(cancellationRequested)
+{
+}
 LvxReader::~LvxReader() = default;
 
 bool LvxReader::load(const QString& filePath)
@@ -206,6 +211,10 @@ bool LvxReader::load(const QString& filePath)
     }
 
     while (file.pos() + qint64(sizeof(LvxFrameHeader)) <= fileSize) {
+        if (cancellationRequested_ && cancellationRequested_->load()) {
+            errorMessage_ = "LVX加载已取消";
+            return false;
+        }
         LvxFrameHeader frameHeader{};
         const qint64 frameOffset = file.pos();
         if (!readExact(file, reinterpret_cast<char*>(&frameHeader), sizeof(frameHeader))) {
@@ -228,8 +237,10 @@ bool LvxReader::load(const QString& filePath)
         return false;
     }
 
-    frameCache_.resize(frames_.size());
-    frameCacheValid_ = QVector<bool>(frames_.size(), false);
+    if (frameCacheEnabled_) {
+        frameCache_.resize(frames_.size());
+        frameCacheValid_ = QVector<bool>(frames_.size(), false);
+    }
     return true;
 }
 
@@ -291,7 +302,7 @@ bool LvxReader::readFrame(int frameIndex,
         return false;
     }
 
-    if (frameCacheValid_.value(frameIndex, false)) {
+    if (frameCacheEnabled_ && frameCacheValid_.value(frameIndex, false)) {
         frame = frameCache_.at(frameIndex);
         return true;
     }
@@ -307,6 +318,10 @@ bool LvxReader::readFrame(int frameIndex,
     const Playback::FrameRef& frameRef = frames_.at(frameIndex);
     qint64 cursor = qint64(frameRef.offset) + qint64(frameHeaderSize_);
     while (cursor + qint64(sizeof(LvxPackageHeader)) <= qint64(frameRef.nextOffset)) {
+        if (cancellationRequested_ && cancellationRequested_->load()) {
+            errorMessage_ = "LVX读取已取消";
+            return false;
+        }
         if (!playbackFile_->seek(cursor)) {
             break;
         }
@@ -343,9 +358,13 @@ bool LvxReader::readFrame(int frameIndex,
                                             lineCounts_.value(deviceKey, 1));
     }
 
-    frameCache_[frameIndex] = parsed;
-    frameCacheValid_[frameIndex] = true;
-    frame = frameCache_.at(frameIndex);
+    if (frameCacheEnabled_) {
+        frameCache_[frameIndex] = parsed;
+        frameCacheValid_[frameIndex] = true;
+        frame = frameCache_.at(frameIndex);
+    } else {
+        frame = std::move(parsed);
+    }
     return true;
 }
 

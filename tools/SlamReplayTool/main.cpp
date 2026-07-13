@@ -11,8 +11,10 @@
 #include <QTextStream>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 namespace {
 
@@ -235,13 +237,21 @@ bool loadDiagnosticSource(const QString& filePath,
 
     if (isLvxPath(filePath)) {
         LvxSlamSource lvxSource(config.inputFrameDurationMs);
-        if (!lvxSource.load(filePath, error)) {
+        std::atomic_bool cancellationRequested{false};
+        if (!lvxSource.open(filePath, &cancellationRequested, error)) {
             source->kind = QStringLiteral("lvx");
             return false;
         }
         source->kind = QFileInfo(filePath).suffix().toLower();
+        SlamInputFrame frame;
+        while (lvxSource.readNextFrame(&frame, &cancellationRequested, error)) {
+            source->frames.push_back(std::move(frame));
+            frame = SlamInputFrame();
+        }
+        if (error != nullptr && !error->isEmpty()) {
+            return false;
+        }
         source->summaryText = lvxSource.summaryText();
-        source->frames = lvxSource.frames();
         return true;
     }
 

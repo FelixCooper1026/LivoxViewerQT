@@ -6,6 +6,8 @@
 
 #include <QFile>
 
+#include <utility>
+
 namespace {
 
 bool readExact(QFile& file, char* data, qint64 size)
@@ -22,7 +24,11 @@ uint64_t parseTimestampValue(uint64_t raw)
 
 namespace Lvx2 {
 
-Lvx2Reader::Lvx2Reader() = default;
+Lvx2Reader::Lvx2Reader(bool frameCacheEnabled, const std::atomic_bool* cancellationRequested)
+    : frameCacheEnabled_(frameCacheEnabled)
+    , cancellationRequested_(cancellationRequested)
+{
+}
 Lvx2Reader::~Lvx2Reader() = default;
 
 bool Lvx2Reader::load(const QString& filePath)
@@ -78,6 +84,10 @@ bool Lvx2Reader::load(const QString& filePath)
 
     const qint64 fileSize = file.size();
     while (file.pos() + qint64(sizeof(Lvx2FrameHeader)) <= fileSize) {
+        if (cancellationRequested_ && cancellationRequested_->load()) {
+            errorMessage_ = "LVX2加载已取消";
+            return false;
+        }
         Lvx2FrameHeader frameHeader{};
         const qint64 frameOffset = file.pos();
         if (!readExact(file, reinterpret_cast<char*>(&frameHeader), sizeof(frameHeader))) {
@@ -100,8 +110,10 @@ bool Lvx2Reader::load(const QString& filePath)
         return false;
     }
 
-    frameCache_.resize(frames_.size());
-    frameCacheValid_ = QVector<bool>(frames_.size(), false);
+    if (frameCacheEnabled_) {
+        frameCache_.resize(frames_.size());
+        frameCacheValid_ = QVector<bool>(frames_.size(), false);
+    }
     return true;
 }
 
@@ -163,7 +175,7 @@ bool Lvx2Reader::readFrame(int frameIndex,
         return false;
     }
 
-    if (frameCacheValid_.value(frameIndex, false)) {
+    if (frameCacheEnabled_ && frameCacheValid_.value(frameIndex, false)) {
         frame = frameCache_.at(frameIndex);
         return true;
     }
@@ -179,6 +191,10 @@ bool Lvx2Reader::readFrame(int frameIndex,
     const Playback::FrameRef& frameRef = frames_.at(frameIndex);
     qint64 cursor = qint64(frameRef.offset) + qint64(sizeof(Lvx2FrameHeader));
     while (cursor + qint64(sizeof(Lvx2PackageHeader)) <= qint64(frameRef.nextOffset)) {
+        if (cancellationRequested_ && cancellationRequested_->load()) {
+            errorMessage_ = "LVX2读取已取消";
+            return false;
+        }
         if (!playbackFile_->seek(cursor)) {
             break;
         }
@@ -216,9 +232,13 @@ bool Lvx2Reader::readFrame(int frameIndex,
                                              lineCounts_.value(packageHeader.lidar_id, 1));
     }
 
-    frameCache_[frameIndex] = parsed;
-    frameCacheValid_[frameIndex] = true;
-    frame = frameCache_.at(frameIndex);
+    if (frameCacheEnabled_) {
+        frameCache_[frameIndex] = parsed;
+        frameCacheValid_[frameIndex] = true;
+        frame = frameCache_.at(frameIndex);
+    } else {
+        frame = std::move(parsed);
+    }
     return true;
 }
 

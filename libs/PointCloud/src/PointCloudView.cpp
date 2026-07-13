@@ -58,7 +58,7 @@ constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
 constexpr float kSlamFollowDistanceM = 6.0f;
-constexpr float kSlamFollowHeightM = 2.5f;
+constexpr float kSlamFollowHeightM = 1.5f;
 constexpr float kSlamFollowLookAheadM = 4.0f;
 constexpr float kSlamFollowTargetHeightM = 0.5f;
 

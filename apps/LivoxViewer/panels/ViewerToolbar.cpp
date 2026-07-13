@@ -1109,10 +1109,10 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     projectionGroup->addPrimaryWidget(createIconButton(observerProjectionAction, projectionGroup, toolbarIconSize));
 
-    QAction* slamFollowProjectionAction = new QAction(QIcon(":/icons/capture_camera.svg"), "SLAM 第三人称跟随", this);
-    ThemeIconUtils::setThemedSvgIcon(slamFollowProjectionAction, QStringLiteral(":/icons/capture_camera.svg"));
+    QAction* slamFollowProjectionAction = new QAction(QIcon(":/icons/projection_slam_follow.svg"), "SLAM 第三人称跟随", this);
+    ThemeIconUtils::setThemedSvgIcon(slamFollowProjectionAction, QStringLiteral(":/icons/projection_slam_follow.svg"));
     slamFollowProjectionAction->setCheckable(true);
-    slamFollowProjectionAction->setToolTip("相机从机体后上方跟随最新 SLAM 位姿，以 +X 为前方、+Z 为上方");
+    slamFollowProjectionAction->setToolTip("相机跟随SLAM位姿视角");
     projectionModeGroup->addAction(slamFollowProjectionAction);
     connect(slamFollowProjectionAction, &QAction::triggered, this, [this]() {
         forEachPointCloudView([](PointCloudView* view) {
