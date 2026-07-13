@@ -1218,7 +1218,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* legendTab = createSettingsPage("图例", "设置距离、高度和线号着色图例。");
     QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
     QWidget* backgroundTab = createSettingsPage("背景", "设置 OpenGL 点云视图的背景颜色。");
-    QWidget* slamTab = createSettingsPage("SLAM", "设置旁路 SLAM 后端和轨迹显示参数。");
+    QWidget* slamTab = createSettingsPage("后端", "设置 SLAM 后端和轨迹显示样式等参数。");
 
     QVBoxLayout* themeLayout = qobject_cast<QVBoxLayout*>(themeTab->layout());
     QVBoxLayout* connectionLayout = qobject_cast<QVBoxLayout*>(connectionTab->layout());
@@ -1478,8 +1478,14 @@ void LivoxViewerWindow::showPreferencesDialog()
     QComboBox* slamTemplateCombo = new QComboBox(slamTemplateRow);
     slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Mid360Mid360S),
                                int(SlamLidarTemplate::Mid360Mid360S));
+    slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Mid360L),
+                               int(SlamLidarTemplate::Mid360L));
     slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Avia),
                                int(SlamLidarTemplate::Avia));
+    slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Avia2),
+                               int(SlamLidarTemplate::Avia2));
+    slamTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Custom),
+                               int(SlamLidarTemplate::Custom));
     const int slamTemplateIndex = slamTemplateCombo->findData(int(slamRuntimeConfig.lidarTemplate));
     slamTemplateCombo->setCurrentIndex(slamTemplateIndex >= 0 ? slamTemplateIndex : 0);
     slamTemplateCombo->setFixedWidth(168);
@@ -1525,7 +1531,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     for (int i = 0; i < 3; ++i) {
         QLabel* label = new QLabel(slamExtrinsicTLabels.at(i), slamExtrinsicTRow);
         slamExtrinsicTSpins[static_cast<std::size_t>(i)] =
-            createSlamExtrinsicSpin(slamRuntimeConfig.extrinsicT_L_I[i], -10.0, 10.0, 5, 0.001, QStringLiteral(" m"));
+            createSlamExtrinsicSpin(slamRuntimeConfig.extrinsicT_L_I[i], -10.0, 10.0, 7, 0.0001, QStringLiteral(" m"));
         slamExtrinsicTLayout->addWidget(label);
         slamExtrinsicTLayout->addWidget(slamExtrinsicTSpins[static_cast<std::size_t>(i)]);
     }
@@ -2449,7 +2455,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamSettingsTabs->syncCurrentPageHeight();
     slamLayout->addStretch();
 
-    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景", "SLAM"};
+    const QStringList navigationNames = {"主题", "连接", "网格", "图例", "着色", "背景", "后端"};
     const QStringList navigationIcons = {
         ":/icons/settings_theme.svg",
         ":/icons/settings_connection.svg",
@@ -2457,7 +2463,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         ":/icons/settings_legend.svg",
         ":/icons/settings_color.svg",
         ":/icons/settings_background.svg",
-        ":/icons/settings.svg"
+        ":/icons/settings_slam.svg"
     };
     for (int i = 0; i < navigationNames.size(); ++i) {
         QPushButton* button = createPreferenceNavButton(navigationNames.at(i), navigationIcons.at(i), navigation);

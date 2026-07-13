@@ -46,16 +46,20 @@ QString statusName(SlamStatusCode status)
 
 QString templateName(SlamLidarTemplate lidarTemplate)
 {
-    return lidarTemplate == SlamLidarTemplate::Avia
-        ? QStringLiteral("avia")
-        : QStringLiteral("mid360");
+    return slamLidarTemplateDisplayName(lidarTemplate);
 }
 
 SlamLidarTemplate inferTemplateForPath(const QString& filePath)
 {
     const QString path = QFileInfo(filePath).absoluteFilePath().toLower();
+    if (path.contains(QStringLiteral("avia2"))) {
+        return SlamLidarTemplate::Avia2;
+    }
     if (path.contains(QStringLiteral("avia"))) {
         return SlamLidarTemplate::Avia;
+    }
+    if (path.contains(QStringLiteral("mid360l")) || path.contains(QStringLiteral("mid-360l"))) {
+        return SlamLidarTemplate::Mid360L;
     }
     return SlamLidarTemplate::Mid360Mid360S;
 }

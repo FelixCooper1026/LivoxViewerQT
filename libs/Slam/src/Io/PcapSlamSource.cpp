@@ -25,6 +25,8 @@ constexpr size_t kLivoxPayloadHeaderSize = 36;
 constexpr int64_t kLivoxTimeIntervalUnitNs = 100;
 constexpr int64_t kNsPerMs = 1000000;
 constexpr double kLivoxPi = 3.14159265358979323846;
+constexpr int64_t kAvia2NormalPointRate = 350000;
+constexpr int64_t kAvia2FocusPointRate = 100000;
 
 struct PcapMetadata {
     QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
@@ -300,6 +302,38 @@ void flushFrame(QVector<SlamInputFrame>& frames, SlamInputFrame& frame, bool& ha
     hasFrame = false;
 }
 
+int64_t inferAvia2PointRate(const QVector<SlamInputFrame>& frames, int64_t frameDurationNs)
+{
+    uint64_t pointCount = 0;
+    for (const SlamInputFrame& frame : frames) {
+        pointCount += uint64_t(frame.points.size());
+    }
+    const int64_t durationNs = frames.last().frameStartNs - frames.first().frameStartNs + frameDurationNs;
+    const double observedPointRate = double(pointCount) * 1.0e9 / double(durationNs);
+    return std::abs(observedPointRate - double(kAvia2NormalPointRate)) <
+            std::abs(observedPointRate - double(kAvia2FocusPointRate))
+        ? kAvia2NormalPointRate
+        : kAvia2FocusPointRate;
+}
+
+void reconstructAvia2PointTiming(QVector<SlamInputFrame>& frames, int64_t pointRate, int64_t frameDurationNs)
+{
+    const int64_t expectedFramePoints = pointRate * frameDurationNs / int64_t{1000000000};
+    if (frames.first().points.size() * 10 < expectedFramePoints * 9) {
+        frames.removeFirst();
+    }
+    for (SlamInputFrame& frame : frames) {
+        for (qsizetype i = 0; i < frame.points.size(); ++i) {
+            SlamPoint& point = frame.points[i];
+            point.offsetNs = int64_t(i) * int64_t{1000000000} / pointRate;
+            point.hasOffsetTime = true;
+        }
+        frame.frameEndNs = frame.frameStartNs + frame.points.last().offsetNs;
+        frame.hasPointOffsetTime = true;
+        frame.timeSource = SlamTimeSource::SynthesizedFromPacketInterval;
+    }
+}
+
 void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
 {
     struct pcap_pkthdr* header = nullptr;
@@ -514,6 +548,8 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
     uint64_t nextSequence = 0;
     bool hasLastPointPacketTime = false;
     int64_t lastPointPacketTimeNs = 0;
+    uint64_t avia2PointPacketCount = 0;
+    uint64_t avia2MissingPointTimingPacketCount = 0;
 
     struct pcap_pkthdr* packetHeader = nullptr;
     const u_char* packetData = nullptr;
@@ -580,6 +616,12 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
         if (!hasPointOffsetTime(header)) {
             summary_.missingPointOffsetPacketCount++;
         }
+        if (deviceTypes.value(lidarId, 0) == kLivoxLidarTypeAvia2) {
+            ++avia2PointPacketCount;
+            if (!hasPointOffsetTime(header)) {
+                ++avia2MissingPointTimingPacketCount;
+            }
+        }
 
         const qsizetype pointCountBefore = currentFrame.points.size();
         if (appendPointPayload(udpInfo.payload,
@@ -611,6 +653,17 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
         }
         summary_.status = SlamStatusCode::Failed;
         return false;
+    }
+
+    if (avia2PointPacketCount == summary_.pointPacketCount &&
+        avia2MissingPointTimingPacketCount == avia2PointPacketCount) {
+        const int64_t pointRate = inferAvia2PointRate(frames_, frameDurationNs_);
+        reconstructAvia2PointTiming(frames_, pointRate, frameDurationNs_);
+        summary_.missingPointOffsetPacketCount = 0;
+        summary_.messages.push_back(
+            pointRate == kAvia2NormalPointRate
+                ? QStringLiteral("Avia2 Normal 点云已按 350000 点/秒重建点内时间。")
+                : QStringLiteral("Avia2 Focus 点云已按 100000 点/秒重建点内时间。"));
     }
 
     frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);

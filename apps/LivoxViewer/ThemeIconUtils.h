@@ -43,15 +43,16 @@ inline QPixmap themedSvgPixmap(const QString& iconPath, const QSize& size)
     const QSize physicalSize(qMax(1, qRound(size.width() * dpr)),
                              qMax(1, qRound(size.height() * dpr)));
     QPixmap pixmap(physicalSize);
-    pixmap.setDevicePixelRatio(dpr);
     pixmap.fill(Qt::transparent);
 
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing, true);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    renderer.render(&painter, QRectF(QPointF(0, 0), QSizeF(size)));
+    renderer.render(&painter, QRectF(QPointF(0, 0), QSizeF(physicalSize)));
     painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-    painter.fillRect(QRectF(QPointF(0, 0), QSizeF(size)), iconColor());
+    painter.fillRect(QRectF(QPointF(0, 0), QSizeF(physicalSize)), iconColor());
+    painter.end();
+    pixmap.setDevicePixelRatio(dpr);
     return pixmap;
 }
 
@@ -68,7 +69,7 @@ inline QIcon themedSvgIcon(const QString& iconPath)
     }
 
     QIcon icon;
-    for (int size : {16, 20, 24, 32, 48, 64}) {
+    for (int size : {16, 20, 22, 24, 32, 48, 64}) {
         icon.addPixmap(themedSvgPixmap(iconPath, QSize(size, size)));
     }
     iconCache.insert(cacheKey, icon);

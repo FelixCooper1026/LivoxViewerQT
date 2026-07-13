@@ -8,7 +8,10 @@
 
 enum class SlamLidarTemplate {
     Mid360Mid360S = 0,
-    Avia = 1
+    Avia = 1,
+    Mid360L = 2,
+    Avia2 = 3,
+    Custom = 4
 };
 
 struct SlamRuntimeConfig {

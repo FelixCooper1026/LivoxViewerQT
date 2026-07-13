@@ -117,8 +117,14 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
     slamControlTemplateCombo = new QComboBox(slamControlBar);
     slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Mid360Mid360S),
                                       static_cast<int>(SlamLidarTemplate::Mid360Mid360S));
+    slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Mid360L),
+                                      static_cast<int>(SlamLidarTemplate::Mid360L));
     slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Avia),
                                       static_cast<int>(SlamLidarTemplate::Avia));
+    slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Avia2),
+                                      static_cast<int>(SlamLidarTemplate::Avia2));
+    slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Custom),
+                                      static_cast<int>(SlamLidarTemplate::Custom));
     slamProgressBar = new QProgressBar(slamControlBar);
     slamProgressBar->setRange(0, 1);
     slamProgressBar->setValue(0);

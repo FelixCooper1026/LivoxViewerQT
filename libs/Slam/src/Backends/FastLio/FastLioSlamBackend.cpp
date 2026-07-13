@@ -128,6 +128,8 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
 
 DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConfig& config)
 {
+    const bool aviaFamily = config.lidarTemplate == SlamLidarTemplate::Avia ||
+                            config.lidarTemplate == SlamLidarTemplate::Avia2;
     DynamicObjectDetectorConfig detectorConfig;
     detectorConfig.horizontalResolutionRad = config.dynamicObjectHorizontalResolutionRad;
     detectorConfig.verticalResolutionRad = config.dynamicObjectVerticalResolutionRad;
@@ -139,9 +141,9 @@ DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConf
     detectorConfig.maxRangeM = config.dynamicObjectMaxRangeM;
     detectorConfig.bufferDelaySec = config.dynamicObjectBufferDelaySec;
     detectorConfig.depthMapDurationSec = config.dynamicObjectDepthMapDurationSec;
-    detectorConfig.frameDurationSec = config.lidarTemplate == SlamLidarTemplate::Avia ? 0.1 : 0.02;
+    detectorConfig.frameDurationSec = aviaFamily ? 0.1 : 0.02;
     detectorConfig.maxDepthMaps = config.dynamicObjectMaxDepthMaps;
-    detectorConfig.maxPointsPerPixel = config.lidarTemplate == SlamLidarTemplate::Avia ? 50 : 20;
+    detectorConfig.maxPointsPerPixel = aviaFamily ? 50 : 20;
     detectorConfig.minHistoryMaps = config.dynamicObjectMinHistoryMaps;
     detectorConfig.neighborPixelRadius = config.dynamicObjectNeighborPixelRadius;
     detectorConfig.case1DepthMarginM = config.dynamicObjectCase1DepthMarginM;
@@ -150,7 +152,7 @@ DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConf
     detectorConfig.case1VoteThreshold = config.dynamicObjectCase1VoteThreshold;
     detectorConfig.case2OcclusionChainLength = config.dynamicObjectCase2OcclusionChainLength;
     detectorConfig.case3OcclusionChainLength = config.dynamicObjectCase3OcclusionChainLength;
-    if (config.lidarTemplate == SlamLidarTemplate::Avia) {
+    if (aviaFamily) {
         detectorConfig.case2MapConsistencyDepthM = 0.1;
         detectorConfig.case2MapConsistencyHorizontalRad = 0.01;
         detectorConfig.case2MapConsistencyVerticalRad = 0.01;
