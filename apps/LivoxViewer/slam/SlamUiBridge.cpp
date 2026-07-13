@@ -50,6 +50,20 @@ QVector3D posePosition(const SlamPose& pose)
     return QVector3D(float(pose.tx), float(pose.ty), float(pose.tz));
 }
 
+SlamRenderPose renderPose(const SlamPose& pose, bool valid)
+{
+    SlamRenderPose result;
+    result.valid = valid;
+    result.tx = float(pose.tx);
+    result.ty = float(pose.ty);
+    result.tz = float(pose.tz);
+    result.qx = float(pose.qx);
+    result.qy = float(pose.qy);
+    result.qz = float(pose.qz);
+    result.qw = float(pose.qw);
+    return result;
+}
+
 QString formatPose(const SlamPose& pose)
 {
     return QStringLiteral("t=[%1, %2, %3]\nq=[%4, %5, %6, %7]")
@@ -203,12 +217,25 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     if (output.odometryOnly) {
         m_latestOutput.currentPose = output.currentPose;
+        m_latestOutput.currentPoseValid = output.currentPoseValid;
+        m_hasCurrentPose = output.currentPoseValid;
         m_displayState.currentPose = formatPose(output.currentPose);
         emit displayStateChanged();
+        emit renderPoseReady(renderPose(output.currentPose, m_hasCurrentPose));
         emit poseAxisVerticesReady(buildPoseAxisVertices());
         return;
     }
+    const SlamPose retainedPose = m_latestOutput.currentPose;
+    const bool retainedPoseValid = m_hasCurrentPose;
     m_latestOutput = output;
+    if (output.currentPoseValid) {
+        m_hasCurrentPose = true;
+    } else {
+        m_latestOutput.currentPose = retainedPose;
+        m_latestOutput.currentPoseValid = retainedPoseValid;
+        m_hasCurrentPose = retainedPoseValid;
+    }
+    emit renderPoseReady(renderPose(m_latestOutput.currentPose, m_hasCurrentPose));
     if (isErrorStatus(output.status)) {
         m_errorMessage = errorDisplayMessage(output);
     } else if (output.status == SlamStatusCode::Starting ||
@@ -364,6 +391,16 @@ void SlamUiBridge::clearErrorMessage()
     refreshStatus();
 }
 
+void SlamUiBridge::resetCurrentPose()
+{
+    m_latestOutput.currentPose = SlamPose();
+    m_latestOutput.currentPoseValid = false;
+    m_hasCurrentPose = false;
+    emit renderPoseReady(SlamRenderPose());
+    emit poseAxisVerticesReady(buildPoseAxisVertices());
+    refreshStatus();
+}
+
 void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
@@ -376,7 +413,11 @@ void SlamUiBridge::clearDisplay()
     m_latestOutput.newGlobalMapPoints.clear();
     m_latestOutput.globalMapPointCount = 0;
     m_latestOutput.dynamicObjectStats = SlamDynamicObjectStats();
+    m_latestOutput.currentPose = SlamPose();
+    m_latestOutput.currentPoseValid = false;
+    m_hasCurrentPose = false;
     m_errorMessage.clear();
+    emit renderPoseReady(SlamRenderPose());
     emit renderSnapshotReady(buildRenderSnapshot());
     refreshStatus();
 }
@@ -465,6 +506,7 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     snapshot.trajectoryLineWidthPx = m_trajectoryLineWidthPx;
     snapshot.poseAxisLengthM = m_poseAxisLengthM;
     snapshot.poseAxisLineWidthPx = m_poseAxisLineWidthPx;
+    snapshot.currentPose = renderPose(m_latestOutput.currentPose, m_hasCurrentPose);
 
     if (m_trajectoryVisible) {
         snapshot.trajectoryVertices.reserve(m_trajectory.size());

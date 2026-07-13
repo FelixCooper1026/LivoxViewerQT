@@ -1034,6 +1034,39 @@ void LivoxViewerWindow::loadViewPreferences()
     if (pointCloudBackgroundPreset < BackgroundDeepBlack || pointCloudBackgroundPreset > BackgroundPureWhite) {
         pointCloudBackgroundPreset = BackgroundGraphite;
     }
+    pointCloudEdlConfig.enabled = settings.value(
+        QStringLiteral("visualization/edl/enabled"), pointCloudEdlConfig.enabled).toBool();
+    pointCloudEdlConfig.strength = std::clamp(
+        settings.value(QStringLiteral("visualization/edl/strength"), pointCloudEdlConfig.strength).toFloat(),
+        0.0f,
+        5.0f);
+    pointCloudEdlConfig.radiusPx = std::clamp(
+        settings.value(QStringLiteral("visualization/edl/radiusPx"), pointCloudEdlConfig.radiusPx).toFloat(),
+        0.5f,
+        5.0f);
+    pointCloudEdlConfig.silhouetteStrength = std::clamp(
+        settings.value(QStringLiteral("visualization/edl/silhouetteStrength"),
+                       pointCloudEdlConfig.silhouetteStrength).toFloat(),
+        0.0f,
+        1.0f);
+    pointCloudEdlConfig.minimumShade = std::clamp(
+        settings.value(QStringLiteral("visualization/edl/minimumShade"),
+                       pointCloudEdlConfig.minimumShade).toFloat(),
+        0.0f,
+        1.0f);
+    pointCloudEdlConfig.sampleCount = settings.value(
+        QStringLiteral("visualization/edl/sampleCount"), pointCloudEdlConfig.sampleCount).toInt();
+    if (pointCloudEdlConfig.sampleCount != 4 && pointCloudEdlConfig.sampleCount != 8) {
+        pointCloudEdlConfig.sampleCount = 8;
+    }
+    const float storedEdlRenderScale = settings.value(
+        QStringLiteral("visualization/edl/renderScale"), pointCloudEdlConfig.renderScale).toFloat();
+    pointCloudEdlConfig.renderScale = storedEdlRenderScale < 0.625f
+        ? 0.5f
+        : (storedEdlRenderScale < 0.875f ? 0.75f : 1.0f);
+    pointCloudEdlConfig.roundPointSplat = settings.value(
+        QStringLiteral("visualization/edl/roundPointSplat"),
+        pointCloudEdlConfig.roundPointSplat).toBool();
     const QStringList storedLineColors = settings.value("color/lineColors").toStringList();
     for (int i = 0; i < storedLineColors.size() && i < lineColors.size(); ++i) {
         const QColor color(storedLineColors.at(i));
@@ -1061,6 +1094,11 @@ void LivoxViewerWindow::loadViewPreferences()
     }
 
     pointCloudView->setGridConfig(config);
+    forEachPointCloudView([this](PointCloudView* view) {
+        if (view) {
+            view->setEdlConfig(pointCloudEdlConfig);
+        }
+    });
     applyPointCloudBackground();
     updatePointCloudLegend();
     syncReflectivityColorScaleControls();
@@ -1118,6 +1156,16 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("color/reflectivityScale", reflectivityColorScale);
     settings.setValue("color/solidColor", solidColor);
     settings.setValue("background/preset", pointCloudBackgroundPreset);
+    settings.setValue(QStringLiteral("visualization/edl/enabled"), pointCloudEdlConfig.enabled);
+    settings.setValue(QStringLiteral("visualization/edl/strength"), pointCloudEdlConfig.strength);
+    settings.setValue(QStringLiteral("visualization/edl/radiusPx"), pointCloudEdlConfig.radiusPx);
+    settings.setValue(QStringLiteral("visualization/edl/silhouetteStrength"),
+                      pointCloudEdlConfig.silhouetteStrength);
+    settings.setValue(QStringLiteral("visualization/edl/minimumShade"), pointCloudEdlConfig.minimumShade);
+    settings.setValue(QStringLiteral("visualization/edl/sampleCount"), pointCloudEdlConfig.sampleCount);
+    settings.setValue(QStringLiteral("visualization/edl/renderScale"), pointCloudEdlConfig.renderScale);
+    settings.setValue(QStringLiteral("visualization/edl/roundPointSplat"),
+                      pointCloudEdlConfig.roundPointSplat);
     QStringList storedLineColors;
     for (const QColor& color : lineColors) {
         storedLineColors.append(color.name(QColor::HexRgb));
@@ -1216,7 +1264,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* connectionTab = createSettingsPage("连接", "配置与雷达连接时的主机网络行为。");
     QWidget* gridTab = createSettingsPage("网格", "调整点云视图中的世界坐标网格。");
     QWidget* legendTab = createSettingsPage("图例", "设置距离、高度和线号着色图例。");
-    QWidget* colorTab = createSettingsPage("着色", "设置纯色着色模式使用的颜色。");
+    QWidget* colorTab = createSettingsPage("着色", "设置点云颜色映射与屏幕空间深度增强效果。");
     QWidget* backgroundTab = createSettingsPage("背景", "设置 OpenGL 点云视图的背景颜色。");
     QWidget* slamTab = createSettingsPage("后端", "设置 SLAM 后端和轨迹显示样式等参数。");
 
@@ -1377,6 +1425,47 @@ void LivoxViewerWindow::showPreferencesDialog()
                 const QPair<QColor, QColor> colors = backgroundPresetColors(selectedBackgroundPreset);
                 backgroundPresetPreview->setStyleSheet(verticalColorBarStyleSheet(colors.first, colors.second));
             });
+
+    SwitchCheckBox* edlEnabledCheck = new SwitchCheckBox(colorTab);
+    edlEnabledCheck->setChecked(pointCloudEdlConfig.enabled);
+    usePreferenceControlColumn(edlEnabledCheck);
+    auto createEdlSpin = [&dlg](double minimum,
+                                double maximum,
+                                double step,
+                                double value,
+                                const QString& suffix = QString()) {
+        QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
+        spin->setRange(minimum, maximum);
+        spin->setDecimals(2);
+        spin->setSingleStep(step);
+        spin->setValue(value);
+        spin->setSuffix(suffix);
+        preparePreferenceSpinBox(spin);
+        return spin;
+    };
+    QDoubleSpinBox* edlStrengthSpin = createEdlSpin(0.0, 5.0, 0.1, pointCloudEdlConfig.strength);
+    QDoubleSpinBox* edlRadiusSpin = createEdlSpin(0.5, 5.0, 0.1, pointCloudEdlConfig.radiusPx,
+                                                  QStringLiteral(" px"));
+    QDoubleSpinBox* edlSilhouetteSpin = createEdlSpin(
+        0.0, 1.0, 0.05, pointCloudEdlConfig.silhouetteStrength);
+    QDoubleSpinBox* edlMinimumShadeSpin = createEdlSpin(
+        0.0, 1.0, 0.05, pointCloudEdlConfig.minimumShade);
+    QComboBox* edlQualityCombo = new QComboBox(colorTab);
+    edlQualityCombo->addItem(QStringLiteral("低（50%，4 采样）"), 0);
+    edlQualityCombo->addItem(QStringLiteral("中（75%，8 采样）"), 1);
+    edlQualityCombo->addItem(QStringLiteral("高（100%，8 采样）"), 2);
+    int edlQuality = 2;
+    if (pointCloudEdlConfig.sampleCount == 4 || pointCloudEdlConfig.renderScale == 0.5f) {
+        edlQuality = 0;
+    } else if (pointCloudEdlConfig.renderScale == 0.75f) {
+        edlQuality = 1;
+    }
+    edlQualityCombo->setCurrentIndex(edlQuality);
+    edlQualityCombo->setFixedWidth(220);
+    usePreferenceControlColumn(edlQualityCombo, 220);
+    SwitchCheckBox* edlRoundPointCheck = new SwitchCheckBox(colorTab);
+    edlRoundPointCheck->setChecked(pointCloudEdlConfig.roundPointSplat);
+    usePreferenceControlColumn(edlRoundPointCheck);
 
     auto createSlamVoxelSpin = [&dlg](double value) {
         QDoubleSpinBox* spin = new QDoubleSpinBox(&dlg);
@@ -2074,6 +2163,17 @@ void LivoxViewerWindow::showPreferencesDialog()
                          lineColorRows.at(i));
     }
     colorPageLayout->addWidget(lineColorSection);
+
+    addPreferenceSectionTitle(colorPageLayout, "Eye-Dome Lighting");
+    QFrame* edlSection = createPreferenceSection(colorTab);
+    addPreferenceRow(edlSection, "启用", "比较相邻像素的线性深度并压暗前景轮廓。", edlEnabledCheck);
+    addPreferenceRow(edlSection, "强度", "控制深度断层产生的明暗对比。", edlStrengthSpin);
+    addPreferenceRow(edlSection, "轮廓半径", "以逻辑像素为单位设置邻域采样距离。", edlRadiusSpin);
+    addPreferenceRow(edlSection, "空洞轮廓", "控制点云外轮廓和空洞邻域的压暗程度。", edlSilhouetteSpin);
+    addPreferenceRow(edlSection, "最低亮度", "限制最暗亮度，避免稀疏点云变成纯黑。", edlMinimumShadeSpin);
+    addPreferenceRow(edlSection, "质量", "调整离屏分辨率与邻域采样数量。", edlQualityCombo);
+    addPreferenceRow(edlSection, "圆形点", "将方形 point sprite 裁剪为圆形，减少块状黑边。", edlRoundPointCheck);
+    colorPageLayout->addWidget(edlSection);
     colorPageLayout->addStretch();
 
     addPreferenceSectionTitle(backgroundLayout, "点云背景");
@@ -2526,6 +2626,26 @@ void LivoxViewerWindow::showPreferencesDialog()
     solidColor = selectedSolidColor;
     lineColors = selectedLineColors;
     pointCloudBackgroundPreset = selectedBackgroundPreset;
+    pointCloudEdlConfig.enabled = edlEnabledCheck->isChecked();
+    pointCloudEdlConfig.strength = float(edlStrengthSpin->value());
+    pointCloudEdlConfig.radiusPx = float(edlRadiusSpin->value());
+    pointCloudEdlConfig.silhouetteStrength = float(edlSilhouetteSpin->value());
+    pointCloudEdlConfig.minimumShade = float(edlMinimumShadeSpin->value());
+    pointCloudEdlConfig.roundPointSplat = edlRoundPointCheck->isChecked();
+    switch (edlQualityCombo->currentData().toInt()) {
+    case 0:
+        pointCloudEdlConfig.sampleCount = 4;
+        pointCloudEdlConfig.renderScale = 0.5f;
+        break;
+    case 1:
+        pointCloudEdlConfig.sampleCount = 8;
+        pointCloudEdlConfig.renderScale = 0.75f;
+        break;
+    default:
+        pointCloudEdlConfig.sampleCount = 8;
+        pointCloudEdlConfig.renderScale = 1.0f;
+        break;
+    }
     themeMode = themeGroup->checkedId();
     const SlamRuntimeConfig previousSlamRuntimeConfig = slamRuntimeConfig;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
@@ -2713,6 +2833,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     if (backgroundChanged) {
         applyPointCloudBackground();
     }
+    forEachPointCloudView([this](PointCloudView* view) {
+        if (view) {
+            view->setEdlConfig(pointCloudEdlConfig);
+        }
+    });
     saveViewPreferences();
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
         logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));

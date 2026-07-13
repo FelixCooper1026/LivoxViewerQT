@@ -166,6 +166,7 @@ void LivoxViewerWindow::initializeUserInterface()
     realtimePointCloudView->installEventFilter(this);
     realtimePointCloudView->setMinimumSize(200, 200);
     realtimePointCloudView->setPointSize(pointSizePx);
+    realtimePointCloudView->setEdlConfig(pointCloudEdlConfig);
     pointCloudView = realtimePointCloudView;
     connect(realtimePointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
     connect(realtimePointCloudView, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);

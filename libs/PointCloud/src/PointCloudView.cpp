@@ -1,4 +1,5 @@
 #include "PointCloudView.h"
+#include "PointCloudEdlRenderer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +17,7 @@
 #include <QMimeData>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QDebug>
 #include <QPointer>
 #include <QStringList>
 #include <QThread>
@@ -55,6 +57,10 @@ constexpr float kDefaultCameraDistance = 25.0f;
 constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
+constexpr float kSlamFollowDistanceM = 6.0f;
+constexpr float kSlamFollowHeightM = 2.5f;
+constexpr float kSlamFollowLookAheadM = 4.0f;
+constexpr float kSlamFollowTargetHeightM = 0.5f;
 
 bool isSupportedPlaybackDropFile(const QString& filePath)
 {
@@ -494,6 +500,10 @@ PointCloudView::~PointCloudView()
     if (hasContext) {
         makeCurrent();
     }
+    if (m_edlRenderer) {
+        m_edlRenderer->destroy();
+        m_edlRenderer.reset();
+    }
     m_stlModelVbo.destroy();
     m_stlModelVao.destroy();
     m_crossSectionTriangleVbo.destroy();
@@ -530,6 +540,7 @@ void PointCloudView::setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot)
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_slamRenderSnapshot = snapshot;
+    setSlamFollowPose(snapshot.currentPose);
     m_slamRenderUploadPending = true;
     bool hasPrimaryPointCloud = false;
     {
@@ -561,6 +572,7 @@ void PointCloudView::clearSlamRenderOverlay()
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
     m_slamRenderSnapshot = SlamRenderSnapshot();
+    setSlamFollowPose(SlamRenderPose());
     m_slamRenderUploadPending = true;
     update();
 }
@@ -601,6 +613,9 @@ bool PointCloudView::pickNearestPoint(const QPoint& pos, QVector3D& outWorld, QP
 
 void PointCloudView::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+        return;
+    }
     if (event->button() == Qt::LeftButton) {
         QVector3D pickedWorld;
         QPoint pickedScreen;
@@ -639,6 +654,8 @@ void PointCloudView::initializeGL()
     glPointSize(2.0f);
     
     setupShaders();
+    m_edlRenderer = std::make_unique<PointCloudEdlRenderer>();
+    m_edlRenderer->initialize();
     setupBackgroundBuffers();
     setupBuffers();
     setupAxesBuffers();
@@ -718,13 +735,25 @@ void PointCloudView::setupShaders()
         flat in int vIsSelected; // 接收顶点着色器传来的判断结果
 
         uniform int uModelLighting;
+        uniform int uPointPrimitive;
+        uniform int uEdlEligible;
+        uniform int uEdlPass;
+        uniform int uRoundPointSplat;
 
-        out vec4 FragColor;
+        layout(location = 0) out vec4 SceneColor;
+        layout(location = 1) out float LinearDepth;
 
         void main() {
-            // 片元着色器只做最简单的 IF 判断，不涉及任何矩阵运算！
+            if (uPointPrimitive == 1 && uRoundPointSplat == 1) {
+                vec2 coord = gl_PointCoord * 2.0 - 1.0;
+                if (dot(coord, coord) > 1.0) {
+                    discard;
+                }
+            }
+
+            vec3 color = vColor;
             if (vIsSelected == 1) {
-                FragColor = vec4(1.0, 0.0, 0.0, 1.0); // 框选的点涂成纯红色
+                color = vec3(1.0, 0.0, 0.0);
             } else if (uModelLighting == 1) {
                 vec3 normal = normalize(vNormal);
                 vec3 viewDir = normalize(-vViewPosition);
@@ -734,11 +763,14 @@ void PointCloudView::setupShaders()
                               + 0.22 * max(dot(normal, fillLight), 0.0);
                 vec3 halfDir = normalize(keyLight + viewDir);
                 float specular = 0.10 * pow(max(dot(normal, halfDir), 0.0), 32.0);
-                vec3 color = vColor * (0.36 + diffuse) + vec3(specular);
-                FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-            } else {
-                FragColor = vec4(vColor, 1.0);        // 没选中的点保持原色
+                color = clamp(vColor * (0.36 + diffuse) + vec3(specular), 0.0, 1.0);
             }
+
+            float category = uEdlPass == 1
+                ? (uEdlEligible == 1 ? 1.0 : 0.5)
+                : 1.0;
+            SceneColor = vec4(color, category);
+            LinearDepth = max(-vViewPosition.z, 0.0001);
         }
     )";
 
@@ -1262,33 +1294,49 @@ void PointCloudView::syncOrbitTargetFromViewer()
 
 void PointCloudView::paintGL()
 {
+    if (!m_program) {
+        return;
+    }
+
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
     glClearDepth(1.0);
 
-    if (m_backgroundTopColor == m_backgroundBottomColor) {
-        glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    } else {
-        glDisable(GL_DEPTH_TEST);
-        m_backgroundProgram->bind();
-        m_backgroundProgram->setUniformValue("uTopColor", QVector3D(m_backgroundTopColor.redF(),
-                                                                    m_backgroundTopColor.greenF(),
-                                                                    m_backgroundTopColor.blueF()));
-        m_backgroundProgram->setUniformValue("uBottomColor", QVector3D(m_backgroundBottomColor.redF(),
-                                                                       m_backgroundBottomColor.greenF(),
-                                                                       m_backgroundBottomColor.blueF()));
-        m_backgroundVao.bind();
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        m_backgroundVao.release();
-        m_backgroundProgram->release();
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glEnable(GL_DEPTH_TEST);
+    bool edlActive = false;
+    if (m_edlConfig.enabled && m_edlRenderer) {
+        edlActive = m_edlRenderer->beginScene(edlPhysicalSize());
+        if (!edlActive && !m_edlFallbackReported) {
+            qWarning().noquote() << "EDL disabled for this view:" << m_edlRenderer->errorMessage();
+            m_edlFallbackReported = true;
+        } else if (edlActive) {
+            m_edlFallbackReported = false;
+        }
     }
-    
-    if (!m_program) {
-        return;
+
+    if (!edlActive) {
+        glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+        const QSize physicalSize = widgetPhysicalSize();
+        glViewport(0, 0, physicalSize.width(), physicalSize.height());
+        if (m_backgroundTopColor == m_backgroundBottomColor) {
+            glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        } else {
+            glDisable(GL_DEPTH_TEST);
+            m_backgroundProgram->bind();
+            m_backgroundProgram->setUniformValue("uTopColor", QVector3D(m_backgroundTopColor.redF(),
+                                                                        m_backgroundTopColor.greenF(),
+                                                                        m_backgroundTopColor.blueF()));
+            m_backgroundProgram->setUniformValue("uBottomColor", QVector3D(m_backgroundBottomColor.redF(),
+                                                                           m_backgroundBottomColor.greenF(),
+                                                                           m_backgroundBottomColor.blueF()));
+            m_backgroundVao.bind();
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            m_backgroundVao.release();
+            m_backgroundProgram->release();
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glEnable(GL_DEPTH_TEST);
+        }
     }
     
     m_program->bind();
@@ -1311,6 +1359,20 @@ void PointCloudView::paintGL()
         m_modelView.setToIdentity();
         m_modelView = m_modelView * rot;
         m_modelView.translate(-m_viewerPosition);
+    } else if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+        const QVector3D forward = m_slamFollowOrientation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f));
+        const QVector3D up = m_slamFollowOrientation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f));
+        const QVector3D cameraPosition = m_slamFollowPosition
+            - forward * kSlamFollowDistanceM
+            + up * kSlamFollowHeightM;
+        const QVector3D lookTarget = m_slamFollowPosition
+            + forward * kSlamFollowLookAheadM
+            + up * kSlamFollowTargetHeightM;
+        const QVector3D viewDirection = (lookTarget - cameraPosition).normalized();
+        m_modelView.setToIdentity();
+        m_modelView.lookAt(cameraPosition, lookTarget, up);
+        rot.setToIdentity();
+        rot.lookAt(QVector3D(), viewDirection, up);
     }
 
     // 设置基础投影矩阵    
@@ -1335,17 +1397,28 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("normalMatrix", normalMatrix);
     m_program->setUniformValue("uPointSize", m_pointSize);
     m_program->setUniformValue("uModelLighting", 0);
+    m_program->setUniformValue("uEdlPass", edlActive ? 1 : 0);
+    auto setPrimitiveState = [this, edlActive](bool pointPrimitive, bool edlEligible) {
+        m_program->setUniformValue("uPointPrimitive", pointPrimitive ? 1 : 0);
+        m_program->setUniformValue("uEdlEligible", edlEligible ? 1 : 0);
+        m_program->setUniformValue(
+            "uRoundPointSplat",
+            pointPrimitive && edlActive && m_edlConfig.roundPointSplat ? 1 : 0);
+    };
 
     // ==========================================
     // 2. 绘制基础图元：网格 (注：坐标轴被移到了后面作为 Overlay 绘制)
     // ==========================================
     m_program->setUniformValue("uSelectionEnabled", 0);
     m_program->setUniformValue("uPersistEnabled", 0);
+    setPrimitiveState(false, false);
 
     // 绘制网格
     if (m_gridVisible) {
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (!edlActive) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
         glEnable(GL_LINE_SMOOTH);
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
         glLineWidth(1.0f);
@@ -1355,7 +1428,9 @@ void PointCloudView::paintGL()
             m_gridVao.release();
         }
         glDisable(GL_LINE_SMOOTH);
-        glDisable(GL_BLEND);
+        if (!edlActive) {
+            glDisable(GL_BLEND);
+        }
     }
     glLineWidth(1.0f);
 
@@ -1388,6 +1463,7 @@ void PointCloudView::paintGL()
     }
     
     // 4. 绘制点云
+    setPrimitiveState(true, true);
     if (!m_points.isEmpty()) {
         m_vao.bind();
         glDrawArrays(GL_POINTS, 0, m_points.size());
@@ -1441,6 +1517,7 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("uSelectionEnabled", 0);
     m_program->setUniformValue("uPersistEnabled", 0);
     m_program->setUniformValue("uModelLighting", 0);
+    setPrimitiveState(true, true);
     if (m_slamWorldFrameVertexCount > 0 && m_slamWorldFrameVao.isCreated()) {
         glDepthFunc(GL_LEQUAL);
         m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.worldFramePointSizePx);
@@ -1458,12 +1535,50 @@ void PointCloudView::paintGL()
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
     if (m_slamDynamicObjectVertexCount > 0 && m_slamDynamicObjectVao.isCreated()) {
+        setPrimitiveState(true, false);
         m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.dynamicObjectPointSizePx);
         m_slamDynamicObjectVao.bind();
         glDrawArrays(GL_POINTS, 0, m_slamDynamicObjectVertexCount);
         m_slamDynamicObjectVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
+
+    if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
+        setPrimitiveState(false, false);
+        m_program->setUniformValue("uPersistEnabled", 0);
+        m_program->setUniformValue("uSelectionEnabled", 0);
+        m_program->setUniformValue("normalMatrix", m_modelView.normalMatrix());
+        m_program->setUniformValue("uModelLighting", 1);
+        glEnable(GL_DEPTH_TEST);
+        m_stlModelVao.bind();
+        glDrawArrays(GL_TRIANGLES, 0, m_stlModelVertices.size());
+        m_stlModelVao.release();
+        m_program->setUniformValue("uModelLighting", 0);
+    }
+
+    if (edlActive) {
+        m_program->release();
+        const QSize physicalSize = widgetPhysicalSize();
+        const float physicalRadius = m_edlConfig.radiusPx * float(devicePixelRatioF()) * m_edlConfig.renderScale;
+        m_edlRenderer->composite(defaultFramebufferObject(),
+                                 physicalSize,
+                                 m_edlConfig,
+                                 physicalRadius,
+                                 m_backgroundTopColor,
+                                 m_backgroundBottomColor);
+        glDepthMask(GL_TRUE);
+        m_program->bind();
+        m_program->setUniformValue("modelView", m_modelView);
+        m_program->setUniformValue("projection", m_projection);
+        m_program->setUniformValue("normalMatrix", normalMatrix);
+        m_program->setUniformValue("uPointSize", m_pointSize);
+        m_program->setUniformValue("uModelLighting", 0);
+        m_program->setUniformValue("uEdlPass", 0);
+        m_program->setUniformValue("uSelectionEnabled", 0);
+        m_program->setUniformValue("uPersistEnabled", 0);
+        setPrimitiveState(false, false);
+    }
+
     if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {
         glDisable(GL_DEPTH_TEST);
         glLineWidth(m_slamRenderSnapshot.trajectoryLineWidthPx);
@@ -1481,18 +1596,6 @@ void PointCloudView::paintGL()
         glEnable(GL_DEPTH_TEST);
     }
 
-    if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
-        m_program->setUniformValue("uPersistEnabled", 0);
-        m_program->setUniformValue("uSelectionEnabled", 0);
-        m_program->setUniformValue("normalMatrix", m_modelView.normalMatrix());
-        m_program->setUniformValue("uModelLighting", 1);
-        glEnable(GL_DEPTH_TEST);
-        m_stlModelVao.bind();
-        glDrawArrays(GL_TRIANGLES, 0, m_stlModelVertices.size());
-        m_stlModelVao.release();
-        m_program->setUniformValue("uModelLighting", 0);
-    }
-
     if (m_crossSectionState.enabled && m_crossSectionState.initialized) {
         const PointCloudCrossSection::Camera camera = crossSectionCamera();
         QVector<PointCloudCrossSection::ColoredVertex> crossSectionLines =
@@ -1505,6 +1608,7 @@ void PointCloudView::paintGL()
         uploadCrossSectionTriangles(crossSectionTriangles);
 
         m_program->setUniformValue("uPersistEnabled", 0);
+        setPrimitiveState(false, false);
         glDisable(GL_DEPTH_TEST);
         m_crossSectionTriangleVao.bind();
         glDrawArrays(GL_TRIANGLES, 0, m_crossSectionTriangleVertexCount);
@@ -1528,6 +1632,7 @@ void PointCloudView::paintGL()
     glDisable(GL_DEPTH_TEST);
     m_program->setUniformValue("uSelectionEnabled", 0); 
     m_program->setUniformValue("uPersistEnabled", 0);
+    setPrimitiveState(false, false);
 
     QMatrix4x4 overlayProj;
     // 构建正交投影，左下角为(0,0)，宽高为像素分辨率
@@ -1551,6 +1656,7 @@ void PointCloudView::paintGL()
     glLineWidth(1.0f);
 
     // 恢复深度测试并解绑着色器
+    glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
     m_program->release();
 
@@ -1803,9 +1909,70 @@ void PointCloudView::paintGL()
 
 }
 
+void PointCloudView::setEdlConfig(const EdlConfig& config)
+{
+    const bool releaseFramebuffer = m_edlConfig.enabled && !config.enabled &&
+                                    m_edlRenderer && context();
+    m_edlConfig = config;
+    m_edlFallbackReported = false;
+    if (releaseFramebuffer) {
+        ScopedOpenGLContext current(this);
+        m_edlRenderer->destroyFramebuffer();
+    }
+    update();
+}
+
+void PointCloudView::setSlamFollowPose(const SlamRenderPose& pose)
+{
+    Q_ASSERT(qApp);
+    Q_ASSERT(QThread::currentThread() == qApp->thread());
+    m_slamFollowPoseValid = pose.valid;
+    if (pose.valid) {
+        m_slamFollowPosition = QVector3D(pose.tx, pose.ty, pose.tz);
+        m_slamFollowOrientation = QQuaternion(pose.qw, pose.qx, pose.qy, pose.qz).normalized();
+    }
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow) {
+        update();
+    }
+}
+
+bool PointCloudView::isEdlSupported() const
+{
+    return m_edlRenderer && m_edlRenderer->isSupported();
+}
+
+QString PointCloudView::edlErrorMessage() const
+{
+    return m_edlRenderer ? m_edlRenderer->errorMessage()
+                         : QStringLiteral("EDL renderer is not initialized");
+}
+
+QSize PointCloudView::widgetPhysicalSize() const
+{
+    const qreal dpr = devicePixelRatioF();
+    return QSize(qMax(1, int(std::lround(width() * dpr))),
+                 qMax(1, int(std::lround(height() * dpr))));
+}
+
+QSize PointCloudView::edlPhysicalSize() const
+{
+    const qreal scale = devicePixelRatioF() * m_edlConfig.renderScale;
+    return QSize(qMax(1, int(std::lround(width() * scale))),
+                 qMax(1, int(std::lround(height() * scale))));
+}
+
 void PointCloudView::resizeGL(int w, int h)
 {
     glViewport(0, 0, w * devicePixelRatioF(), h * devicePixelRatioF());
+}
+
+void PointCloudView::hideEvent(QHideEvent* event)
+{
+    if (m_edlRenderer && context()) {
+        ScopedOpenGLContext current(this);
+        m_edlRenderer->destroyFramebuffer();
+    }
+    QOpenGLWidget::hideEvent(event);
 }
 
 void PointCloudView::mousePressEvent(QMouseEvent *event)
@@ -1856,9 +2023,10 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
         return;
     }
     // 相机操作：左键旋转 或 中键/右键平移
-    if ((event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) ||
-        event->button() == Qt::MiddleButton ||
-        event->button() == Qt::RightButton) {
+    if (!(m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) &&
+        ((event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) ||
+         event->button() == Qt::MiddleButton ||
+         event->button() == Qt::RightButton)) {
         setCursor(Qt::ClosedHandCursor);
     }
 }
@@ -1896,7 +2064,12 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
         updateSelectionRegionFromRect(m_selectionRect());
         update();
         return;
-    } else if (m_activeButton == Qt::LeftButton) {
+    }
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+        m_lastMousePos = event->pos();
+        return;
+    }
+    if (m_activeButton == Qt::LeftButton) {
         QVector3D va = mapToArcball(m_lastMousePos);
         QVector3D vb = mapToArcball(event->pos());
         QVector3D axis = QVector3D::crossProduct(va, vb);
@@ -1971,6 +2144,10 @@ void PointCloudView::leaveEvent(QEvent *event)
 
 void PointCloudView::wheelEvent(QWheelEvent *event)
 {
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+        event->accept();
+        return;
+    }
     const float oldDistance = m_distance;
     const float factor = 1.0f - event->angleDelta().y() * 0.001f; // 每格约 1.5% 的比例变化
     m_distance = qMax(0.1f, m_distance * factor);                  // 最小距离 0.1

@@ -3,12 +3,14 @@
 
 #include "PointCloudFrame.h"
 #include "PointCloudCrossSection.h"
+#include "PointCloudRenderConfig.h"
 #include "Visualization/SlamRenderSnapshot.h"
 #include "plugins/StlModel/StlModelLoader.h"
 
 #include <QColor>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QHideEvent>
 #include <QMatrix4x4>
 #include <QMutex>
 #include <QMutexLocker>
@@ -41,11 +43,15 @@ struct StlRenderVertex {
     float nz = 1.0f;
 };
 
+class PointCloudEdlRenderer;
+
 class PointCloudView : public QOpenGLWidget, protected QOpenGLFunctions_3_3_Core
 {
     Q_OBJECT
 
 public:
+    using EdlConfig = PointCloudEdlConfig;
+
     struct SelectionRegion {
         bool valid = false;
         QMatrix4x4 mvp;
@@ -67,7 +73,8 @@ public:
     enum class ProjectionMode {
         Perspective = 0,
         Orthographic = 1,
-        ObserverPerspective = 2
+        ObserverPerspective = 2,
+        SlamPoseFollow = 3
     };
 
     struct GridConfig {
@@ -99,6 +106,10 @@ public:
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);
+    void setEdlConfig(const EdlConfig& config);
+    EdlConfig edlConfig() const { return m_edlConfig; }
+    bool isEdlSupported() const;
+    QString edlErrorMessage() const;
     void setBackgroundColors(const QColor& topColor, const QColor& bottomColor);
     void setLegend(int mode,
                    float minVal,
@@ -145,6 +156,7 @@ public:
     void setProjectionMode(ProjectionMode mode);
     ProjectionMode projectionMode() const { return m_projectionMode; }
     void setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot);
+    void setSlamFollowPose(const SlamRenderPose& pose);
     void setSlamPoseAxisVertices(const QVector<SlamRenderVertex>& vertices);
     void clearSlamRenderOverlay();
 
@@ -159,6 +171,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override;
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
     void leaveEvent(QEvent *event) override;
     void setupGridBuffers();
 
@@ -210,9 +223,14 @@ private:
     QVector3D orbitCameraPosition() const;
     void syncViewerPositionFromOrbit();
     void syncOrbitTargetFromViewer();
+    QSize edlPhysicalSize() const;
+    QSize widgetPhysicalSize() const;
 
     QOpenGLShaderProgram *m_program;
     QOpenGLShaderProgram* m_backgroundProgram = nullptr;
+    std::unique_ptr<PointCloudEdlRenderer> m_edlRenderer;
+    EdlConfig m_edlConfig;
+    bool m_edlFallbackReported = false;
     QOpenGLBuffer m_backgroundVbo;
     QOpenGLVertexArrayObject m_backgroundVao;
     QOpenGLBuffer m_vbo;
@@ -323,6 +341,9 @@ private:
     QQuaternion m_orientation;
     QVector3D m_target;
     QVector3D m_viewerPosition;
+    QVector3D m_slamFollowPosition;
+    QQuaternion m_slamFollowOrientation;
+    bool m_slamFollowPoseValid = false;
     Qt::MouseButton m_activeButton;
     QPoint m_lastMousePos;
     bool m_mousePressed;

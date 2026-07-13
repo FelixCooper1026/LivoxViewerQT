@@ -182,6 +182,7 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     view->installEventFilter(this);
     view->setMinimumSize(200, 200);
     view->setPointSize(pointSizePx);
+    view->setEdlConfig(pointCloudEdlConfig);
     view->setMeasurementModeEnabled(measurementModeActive);
     view->setSelectionModeEnabled(selectionRealtimeEnabled);
     view->resetView();

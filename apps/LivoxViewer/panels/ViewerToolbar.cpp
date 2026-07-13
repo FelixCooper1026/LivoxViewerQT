@@ -1067,7 +1067,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolsGroup->moreMenu()->addAction(crossSectionControlsAction);
     toolbarLayout->addWidget(toolsGroup);
 
-    ToolbarGroup* projectionGroup = new ToolbarGroup("投影控制", viewerToolbar);
+    ToolbarGroup* projectionGroup = new ToolbarGroup("视角控制", viewerToolbar);
     projectionGroup->setCompactPriority(4);
     QActionGroup* projectionModeGroup = new QActionGroup(projectionGroup);
     projectionModeGroup->setExclusive(true);
@@ -1108,9 +1108,22 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         });
     });
     projectionGroup->addPrimaryWidget(createIconButton(observerProjectionAction, projectionGroup, toolbarIconSize));
+
+    QAction* slamFollowProjectionAction = new QAction(QIcon(":/icons/capture_camera.svg"), "SLAM 第三人称跟随", this);
+    ThemeIconUtils::setThemedSvgIcon(slamFollowProjectionAction, QStringLiteral(":/icons/capture_camera.svg"));
+    slamFollowProjectionAction->setCheckable(true);
+    slamFollowProjectionAction->setToolTip("相机从机体后上方跟随最新 SLAM 位姿，以 +X 为前方、+Z 为上方");
+    projectionModeGroup->addAction(slamFollowProjectionAction);
+    connect(slamFollowProjectionAction, &QAction::triggered, this, [this]() {
+        forEachPointCloudView([](PointCloudView* view) {
+            view->setProjectionMode(PointCloudView::ProjectionMode::SlamPoseFollow);
+        });
+    });
+    projectionGroup->addPrimaryWidget(createIconButton(slamFollowProjectionAction, projectionGroup, toolbarIconSize));
     projectionGroup->moreMenu()->addAction(orthographicProjectionAction);
     projectionGroup->moreMenu()->addAction(perspectiveProjectionAction);
     projectionGroup->moreMenu()->addAction(observerProjectionAction);
+    projectionGroup->moreMenu()->addAction(slamFollowProjectionAction);
     toolbarLayout->addWidget(projectionGroup);
 
     ToolbarGroup* viewGroup = new ToolbarGroup("视图控制", viewerToolbar);

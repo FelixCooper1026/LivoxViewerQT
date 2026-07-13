@@ -62,12 +62,14 @@ public slots:
     void setModeAndBackend(const QString& mode, const QString& backend);
     void setErrorMessage(const QString& message);
     void clearErrorMessage();
+    void resetCurrentPose();
     void clearDisplay();
 
 signals:
     void statusTextReady(const QString& text);
     void displayStateChanged();
     void renderSnapshotReady(const SlamRenderSnapshot& snapshot);
+    void renderPoseReady(const SlamRenderPose& pose);
     void poseAxisVerticesReady(const QVector<SlamRenderVertex>& vertices);
 
 private:
@@ -101,6 +103,7 @@ private:
     bool m_worldFrameVisible = true;
     bool m_bodyFrameVisible = true;
     bool m_dynamicObjectVisible = true;
+    bool m_hasCurrentPose = false;
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

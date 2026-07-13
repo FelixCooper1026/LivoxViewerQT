@@ -124,6 +124,7 @@ enum class SlamStatusCode {
 struct SlamOutput {
     SlamStatusCode status = SlamStatusCode::Idle;
     SlamPose currentPose;
+    bool currentPoseValid = false;
     QVector<SlamTrajectoryPoint> newTrajectoryPoints;
     QVector<SlamPoint> publishedWorldFramePoints;
     QVector<SlamPoint> publishedBodyFramePoints;

@@ -220,6 +220,7 @@ set(SOURCES
     libs/LivoxCore/src/LidarDiscoveryService.cpp
     libs/LivoxCore/src/LidarParameterService.cpp
     libs/PointCloud/src/PointCloudView.cpp
+    libs/PointCloud/src/PointCloudEdlRenderer.cpp
     libs/PointCloud/src/PointCloudDecoder.cpp
     libs/PointCloud/src/PointCloudColorizer.cpp
     libs/PointCloud/src/PointCloudFilter.cpp
@@ -290,6 +291,8 @@ set(SOURCES
     libs/PointCloud/include/PointCloudTypes.h
     libs/PointCloud/include/PointCloudFrame.h
     libs/PointCloud/include/PointCloudView.h
+    libs/PointCloud/include/PointCloudEdlRenderer.h
+    libs/PointCloud/include/PointCloudRenderConfig.h
     libs/PointCloud/include/PointCloudDecoder.h
     libs/PointCloud/include/PointCloudColorizer.h
     libs/PointCloud/include/PointCloudFilter.h

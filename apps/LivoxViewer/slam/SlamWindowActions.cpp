@@ -412,6 +412,7 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     }
 
     qRegisterMetaType<SlamRenderSnapshot>("SlamRenderSnapshot");
+    qRegisterMetaType<SlamRenderPose>("SlamRenderPose");
     slamUiBridge = new SlamUiBridge(this);
     slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
@@ -435,6 +436,11 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
         }
         if (slamPointCloudView) {
             slamPointCloudView->setSlamRenderSnapshot(snapshot);
+        }
+    });
+    connect(slamUiBridge, &SlamUiBridge::renderPoseReady, this, [this](const SlamRenderPose& pose) {
+        if (slamPointCloudView) {
+            slamPointCloudView->setSlamFollowPose(pose);
         }
     });
     connect(slamUiBridge, &SlamUiBridge::poseAxisVerticesReady, this,
@@ -675,6 +681,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     slamPointCloudView->installEventFilter(this);
     slamPointCloudView->setMinimumSize(200, 200);
     slamPointCloudView->setPointSize(pointSizePx);
+    slamPointCloudView->setEdlConfig(pointCloudEdlConfig);
     slamPointCloudView->setMeasurementModeEnabled(measurementModeActive);
     slamPointCloudView->setSelectionModeEnabled(selectionRealtimeEnabled);
     connect(slamPointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
@@ -831,10 +838,11 @@ void LivoxViewerWindow::startSlamProcessing()
                                                                         int64_t{1000000});
                     }
 
-                    if (correction.valid && predictor.initialized()) {
+                    if (!slamWorkerPaused.load() && correction.valid && predictor.initialized()) {
                         SlamOutput output;
                         output.status = SlamStatusCode::Running;
                         output.currentPose = predictor.pose();
+                        output.currentPoseValid = true;
                         output.imuHealthy = !predictor.lidarOnly();
                         output.odometryOnly = true;
                         postOutput(std::move(output));
@@ -1319,7 +1327,7 @@ void LivoxViewerWindow::pauseSlamProcessing()
 
 void LivoxViewerWindow::stopSlamProcessing()
 {
-    ensureSlamUiBridge();
+    SlamUiBridge* bridge = ensureSlamUiBridge();
     slamWorkerCancel.store(true);
     slamWorkerPaused.store(false);
     if (slamWorker.joinable()) {
@@ -1327,6 +1335,9 @@ void LivoxViewerWindow::stopSlamProcessing()
     }
     slamWorkerActive.store(false);
     postSlamStatus(SlamStatusCode::Stopped, QStringLiteral("SLAM 已停止。"));
+    QMetaObject::invokeMethod(this, [bridge]() {
+        bridge->resetCurrentPose();
+    }, Qt::QueuedConnection);
     updateSlamControlBarUi();
 }
 

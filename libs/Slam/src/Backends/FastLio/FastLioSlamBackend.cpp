@@ -750,6 +750,7 @@ void appendTrajectoryOutput(FastLioAlgorithmState& state, SlamOutput* output, in
     }
 
     output->currentPose = toSlamPose(state, timestampNs);
+    output->currentPoseValid = true;
     SlamTrajectoryPoint trajectoryPoint;
     trajectoryPoint.pose = output->currentPose;
     trajectoryPoint.quality = state.effectiveFeatureNum > 0 ? 1.0 : 0.0;
@@ -927,6 +928,7 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
     output->globalMapPointCount = state.globalMapPointCount;
     output->trajectoryPointCount = state.trajectoryPointCount;
     output->currentPose = toSlamPose(state, timestampNs);
+    output->currentPoseValid = true;
     output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
     output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
 }

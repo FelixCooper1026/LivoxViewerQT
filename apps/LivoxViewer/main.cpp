@@ -34,6 +34,8 @@ int main(int argc, char *argv[])
 #endif
 
     QSurfaceFormat glFormat = QSurfaceFormat::defaultFormat();
+    glFormat.setVersion(3, 3);
+    glFormat.setProfile(QSurfaceFormat::CoreProfile);
     glFormat.setDepthBufferSize(24);
     glFormat.setStencilBufferSize(8);
     glFormat.setSamples(0);
