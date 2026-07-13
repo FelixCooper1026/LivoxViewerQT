@@ -922,7 +922,6 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
         ? QStringLiteral("FAST_LO is running with rigid scans because point offset time is unavailable.")
         : QString();
     output->imuHealthy = !state.lidarOnly;
-    output->odometryOnly = state.lidarOnly;
     output->backendMs = backendMs;
     output->mapPointCount = state.ikdtree.validnum();
     output->globalMapPointCount = state.globalMapPointCount;
@@ -1085,6 +1084,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         appendDynamicObjectOutput(state, output, frame.frameEndNs);
+        appendPublishedWorldFrameOutput(state, output);
+        appendPublishedBodyFrameOutput(state, output);
+        appendGlobalMapOutput(state, output);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());
@@ -1097,6 +1099,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         appendDynamicObjectOutput(state, output, frame.frameEndNs);
+        appendPublishedWorldFrameOutput(state, output);
+        appendPublishedBodyFrameOutput(state, output);
+        appendGlobalMapOutput(state, output);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());

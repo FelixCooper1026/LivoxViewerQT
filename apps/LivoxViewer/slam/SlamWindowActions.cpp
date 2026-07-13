@@ -1172,50 +1172,6 @@ void LivoxViewerWindow::startSlamProcessing()
             return;
         }
 
-        HighRateOdometryChannel odometryChannel;
-        std::atomic_bool odometryStop{false};
-        std::thread odometryWorker;
-        if (isLidarOnlyConfig(config)) {
-            odometryWorker = std::thread([this, &postOutput, &odometryChannel, &odometryStop]() {
-                HighRateOdometryPredictor predictor;
-                uint64_t correctionGeneration = 0;
-                auto nextPublish = std::chrono::steady_clock::now();
-                while (!odometryStop.load()) {
-                    nextPublish += kOdometryPublishPeriod;
-                    if (slamWorkerPaused.load()) {
-                        nextPublish = std::chrono::steady_clock::now();
-                        std::this_thread::sleep_for(kOdometryPublishPeriod);
-                        continue;
-                    }
-
-                    FastLioPredictionState correction;
-                    uint64_t generation = 0;
-                    {
-                        std::lock_guard<std::mutex> lock(odometryChannel.mutex);
-                        correction = odometryChannel.correction;
-                        generation = odometryChannel.generation;
-                    }
-                    if (generation != correctionGeneration) {
-                        correctionGeneration = generation;
-                        if (correction.valid) {
-                            predictor.applyCorrection(correction);
-                        }
-                    }
-                    if (predictor.initialized()) {
-                        predictor.predictTo(predictor.timestampNs() +
-                                            int64_t{kOdometryPublishPeriod.count()} * int64_t{1000000});
-                        SlamOutput odometryOutput;
-                        odometryOutput.status = SlamStatusCode::Running;
-                        odometryOutput.currentPose = predictor.pose();
-                        odometryOutput.imuHealthy = false;
-                        odometryOutput.odometryOnly = true;
-                        postOutput(std::move(odometryOutput));
-                    }
-                    std::this_thread::sleep_until(nextPublish);
-                }
-            });
-        }
-
         QElapsedTimer elapsed;
         elapsed.start();
         int processedFrames = 0;
@@ -1297,12 +1253,6 @@ void LivoxViewerWindow::startSlamProcessing()
             lastOutput = output;
             hasLastOutput = true;
             postOutput(output);
-            if (isLidarOnlyConfig(config) && output.status == SlamStatusCode::Running) {
-                const FastLioPredictionState correction = backend.predictionState(frame.frameEndNs);
-                std::lock_guard<std::mutex> lock(odometryChannel.mutex);
-                odometryChannel.correction = correction;
-                ++odometryChannel.generation;
-            }
             postProgress(progressFrames,
                          frames.size(),
                          false,
@@ -1317,10 +1267,6 @@ void LivoxViewerWindow::startSlamProcessing()
             }
         }
 
-        odometryStop.store(true);
-        if (odometryWorker.joinable()) {
-            odometryWorker.join();
-        }
         backend.stop();
         const bool cancelled = slamWorkerCancel.load();
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
