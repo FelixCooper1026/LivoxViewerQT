@@ -68,10 +68,12 @@ signals:
     void statusTextReady(const QString& text);
     void displayStateChanged();
     void renderSnapshotReady(const SlamRenderSnapshot& snapshot);
+    void poseAxisVerticesReady(const QVector<SlamRenderVertex>& vertices);
 
 private:
     void refreshStatus();
     SlamRenderSnapshot buildRenderSnapshot();
+    QVector<SlamRenderVertex> buildPoseAxisVertices() const;
     void appendTrajectory(const SlamOutput& output);
     void appendGlobalMap(const SlamOutput& output);
 

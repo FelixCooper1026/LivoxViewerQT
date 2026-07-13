@@ -145,6 +145,7 @@ public:
     void setProjectionMode(ProjectionMode mode);
     ProjectionMode projectionMode() const { return m_projectionMode; }
     void setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot);
+    void setSlamPoseAxisVertices(const QVector<SlamRenderVertex>& vertices);
     void clearSlamRenderOverlay();
 
 protected:
@@ -244,6 +245,7 @@ private:
     int m_slamDynamicObjectVertexCount = 0;
     SlamRenderSnapshot m_slamRenderSnapshot;
     bool m_slamRenderUploadPending = false;
+    bool m_slamPoseAxisUploadPending = false;
 
     QOpenGLBuffer m_crossSectionVbo;
     QOpenGLVertexArrayObject m_crossSectionVao;

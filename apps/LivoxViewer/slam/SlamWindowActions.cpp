@@ -22,12 +22,111 @@
 
 #include <algorithm>
 #include <chrono>
+#include <deque>
+#include <mutex>
 #include <thread>
 #include <utility>
+
+#include <Eigen/Geometry>
 
 namespace {
 
 constexpr int64_t kSlamWorldHistoryRetentionNs = int64_t{600000} * int64_t{1000000};
+constexpr std::chrono::milliseconds kOdometryPublishPeriod(5);
+
+class HighRateOdometryPredictor {
+public:
+    void appendSamples(const QVector<SlamImuSample>& samples)
+    {
+        for (const SlamImuSample& sample : samples) {
+            history_.push_back(sample);
+        }
+    }
+
+    void applyCorrection(const FastLioPredictionState& correction)
+    {
+        position_ = Eigen::Vector3d(correction.position[0], correction.position[1], correction.position[2]);
+        orientation_ = Eigen::Quaterniond(correction.orientation[3],
+                                           correction.orientation[0],
+                                           correction.orientation[1],
+                                           correction.orientation[2]);
+        velocity_ = Eigen::Vector3d(correction.velocity[0], correction.velocity[1], correction.velocity[2]);
+        gyroBias_ = Eigen::Vector3d(correction.gyroBias[0], correction.gyroBias[1], correction.gyroBias[2]);
+        accelBias_ = Eigen::Vector3d(correction.accelBias[0], correction.accelBias[1], correction.accelBias[2]);
+        gravity_ = Eigen::Vector3d(correction.gravity[0], correction.gravity[1], correction.gravity[2]);
+        accelerationScale_ = correction.accelerationScale;
+        timestampNs_ = correction.timestampNs;
+        initialized_ = true;
+
+        while (!history_.empty() && history_.front().timestampNs <= timestampNs_) {
+            history_.pop_front();
+        }
+        integratePendingSamples();
+    }
+
+    void integratePendingSamples()
+    {
+        if (!initialized_) {
+            return;
+        }
+        for (const SlamImuSample& sample : history_) {
+            if (sample.timestampNs <= timestampNs_) {
+                continue;
+            }
+            const double dt = double(sample.timestampNs - timestampNs_) * 1.0e-9;
+            const Eigen::Vector3d gyro(sample.gyroRadPerSec[0],
+                                       sample.gyroRadPerSec[1],
+                                       sample.gyroRadPerSec[2]);
+            const Eigen::Vector3d accel(sample.accelRaw[0], sample.accelRaw[1], sample.accelRaw[2]);
+            const Eigen::Vector3d angularVelocity = gyro - gyroBias_;
+            const Eigen::Vector3d worldAcceleration =
+                orientation_ * (accel * accelerationScale_ - accelBias_) + gravity_;
+            position_ += velocity_ * dt + 0.5 * worldAcceleration * dt * dt;
+            velocity_ += worldAcceleration * dt;
+            const double angle = angularVelocity.norm() * dt;
+            if (angle > 0.0) {
+                orientation_ = (orientation_ *
+                    Eigen::Quaterniond(Eigen::AngleAxisd(angle, angularVelocity.normalized()))).normalized();
+            }
+            timestampNs_ = sample.timestampNs;
+        }
+    }
+
+    bool initialized() const { return initialized_; }
+
+    SlamPose pose() const
+    {
+        SlamPose result;
+        result.timestampNs = timestampNs_;
+        result.tx = position_.x();
+        result.ty = position_.y();
+        result.tz = position_.z();
+        result.qx = orientation_.x();
+        result.qy = orientation_.y();
+        result.qz = orientation_.z();
+        result.qw = orientation_.w();
+        result.poseFrame = QStringLiteral("slam_world");
+        return result;
+    }
+
+private:
+    std::deque<SlamImuSample> history_;
+    Eigen::Vector3d position_ = Eigen::Vector3d::Zero();
+    Eigen::Quaterniond orientation_ = Eigen::Quaterniond::Identity();
+    Eigen::Vector3d velocity_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d gyroBias_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d accelBias_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d gravity_ = Eigen::Vector3d::Zero();
+    double accelerationScale_ = 1.0;
+    int64_t timestampNs_ = 0;
+    bool initialized_ = false;
+};
+
+struct HighRateOdometryChannel {
+    std::mutex mutex;
+    FastLioPredictionState correction;
+    uint64_t generation = 0;
+};
 
 SlamOutput statusOutput(SlamStatusCode status, const QString& message)
 {
@@ -298,6 +397,12 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
             slamPointCloudView->setSlamRenderSnapshot(snapshot);
         }
     });
+    connect(slamUiBridge, &SlamUiBridge::poseAxisVerticesReady, this,
+            [this](const QVector<SlamRenderVertex>& vertices) {
+                if (slamRenderOverlayEnabled && slamPointCloudView) {
+                    slamPointCloudView->setSlamPoseAxisVertices(vertices);
+                }
+            });
     connect(slamUiBridge, &SlamUiBridge::displayStateChanged, this, &LivoxViewerWindow::updateSlamStatusPanel);
     showSlamStatusPanel();
     updateSlamStatusPanel();
@@ -647,6 +752,45 @@ void LivoxViewerWindow::startSlamProcessing()
                 return;
             }
 
+            HighRateOdometryChannel odometryChannel;
+            std::atomic_bool odometryStop{false};
+            liveSlamSource.setOdometryImuEnabled(true);
+            std::thread odometryWorker([this, &postOutput, &odometryChannel, &odometryStop]() {
+                HighRateOdometryPredictor predictor;
+                uint64_t correctionGeneration = 0;
+                auto nextPublish = std::chrono::steady_clock::now();
+                while (!odometryStop.load()) {
+                    nextPublish += kOdometryPublishPeriod;
+                    predictor.appendSamples(liveSlamSource.takeOdometryImuSamples());
+
+                    FastLioPredictionState correction;
+                    uint64_t generation = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(odometryChannel.mutex);
+                        correction = odometryChannel.correction;
+                        generation = odometryChannel.generation;
+                    }
+                    if (generation != correctionGeneration) {
+                        correctionGeneration = generation;
+                        if (correction.valid) {
+                            predictor.applyCorrection(correction);
+                        }
+                    } else {
+                        predictor.integratePendingSamples();
+                    }
+
+                    if (correction.valid && predictor.initialized()) {
+                        SlamOutput output;
+                        output.status = SlamStatusCode::Running;
+                        output.currentPose = predictor.pose();
+                        output.imuHealthy = true;
+                        output.odometryOnly = true;
+                        postOutput(std::move(output));
+                    }
+                    std::this_thread::sleep_until(nextPublish);
+                }
+            });
+
             QElapsedTimer elapsed;
             elapsed.start();
             int processedFrames = 0;
@@ -669,6 +813,11 @@ void LivoxViewerWindow::startSlamProcessing()
                     if (!backend.reset(&error)) {
                         postOutput(statusOutput(SlamStatusCode::Failed, error));
                         break;
+                    }
+                    {
+                        std::lock_guard<std::mutex> lock(odometryChannel.mutex);
+                        odometryChannel.correction = FastLioPredictionState();
+                        ++odometryChannel.generation;
                     }
                     hasLastOutput = false;
                     lastOutput = SlamOutput();
@@ -759,6 +908,12 @@ void LivoxViewerWindow::startSlamProcessing()
                 }
                 lastOutput = output;
                 hasLastOutput = true;
+                const FastLioPredictionState correction = backend.predictionState(frame.frameEndNs);
+                if (correction.valid) {
+                    std::lock_guard<std::mutex> lock(odometryChannel.mutex);
+                    odometryChannel.correction = correction;
+                    ++odometryChannel.generation;
+                }
                 postOutput(output);
                 postOnlineProgress(output.inputFps, processedFrames);
 
@@ -769,6 +924,9 @@ void LivoxViewerWindow::startSlamProcessing()
                 }
             }
 
+            odometryStop.store(true);
+            odometryWorker.join();
+            liveSlamSource.setOdometryImuEnabled(false);
             backend.stop();
             const bool cancelled = slamWorkerCancel.load();
             SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());

@@ -1007,3 +1007,27 @@ SlamStatusCode FastLioSlamBackend::status() const
 {
     return status_;
 }
+
+FastLioPredictionState FastLioSlamBackend::predictionState(int64_t timestampNs) const
+{
+    FastLioPredictionState result;
+    if (!state_ || status_ != SlamStatusCode::Running) {
+        return result;
+    }
+
+    result.valid = true;
+    result.timestampNs = timestampNs;
+    for (int i = 0; i < 3; ++i) {
+        result.position[i] = state_->statePoint.pos(i);
+        result.velocity[i] = state_->statePoint.vel(i);
+        result.gyroBias[i] = state_->statePoint.bg(i);
+        result.accelBias[i] = state_->statePoint.ba(i);
+        result.gravity[i] = state_->statePoint.grav[i];
+    }
+    result.orientation[0] = state_->statePoint.rot.coeffs()[0];
+    result.orientation[1] = state_->statePoint.rot.coeffs()[1];
+    result.orientation[2] = state_->statePoint.rot.coeffs()[2];
+    result.orientation[3] = state_->statePoint.rot.coeffs()[3];
+    result.accelerationScale = state_->imuProcessor->acceleration_scale();
+    return result;
+}

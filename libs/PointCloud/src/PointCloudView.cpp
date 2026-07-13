@@ -547,6 +547,15 @@ void PointCloudView::setSlamRenderSnapshot(const SlamRenderSnapshot& snapshot)
     update();
 }
 
+void PointCloudView::setSlamPoseAxisVertices(const QVector<SlamRenderVertex>& vertices)
+{
+    Q_ASSERT(qApp);
+    Q_ASSERT(QThread::currentThread() == qApp->thread());
+    m_slamRenderSnapshot.poseAxisVertices = vertices;
+    m_slamPoseAxisUploadPending = true;
+    update();
+}
+
 void PointCloudView::clearSlamRenderOverlay()
 {
     Q_ASSERT(qApp);
@@ -954,7 +963,20 @@ void PointCloudView::setupCrossSectionBuffers()
 
 void PointCloudView::uploadSlamRenderOverlayIfNeeded()
 {
-    if (!m_slamRenderUploadPending || !m_program || QOpenGLContext::currentContext() != context()) {
+    if ((!m_slamRenderUploadPending && !m_slamPoseAxisUploadPending) ||
+        !m_program || QOpenGLContext::currentContext() != context()) {
+        return;
+    }
+
+    if (!m_slamRenderUploadPending) {
+        uploadSlamRenderBuffer(this,
+                               m_program,
+                               m_slamRenderSnapshot.poseAxisVertices,
+                               m_slamPoseAxisVbo,
+                               m_slamPoseAxisVao,
+                               m_slamPoseAxisBufferCapacityBytes,
+                               m_slamPoseAxisVertexCount);
+        m_slamPoseAxisUploadPending = false;
         return;
     }
 
@@ -1013,6 +1035,7 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamDynamicObjectBufferCapacityBytes,
                            m_slamDynamicObjectVertexCount);
     m_slamRenderUploadPending = false;
+    m_slamPoseAxisUploadPending = false;
 }
 
 void PointCloudView::destroySlamRenderOverlay()

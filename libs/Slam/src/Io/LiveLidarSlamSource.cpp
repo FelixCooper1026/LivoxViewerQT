@@ -217,6 +217,7 @@ void LiveLidarSlamSource::reset()
     activeHandle_ = 0;
     hasActiveHandle_ = false;
     stats_ = LiveLidarSlamSourceStats();
+    odometryImuSamples_.clear();
     statsTimer_.restart();
 }
 
@@ -235,6 +236,21 @@ int LiveLidarSlamSource::frameDurationMs() const
 void LiveLidarSlamSource::setQueueCapacity(int capacity)
 {
     queue_.setCapacity(capacity);
+}
+
+void LiveLidarSlamSource::setOdometryImuEnabled(bool enabled)
+{
+    QMutexLocker locker(&mutex_);
+    odometryImuEnabled_ = enabled;
+    odometryImuSamples_.clear();
+}
+
+QVector<SlamImuSample> LiveLidarSlamSource::takeOdometryImuSamples()
+{
+    QMutexLocker locker(&mutex_);
+    QVector<SlamImuSample> samples = std::move(odometryImuSamples_);
+    odometryImuSamples_.clear();
+    return samples;
 }
 
 bool LiveLidarSlamSource::appendPointPacket(uint32_t handle,
@@ -393,6 +409,9 @@ bool LiveLidarSlamSource::appendImuPacket(uint32_t handle, const LivoxLidarEther
         sample.accelRaw[1] = points[i].acc_y;
         sample.accelRaw[2] = points[i].acc_z;
         synchronizer_.pushImuSample(sample);
+        if (odometryImuEnabled_) {
+            odometryImuSamples_.push_back(sample);
+        }
         latestSampleTimestampNs = sample.timestampNs;
     }
 

@@ -5,6 +5,18 @@
 
 #include <memory>
 
+struct FastLioPredictionState {
+    bool valid = false;
+    int64_t timestampNs = 0;
+    double position[3] = {};
+    double orientation[4] = {0.0, 0.0, 0.0, 1.0};
+    double velocity[3] = {};
+    double gyroBias[3] = {};
+    double accelBias[3] = {};
+    double gravity[3] = {};
+    double accelerationScale = 1.0;
+};
+
 class FastLioSlamBackend final : public ISlamBackend {
 public:
     FastLioSlamBackend();
@@ -15,6 +27,7 @@ public:
     bool reset(QString* error) override;
     bool processFrame(const SlamInputFrame& frame, SlamOutput* output, QString* error) override;
     SlamStatusCode status() const override;
+    FastLioPredictionState predictionState(int64_t timestampNs) const;
 
 private:
     struct FastLioState;

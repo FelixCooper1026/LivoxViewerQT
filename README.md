@@ -152,4 +152,6 @@ ROSbag LiDAR topic 支持 Livox CustomMsg、Livox driver2 PointCloud2、允许�
 
 ## 许可证
 
-MIT License，详见 [LICENSE](LICENSE)。
+本项目采用 GNU General Public License v2.0 only（GPL-2.0-only），详见 [LICENSE](LICENSE)。
+
+SLAM 模块移植了 FAST-LIO 和 M-detector 的代码；两者均采用 GNU GPL v2。FAST-LIO 的原始许可证副本保留在 `libs/Slam/third_party/fast_lio/LICENSE`。

@@ -139,6 +139,7 @@ struct SlamOutput {
     int globalMapPointCount = 0;
     int trajectoryPointCount = 0;
     bool imuHealthy = false;
+    bool odometryOnly = false;
 };
 
 #endif // SLAM_CORE_SLAMTYPES_H

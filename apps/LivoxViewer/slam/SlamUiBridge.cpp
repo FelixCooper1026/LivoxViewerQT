@@ -201,6 +201,13 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
 {
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
+    if (output.odometryOnly) {
+        m_latestOutput.currentPose = output.currentPose;
+        m_displayState.currentPose = formatPose(output.currentPose);
+        emit displayStateChanged();
+        emit poseAxisVerticesReady(buildPoseAxisVertices());
+        return;
+    }
     m_latestOutput = output;
     if (isErrorStatus(output.status)) {
         m_errorMessage = errorDisplayMessage(output);
@@ -468,37 +475,7 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     }
 
     if (m_poseAxisVisible) {
-        const QVector3D origin = posePosition(m_latestOutput.currentPose);
-        const QQuaternion rotation(float(m_latestOutput.currentPose.qw),
-                                   float(m_latestOutput.currentPose.qx),
-                                   float(m_latestOutput.currentPose.qy),
-                                   float(m_latestOutput.currentPose.qz));
-        const float diameter = poseAxisDiameterFromLineWidth(m_poseAxisLineWidthPx);
-        snapshot.poseAxisVertices.reserve(288);
-        appendPoseAxisMesh(snapshot.poseAxisVertices,
-                           origin,
-                           rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
-                           m_poseAxisLengthM,
-                           diameter,
-                           1.0f,
-                           0.05f,
-                           0.05f);
-        appendPoseAxisMesh(snapshot.poseAxisVertices,
-                           origin,
-                           rotation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)),
-                           m_poseAxisLengthM,
-                           diameter,
-                           0.05f,
-                           1.0f,
-                           0.05f);
-        appendPoseAxisMesh(snapshot.poseAxisVertices,
-                           origin,
-                           rotation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)),
-                           m_poseAxisLengthM,
-                           diameter,
-                           0.1f,
-                           0.35f,
-                           1.0f);
+        snapshot.poseAxisVertices = buildPoseAxisVertices();
     }
 
     const QVector<SlamPoint>* worldFramePoints = nullptr;
@@ -528,6 +505,29 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
         }
     }
     return snapshot;
+}
+
+QVector<SlamRenderVertex> SlamUiBridge::buildPoseAxisVertices() const
+{
+    QVector<SlamRenderVertex> vertices;
+    if (!m_poseAxisVisible) {
+        return vertices;
+    }
+
+    const QVector3D origin = posePosition(m_latestOutput.currentPose);
+    const QQuaternion rotation(float(m_latestOutput.currentPose.qw),
+                               float(m_latestOutput.currentPose.qx),
+                               float(m_latestOutput.currentPose.qy),
+                               float(m_latestOutput.currentPose.qz));
+    const float diameter = poseAxisDiameterFromLineWidth(m_poseAxisLineWidthPx);
+    vertices.reserve(288);
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
+                       m_poseAxisLengthM, diameter, 1.0f, 0.05f, 0.05f);
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)),
+                       m_poseAxisLengthM, diameter, 0.05f, 1.0f, 0.05f);
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)),
+                       m_poseAxisLengthM, diameter, 0.1f, 0.35f, 1.0f);
+    return vertices;
 }
 
 void SlamUiBridge::appendTrajectory(const SlamOutput& output)

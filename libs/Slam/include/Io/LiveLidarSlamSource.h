@@ -71,6 +71,8 @@ public:
     void setFrameDurationMs(int frameDurationMs);
     int frameDurationMs() const;
     void setQueueCapacity(int capacity);
+    void setOdometryImuEnabled(bool enabled);
+    QVector<SlamImuSample> takeOdometryImuSamples();
     bool appendPointPacket(uint32_t handle,
                            uint8_t deviceType,
                            const LivoxLidarEthernetPacket* packet,
@@ -136,6 +138,8 @@ private:
     LiveLidarSlamSourceStats stats_;
     QElapsedTimer statsTimer_;
     int64_t frameDurationNs_ = 100000000;
+    bool odometryImuEnabled_ = false;
+    QVector<SlamImuSample> odometryImuSamples_;
 };
 
 #endif // SLAM_IO_LIVELIDARSLAMSOURCE_H
