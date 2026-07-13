@@ -23,6 +23,7 @@ public:
     bool readFrame(int frameIndex,
                    const QMap<uint32_t, bool>& deviceVisibility,
                    PointCloudFrame& frame) override;
+    uint64_t nominalFrameDurationNs() const override;
     void invalidateCache() override;
 
 private:
@@ -37,6 +38,7 @@ private:
     QVector<PointCloudFrame> frameCache_;
     QVector<bool> frameCacheValid_;
     std::unique_ptr<QFile> playbackFile_;
+    uint64_t frameDurationNs_ = 50000000ULL;
 };
 
 } // namespace Lvx2

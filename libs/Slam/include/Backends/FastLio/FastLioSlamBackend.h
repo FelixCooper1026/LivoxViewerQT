@@ -7,10 +7,12 @@
 
 struct FastLioPredictionState {
     bool valid = false;
+    bool lidarOnly = false;
     int64_t timestampNs = 0;
     double position[3] = {};
     double orientation[4] = {0.0, 0.0, 0.0, 1.0};
     double velocity[3] = {};
+    double angularVelocity[3] = {};
     double gyroBias[3] = {};
     double accelBias[3] = {};
     double gravity[3] = {};

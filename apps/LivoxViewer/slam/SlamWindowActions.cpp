@@ -3,6 +3,7 @@
 #include "Backends/FastLio/FastLioSlamBackend.h"
 #include "Export/SlamMapExport.h"
 #include "Export/SlamTrajectoryExport.h"
+#include "Io/LvxSlamSource.h"
 #include "Io/PcapSlamSource.h"
 #include "Io/RosbagSlamSource.h"
 #include "slam/SlamControlDialog.h"
@@ -34,6 +35,16 @@ namespace {
 constexpr int64_t kSlamWorldHistoryRetentionNs = int64_t{600000} * int64_t{1000000};
 constexpr std::chrono::milliseconds kOdometryPublishPeriod(5);
 
+bool isLidarOnlyConfig(const SlamRuntimeConfig& config)
+{
+    return !config.imuEnabled && config.allowPureLidar;
+}
+
+QString slamBackendDisplayName(const SlamRuntimeConfig& config)
+{
+    return isLidarOnlyConfig(config) ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
+}
+
 class HighRateOdometryPredictor {
 public:
     void appendSamples(const QVector<SlamImuSample>& samples)
@@ -51,10 +62,14 @@ public:
                                            correction.orientation[1],
                                            correction.orientation[2]);
         velocity_ = Eigen::Vector3d(correction.velocity[0], correction.velocity[1], correction.velocity[2]);
+        angularVelocity_ = Eigen::Vector3d(correction.angularVelocity[0],
+                                           correction.angularVelocity[1],
+                                           correction.angularVelocity[2]);
         gyroBias_ = Eigen::Vector3d(correction.gyroBias[0], correction.gyroBias[1], correction.gyroBias[2]);
         accelBias_ = Eigen::Vector3d(correction.accelBias[0], correction.accelBias[1], correction.accelBias[2]);
         gravity_ = Eigen::Vector3d(correction.gravity[0], correction.gravity[1], correction.gravity[2]);
         accelerationScale_ = correction.accelerationScale;
+        lidarOnly_ = correction.lidarOnly;
         timestampNs_ = correction.timestampNs;
         initialized_ = true;
 
@@ -66,7 +81,7 @@ public:
 
     void integratePendingSamples()
     {
-        if (!initialized_) {
+        if (!initialized_ || lidarOnly_) {
             return;
         }
         for (const SlamImuSample& sample : history_) {
@@ -92,7 +107,24 @@ public:
         }
     }
 
+    void predictTo(int64_t timestampNs)
+    {
+        if (!initialized_ || !lidarOnly_ || timestampNs <= timestampNs_) {
+            return;
+        }
+        const double dt = double(timestampNs - timestampNs_) * 1.0e-9;
+        position_ += velocity_ * dt;
+        const double angle = angularVelocity_.norm() * dt;
+        if (angle > 0.0) {
+            orientation_ = (orientation_ *
+                Eigen::Quaterniond(Eigen::AngleAxisd(angle, angularVelocity_.normalized()))).normalized();
+        }
+        timestampNs_ = timestampNs;
+    }
+
     bool initialized() const { return initialized_; }
+    bool lidarOnly() const { return lidarOnly_; }
+    int64_t timestampNs() const { return timestampNs_; }
 
     SlamPose pose() const
     {
@@ -114,12 +146,14 @@ private:
     Eigen::Vector3d position_ = Eigen::Vector3d::Zero();
     Eigen::Quaterniond orientation_ = Eigen::Quaterniond::Identity();
     Eigen::Vector3d velocity_ = Eigen::Vector3d::Zero();
+    Eigen::Vector3d angularVelocity_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d gyroBias_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d accelBias_ = Eigen::Vector3d::Zero();
     Eigen::Vector3d gravity_ = Eigen::Vector3d::Zero();
     double accelerationScale_ = 1.0;
     int64_t timestampNs_ = 0;
     bool initialized_ = false;
+    bool lidarOnly_ = false;
 };
 
 struct HighRateOdometryChannel {
@@ -360,6 +394,12 @@ QString offlineSourceKindForPath(const QString& filePath)
         suffix == QStringLiteral("yml")) {
         return QStringLiteral("ROS2 db3");
     }
+    if (suffix == QStringLiteral("lvx2")) {
+        return QStringLiteral("LVX2");
+    }
+    if (suffix == QStringLiteral("lvx")) {
+        return QStringLiteral("LVX");
+    }
     return QStringLiteral("PCAP");
 }
 
@@ -451,14 +491,16 @@ void LivoxViewerWindow::startOfflineSlamFromMenu()
 void LivoxViewerWindow::setSlamInputModeOffline()
 {
     slamInputMode = SlamInputMode::Offline;
-    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"),
+                                            slamBackendDisplayName(slamRuntimeConfig));
     updateSlamControlBarUi();
 }
 
 void LivoxViewerWindow::setSlamInputModeOnline()
 {
     slamInputMode = SlamInputMode::Online;
-    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("在线 SLAM"), QStringLiteral("FAST_LIO"));
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("在线 SLAM"),
+                                            slamBackendDisplayName(slamRuntimeConfig));
     updateSlamControlBarUi();
 }
 
@@ -571,10 +613,11 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
     dialog.setDirectory(lastDir);
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setNameFilters({
-        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag *.db3 *.yaml *.yml)"),
+        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag *.db3 *.yaml *.yml *.lvx *.lvx2)"),
         QStringLiteral("PCAP 文件 (*.pcap *.pcapng)"),
         QStringLiteral("ROS1 Bag 文件 (*.bag)"),
         QStringLiteral("ROS2 db3 文件 (*.db3 *.yaml *.yml)"),
+        QStringLiteral("Livox LVX/LVX2 文件 (*.lvx *.lvx2)"),
         QStringLiteral("所有文件 (*.*)")
     });
     if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
@@ -586,18 +629,23 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
         stopSlamProcessing();
     }
     const QString suffix = QFileInfo(filePath).suffix().toLower();
-    slamOfflineSourceKind = (suffix == QStringLiteral("bag") ||
-                             suffix == QStringLiteral("db3") ||
-                             suffix == QStringLiteral("yaml") ||
-                             suffix == QStringLiteral("yml"))
-        ? SlamOfflineSourceKind::Rosbag
-        : SlamOfflineSourceKind::Pcap;
+    if (suffix == QStringLiteral("lvx") || suffix == QStringLiteral("lvx2")) {
+        slamOfflineSourceKind = SlamOfflineSourceKind::Lvx;
+    } else if (suffix == QStringLiteral("bag") ||
+               suffix == QStringLiteral("db3") ||
+               suffix == QStringLiteral("yaml") ||
+               suffix == QStringLiteral("yml")) {
+        slamOfflineSourceKind = SlamOfflineSourceKind::Rosbag;
+    } else {
+        slamOfflineSourceKind = SlamOfflineSourceKind::Pcap;
+    }
     slamOfflineSourcePath = filePath;
     slamOfflineSourceDisplayName = offlineSourceKindForPath(filePath);
     settings.setValue(QStringLiteral("slam/lastOfflineSourceDir"), QFileInfo(filePath).absolutePath());
     ensureSlamVisualizationTab(filePath);
     clearSlamDisplay();
-    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"), QStringLiteral("FAST_LIO"));
+    ensureSlamUiBridge()->setModeAndBackend(QStringLiteral("离线 SLAM"),
+                                            slamBackendDisplayName(slamRuntimeConfig));
     logMessage(QStringLiteral("[SLAM] 已加载离线 %1: %2")
                    .arg(slamOfflineSourceDisplayName, QDir::toNativeSeparators(filePath)));
     if (statusBar()) {
@@ -665,7 +713,7 @@ void LivoxViewerWindow::startSlamProcessing()
 {
     SlamUiBridge* bridge = ensureSlamUiBridge();
     bridge->setModeAndBackend(isOfflineSlamMode() ? QStringLiteral("离线 SLAM") : QStringLiteral("在线 SLAM"),
-                              QStringLiteral("FAST_LIO"));
+                              slamBackendDisplayName(slamRuntimeConfig));
 
     if (slamWorker.joinable() && !slamWorkerActive.load()) {
         slamWorker.join();
@@ -778,12 +826,16 @@ void LivoxViewerWindow::startSlamProcessing()
                     } else {
                         predictor.integratePendingSamples();
                     }
+                    if (predictor.lidarOnly()) {
+                        predictor.predictTo(predictor.timestampNs() + int64_t{kOdometryPublishPeriod.count()} *
+                                                                        int64_t{1000000});
+                    }
 
                     if (correction.valid && predictor.initialized()) {
                         SlamOutput output;
                         output.status = SlamStatusCode::Running;
                         output.currentPose = predictor.pose();
-                        output.imuHealthy = true;
+                        output.imuHealthy = !predictor.lidarOnly();
                         output.odometryOnly = true;
                         postOutput(std::move(output));
                     }
@@ -952,7 +1004,7 @@ void LivoxViewerWindow::startSlamProcessing()
     }
 
     if (slamOfflineSourcePath.isEmpty() || slamOfflineSourceKind == SlamOfflineSourceKind::None) {
-        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先加载离线 SLAM 数据源（PCAP 或 ROSbag）。"));
+        postSlamStatus(SlamStatusCode::Failed, QStringLiteral("请先加载离线 SLAM 数据源。"));
         return;
     }
 
@@ -1042,10 +1094,29 @@ void LivoxViewerWindow::startSlamProcessing()
         } else if (sourceKind == SlamOfflineSourceKind::Rosbag) {
             RosbagSlamSourceConfig rosbagConfig;
             rosbagConfig.frameDurationMs = config.inputFrameDurationMs;
+            rosbagConfig.requireImu = !isLidarOnlyConfig(config);
+            rosbagConfig.requirePointOffsetTime = !isLidarOnlyConfig(config);
             rosbagConfig.allowLivoxDriver2PointCloud2 = config.allowRosbagDriver2PointCloud2;
             rosbagConfig.allowLivoxDriverPointCloud2SynthesizedTime =
                 config.allowRosbagDriverPointCloud2SynthesizedTime;
             RosbagSlamSource source(rosbagConfig);
+            if (!source.load(sourcePath, &error)) {
+                postOutput(statusOutput(SlamStatusCode::Failed, error));
+                slamWorkerActive.store(false);
+                postControlUpdate();
+                return;
+            }
+            frames = source.frames();
+            summaryText = source.summaryText();
+        } else if (sourceKind == SlamOfflineSourceKind::Lvx) {
+            if (!isLidarOnlyConfig(config)) {
+                postOutput(statusOutput(SlamStatusCode::MissingImu,
+                                        QStringLiteral("LVX/LVX2 离线 SLAM 需要在首选项中启用纯激光里程计。")));
+                slamWorkerActive.store(false);
+                postControlUpdate();
+                return;
+            }
+            LvxSlamSource source(config.inputFrameDurationMs);
             if (!source.load(sourcePath, &error)) {
                 postOutput(statusOutput(SlamStatusCode::Failed, error));
                 slamWorkerActive.store(false);
@@ -1099,6 +1170,50 @@ void LivoxViewerWindow::startSlamProcessing()
             slamWorkerActive.store(false);
             postControlUpdate();
             return;
+        }
+
+        HighRateOdometryChannel odometryChannel;
+        std::atomic_bool odometryStop{false};
+        std::thread odometryWorker;
+        if (isLidarOnlyConfig(config)) {
+            odometryWorker = std::thread([this, &postOutput, &odometryChannel, &odometryStop]() {
+                HighRateOdometryPredictor predictor;
+                uint64_t correctionGeneration = 0;
+                auto nextPublish = std::chrono::steady_clock::now();
+                while (!odometryStop.load()) {
+                    nextPublish += kOdometryPublishPeriod;
+                    if (slamWorkerPaused.load()) {
+                        nextPublish = std::chrono::steady_clock::now();
+                        std::this_thread::sleep_for(kOdometryPublishPeriod);
+                        continue;
+                    }
+
+                    FastLioPredictionState correction;
+                    uint64_t generation = 0;
+                    {
+                        std::lock_guard<std::mutex> lock(odometryChannel.mutex);
+                        correction = odometryChannel.correction;
+                        generation = odometryChannel.generation;
+                    }
+                    if (generation != correctionGeneration) {
+                        correctionGeneration = generation;
+                        if (correction.valid) {
+                            predictor.applyCorrection(correction);
+                        }
+                    }
+                    if (predictor.initialized()) {
+                        predictor.predictTo(predictor.timestampNs() +
+                                            int64_t{kOdometryPublishPeriod.count()} * int64_t{1000000});
+                        SlamOutput odometryOutput;
+                        odometryOutput.status = SlamStatusCode::Running;
+                        odometryOutput.currentPose = predictor.pose();
+                        odometryOutput.imuHealthy = false;
+                        odometryOutput.odometryOnly = true;
+                        postOutput(std::move(odometryOutput));
+                    }
+                    std::this_thread::sleep_until(nextPublish);
+                }
+            });
         }
 
         QElapsedTimer elapsed;
@@ -1158,7 +1273,7 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             const uint64_t elapsedFrameNs =
                 frame.frameStartNs >= firstFrameStartNs ? uint64_t(frame.frameStartNs - firstFrameStartNs) : 0ULL;
-            if (!frame.hasCompleteImuCoverage) {
+            if (!isLidarOnlyConfig(config) && !frame.hasCompleteImuCoverage) {
                 ++droppedFrames;
                 postProgress(progressFrames,
                              frames.size(),
@@ -1182,6 +1297,12 @@ void LivoxViewerWindow::startSlamProcessing()
             lastOutput = output;
             hasLastOutput = true;
             postOutput(output);
+            if (isLidarOnlyConfig(config) && output.status == SlamStatusCode::Running) {
+                const FastLioPredictionState correction = backend.predictionState(frame.frameEndNs);
+                std::lock_guard<std::mutex> lock(odometryChannel.mutex);
+                odometryChannel.correction = correction;
+                ++odometryChannel.generation;
+            }
             postProgress(progressFrames,
                          frames.size(),
                          false,
@@ -1196,6 +1317,10 @@ void LivoxViewerWindow::startSlamProcessing()
             }
         }
 
+        odometryStop.store(true);
+        if (odometryWorker.joinable()) {
+            odometryWorker.join();
+        }
         backend.stop();
         const bool cancelled = slamWorkerCancel.load();
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());

@@ -26,6 +26,9 @@ constexpr double kNsToSeconds = 1.0e-9;
 constexpr double kNsToMilliseconds = 1.0e-6;
 constexpr double kInitTime = 0.1;
 constexpr double kLaserPointCov = 0.001;
+constexpr double kLoFixedStateCov = 1.0e-9;
+constexpr double kLoInitialPoseCov = 1.0e-3;
+constexpr double kLoInitialMotionCov = 1.0;
 constexpr float kMoveThreshold = 1.5f;
 constexpr int kMinMapInitPoints = 5;
 
@@ -191,6 +194,7 @@ struct FastLioAlgorithmState {
           corrNormvect(new PointCloudXYZI()),
           imuProcessor(new ImuProcess())
     {
+        lidarOnly = !config.imuEnabled && config.allowPureLidar;
         filterSizeSurf = config.filterSizeSurfM;
         filterSizeMap = config.filterSizeMapM;
         cubeLen = config.cubeSideLengthM;
@@ -227,6 +231,22 @@ struct FastLioAlgorithmState {
         double epsi[23] = {};
         std::fill(epsi, epsi + 23, 0.001);
         kf.init_dyn_share(get_f, df_dx, df_dw, hShareModel, config.maxIterations, epsi);
+        if (lidarOnly) {
+            statePoint.offset_T_L_I = lidarTWrImu;
+            statePoint.offset_R_L_I = SO3(lidarRWrImu);
+            kf.change_x(statePoint);
+
+            auto covariance = kf.get_P();
+            covariance.setIdentity();
+            covariance *= kLoFixedStateCov;
+            covariance.block<6, 6>(0, 0) =
+                Eigen::Matrix<double, 6, 6>::Identity() * kLoInitialPoseCov;
+            covariance.block<3, 3>(12, 12) =
+                Eigen::Matrix3d::Identity() * kLoInitialMotionCov;
+            covariance.block<3, 3>(15, 15) =
+                Eigen::Matrix3d::Identity() * kLoInitialMotionCov;
+            kf.change_P(covariance);
+        }
     }
 
     SlamRuntimeConfig config;
@@ -243,6 +263,12 @@ struct FastLioAlgorithmState {
     bool firstScan = true;
     bool ekfInited = false;
     bool localMapInitialized = false;
+    bool lidarOnly = false;
+    bool currentFrameHasPointOffsetTime = false;
+    bool hasLoReferencePose = false;
+    int64_t loReferenceTimestampNs = 0;
+    V3D loReferencePosition = Zero3d;
+    M3D loReferenceRotation = Eye3d;
     int effectiveFeatureNum = 0;
     int featsDownSize = 0;
     int trajectoryPointCount = 0;
@@ -281,6 +307,84 @@ struct FastLioAlgorithmState {
 };
 
 thread_local FastLioAlgorithmState* activeFastLioState = nullptr;
+
+void predictWithoutImu(FastLioAlgorithmState& state, int64_t timestampNs)
+{
+    if (!state.hasLoReferencePose) {
+        return;
+    }
+
+    const double dt = double(timestampNs - state.loReferenceTimestampNs) * kNsToSeconds;
+    state.statePoint = state.kf.get_x();
+    const V3D velocity(state.statePoint.vel(0), state.statePoint.vel(1), state.statePoint.vel(2));
+    const V3D angularVelocity(state.statePoint.bg(0), state.statePoint.bg(1), state.statePoint.bg(2));
+    state.statePoint.pos = state.statePoint.pos + velocity * dt;
+    state.statePoint.rot = SO3(state.statePoint.rot.toRotationMatrix() * Exp(angularVelocity, dt));
+
+    auto covariance = state.kf.get_P();
+    Eigen::Matrix<double, 23, 23> transition = Eigen::Matrix<double, 23, 23>::Identity();
+    transition.block<3, 3>(0, 12) = Eigen::Matrix3d::Identity() * dt;
+    transition.block<3, 3>(3, 3) = Exp(angularVelocity, -dt);
+    transition.block<3, 3>(3, 15) = Eigen::Matrix3d::Identity() * dt;
+    covariance = transition * covariance * transition.transpose();
+    covariance.block<3, 3>(12, 12) +=
+        Eigen::Matrix3d::Identity() * state.config.accCov * dt * dt;
+    covariance.block<3, 3>(15, 15) +=
+        Eigen::Matrix3d::Identity() * state.config.gyrCov * dt * dt;
+    state.kf.change_x(state.statePoint);
+    state.kf.change_P(covariance);
+}
+
+void undistortWithoutImu(FastLioAlgorithmState& state)
+{
+    *state.featsUndistort = *state.measures.lidar;
+    if (!state.currentFrameHasPointOffsetTime) {
+        return;
+    }
+
+    const double frameDurationSec = state.measures.lidar_end_time - state.measures.lidar_beg_time;
+    const M3D worldFromImu = state.statePoint.rot.toRotationMatrix();
+    const M3D lidarToImu = state.statePoint.offset_R_L_I.toRotationMatrix();
+    const V3D lidarInImu(state.statePoint.offset_T_L_I(0),
+                         state.statePoint.offset_T_L_I(1),
+                         state.statePoint.offset_T_L_I(2));
+    const V3D velocityWorld(state.statePoint.vel(0),
+                            state.statePoint.vel(1),
+                            state.statePoint.vel(2));
+    const V3D angularVelocity(state.statePoint.bg(0),
+                              state.statePoint.bg(1),
+                              state.statePoint.bg(2));
+
+    for (PointType& point : state.featsUndistort->points) {
+        const double pointOffsetSec = double(point.curvature) * 0.001;
+        const double dt = frameDurationSec - pointOffsetSec;
+        const V3D pointLidar(point.x, point.y, point.z);
+        const V3D pointImu = lidarToImu * pointLidar + lidarInImu;
+        const V3D pointImuAtEnd =
+            Exp(angularVelocity, -dt) * pointImu - worldFromImu.transpose() * velocityWorld * dt;
+        const V3D pointLidarAtEnd = lidarToImu.transpose() * (pointImuAtEnd - lidarInImu);
+        point.x = static_cast<float>(pointLidarAtEnd(0));
+        point.y = static_cast<float>(pointLidarAtEnd(1));
+        point.z = static_cast<float>(pointLidarAtEnd(2));
+    }
+}
+
+void commitLidarOnlyPose(FastLioAlgorithmState& state, int64_t timestampNs)
+{
+    state.statePoint = state.kf.get_x();
+    if (state.hasLoReferencePose) {
+        const double dt = double(timestampNs - state.loReferenceTimestampNs) * kNsToSeconds;
+        state.statePoint.vel = (state.statePoint.pos - state.loReferencePosition) / dt;
+        const M3D relativeRotation =
+            state.loReferenceRotation.transpose() * state.statePoint.rot.toRotationMatrix();
+        state.statePoint.bg = Log(relativeRotation) / dt;
+        state.kf.change_x(state.statePoint);
+    }
+    state.loReferenceTimestampNs = timestampNs;
+    state.loReferencePosition = state.statePoint.pos;
+    state.loReferenceRotation = state.statePoint.rot.toRotationMatrix();
+    state.hasLoReferencePose = true;
+}
 
 void assignError(QString* error, const QString& message)
 {
@@ -814,8 +918,11 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
         return;
     }
     output->status = SlamStatusCode::Running;
-    output->message.clear();
-    output->imuHealthy = true;
+    output->message = state.lidarOnly && !state.currentFrameHasPointOffsetTime
+        ? QStringLiteral("FAST_LO is running with rigid scans because point offset time is unavailable.")
+        : QString();
+    output->imuHealthy = !state.lidarOnly;
+    output->odometryOnly = state.lidarOnly;
     output->backendMs = backendMs;
     output->mapPointCount = state.ikdtree.validnum();
     output->globalMapPointCount = state.globalMapPointCount;
@@ -848,7 +955,7 @@ bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
         assignError(error, message_);
         return false;
     }
-    if (!config_.imuEnabled) {
+    if (!config_.imuEnabled && !config_.allowPureLidar) {
         message_ = QStringLiteral("FAST_LIO requires IMU input.");
         status_ = SlamStatusCode::MissingImu;
         assignError(error, message_);
@@ -890,7 +997,8 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         return false;
     }
 
-    if (frame.imuSamples.isEmpty()) {
+    const bool lidarOnly = state_->lidarOnly;
+    if (!lidarOnly && frame.imuSamples.isEmpty()) {
         message_ = QStringLiteral("FAST_LIO requires IMU samples for every lidar frame.");
         status_ = SlamStatusCode::MissingImu;
         assignOutputStatus(output, status_, message_);
@@ -898,7 +1006,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         return false;
     }
 
-    if (!frame.hasCompleteImuCoverage) {
+    if (!lidarOnly && !frame.hasCompleteImuCoverage) {
         message_ = QStringLiteral("FAST_LIO requires IMU coverage through the lidar frame end.");
         status_ = SlamStatusCode::TimeSyncError;
         assignOutputStatus(output, status_, message_);
@@ -906,7 +1014,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         return false;
     }
 
-    if (!frame.hasPointOffsetTime) {
+    if (!lidarOnly && !frame.hasPointOffsetTime) {
         message_ = QStringLiteral("FAST_LIO requires per-point offset time.");
         status_ = SlamStatusCode::TimeSyncError;
         assignOutputStatus(output, status_, message_);
@@ -916,29 +1024,45 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
 
     FastLioState& state = *state_;
     state.measures = toFastLioMeasureGroup(frame, state.config.blindMinRangeM, state.config.pointFilterNum);
+    state.currentFrameHasPointOffsetTime = frame.hasPointOffsetTime;
 
     if (state.firstScan) {
         state.firstLidarTime = state.measures.lidar_beg_time;
-        state.imuProcessor->first_lidar_time = state.firstLidarTime;
         state.firstScan = false;
-        status_ = SlamStatusCode::InitializingImu;
-        assignOutputStatus(output, status_, QStringLiteral("FAST_LIO accepted first lidar frame; initializing IMU."));
-        assignError(error, QString());
-        return true;
+        if (!state.lidarOnly) {
+            state.imuProcessor->first_lidar_time = state.firstLidarTime;
+            status_ = SlamStatusCode::InitializingImu;
+            assignOutputStatus(output, status_, QStringLiteral("FAST_LIO accepted first lidar frame; initializing IMU."));
+            assignError(error, QString());
+            return true;
+        }
+        state.statePoint = state.kf.get_x();
+        undistortWithoutImu(state);
+    } else if (state.lidarOnly) {
+        predictWithoutImu(state, frame.frameEndNs);
+        state.statePoint = state.kf.get_x();
+        undistortWithoutImu(state);
+    } else {
+        state.imuProcessor->Process(state.measures, state.kf, state.featsUndistort);
+        state.statePoint = state.kf.get_x();
     }
 
-    state.imuProcessor->Process(state.measures, state.kf, state.featsUndistort);
-    state.statePoint = state.kf.get_x();
     state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
 
     if (state.featsUndistort->empty()) {
-        status_ = SlamStatusCode::InitializingImu;
-        assignOutputStatus(output, status_, QStringLiteral("FAST_LIO IMU initialization is still running."));
+        status_ = state.lidarOnly ? SlamStatusCode::Degraded : SlamStatusCode::InitializingImu;
+        assignOutputStatus(output,
+                           status_,
+                           state.lidarOnly
+                               ? QStringLiteral("FAST_LO received a lidar frame without usable points.")
+                               : QStringLiteral("FAST_LIO IMU initialization is still running."));
         assignError(error, QString());
         return true;
     }
 
-    state.ekfInited = (state.measures.lidar_beg_time - state.firstLidarTime) >= kInitTime;
+    state.ekfInited = state.lidarOnly
+        ? state.hasLoReferencePose
+        : (state.measures.lidar_beg_time - state.firstLidarTime) >= kInitTime;
     laserMapFovSegment(state);
 
     state.downSizeFilterSurf.setInputCloud(state.featsUndistort);
@@ -956,6 +1080,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
             }
             state.ikdtree.Build(state.featsDownWorld->points);
         }
+        if (state.lidarOnly) {
+            commitLidarOnlyPose(state, frame.frameEndNs);
+        }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         appendDynamicObjectOutput(state, output, frame.frameEndNs);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
@@ -965,6 +1092,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     }
 
     if (state.featsDownSize < kMinMapInitPoints) {
+        if (state.lidarOnly) {
+            commitLidarOnlyPose(state, frame.frameEndNs);
+        }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         appendDynamicObjectOutput(state, output, frame.frameEndNs);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
@@ -985,6 +1115,9 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     activeFastLioState = nullptr;
 
     state.statePoint = state.kf.get_x();
+    if (state.lidarOnly) {
+        commitLidarOnlyPose(state, frame.frameEndNs);
+    }
     state.eulerCur = SO3ToEuler(state.statePoint.rot);
     state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
 
@@ -1018,11 +1151,13 @@ FastLioPredictionState FastLioSlamBackend::predictionState(int64_t timestampNs) 
     }
 
     result.valid = true;
+    result.lidarOnly = state_->lidarOnly;
     result.timestampNs = timestampNs;
     for (int i = 0; i < 3; ++i) {
         result.position[i] = state_->statePoint.pos(i);
         result.velocity[i] = state_->statePoint.vel(i);
-        result.gyroBias[i] = state_->statePoint.bg(i);
+        result.angularVelocity[i] = state_->lidarOnly ? state_->statePoint.bg(i) : 0.0;
+        result.gyroBias[i] = state_->lidarOnly ? 0.0 : state_->statePoint.bg(i);
         result.accelBias[i] = state_->statePoint.ba(i);
         result.gravity[i] = state_->statePoint.grav[i];
     }
@@ -1030,6 +1165,6 @@ FastLioPredictionState FastLioSlamBackend::predictionState(int64_t timestampNs) 
     result.orientation[1] = state_->statePoint.rot.coeffs()[1];
     result.orientation[2] = state_->statePoint.rot.coeffs()[2];
     result.orientation[3] = state_->statePoint.rot.coeffs()[3];
-    result.accelerationScale = state_->imuProcessor->acceleration_scale();
+    result.accelerationScale = state_->lidarOnly ? 1.0 : state_->imuProcessor->acceleration_scale();
     return result;
 }

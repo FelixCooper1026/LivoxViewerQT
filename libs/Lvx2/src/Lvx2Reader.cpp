@@ -1,10 +1,10 @@
 #include "Lvx2Reader.h"
 
+#include "LidarPacketUtils.h"
 #include "LidarModelUtils.h"
 #include "Lvx2PointParser.h"
 
 #include <QFile>
-#include <QtEndian>
 
 namespace {
 
@@ -15,7 +15,7 @@ bool readExact(QFile& file, char* data, qint64 size)
 
 uint64_t parseTimestampValue(uint64_t raw)
 {
-    return qFromBigEndian(raw);
+    return LivoxCore::parseLivoxTimestamp(reinterpret_cast<const uint8_t*>(&raw));
 }
 
 } // namespace
@@ -36,6 +36,7 @@ bool Lvx2Reader::load(const QString& filePath)
     frameCache_.clear();
     frameCacheValid_.clear();
     playbackFile_.reset();
+    frameDurationNs_ = 50000000ULL;
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -55,6 +56,7 @@ bool Lvx2Reader::load(const QString& filePath)
         errorMessage_ = "不是有效的LVX2文件";
         return false;
     }
+    frameDurationNs_ = uint64_t(std::max<uint32_t>(1, privateHeader.frame_duration)) * 1000000ULL;
 
     const int deviceCount = std::max(0, int(privateHeader.device_count));
     for (int i = 0; i < deviceCount; ++i) {
@@ -121,6 +123,11 @@ QString Lvx2Reader::errorMessage() const
 int Lvx2Reader::frameCount() const
 {
     return frames_.size();
+}
+
+uint64_t Lvx2Reader::nominalFrameDurationNs() const
+{
+    return frameDurationNs_;
 }
 
 QVector<Playback::DeviceInfo> Lvx2Reader::devices() const

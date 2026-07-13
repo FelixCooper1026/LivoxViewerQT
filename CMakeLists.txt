@@ -251,6 +251,7 @@ set(SOURCES
     libs/Slam/src/Export/SlamTrajectoryExport.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
     libs/Slam/src/Io/LiveLidarSlamSource.cpp
+    libs/Slam/src/Io/LvxSlamSource.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Export/src/PointCloudExport.cpp
@@ -330,6 +331,7 @@ set(SOURCES
     libs/Slam/include/Export/SlamMapExport.h
     libs/Slam/include/Export/SlamTrajectoryExport.h
     libs/Slam/include/Io/LiveLidarSlamSource.h
+    libs/Slam/include/Io/LvxSlamSource.h
     libs/Slam/include/Io/PcapSlamSource.h
     libs/Slam/include/Io/RosbagSlamSource.h
     libs/Slam/include/Visualization/SlamRenderSnapshot.h
@@ -590,6 +592,10 @@ endif()
 
 set(SLAM_REPLAY_TOOL_SOURCES
     tools/SlamReplayTool/main.cpp
+    libs/Lvx/src/LvxReader.cpp
+    libs/Lvx/src/LvxPointParser.cpp
+    libs/Lvx2/src/Lvx2Reader.cpp
+    libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/ImuParser.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
@@ -604,6 +610,7 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp
+    libs/Slam/src/Io/LvxSlamSource.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
 )
 
@@ -614,6 +621,7 @@ target_include_directories(SlamReplayTool PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Playback/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
     ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
@@ -630,9 +638,9 @@ if(LIVOX_SDK_AVAILABLE AND EXISTS "${LIVOX_INCLUDE_PATH}")
 endif()
 
 if(QT_VERSION_MAJOR EQUAL 6)
-    target_link_libraries(SlamReplayTool PRIVATE Qt6::Core Qt6::Sql)
+    target_link_libraries(SlamReplayTool PRIVATE Qt6::Core Qt6::Gui Qt6::Sql)
 else()
-    target_link_libraries(SlamReplayTool PRIVATE Qt5::Core Qt5::Sql)
+    target_link_libraries(SlamReplayTool PRIVATE Qt5::Core Qt5::Gui Qt5::Sql)
 endif()
 
 target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4)

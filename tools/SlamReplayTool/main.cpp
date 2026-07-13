@@ -1,5 +1,6 @@
 #include "Backends/FastLio/FastLioSlamBackend.h"
 #include "Core/SlamRuntimeConfig.h"
+#include "Io/LvxSlamSource.h"
 #include "Io/PcapSlamSource.h"
 #include "Io/RosbagSlamSource.h"
 
@@ -88,6 +89,12 @@ bool isRosbagPath(const QString& filePath)
            suffix == QStringLiteral("db3") ||
            suffix == QStringLiteral("yaml") ||
            suffix == QStringLiteral("yml");
+}
+
+bool isLvxPath(const QString& filePath)
+{
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    return suffix == QStringLiteral("lvx") || suffix == QStringLiteral("lvx2");
 }
 
 QString resolveInputPath(const QString& inputPath)
@@ -226,6 +233,18 @@ bool loadDiagnosticSource(const QString& filePath,
         return true;
     }
 
+    if (isLvxPath(filePath)) {
+        LvxSlamSource lvxSource(config.inputFrameDurationMs);
+        if (!lvxSource.load(filePath, error)) {
+            source->kind = QStringLiteral("lvx");
+            return false;
+        }
+        source->kind = QFileInfo(filePath).suffix().toLower();
+        source->summaryText = lvxSource.summaryText();
+        source->frames = lvxSource.frames();
+        return true;
+    }
+
     if (error != nullptr) {
         *error = QStringLiteral("Unsupported input suffix: %1").arg(QFileInfo(filePath).suffix());
     }
@@ -245,7 +264,7 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
     }
 
     for (const SlamInputFrame& frame : frames) {
-        if (!frame.hasCompleteImuCoverage) {
+        if (config.imuEnabled && !frame.hasCompleteImuCoverage) {
             ++result.skippedIncompleteImuFrames;
             continue;
         }
@@ -276,7 +295,7 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
     }
 
     if (result.processedFrames == 0) {
-        result.error = QStringLiteral("no frame had complete IMU coverage");
+        result.error = QStringLiteral("no input frame was processed");
         return result;
     }
     if (result.runningFrames == 0 || result.trajectoryPoints == 0) {
@@ -414,12 +433,19 @@ void printSourceSummary(const QString& text, QTextStream& out)
     }
 }
 
-int runDiagnostic(const QStringList& inputPaths, int maxFrames, bool sourceOnly, QTextStream& out)
+int runDiagnostic(const QStringList& inputPaths,
+                  int maxFrames,
+                  bool sourceOnly,
+                  bool lidarOnly,
+                  QTextStream& out)
 {
     bool allOk = true;
     for (const QString& inputPath : inputPaths) {
         const QString filePath = resolveInputPath(inputPath);
-        const SlamRuntimeConfig config = diagnosticConfigForPath(filePath);
+        SlamRuntimeConfig config = diagnosticConfigForPath(filePath);
+        config.allowPureLidar = lidarOnly;
+        config.imuEnabled = !lidarOnly;
+        config.backendType = lidarOnly ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
         out << "DIAG_BEGIN path=" << filePath
             << " template=" << templateName(config.lidarTemplate)
             << " detRangeM=" << config.detRangeM
@@ -429,7 +455,7 @@ int runDiagnostic(const QStringList& inputPaths, int maxFrames, bool sourceOnly,
 
         QString error;
         DiagnosticSource source;
-        if (!loadDiagnosticSource(filePath, config, !sourceOnly, &source, &error)) {
+        if (!loadDiagnosticSource(filePath, config, !sourceOnly && !lidarOnly, &source, &error)) {
             allOk = false;
             out << "SOURCE_FAILED path=" << filePath << " error=" << error << "\n";
             if (!source.summaryText.isEmpty()) {
@@ -507,7 +533,7 @@ void printUsage(QTextStream& out)
 {
     out << "Usage:\n";
     out << "  SlamReplayTool <with_imu.pcap> <no_imu.pcap>\n";
-    out << "  SlamReplayTool --diagnose [--source-only] [--max-frames N] <pcap|bag|db3|metadata.yaml|directory> [...]\n";
+    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
 }
 
 } // namespace
@@ -521,10 +547,15 @@ int main(int argc, char* argv[])
     if (args.size() >= 3 && args.at(1) == QStringLiteral("--diagnose")) {
         int maxFrames = 0;
         bool sourceOnly = false;
+        bool lidarOnly = false;
         QStringList inputPaths;
         for (int i = 2; i < args.size(); ++i) {
             if (args.at(i) == QStringLiteral("--source-only")) {
                 sourceOnly = true;
+                continue;
+            }
+            if (args.at(i) == QStringLiteral("--lidar-only")) {
+                lidarOnly = true;
                 continue;
             }
             if (args.at(i) == QStringLiteral("--max-frames") && i + 1 < args.size()) {
@@ -537,7 +568,7 @@ int main(int argc, char* argv[])
             printUsage(out);
             return 2;
         }
-        return runDiagnostic(inputPaths, maxFrames, sourceOnly, out);
+        return runDiagnostic(inputPaths, maxFrames, sourceOnly, lidarOnly, out);
     }
 
     if (argc == 3) {

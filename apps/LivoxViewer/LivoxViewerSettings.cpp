@@ -1501,6 +1501,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         return check;
     };
     SwitchCheckBox* slamExtrinsicEstimationCheck = createSlamSwitch(slamRuntimeConfig.extrinsicEstimationEnabled);
+    SwitchCheckBox* slamLidarOnlyCheck = createSlamSwitch(slamRuntimeConfig.allowPureLidar &&
+                                                          !slamRuntimeConfig.imuEnabled);
     auto createSlamExtrinsicSpin = [&dlg](double value,
                                           double minValue,
                                           double maxValue,
@@ -1795,6 +1797,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamAccCovSpin->setValue(runtimeDefaults.accCov);
         slamBGyrCovSpin->setValue(runtimeDefaults.bGyrCov);
         slamBAccCovSpin->setValue(runtimeDefaults.bAccCov);
+        slamLidarOnlyCheck->setChecked(runtimeDefaults.allowPureLidar && !runtimeDefaults.imuEnabled);
         slamExtrinsicEstimationCheck->setChecked(runtimeDefaults.extrinsicEstimationEnabled);
         for (int i = 0; i < 3; ++i) {
             slamExtrinsicTSpins[static_cast<std::size_t>(i)]->setValue(runtimeDefaults.extrinsicT_L_I[i]);
@@ -1857,6 +1860,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.accCov = slamAccCovSpin->value();
         config.bGyrCov = slamBGyrCovSpin->value();
         config.bAccCov = slamBAccCovSpin->value();
+        config.allowPureLidar = slamLidarOnlyCheck->isChecked();
+        config.imuEnabled = !config.allowPureLidar;
+        config.backendType = config.allowPureLidar ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
         config.allowRosbagDriver2PointCloud2 = true;
         config.allowRosbagDriverPointCloud2SynthesizedTime = true;
         config.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
@@ -2137,6 +2143,10 @@ void LivoxViewerWindow::showPreferencesDialog()
     QVBoxLayout* slamVisualTabLayout = qobject_cast<QVBoxLayout*>(slamVisualTab->layout());
 
     QFrame* slamBackendSection = createPreferenceSection(slamBackendTab);
+    addPreferenceRow(slamBackendSection,
+                     "纯激光里程计",
+                     "allowPureLidar，无 IMU 离线数据使用 FAST_LO；关闭时保持 FAST_LIO 严格 IMU 校验",
+                     slamLidarOnlyCheck);
     addPreferenceRow(slamBackendSection,
                      "扫描频率",
                      "preprocessScanRateHz，输入点云的帧率，用于推导聚帧周期并影响时间间隔计算",
@@ -2583,6 +2593,11 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.accCov = slamAccCovSpin->value();
     slamRuntimeConfig.bGyrCov = slamBGyrCovSpin->value();
     slamRuntimeConfig.bAccCov = slamBAccCovSpin->value();
+    slamRuntimeConfig.allowPureLidar = slamLidarOnlyCheck->isChecked();
+    slamRuntimeConfig.imuEnabled = !slamRuntimeConfig.allowPureLidar;
+    slamRuntimeConfig.backendType = slamRuntimeConfig.allowPureLidar
+        ? QStringLiteral("FAST_LO")
+        : QStringLiteral("FAST_LIO");
     slamRuntimeConfig.allowRosbagDriver2PointCloud2 = true;
     slamRuntimeConfig.allowRosbagDriverPointCloud2SynthesizedTime = true;
     slamRuntimeConfig.extrinsicEstimationEnabled = slamExtrinsicEstimationCheck->isChecked();
@@ -2763,6 +2778,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.accCov != previousSlamAccCov ||
         slamRuntimeConfig.bGyrCov != previousSlamBGyrCov ||
         slamRuntimeConfig.bAccCov != previousSlamBAccCov ||
+        slamRuntimeConfig.allowPureLidar != previousSlamRuntimeConfig.allowPureLidar ||
+        slamRuntimeConfig.imuEnabled != previousSlamRuntimeConfig.imuEnabled ||
         slamExtrinsicChanged ||
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||

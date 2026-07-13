@@ -440,7 +440,8 @@ private:
     enum class SlamOfflineSourceKind {
         None,
         Pcap,
-        Rosbag
+        Rosbag,
+        Lvx
     };
     struct SlamWorldPointSegment {
         int64_t timestampNs = 0;

@@ -470,7 +470,7 @@ void finalizeSummary(QVector<SlamInputFrame>& frames,
 
     if (!summary.hasImu) {
         summary.status = SlamStatusCode::MissingImu;
-        summary.messages.push_back(QStringLiteral("PCAP 未解析到 IMU payload，FAST_LIO 后端不得启动。"));
+        summary.messages.push_back(QStringLiteral("PCAP 未解析到 IMU payload，可使用 FAST_LO 处理点云帧。"));
     } else if (summary.outOfOrderPointPacketCount > 0 || summary.missingPointOffsetPacketCount > 0 ||
                summary.missingImuTimingPacketCount > 0 || summary.framesWithCompleteImuCoverage < summary.frameCount) {
         summary.status = SlamStatusCode::TimeSyncError;
@@ -666,7 +666,9 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
                 : QStringLiteral("Avia2 Focus 点云已按 100000 点/秒重建点内时间。"));
     }
 
-    frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);
+    if (!imuSamples.isEmpty()) {
+        frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);
+    }
     finalizeSummary(frames_, imuSamples, summary_);
     return true;
 }

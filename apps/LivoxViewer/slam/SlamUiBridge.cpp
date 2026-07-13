@@ -387,7 +387,9 @@ void SlamUiBridge::refreshStatus()
     m_displayState.status = statusName(m_latestOutput.status);
     m_displayState.mode = m_mode;
     m_displayState.backend = m_backend;
-    m_displayState.imuState = m_latestOutput.imuHealthy ? QStringLiteral("Healthy") : QStringLiteral("Unavailable");
+    m_displayState.imuState = m_backend == QStringLiteral("FAST_LO")
+        ? QStringLiteral("Not used (LO)")
+        : (m_latestOutput.imuHealthy ? QStringLiteral("Healthy") : QStringLiteral("Unavailable"));
     m_displayState.inputFps = QString::number(m_latestOutput.inputFps, 'f', 1);
     m_displayState.backendMs = QString::number(m_latestOutput.backendMs, 'f', 2);
     m_displayState.droppedFrames = QString::number(m_latestOutput.droppedFrameCount);
