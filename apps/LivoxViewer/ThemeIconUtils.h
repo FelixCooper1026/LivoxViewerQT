@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QGuiApplication>
+#include <QHash>
 #include <QIcon>
 #include <QLabel>
 #include <QList>
@@ -56,10 +57,21 @@ inline QPixmap themedSvgPixmap(const QString& iconPath, const QSize& size)
 
 inline QIcon themedSvgIcon(const QString& iconPath)
 {
+    static QHash<QString, QIcon> iconCache;
+    const QString cacheKey = QStringLiteral("%1|%2|%3")
+                                 .arg(iconPath,
+                                      iconColor().name(QColor::HexArgb),
+                                      QString::number(devicePixelRatio()));
+    const auto cachedIcon = iconCache.constFind(cacheKey);
+    if (cachedIcon != iconCache.cend()) {
+        return cachedIcon.value();
+    }
+
     QIcon icon;
-    for (int size = 12; size <= 64; ++size) {
+    for (int size : {16, 20, 24, 32, 48, 64}) {
         icon.addPixmap(themedSvgPixmap(iconPath, QSize(size, size)));
     }
+    iconCache.insert(cacheKey, icon);
     return icon;
 }
 

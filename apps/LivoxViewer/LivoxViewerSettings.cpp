@@ -319,42 +319,17 @@ QPushButton* createColorSwatchButton(QWidget* parent, const QColor& color)
     return button;
 }
 
-void refreshWidgetStyle(QWidget* widget)
+void refreshParameterOptionButtonThemes()
 {
-    if (!widget) {
-        return;
-    }
-
-    if (widget->property("parameterOptionButton").toBool()) {
-        const bool darkTheme = QApplication::palette().color(QPalette::Window).lightness() < 128;
-        widget->setProperty("parameterOptionButtonTheme", darkTheme ? QStringLiteral("dark") : QStringLiteral("light"));
-    }
-
-    if (!widget->styleSheet().isEmpty()) {
-        const QString styleSheet = widget->styleSheet();
-        widget->setStyleSheet(QString());
-        widget->setStyleSheet(styleSheet);
-    }
-
-    if (QStyle* style = widget->style()) {
-        style->unpolish(widget);
-        style->polish(widget);
-    }
-    widget->update();
-
-    const QObjectList children = widget->children();
-    for (QObject* child : children) {
-        if (QWidget* childWidget = qobject_cast<QWidget*>(child)) {
-            refreshWidgetStyle(childWidget);
+    const bool darkTheme = QApplication::palette().color(QPalette::Window).lightness() < 128;
+    for (QWidget* widget : QApplication::allWidgets()) {
+        if (!widget->property("parameterOptionButton").toBool()) {
+            continue;
         }
-    }
-}
-
-void refreshApplicationStyles()
-{
-    const QWidgetList topLevelWidgets = QApplication::topLevelWidgets();
-    for (QWidget* widget : topLevelWidgets) {
-        refreshWidgetStyle(widget);
+        widget->setProperty("parameterOptionButtonTheme", darkTheme ? QStringLiteral("dark") : QStringLiteral("light"));
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
     }
 }
 
@@ -934,7 +909,11 @@ void LivoxViewerWindow::applyUiTheme()
         return;
     }
 
-    app->setStyle(new ComboBoxPopupStyle(QStyleFactory::create("Fusion")));
+    static bool comboBoxPopupStyleInstalled = false;
+    if (!comboBoxPopupStyleInstalled) {
+        app->setStyle(new ComboBoxPopupStyle(QStyleFactory::create("Fusion")));
+        comboBoxPopupStyleInstalled = true;
+    }
     QPalette palette;
 
     const bool darkTheme = shouldUseDarkTheme();
@@ -974,7 +953,7 @@ void LivoxViewerWindow::applyUiTheme()
     app->setStyleSheet(darkTheme ? darkThemeControlStyleSheet() : QString());
     installComboBoxPopupBehavior(app);
     ThemeIconUtils::refreshObject(this);
-    refreshApplicationStyles();
+    refreshParameterOptionButtonThemes();
     if (imuState.visualizationDialog) {
         imuState.visualizationDialog->refreshTheme();
     }
@@ -2501,10 +2480,23 @@ void LivoxViewerWindow::showPreferencesDialog()
     layout->addLayout(contentLayout, 1);
 
     if (dlg.exec() != QDialog::Accepted) {
-        themeMode = originalThemeMode;
-        applyUiTheme();
+        if (themeMode != originalThemeMode) {
+            themeMode = originalThemeMode;
+            applyUiTheme();
+        }
         return;
     }
+
+    const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
+    const PointCloudView::GridConfig previousGridConfig = pointCloudView->gridConfig();
+    const float previousDistanceLegendMin = distanceLegendMin;
+    const float previousDistanceLegendMax = distanceLegendMax;
+    const float previousElevationLegendMin = elevationLegendMin;
+    const float previousElevationLegendMax = elevationLegendMax;
+    const int previousReflectivityColorScale = reflectivityColorScale;
+    const QColor previousSolidColor = solidColor;
+    const QVector<QColor> previousLineColors = lineColors;
+    const int previousPointCloudBackgroundPreset = pointCloudBackgroundPreset;
 
     config.range = float(rangeSpin->value());
     config.step = float(stepSpin->value());
@@ -2519,7 +2511,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     lineColors = selectedLineColors;
     pointCloudBackgroundPreset = selectedBackgroundPreset;
     themeMode = themeGroup->checkedId();
-    const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
     const SlamRuntimeConfig previousSlamRuntimeConfig = slamRuntimeConfig;
     const double previousSlamFilterSurfM = slamRuntimeConfig.filterSizeSurfM;
     const double previousSlamFilterMapM = slamRuntimeConfig.filterSizeMapM;
@@ -2640,6 +2631,24 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
     slamPoseAxisLengthM = static_cast<float>(slamPoseAxisLengthSpin->value());
     slamPoseAxisLineWidthPx = static_cast<float>(slamPoseAxisLineWidthSpin->value());
+    const bool gridChanged =
+        config.range != previousGridConfig.range ||
+        config.step != previousGridConfig.step ||
+        config.color != previousGridConfig.color ||
+        config.type != previousGridConfig.type;
+    const bool pointCloudColorChanged =
+        distanceLegendMin != previousDistanceLegendMin ||
+        distanceLegendMax != previousDistanceLegendMax ||
+        elevationLegendMin != previousElevationLegendMin ||
+        elevationLegendMax != previousElevationLegendMax ||
+        reflectivityColorScale != previousReflectivityColorScale ||
+        solidColor != previousSolidColor ||
+        lineColors != previousLineColors;
+    const bool backgroundChanged = pointCloudBackgroundPreset != previousPointCloudBackgroundPreset;
+    const bool slamLayerAvailabilityChanged =
+        slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
+        slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
+        slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection;
     editedSlamTemplateConfigs.insert(int(slamRuntimeConfig.lidarTemplate), slamRuntimeConfig);
     {
         QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
@@ -2662,18 +2671,26 @@ void LivoxViewerWindow::showPreferencesDialog()
     if (previousSlamPublishWorld && !slamRuntimeConfig.publishWorldFrameCloud) {
         clearSlamWorldPointCloud();
     }
-    rebuildSlamInfoPanel();
-    syncSlamRenderLayerVisibility();
-    syncSlamTemplateControl();
-    refreshSlamWorldPointCloud();
+    if (slamLayerAvailabilityChanged) {
+        rebuildSlamInfoPanel();
+        syncSlamRenderLayerVisibility();
+    }
+    if (slamRuntimeConfig.lidarTemplate != previousSlamLidarTemplate) {
+        syncSlamTemplateControl();
+    }
+    if (slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld) {
+        refreshSlamWorldPointCloud();
+    }
 
-    syncReflectivityColorScaleControls();
-    pointCloudView->setGridConfig(config);
-    applyPointCloudBackground();
-    applyUiTheme();
-    recolorPointCloudViews();
-    if (playbackState.active && playbackState.frame >= 0) {
-        showLvx2PlaybackFrame(playbackState.frame);
+    if (pointCloudColorChanged) {
+        syncReflectivityColorScaleControls();
+        recolorPointCloudViews();
+    }
+    if (gridChanged) {
+        pointCloudView->setGridConfig(config);
+    }
+    if (backgroundChanged) {
+        applyPointCloudBackground();
     }
     saveViewPreferences();
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
