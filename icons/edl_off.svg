@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-  <path d="M3 16.5C5.2 13.7 8.1 12.3 12 12.3C15.9 12.3 18.8 13.7 21 16.5" stroke="#000" stroke-width="1.8" stroke-linecap="round"/>
-  <path d="M5.5 19.5C7.2 17.7 9.4 16.8 12 16.8C14.6 16.8 16.8 17.7 18.5 19.5" stroke="#000" stroke-width="1.8" stroke-linecap="round"/>
-  <circle cx="12" cy="7" r="3.5" stroke="#000" stroke-width="1.8"/>
-  <path d="M4 3L20 21" stroke="#000" stroke-width="2" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" id="Shadow-Off--Streamline-Tabler" height="24" width="24">
+  <desc>
+    Shadow Off Streamline Icon: https://streamlinehq.com
+  </desc>
+  <path d="M5.634 5.638a9 9 0 0 0 12.728 12.727m1.68 -2.32A9 9 0 0 0 7.956 3.957" stroke-width="2"></path>
+  <path d="M16 12h2" stroke-width="2"></path>
+  <path d="M13 15h2" stroke-width="2"></path>
+  <path d="M13 18h1" stroke-width="2"></path>
+  <path d="M13 9h4" stroke-width="2"></path>
+  <path d="M13 6h1" stroke-width="2"></path>
+  <path d="m3 3 18 18" stroke-width="2"></path>
 </svg>

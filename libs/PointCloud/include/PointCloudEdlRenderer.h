@@ -3,12 +3,13 @@
 
 #include "PointCloudRenderConfig.h"
 
-#include <QColor>
 #include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLVertexArrayObject>
 #include <QSize>
 #include <QString>
+
+#include <array>
 
 class QOpenGLShaderProgram;
 
@@ -23,8 +24,9 @@ public:
                    const QSize& targetSize,
                    const PointCloudEdlConfig& config,
                    float physicalRadius,
-                   const QColor& backgroundTop,
-                   const QColor& backgroundBottom);
+                   float nearPlane,
+                   float farPlane,
+                   bool perspectiveMode);
     void destroyFramebuffer();
 
     bool isSupported() const { return m_shaderValid; }
@@ -32,15 +34,27 @@ public:
     QSize framebufferSize() const { return m_framebufferSize; }
 
 private:
-    bool setupCompositeShader();
+    struct ScalePass
+    {
+        GLuint shadeFramebuffer = 0;
+        GLuint shadeTexture = 0;
+        GLuint filteredFramebuffer = 0;
+        GLuint filteredTexture = 0;
+        QSize size;
+    };
+
+    bool setupShaders();
     bool ensureFramebuffer(const QSize& size);
     bool recreateFramebuffer(const QSize& size);
+    void drawFullscreenTriangle();
 
-    GLuint m_framebuffer = 0;
-    GLuint m_colorTexture = 0;
-    GLuint m_linearDepthTexture = 0;
-    GLuint m_depthRenderbuffer = 0;
-    QOpenGLShaderProgram* m_compositeProgram = nullptr;
+    GLuint m_sceneFramebuffer = 0;
+    GLuint m_sceneColorTexture = 0;
+    GLuint m_sceneDepthTexture = 0;
+    std::array<ScalePass, 3> m_scalePasses;
+    QOpenGLShaderProgram* m_shadeProgram = nullptr;
+    QOpenGLShaderProgram* m_bilateralProgram = nullptr;
+    QOpenGLShaderProgram* m_mixProgram = nullptr;
     QOpenGLVertexArrayObject m_fullscreenVao;
     QOpenGLBuffer m_fullscreenVbo{QOpenGLBuffer::VertexBuffer};
     QSize m_framebufferSize;

@@ -4,11 +4,8 @@
 struct PointCloudEdlConfig
 {
     bool enabled = true;
-    float strength = 2.5f;
-    float radiusPx = 2.3f;
-    float silhouetteStrength = 0.2f;
-    float minimumShade = 0.35f;
-    int sampleCount = 8;
+    float strength = 100.0f;
+    float radiusPx = 3.0f;
     float renderScale = 1.0f;
     bool roundPointSplat = true;
 };

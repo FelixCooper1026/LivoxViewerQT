@@ -1056,28 +1056,13 @@ void LivoxViewerWindow::loadViewPreferences()
     pointCloudEdlConfig.enabled = settings.value(
         QStringLiteral("visualization/edl/enabled"), pointCloudEdlConfig.enabled).toBool();
     pointCloudEdlConfig.strength = std::clamp(
-        settings.value(QStringLiteral("visualization/edl/strength"), pointCloudEdlConfig.strength).toFloat(),
+        settings.value(QStringLiteral("visualization/edl/qedlStrength"), pointCloudEdlConfig.strength).toFloat(),
         0.0f,
-        5.0f);
+        300.0f);
     pointCloudEdlConfig.radiusPx = std::clamp(
-        settings.value(QStringLiteral("visualization/edl/radiusPx"), pointCloudEdlConfig.radiusPx).toFloat(),
+        settings.value(QStringLiteral("visualization/edl/qedlRadiusPx"), pointCloudEdlConfig.radiusPx).toFloat(),
         0.5f,
-        5.0f);
-    pointCloudEdlConfig.silhouetteStrength = std::clamp(
-        settings.value(QStringLiteral("visualization/edl/silhouetteStrength"),
-                       pointCloudEdlConfig.silhouetteStrength).toFloat(),
-        0.0f,
-        1.0f);
-    pointCloudEdlConfig.minimumShade = std::clamp(
-        settings.value(QStringLiteral("visualization/edl/minimumShade"),
-                       pointCloudEdlConfig.minimumShade).toFloat(),
-        0.0f,
-        1.0f);
-    pointCloudEdlConfig.sampleCount = settings.value(
-        QStringLiteral("visualization/edl/sampleCount"), pointCloudEdlConfig.sampleCount).toInt();
-    if (pointCloudEdlConfig.sampleCount != 4 && pointCloudEdlConfig.sampleCount != 8) {
-        pointCloudEdlConfig.sampleCount = 8;
-    }
+        8.0f);
     const float storedEdlRenderScale = settings.value(
         QStringLiteral("visualization/edl/renderScale"), pointCloudEdlConfig.renderScale).toFloat();
     pointCloudEdlConfig.renderScale = storedEdlRenderScale < 0.625f
@@ -1177,12 +1162,8 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("color/solidColor", solidColor);
     settings.setValue("background/preset", pointCloudBackgroundPreset);
     settings.setValue(QStringLiteral("visualization/edl/enabled"), pointCloudEdlConfig.enabled);
-    settings.setValue(QStringLiteral("visualization/edl/strength"), pointCloudEdlConfig.strength);
-    settings.setValue(QStringLiteral("visualization/edl/radiusPx"), pointCloudEdlConfig.radiusPx);
-    settings.setValue(QStringLiteral("visualization/edl/silhouetteStrength"),
-                      pointCloudEdlConfig.silhouetteStrength);
-    settings.setValue(QStringLiteral("visualization/edl/minimumShade"), pointCloudEdlConfig.minimumShade);
-    settings.setValue(QStringLiteral("visualization/edl/sampleCount"), pointCloudEdlConfig.sampleCount);
+    settings.setValue(QStringLiteral("visualization/edl/qedlStrength"), pointCloudEdlConfig.strength);
+    settings.setValue(QStringLiteral("visualization/edl/qedlRadiusPx"), pointCloudEdlConfig.radiusPx);
     settings.setValue(QStringLiteral("visualization/edl/renderScale"), pointCloudEdlConfig.renderScale);
     settings.setValue(QStringLiteral("visualization/edl/roundPointSplat"),
                       pointCloudEdlConfig.roundPointSplat);
@@ -1463,19 +1444,15 @@ void LivoxViewerWindow::showPreferencesDialog()
         preparePreferenceSpinBox(spin);
         return spin;
     };
-    QDoubleSpinBox* edlStrengthSpin = createEdlSpin(0.0, 5.0, 0.1, pointCloudEdlConfig.strength);
-    QDoubleSpinBox* edlRadiusSpin = createEdlSpin(0.5, 5.0, 0.1, pointCloudEdlConfig.radiusPx,
-                                                  QStringLiteral(" px"));
-    QDoubleSpinBox* edlSilhouetteSpin = createEdlSpin(
-        0.0, 1.0, 0.05, pointCloudEdlConfig.silhouetteStrength);
-    QDoubleSpinBox* edlMinimumShadeSpin = createEdlSpin(
-        0.0, 1.0, 0.05, pointCloudEdlConfig.minimumShade);
+    QDoubleSpinBox* edlStrengthSpin = createEdlSpin(0.0, 300.0, 5.0, pointCloudEdlConfig.strength);
+    QDoubleSpinBox* edlRadiusSpin = createEdlSpin(0.5, 8.0, 0.1, pointCloudEdlConfig.radiusPx,
+                                                   QStringLiteral(" px"));
     QComboBox* edlQualityCombo = new QComboBox(colorTab);
-    edlQualityCombo->addItem(QStringLiteral("低（50%，4 采样）"), 0);
-    edlQualityCombo->addItem(QStringLiteral("中（75%，8 采样）"), 1);
-    edlQualityCombo->addItem(QStringLiteral("高（100%，8 采样）"), 2);
+    edlQualityCombo->addItem(QStringLiteral("低（50% 分辨率）"), 0);
+    edlQualityCombo->addItem(QStringLiteral("中（75% 分辨率）"), 1);
+    edlQualityCombo->addItem(QStringLiteral("高（100% 分辨率）"), 2);
     int edlQuality = 2;
-    if (pointCloudEdlConfig.sampleCount == 4 || pointCloudEdlConfig.renderScale == 0.5f) {
+    if (pointCloudEdlConfig.renderScale == 0.5f) {
         edlQuality = 0;
     } else if (pointCloudEdlConfig.renderScale == 0.75f) {
         edlQuality = 1;
@@ -2186,12 +2163,10 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     addPreferenceSectionTitle(colorPageLayout, "Eye-Dome Lighting");
     QFrame* edlSection = createPreferenceSection(colorTab);
-    addPreferenceRow(edlSection, "启用", "比较相邻像素的线性深度并压暗前景轮廓。", edlEnabledCheck);
-    addPreferenceRow(edlSection, "强度", "控制深度断层产生的明暗对比。", edlStrengthSpin);
-    addPreferenceRow(edlSection, "轮廓半径", "以逻辑像素为单位设置邻域采样距离。", edlRadiusSpin);
-    addPreferenceRow(edlSection, "空洞轮廓", "控制点云外轮廓和空洞邻域的压暗程度。", edlSilhouetteSpin);
-    addPreferenceRow(edlSection, "最低亮度", "限制最暗亮度，避免稀疏点云变成纯黑。", edlMinimumShadeSpin);
-    addPreferenceRow(edlSection, "质量", "调整离屏分辨率与邻域采样数量。", edlQualityCombo);
+    addPreferenceRow(edlSection, "启用", "使用 CloudCompare 风格的三尺度 Eye-Dome Lighting。", edlEnabledCheck);
+    addPreferenceRow(edlSection, "强度", "控制三尺度深度遮蔽的明暗对比。", edlStrengthSpin);
+    addPreferenceRow(edlSection, "邻域距离", "设置透视投影的邻域采样距离；正交投影自动使用其 40%。", edlRadiusSpin);
+    addPreferenceRow(edlSection, "质量", "调整场景离屏分辨率；每档均使用三尺度与双边滤波。", edlQualityCombo);
     addPreferenceRow(edlSection, "圆形点", "将方形 point sprite 裁剪为圆形，减少块状黑边。", edlRoundPointCheck);
     colorPageLayout->addWidget(edlSection);
     colorPageLayout->addStretch();
@@ -2649,20 +2624,15 @@ void LivoxViewerWindow::showPreferencesDialog()
     pointCloudEdlConfig.enabled = edlEnabledCheck->isChecked();
     pointCloudEdlConfig.strength = float(edlStrengthSpin->value());
     pointCloudEdlConfig.radiusPx = float(edlRadiusSpin->value());
-    pointCloudEdlConfig.silhouetteStrength = float(edlSilhouetteSpin->value());
-    pointCloudEdlConfig.minimumShade = float(edlMinimumShadeSpin->value());
     pointCloudEdlConfig.roundPointSplat = edlRoundPointCheck->isChecked();
     switch (edlQualityCombo->currentData().toInt()) {
     case 0:
-        pointCloudEdlConfig.sampleCount = 4;
         pointCloudEdlConfig.renderScale = 0.5f;
         break;
     case 1:
-        pointCloudEdlConfig.sampleCount = 8;
         pointCloudEdlConfig.renderScale = 0.75f;
         break;
     default:
-        pointCloudEdlConfig.sampleCount = 8;
         pointCloudEdlConfig.renderScale = 1.0f;
         break;
     }

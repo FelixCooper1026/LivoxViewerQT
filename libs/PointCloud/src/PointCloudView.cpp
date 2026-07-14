@@ -741,7 +741,6 @@ void PointCloudView::setupShaders()
         uniform int uRoundPointSplat;
 
         layout(location = 0) out vec4 SceneColor;
-        layout(location = 1) out float LinearDepth;
 
         void main() {
             if (uPointPrimitive == 1 && uRoundPointSplat == 1) {
@@ -770,7 +769,6 @@ void PointCloudView::setupShaders()
                 ? (uEdlEligible == 1 ? 1.0 : 0.5)
                 : 1.0;
             SceneColor = vec4(color, category);
-            LinearDepth = max(-vViewPosition.z, 0.0001);
         }
     )";
 
@@ -1321,25 +1319,25 @@ void PointCloudView::paintGL()
         glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
         const QSize physicalSize = widgetPhysicalSize();
         glViewport(0, 0, physicalSize.width(), physicalSize.height());
-        if (m_backgroundTopColor == m_backgroundBottomColor) {
-            glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        } else {
-            glDisable(GL_DEPTH_TEST);
-            m_backgroundProgram->bind();
-            m_backgroundProgram->setUniformValue("uTopColor", QVector3D(m_backgroundTopColor.redF(),
-                                                                        m_backgroundTopColor.greenF(),
-                                                                        m_backgroundTopColor.blueF()));
-            m_backgroundProgram->setUniformValue("uBottomColor", QVector3D(m_backgroundBottomColor.redF(),
-                                                                           m_backgroundBottomColor.greenF(),
-                                                                           m_backgroundBottomColor.blueF()));
-            m_backgroundVao.bind();
-            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-            m_backgroundVao.release();
-            m_backgroundProgram->release();
-            glClear(GL_DEPTH_BUFFER_BIT);
-            glEnable(GL_DEPTH_TEST);
-        }
+    }
+    if (m_backgroundTopColor == m_backgroundBottomColor) {
+        glClearColor(m_backgroundTopColor.redF(), m_backgroundTopColor.greenF(), m_backgroundTopColor.blueF(), 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+        m_backgroundProgram->bind();
+        m_backgroundProgram->setUniformValue("uTopColor", QVector3D(m_backgroundTopColor.redF(),
+                                                                    m_backgroundTopColor.greenF(),
+                                                                    m_backgroundTopColor.blueF()));
+        m_backgroundProgram->setUniformValue("uBottomColor", QVector3D(m_backgroundBottomColor.redF(),
+                                                                       m_backgroundBottomColor.greenF(),
+                                                                       m_backgroundBottomColor.blueF()));
+        m_backgroundVao.bind();
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        m_backgroundVao.release();
+        m_backgroundProgram->release();
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
     }
     
     m_program->bind();
@@ -1419,8 +1417,7 @@ void PointCloudView::paintGL()
     // 绘制网格
     if (m_gridVisible) {
         if (edlActive) {
-            const GLenum colorAttachment = GL_COLOR_ATTACHMENT0;
-            glDrawBuffers(1, &colorAttachment);
+            // 网格保留在场景颜色中，但不向 qEDL 的场景深度纹理写入深度。
             glDepthMask(GL_FALSE);
         } else {
             glEnable(GL_BLEND);
@@ -1436,8 +1433,6 @@ void PointCloudView::paintGL()
         }
         if (edlActive) {
             glDepthMask(GL_TRUE);
-            const GLenum edlAttachments[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-            glDrawBuffers(2, edlAttachments);
         } else {
             glDisable(GL_LINE_SMOOTH);
             glDisable(GL_BLEND);
@@ -1570,13 +1565,18 @@ void PointCloudView::paintGL()
     if (edlActive) {
         m_program->release();
         const QSize physicalSize = widgetPhysicalSize();
-        const float physicalRadius = m_edlConfig.radiusPx * float(devicePixelRatioF()) * m_edlConfig.renderScale;
+        const float projectionRadiusScale = m_projectionMode == ProjectionMode::Orthographic ? 0.4f : 1.0f;
+        const float physicalRadius = m_edlConfig.radiusPx
+            * projectionRadiusScale
+            * float(devicePixelRatioF())
+            * m_edlConfig.renderScale;
         m_edlRenderer->composite(defaultFramebufferObject(),
                                  physicalSize,
                                  m_edlConfig,
                                  physicalRadius,
-                                 m_backgroundTopColor,
-                                 m_backgroundBottomColor);
+                                 nearPlane,
+                                 farPlane,
+                                 m_projectionMode != ProjectionMode::Orthographic);
         glDepthMask(GL_TRUE);
         m_program->bind();
         m_program->setUniformValue("modelView", m_modelView);
