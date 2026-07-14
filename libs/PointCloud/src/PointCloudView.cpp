@@ -1180,6 +1180,9 @@ void PointCloudView::setupGridBuffers()
 
     if (drawSquareGrid) {
         for (float i = -range; i <= range + 1e-4f; i += step) {
+            if (std::abs(i) <= 1e-4f) {
+                continue;
+            }
             addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f), gridColor);
             addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f), gridColor);
         }
@@ -1415,20 +1418,24 @@ void PointCloudView::paintGL()
 
     // 绘制网格
     if (m_gridVisible) {
-        if (!edlActive) {
+        if (edlActive) {
+            glDepthMask(GL_FALSE);
+        } else {
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnable(GL_LINE_SMOOTH);
+            glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
         }
-        glEnable(GL_LINE_SMOOTH);
-        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
         glLineWidth(1.0f);
         if (m_gridVertexCount > 0) {
             m_gridVao.bind();
             glDrawArrays(GL_LINES, 0, m_gridVertexCount);
             m_gridVao.release();
         }
-        glDisable(GL_LINE_SMOOTH);
-        if (!edlActive) {
+        if (edlActive) {
+            glDepthMask(GL_TRUE);
+        } else {
+            glDisable(GL_LINE_SMOOTH);
             glDisable(GL_BLEND);
         }
     }
