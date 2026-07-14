@@ -32,6 +32,11 @@ struct ColorScaleDefinition {
     int stopCount;
 };
 
+struct ElevationColorScaleDefinition {
+    std::array<ColorScaleStop, 33> stops;
+    int stopCount;
+};
+
 constexpr Rgb rgb(int r, int g, int b)
 {
     return {float(r) / 255.0f, float(g) / 255.0f, float(b) / 255.0f};
@@ -40,6 +45,11 @@ constexpr Rgb rgb(int r, int g, int b)
 constexpr ColorScaleStop stop(int r, int g, int b, float position)
 {
     return {rgb(r, g, b), position};
+}
+
+constexpr ColorScaleStop floatStop(float r, float g, float b, float position)
+{
+    return {{r, g, b}, position};
 }
 
 constexpr std::array<ColorScaleDefinition, kReflectivityScaleCount> kReflectivityColorScales = {{
@@ -55,6 +65,45 @@ constexpr std::array<ColorScaleDefinition, kReflectivityScaleCount> kReflectivit
     {std::array<ColorScaleStop, 15>{stop(51, 51, 153, 0.0f), stop(27, 99, 201, 0.071429f), stop(3, 147, 249, 0.142857f), stop(0, 184, 160, 0.214286f), stop(37, 211, 109, 0.285714f), stop(109, 226, 124, 0.357143f), stop(181, 240, 138, 0.428571f), stop(254, 254, 152, 0.5f), stop(218, 208, 133, 0.571429f), stop(182, 162, 114, 0.642857f), stop(146, 115, 94, 0.714286f), stop(147, 117, 110, 0.785714f), stop(183, 163, 159, 0.857143f), stop(219, 209, 207, 0.928571f), stop(255, 255, 255, 1.0f)}, 15},
     {std::array<ColorScaleStop, 15>{stop(0, 0, 0, 0.0f), stop(12, 25, 118, 0.071429f), stop(24, 65, 121, 0.142857f), stop(36, 100, 124, 0.214286f), stop(48, 129, 126, 0.285714f), stop(57, 139, 104, 0.357143f), stop(65, 149, 82, 0.428571f), stop(94, 160, 75, 0.5f), stop(130, 169, 84, 0.571429f), stop(160, 177, 90, 0.642857f), stop(185, 179, 95, 0.714286f), stop(193, 163, 103, 0.785714f), stop(213, 177, 148, 0.857143f), stop(233, 205, 197, 0.928571f), stop(253, 251, 251, 1.0f)}, 15}
 }};
+
+constexpr ElevationColorScaleDefinition kElevationColorScale = {
+    std::array<ColorScaleStop, 33>{
+        floatStop(0.2298057f,   0.298717966f, 0.753683153f, 0.00000f),
+        floatStop(0.26623388f,  0.353094838f, 0.801466763f, 0.03125f),
+        floatStop(0.30386891f,  0.406535296f, 0.84495867f,  0.06250f),
+        floatStop(0.342804478f, 0.458757618f, 0.883725899f, 0.09375f),
+        floatStop(0.38301334f,  0.50941904f,  0.917387822f, 0.12500f),
+        floatStop(0.424369608f, 0.558148092f, 0.945619588f, 0.15625f),
+        floatStop(0.46666708f,  0.604562568f, 0.968154911f, 0.18750f),
+        floatStop(0.509635204f, 0.648280772f, 0.98478814f,  0.21875f),
+        floatStop(0.552953156f, 0.688929332f, 0.995375608f, 0.25000f),
+        floatStop(0.596262162f, 0.726149107f, 0.999836203f, 0.28125f),
+        floatStop(0.639176211f, 0.759599947f, 0.998151185f, 0.31250f),
+        floatStop(0.681291281f, 0.788964712f, 0.990363227f, 0.34375f),
+        floatStop(0.722193294f, 0.813952739f, 0.976574709f, 0.37500f),
+        floatStop(0.761464949f, 0.834302879f, 0.956945269f, 0.40625f),
+        floatStop(0.798691636f, 0.849786142f, 0.931688648f, 0.43750f),
+        floatStop(0.833466556f, 0.860207984f, 0.901068838f, 0.46875f),
+        floatStop(0.865395197f, 0.86541021f,  0.865395561f, 0.50000f),
+        floatStop(0.897787179f, 0.848937047f, 0.820880546f, 0.53125f),
+        floatStop(0.924127593f, 0.827384882f, 0.774508472f, 0.56250f),
+        floatStop(0.944468518f, 0.800927443f, 0.726736146f, 0.59375f),
+        floatStop(0.958852946f, 0.769767752f, 0.678007945f, 0.62500f),
+        floatStop(0.96732803f,  0.734132809f, 0.628751763f, 0.65625f),
+        floatStop(0.969954137f, 0.694266682f, 0.579375448f, 0.68750f),
+        floatStop(0.966811177f, 0.650421156f, 0.530263762f, 0.71875f),
+        floatStop(0.958003065f, 0.602842431f, 0.481775914f, 0.75000f),
+        floatStop(0.943660866f, 0.551750968f, 0.434243684f, 0.78125f),
+        floatStop(0.923944917f, 0.49730856f,  0.387970225f, 0.81250f),
+        floatStop(0.89904617f,  0.439559467f, 0.343229596f, 0.84375f),
+        floatStop(0.869186849f, 0.378313092f, 0.300267182f, 0.87500f),
+        floatStop(0.834620542f, 0.312874446f, 0.259301199f, 0.90625f),
+        floatStop(0.795631745f, 0.24128379f,  0.220525627f, 0.93750f),
+        floatStop(0.752534934f, 0.157246067f, 0.184115123f, 0.96875f),
+        floatStop(0.705673158f, 0.01555616f,  0.150232812f, 1.00000f)
+    },
+    33
+};
 
 constexpr const char* kViridisScaleHex =
     "44015444025544035745055845065A45085B46095C460B5E460C5F460E61470F62471163471265471466471567471669"
@@ -117,7 +166,8 @@ Rgb colorFromHexTable(const char* colors, int index)
                hexValue(color[4]) * 16 + hexValue(color[5]));
 }
 
-Rgb interpolateColor(const ColorScaleDefinition& scale, float t)
+template<typename ScaleDefinition>
+Rgb interpolateColor(const ScaleDefinition& scale, float t)
 {
     t = std::clamp(t, 0.0f, 1.0f);
     int index = 0;
@@ -171,6 +221,17 @@ QVector<QColor> reflectivityColorScaleStops(int scale)
     QVector<QColor> colors;
     colors.reserve(kReflectivityValueCount);
     for (const Rgb& color : reflectivityLookupTables()[size_t(scale)]) {
+        colors.append(QColor::fromRgbF(color.r, color.g, color.b));
+    }
+    return colors;
+}
+
+QVector<QColor> elevationColorScaleStops()
+{
+    QVector<QColor> colors;
+    colors.reserve(kElevationColorScale.stopCount);
+    for (int index = 0; index < kElevationColorScale.stopCount; ++index) {
+        const Rgb& color = kElevationColorScale.stops[size_t(index)].color;
         colors.append(QColor::fromRgbF(color.r, color.g, color.b));
     }
     return colors;
@@ -236,9 +297,10 @@ PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& c
         for (PointCloudPoint& point : points) {
             float t = (point.z - minZ) / (maxZ - minZ);
             t = std::clamp(t, 0.0f, 1.0f);
-            point.r = t;
-            point.g = 0.0f;
-            point.b = 1.0f - t;
+            const Rgb color = interpolateColor(kElevationColorScale, t);
+            point.r = color.r;
+            point.g = color.g;
+            point.b = color.b;
         }
         legend.minValue = minZ;
         legend.maxValue = maxZ;

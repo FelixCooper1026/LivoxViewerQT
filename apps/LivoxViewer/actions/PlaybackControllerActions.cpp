@@ -739,7 +739,13 @@ void LivoxViewerWindow::showLvx2PlaybackFrame(int playbackFrameIndex)
         } else if (mode == ColorByDistance) {
             pointCloudView->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
         } else if (mode == ColorByElevation) {
-            pointCloudView->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+            pointCloudView->setLegend(ColorByElevation,
+                                      elevationLegendMin,
+                                      elevationLegendMax,
+                                      true,
+                                      {},
+                                      {},
+                                      PointCloudColorizer::elevationColorScaleStops());
         } else if (mode == ColorSolid) {
             pointCloudView->setLegend(ColorSolid, 0.0f, 1.0f, false);
         } else if (mode == ColorByLine) {

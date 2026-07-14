@@ -42,6 +42,7 @@ struct Config {
 };
 
 QVector<QColor> reflectivityColorScaleStops(int scale);
+QVector<QColor> elevationColorScaleStops();
 
 PointCloudPipelineLegend apply(QVector<PointCloudPoint>& points, const Config& config);
 

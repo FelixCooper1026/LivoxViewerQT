@@ -1644,6 +1644,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
     SwitchCheckBox* slamDynamicDetectionCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectDetectionEnabled);
+    SwitchCheckBox* slamDynamicRemovalCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectRemovalEnabled);
     SwitchCheckBox* slamDynamicClusterCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectClusterEnabled);
     QDoubleSpinBox* slamDynamicBufferDelaySpin = createSlamDoubleSpin(
         slamRuntimeConfig.dynamicObjectBufferDelaySec, 0.0, 5.0, 3, 0.01, QStringLiteral(" s"));
@@ -1742,9 +1743,11 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicClusterGroundMaxAngleSpin
     };
     auto syncSlamDynamicControls = [slamDynamicDetectionCheck,
+                                    slamDynamicRemovalCheck,
                                     slamDynamicClusterCheck,
                                     slamDynamicClusterControls]() {
         const bool detectionEnabled = slamDynamicDetectionCheck->isChecked();
+        slamDynamicRemovalCheck->setEnabled(detectionEnabled);
         slamDynamicClusterCheck->setEnabled(detectionEnabled);
         const bool clusterEnabled = detectionEnabled && slamDynamicClusterCheck->isChecked();
         for (QWidget* control : slamDynamicClusterControls) {
@@ -1896,6 +1899,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamPublishBodyCheck->setChecked(runtimeDefaults.publishBodyFrameCloud);
         slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
         slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicObjectDetectionEnabled);
+        slamDynamicRemovalCheck->setChecked(runtimeDefaults.dynamicObjectRemovalEnabled);
         slamDynamicClusterCheck->setChecked(runtimeDefaults.dynamicObjectClusterEnabled);
         slamDynamicClusterVoxelSizeSpin->setValue(runtimeDefaults.dynamicObjectClusterVoxelSizeM);
         slamDynamicClusterExtendVoxelSpin->setValue(runtimeDefaults.dynamicObjectClusterExtendVoxel);
@@ -1963,6 +1967,8 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
         config.saveMap = slamSaveMapCheck->isChecked();
         config.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
+        config.dynamicObjectRemovalEnabled =
+            config.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
         config.dynamicObjectClusterEnabled =
             config.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
         config.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
@@ -2368,6 +2374,11 @@ void LivoxViewerWindow::showPreferencesDialog()
                      slamDynamicDetectionCheck,
                      "建议先关闭聚类增强，仅观察 Case1/2/3 原始点并校准投影、历史窗口和深度阈值。启用后会自动显示不累计的世界系当前帧背景，不需要开启世界系或机体系点云输出。");
     addDynamicPreferenceRow(slamDynamicSection,
+                     "去除动态点云",
+                     "dynamicObjectRemovalEnabled，根据动态检测标签从当前帧输出和 SLAM 增量地图中剔除动态点",
+                     slamDynamicRemovalCheck,
+                     "启用动态检测并确认动态目标识别稳定后再开启。误检会删除真实静态结构，因此应先校准深度阈值和历史窗口；开启聚类增强可让被剔除的目标轮廓更完整。");
+    addDynamicPreferenceRow(slamDynamicSection,
                      "启用聚类增强",
                      "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
                      slamDynamicClusterCheck,
@@ -2722,6 +2733,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
     slamRuntimeConfig.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
+    slamRuntimeConfig.dynamicObjectRemovalEnabled =
+        slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
     slamRuntimeConfig.dynamicObjectClusterEnabled =
         slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
     slamRuntimeConfig.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
@@ -2848,6 +2861,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         return false;
     }();
     const bool slamDynamicConfigChanged =
+        slamRuntimeConfig.dynamicObjectRemovalEnabled != previousSlamRuntimeConfig.dynamicObjectRemovalEnabled ||
         slamRuntimeConfig.dynamicObjectClusterEnabled != previousSlamRuntimeConfig.dynamicObjectClusterEnabled ||
         slamRuntimeConfig.dynamicObjectClusterVoxelSizeM != previousSlamRuntimeConfig.dynamicObjectClusterVoxelSizeM ||
         slamRuntimeConfig.dynamicObjectClusterExtendVoxel != previousSlamRuntimeConfig.dynamicObjectClusterExtendVoxel ||

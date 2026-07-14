@@ -116,8 +116,15 @@ void LivoxViewerWindow::updatePointCloudLegend()
             view->setLegend(ColorByDistance, distanceLegendMin, distanceLegendMax, true);
         }
     } else if (mode == ColorByElevation) {
+        const QVector<QColor> elevationColors = PointCloudColorizer::elevationColorScaleStops();
         for (PointCloudView* view : views) {
-            view->setLegend(ColorByElevation, elevationLegendMin, elevationLegendMax, true);
+            view->setLegend(ColorByElevation,
+                            elevationLegendMin,
+                            elevationLegendMax,
+                            true,
+                            {},
+                            {},
+                            elevationColors);
         }
     } else if (mode == ColorSolid) {
         for (PointCloudView* view : views) {
@@ -148,17 +155,21 @@ void LivoxViewerWindow::recolorPointCloudViews()
     colorConfig.elevationColorMax = elevationLegendMax;
     const QVector<QColor> reflectivityColors =
         PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale);
+    const QVector<QColor> elevationColors = PointCloudColorizer::elevationColorScaleStops();
 
-    forEachPointCloudView([&colorConfig, &reflectivityColors](PointCloudView* view) {
-        view->recolorCurrentPointCloud([view, &colorConfig, &reflectivityColors](QVector<PointCloudPoint>& points) {
+    forEachPointCloudView([&colorConfig, &reflectivityColors, &elevationColors](PointCloudView* view) {
+        view->recolorCurrentPointCloud([view, &colorConfig, &reflectivityColors, &elevationColors](QVector<PointCloudPoint>& points) {
             const PointCloudPipelineLegend legend = PointCloudColorizer::apply(points, colorConfig);
+            const QVector<QColor> gradientColors = colorConfig.mode == ColorByReflectivity
+                ? reflectivityColors
+                : (colorConfig.mode == ColorByElevation ? elevationColors : QVector<QColor>());
             view->setLegend(legend.mode,
                             legend.minValue,
                             legend.maxValue,
                             legend.visible,
                             legend.lineColors,
                             legend.lineNumbers,
-                            colorConfig.mode == ColorByReflectivity ? reflectivityColors : QVector<QColor>());
+                            gradientColors);
         });
     });
 }

@@ -58,7 +58,9 @@ void LivoxViewerWindow::applyPointCloudPipeline(PointCloudFrame& frame, PointClo
                               legend.lineNumbers,
                               colorConfig.mode == ColorByReflectivity
                                   ? PointCloudColorizer::reflectivityColorScaleStops(reflectivityColorScale)
-                                  : QVector<QColor>());
+                                  : (colorConfig.mode == ColorByElevation
+                                         ? PointCloudColorizer::elevationColorScaleStops()
+                                         : QVector<QColor>()));
     }
 
     PointCloudFilter::Config filterConfig;

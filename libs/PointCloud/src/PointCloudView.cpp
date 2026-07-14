@@ -1847,9 +1847,9 @@ void PointCloudView::paintGL()
  
          // 背景透明，不绘制背景
  
-         // 渐变：反射率/距离使用同一色标，高度修正为顶部红、底部蓝
+         // 渐变：点云着色和图例共用同一组颜色节点
          QLinearGradient grad(barRect.topLeft(), barRect.bottomLeft());
-         auto addReflectivityStops = [this, &grad]() {
+         auto addGradientStops = [this, &grad]() {
              const int colorCount = int(m_legendGradientColors.size());
              const int last = colorCount - 1;
              for (int i = 0; i < colorCount; ++i) {
@@ -1863,14 +1863,9 @@ void PointCloudView::paintGL()
              grad.setColorAt(0.75, QColor(  0, 255, 255));
              grad.setColorAt(1.00, QColor(  0,   0, 255));
          };
-         auto addElevationStops = [&grad]() {
-             // 顶部为高值->红，底部为低值->蓝（修正方向）
-             grad.setColorAt(0.00, QColor(255,   0,   0));
-             grad.setColorAt(1.00, QColor(  0,   0, 255));
-         };
-         if (m_legendMode == 0) addReflectivityStops();
+         if (m_legendMode == 0) addGradientStops();
          else if (m_legendMode == 1) addDistanceStops();
-         else if (m_legendMode == 2) addElevationStops();
+         else if (m_legendMode == 2) addGradientStops();
          else { grad.setColorAt(0.0, Qt::white); grad.setColorAt(1.0, Qt::white); }
  
          painter.fillRect(barRect, QBrush(grad));

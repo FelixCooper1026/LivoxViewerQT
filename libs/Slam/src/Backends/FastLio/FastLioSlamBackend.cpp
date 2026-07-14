@@ -905,11 +905,13 @@ void removeDynamicPointsFromBackendFrame(FastLioAlgorithmState& state,
         pointBodyToWorld(&state.featsDownBody->points[static_cast<std::size_t>(index)],
                          &state.featsDownWorld->points[static_cast<std::size_t>(index)],
                          state.statePoint);
-        std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
-        state.ikdtree.Nearest_Search(state.featsDownWorld->points[static_cast<std::size_t>(index)],
-                                     NUM_MATCH_POINTS,
-                                     state.nearestPoints[static_cast<std::size_t>(index)],
-                                     pointSearchSqDis);
+        if (state.ikdtree.Root_Node != nullptr) {
+            std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
+            state.ikdtree.Nearest_Search(state.featsDownWorld->points[static_cast<std::size_t>(index)],
+                                         NUM_MATCH_POINTS,
+                                         state.nearestPoints[static_cast<std::size_t>(index)],
+                                         pointSearchSqDis);
+        }
     }
 }
 
@@ -1071,6 +1073,12 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     state.featsDownSize = static_cast<int>(state.featsDownBody->points.size());
 
     if (state.ikdtree.Root_Node == nullptr) {
+        if (state.lidarOnly) {
+            commitLidarOnlyPose(state, frame.frameEndNs);
+        }
+        const QVector<DynamicObjectLabel> dynamicLabels =
+            appendDynamicObjectOutput(state, output, frame.frameEndNs);
+        removeDynamicPointsFromBackendFrame(state, dynamicLabels);
         if (state.featsDownSize > kMinMapInitPoints) {
             state.ikdtree.set_downsample_param(static_cast<float>(state.filterSizeMap));
             state.featsDownWorld->resize(static_cast<std::size_t>(state.featsDownSize));
@@ -1081,11 +1089,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
             }
             state.ikdtree.Build(state.featsDownWorld->points);
         }
-        if (state.lidarOnly) {
-            commitLidarOnlyPose(state, frame.frameEndNs);
-        }
         appendTrajectoryOutput(state, output, frame.frameEndNs);
-        appendDynamicObjectOutput(state, output, frame.frameEndNs);
         appendPublishedWorldFrameOutput(state, output);
         appendPublishedBodyFrameOutput(state, output);
         appendGlobalMapOutput(state, output);
@@ -1099,8 +1103,10 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         if (state.lidarOnly) {
             commitLidarOnlyPose(state, frame.frameEndNs);
         }
+        const QVector<DynamicObjectLabel> dynamicLabels =
+            appendDynamicObjectOutput(state, output, frame.frameEndNs);
+        removeDynamicPointsFromBackendFrame(state, dynamicLabels);
         appendTrajectoryOutput(state, output, frame.frameEndNs);
-        appendDynamicObjectOutput(state, output, frame.frameEndNs);
         appendPublishedWorldFrameOutput(state, output);
         appendPublishedBodyFrameOutput(state, output);
         appendGlobalMapOutput(state, output);
