@@ -585,6 +585,11 @@ void LivoxViewerWindow::syncSlamTemplateControl()
         QSignalBlocker blocker(slamReplayModeCombo);
         slamReplayModeCombo->setCurrentIndex(slamReplayMode == SlamReplayMode::Fast ? 1 : 0);
     }
+    if (slamControlModeCombo) {
+        QSignalBlocker blocker(slamControlModeCombo);
+        slamControlModeCombo->setCurrentIndex(
+            slamRuntimeConfig.allowPureLidar && !slamRuntimeConfig.imuEnabled ? 1 : 0);
+    }
 }
 
 void LivoxViewerWindow::handleSlamTemplateControlChanged(int index)
@@ -616,6 +621,35 @@ void LivoxViewerWindow::handleSlamTemplateControlChanged(int index)
     syncSlamTemplateControl();
     updateSlamControlBarUi();
     logMessage(QStringLiteral("[SLAM] LiDAR 模板已切换为 %1。").arg(slamLidarTemplateDisplayName(selectedTemplate)));
+}
+
+void LivoxViewerWindow::handleSlamModeControlChanged(int index)
+{
+    if (!slamControlModeCombo || index < 0) {
+        return;
+    }
+
+    const bool lidarOnly = slamControlModeCombo->itemData(index).toInt() == 1;
+    if (lidarOnly == (slamRuntimeConfig.allowPureLidar && !slamRuntimeConfig.imuEnabled)) {
+        return;
+    }
+
+    if (slamWorkerActive.load()) {
+        syncSlamTemplateControl();
+        logMessage(QStringLiteral("[SLAM] 运行中不能切换 LIO/LO 模式。"));
+        return;
+    }
+
+    slamRuntimeConfig.allowPureLidar = lidarOnly;
+    slamRuntimeConfig.imuEnabled = !lidarOnly;
+    slamRuntimeConfig.backendType = lidarOnly ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    saveSlamRuntimeConfig(settings, slamRuntimeConfig, QStringLiteral("slam/runtime"));
+    syncSlamTemplateControl();
+    updateSlamControlBarUi();
+    logMessage(lidarOnly
+        ? QStringLiteral("[SLAM] 已切换为 LO 模式。")
+        : QStringLiteral("[SLAM] 已切换为 LIO 模式。"));
 }
 
 bool LivoxViewerWindow::loadOfflineSlamSource()

@@ -39,6 +39,8 @@
     <file>close_file.svg</file>
     <file>3d_model_on.svg</file>
     <file>3d_model_off.svg</file>
+    <file>edl_on.svg</file>
+    <file>edl_off.svg</file>
     <file>capture_camera.svg</file>
     <file>capture_imu.svg</file>
     <file>capture_params.svg</file>

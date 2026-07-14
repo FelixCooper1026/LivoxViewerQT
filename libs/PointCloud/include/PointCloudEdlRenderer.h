@@ -4,6 +4,7 @@
 #include "PointCloudRenderConfig.h"
 
 #include <QColor>
+#include <QOpenGLBuffer>
 #include <QOpenGLFunctions_3_3_Core>
 #include <QOpenGLVertexArrayObject>
 #include <QSize>
@@ -41,6 +42,7 @@ private:
     GLuint m_depthRenderbuffer = 0;
     QOpenGLShaderProgram* m_compositeProgram = nullptr;
     QOpenGLVertexArrayObject m_fullscreenVao;
+    QOpenGLBuffer m_fullscreenVbo{QOpenGLBuffer::VertexBuffer};
     QSize m_framebufferSize;
     QString m_errorMessage;
     bool m_shaderValid = false;

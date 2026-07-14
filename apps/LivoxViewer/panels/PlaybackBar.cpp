@@ -125,6 +125,9 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
                                       static_cast<int>(SlamLidarTemplate::Avia2));
     slamControlTemplateCombo->addItem(slamLidarTemplateDisplayName(SlamLidarTemplate::Custom),
                                       static_cast<int>(SlamLidarTemplate::Custom));
+    slamControlModeCombo = new QComboBox(slamControlBar);
+    slamControlModeCombo->addItem(QStringLiteral("LIO 模式"), 0);
+    slamControlModeCombo->addItem(QStringLiteral("LO 模式"), 1);
     slamProgressBar = new QProgressBar(slamControlBar);
     slamProgressBar->setRange(0, 1);
     slamProgressBar->setValue(0);
@@ -148,6 +151,7 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
     controlsLayout->addWidget(slamProgressBar, 1);
     controlsLayout->addWidget(slamReplayModeCombo);
     controlsLayout->addWidget(slamControlTemplateCombo);
+    controlsLayout->addWidget(slamControlModeCombo);
     controlsLayout->addWidget(slamExportTrajectoryButton);
     controlsLayout->addWidget(slamExportMapButton);
     rootLayout->addLayout(controlsLayout);
@@ -169,6 +173,8 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
             this, &LivoxViewerWindow::handleSlamReplayModeChanged);
     connect(slamControlTemplateCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &LivoxViewerWindow::handleSlamTemplateControlChanged);
+    connect(slamControlModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &LivoxViewerWindow::handleSlamModeControlChanged);
 
     slamControlBar->setVisible(false);
     syncSlamTemplateControl();

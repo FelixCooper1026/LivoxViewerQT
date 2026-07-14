@@ -1217,6 +1217,15 @@ void LivoxViewerWindow::updateSlamControlBarUi()
                                                  ? QStringLiteral("SLAM 运行中不能切换 LiDAR 模板")
                                                  : QStringLiteral("LiDAR 模板"));
     }
+    if (slamControlModeCombo) {
+        QSignalBlocker blocker(slamControlModeCombo);
+        slamControlModeCombo->setCurrentIndex(
+            slamRuntimeConfig.allowPureLidar && !slamRuntimeConfig.imuEnabled ? 1 : 0);
+        slamControlModeCombo->setEnabled(!active);
+        slamControlModeCombo->setToolTip(active
+                                             ? QStringLiteral("SLAM 运行中不能切换 LIO/LO 模式")
+                                             : QStringLiteral("SLAM 模式"));
+    }
     const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线SLAM") : QStringLiteral("在线SLAM");
     const QString stateText = active
         ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))

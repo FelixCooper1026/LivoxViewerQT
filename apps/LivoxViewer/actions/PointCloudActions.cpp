@@ -317,6 +317,23 @@ void LivoxViewerWindow::syncPointCloudStlModelAction()
         checked ? QStringLiteral(":/icons/3d_model_on.svg") : QStringLiteral(":/icons/3d_model_off.svg"));
 }
 
+void LivoxViewerWindow::syncPointCloudEdlAction()
+{
+    if (!pointCloudEdlAction) {
+        return;
+    }
+
+    QSignalBlocker blocker(pointCloudEdlAction);
+    pointCloudEdlAction->setChecked(pointCloudEdlConfig.enabled);
+    pointCloudEdlAction->setToolTip(pointCloudEdlConfig.enabled
+        ? QStringLiteral("关闭 Eye-Dome Lighting")
+        : QStringLiteral("启用 Eye-Dome Lighting"));
+    ThemeIconUtils::setThemedSvgIcon(pointCloudEdlAction,
+        pointCloudEdlConfig.enabled
+            ? QStringLiteral(":/icons/edl_on.svg")
+            : QStringLiteral(":/icons/edl_off.svg"));
+}
+
 void LivoxViewerWindow::syncPointCloudToolActions()
 {
     if (pointCloudMeasureAction) {

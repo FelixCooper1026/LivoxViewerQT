@@ -711,6 +711,25 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     });
     displayGroup->addPrimaryWidget(createIconButton(stlModelAction, displayGroup, toolbarIconSize));
 
+    pointCloudEdlAction = new QAction(QIcon(QStringLiteral(":/icons/edl_on.svg")),
+                                      QStringLiteral("Eye-Dome Lighting"),
+                                      this);
+    ThemeIconUtils::setThemedSvgIcon(pointCloudEdlAction, QStringLiteral(":/icons/edl_on.svg"));
+    pointCloudEdlAction->setCheckable(true);
+    pointCloudEdlAction->setChecked(pointCloudEdlConfig.enabled);
+    connect(pointCloudEdlAction, &QAction::toggled, this, [this](bool enabled) {
+        pointCloudEdlConfig.enabled = enabled;
+        forEachPointCloudView([this](PointCloudView* view) {
+            view->setEdlConfig(pointCloudEdlConfig);
+        });
+        saveViewPreferences();
+        syncPointCloudEdlAction();
+        statusLabelBar->setText(enabled ? QStringLiteral("EDL 已启用") : QStringLiteral("EDL 已关闭"));
+        logMessage(enabled ? QStringLiteral("EDL 已启用") : QStringLiteral("EDL 已关闭"));
+    });
+    syncPointCloudEdlAction();
+    displayGroup->addPrimaryWidget(createIconButton(pointCloudEdlAction, displayGroup, toolbarIconSize));
+
     frameIntervalSpin = new QSpinBox(displayGroup);
     frameIntervalSpin->setRange(100, 600000);
     frameIntervalSpin->setSingleStep(100);

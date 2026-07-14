@@ -257,6 +257,7 @@ private:
     void syncReflectivityColorScaleControls();
     void syncPointCloudVisualizationAction();
     void syncPointCloudStlModelAction();
+    void syncPointCloudEdlAction();
     void syncPointCloudToolActions();
     QVector<PointCloudView*> pointCloudViews() const;
     void forEachPointCloudView(const std::function<void(PointCloudView*)>& callback) const;
@@ -278,6 +279,7 @@ private:
     void updateSlamControlBarGeometry();
     void syncSlamTemplateControl();
     void handleSlamTemplateControlChanged(int index);
+    void handleSlamModeControlChanged(int index);
     void handleSlamReplayModeChanged(int index);
     void setLvx2PlaybackPlaying(bool playing);
     void finishPlaybackSourceLoad(int tabId, const std::shared_ptr<Playback::Source>& source);
@@ -391,6 +393,7 @@ private:
     QAction* actionSlamOffline = nullptr;
     QAction* actionPointCloudVisualization = nullptr;
     QAction* pointCloudStlModelAction = nullptr;
+    QAction* pointCloudEdlAction = nullptr;
     QAction* pointCloudMeasureAction = nullptr;
     QAction* pointCloudSelectionAction = nullptr;
     QAction* pointCloudCrossSectionAction = nullptr;
@@ -485,6 +488,7 @@ private:
     QPushButton* slamExportMapButton = nullptr;
     QComboBox* slamReplayModeCombo = nullptr;
     QComboBox* slamControlTemplateCombo = nullptr;
+    QComboBox* slamControlModeCombo = nullptr;
     QProgressBar* slamProgressBar = nullptr;
     QLabel* slamControlLabel = nullptr;
     QLabel* slamSourceLabel = nullptr;

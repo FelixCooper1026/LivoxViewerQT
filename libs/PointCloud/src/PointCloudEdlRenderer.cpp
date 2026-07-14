@@ -8,15 +8,33 @@ bool PointCloudEdlRenderer::initialize()
 {
     initializeOpenGLFunctions();
     m_shaderValid = setupCompositeShader();
-    if (m_shaderValid) {
-        m_fullscreenVao.create();
+    if (!m_shaderValid) {
+        return false;
     }
-    return m_shaderValid;
+
+    static const GLfloat fullscreenTriangle[] = {
+        -1.0f, -1.0f,
+         3.0f, -1.0f,
+        -1.0f,  3.0f
+    };
+    m_fullscreenVao.create();
+    m_fullscreenVbo.create();
+    m_fullscreenVao.bind();
+    m_fullscreenVbo.bind();
+    m_fullscreenVbo.allocate(fullscreenTriangle, sizeof(fullscreenTriangle));
+    m_compositeProgram->bind();
+    m_compositeProgram->enableAttributeArray(0);
+    m_compositeProgram->setAttributeBuffer(0, GL_FLOAT, 0, 2);
+    m_compositeProgram->release();
+    m_fullscreenVbo.release();
+    m_fullscreenVao.release();
+    return true;
 }
 
 void PointCloudEdlRenderer::destroy()
 {
     destroyFramebuffer();
+    m_fullscreenVbo.destroy();
     m_fullscreenVao.destroy();
     delete m_compositeProgram;
     m_compositeProgram = nullptr;
@@ -27,18 +45,13 @@ bool PointCloudEdlRenderer::setupCompositeShader()
 {
     static const char* vertexShaderSource = R"(
         #version 330 core
+        layout(location = 0) in vec2 aPosition;
         out vec2 vUv;
 
         void main()
         {
-            vec2 positions[3] = vec2[](
-                vec2(-1.0, -1.0),
-                vec2( 3.0, -1.0),
-                vec2(-1.0,  3.0)
-            );
-            vec2 position = positions[gl_VertexID];
-            gl_Position = vec4(position, 0.0, 1.0);
-            vUv = position * 0.5 + 0.5;
+            gl_Position = vec4(aPosition, 0.0, 1.0);
+            vUv = aPosition * 0.5 + 0.5;
         }
     )";
 
@@ -131,7 +144,11 @@ bool PointCloudEdlRenderer::beginScene(const QSize& framebufferSize)
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_framebuffer);
+    const GLenum drawBuffers[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+    glDrawBuffers(2, drawBuffers);
     glViewport(0, 0, framebufferSize.width(), framebufferSize.height());
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     const GLfloat clearColor[] = {0.0f, 0.0f, 0.0f, 0.0f};
     const GLfloat clearLinearDepth[] = {0.0f};
     const GLfloat clearDepth = 1.0f;
@@ -153,7 +170,15 @@ void PointCloudEdlRenderer::composite(GLuint targetFramebuffer,
                                       const QColor& backgroundBottom)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, targetFramebuffer);
+    if (targetFramebuffer == 0) {
+        glDrawBuffer(GL_BACK);
+    } else {
+        const GLenum drawBuffer = GL_COLOR_ATTACHMENT0;
+        glDrawBuffers(1, &drawBuffer);
+    }
     glViewport(0, 0, targetSize.width(), targetSize.height());
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);

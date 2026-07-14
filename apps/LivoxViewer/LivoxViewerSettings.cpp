@@ -333,6 +333,15 @@ void refreshParameterOptionButtonThemes()
     }
 }
 
+void refreshApplicationWidgetThemes()
+{
+    for (QWidget* widget : QApplication::allWidgets()) {
+        widget->style()->unpolish(widget);
+        widget->style()->polish(widget);
+        widget->update();
+    }
+}
+
 QString darkThemeControlStyleSheet()
 {
     const QString comboArrowIcon = QStringLiteral(":/icons/combo_arrow_dark_theme.svg");
@@ -708,6 +717,12 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
 {
     setWindowFlag(Qt::FramelessWindowHint, true);
     setWindowTitle(QApplication::applicationDisplayName());
+    QSettings themeSettings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    themeMode = themeSettings.value(QStringLiteral("theme/mode"), themeMode).toInt();
+    if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
+        themeMode = ThemeFollowSystem;
+    }
+    applyUiTheme();
     initializeUserInterface();
     loadViewPreferences();
 
@@ -954,6 +969,7 @@ void LivoxViewerWindow::applyUiTheme()
     app->setPalette(palette);
     app->setStyleSheet(darkTheme ? darkThemeControlStyleSheet() : QString());
     installComboBoxPopupBehavior(app);
+    refreshApplicationWidgetThemes();
     ThemeIconUtils::refreshObject(this);
     refreshParameterOptionButtonThemes();
     if (imuState.visualizationDialog) {
@@ -970,6 +986,7 @@ void LivoxViewerWindow::loadViewPreferences()
     QSettings settings("Livox", "LivoxViewerQT");
     slamRuntimeConfig = loadSlamRuntimeConfig(settings, QStringLiteral("slam/runtime"));
     liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
+    syncSlamTemplateControl();
     slamWorldCurrentFrameColor = settings.value(QStringLiteral("slam/worldCurrentFrameColor"), slamWorldCurrentFrameColor).value<QColor>();
     if (!slamWorldCurrentFrameColor.isValid()) {
         slamWorldCurrentFrameColor = QColor(255, 255, 255);
@@ -1101,6 +1118,7 @@ void LivoxViewerWindow::loadViewPreferences()
             view->setEdlConfig(pointCloudEdlConfig);
         }
     });
+    syncPointCloudEdlAction();
     applyPointCloudBackground();
     updatePointCloudLegend();
     syncReflectivityColorScaleControls();
@@ -2818,9 +2836,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         rebuildSlamInfoPanel();
         syncSlamRenderLayerVisibility();
     }
-    if (slamRuntimeConfig.lidarTemplate != previousSlamLidarTemplate) {
-        syncSlamTemplateControl();
-    }
+    syncSlamTemplateControl();
     if (slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld) {
         refreshSlamWorldPointCloud();
     }
@@ -2840,6 +2856,7 @@ void LivoxViewerWindow::showPreferencesDialog()
             view->setEdlConfig(pointCloudEdlConfig);
         }
     });
+    syncPointCloudEdlAction();
     saveViewPreferences();
     if (autoConfigHostIpEnabled != previousAutoConfigHostIpEnabled) {
         logMessage(QString("自动修改主机IP: %1").arg(autoConfigHostIpEnabled ? "已启用" : "已关闭"));
