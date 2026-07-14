@@ -88,12 +88,12 @@ bool PointCloudEdlRenderer::setupCompositeShader()
             float centerDepth = texture(uLinearDepth, vUv).r;
             vec3 background = mix(uBackgroundBottom, uBackgroundTop, vUv.y);
 
-            if (centerDepth <= 0.0) {
-                FragColor = vec4(background, 1.0);
+            if (scene.a > 0.25 && scene.a < 0.75) {
+                FragColor = vec4(scene.rgb, 1.0);
                 return;
             }
-            if (scene.a < 0.75) {
-                FragColor = vec4(scene.rgb, 1.0);
+            if (centerDepth <= 0.0) {
+                FragColor = vec4(background, 1.0);
                 return;
             }
 

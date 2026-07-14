@@ -1419,6 +1419,8 @@ void PointCloudView::paintGL()
     // 绘制网格
     if (m_gridVisible) {
         if (edlActive) {
+            const GLenum colorAttachment = GL_COLOR_ATTACHMENT0;
+            glDrawBuffers(1, &colorAttachment);
             glDepthMask(GL_FALSE);
         } else {
             glEnable(GL_BLEND);
@@ -1434,6 +1436,8 @@ void PointCloudView::paintGL()
         }
         if (edlActive) {
             glDepthMask(GL_TRUE);
+            const GLenum edlAttachments[] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+            glDrawBuffers(2, edlAttachments);
         } else {
             glDisable(GL_LINE_SMOOTH);
             glDisable(GL_BLEND);
