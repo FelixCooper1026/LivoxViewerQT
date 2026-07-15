@@ -8,6 +8,8 @@
 #include <QVector>
 
 #include <cstdint>
+#include <atomic>
+#include <functional>
 
 struct RosbagSlamTopicInfo {
     QString topic;
@@ -65,6 +67,10 @@ public:
     const RosbagSlamSourceConfig& config() const;
 
     bool load(const QString& filePath, QString* error);
+    bool streamFrames(const QString& filePath,
+                      const std::atomic_bool* cancellationRequested,
+                      const std::function<bool(SlamInputFrame&&)>& consumer,
+                      QString* error);
     void clear();
 
     int frameCount() const;

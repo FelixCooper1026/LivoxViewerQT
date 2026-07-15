@@ -1141,21 +1141,13 @@ void LivoxViewerWindow::startSlamProcessing()
         };
 
         QString error;
-        QVector<SlamInputFrame> frames;
+        std::unique_ptr<PcapSlamSource> pcapSource;
+        std::unique_ptr<RosbagSlamSource> rosbagSource;
         std::unique_ptr<LvxSlamSource> lvxSource;
         QString summaryText;
         int totalFrameCount = 0;
         if (sourceKind == SlamOfflineSourceKind::Pcap) {
-            PcapSlamSource source(config.inputFrameDurationMs);
-            if (!source.load(sourcePath, &error)) {
-                postOutput(statusOutput(SlamStatusCode::Failed, error));
-                slamWorkerActive.store(false);
-                postControlUpdate();
-                return;
-            }
-            frames = source.frames();
-            summaryText = source.summaryText();
-            totalFrameCount = frames.size();
+            pcapSource = std::make_unique<PcapSlamSource>(config.inputFrameDurationMs);
         } else if (sourceKind == SlamOfflineSourceKind::Rosbag) {
             RosbagSlamSourceConfig rosbagConfig;
             rosbagConfig.frameDurationMs = config.inputFrameDurationMs;
@@ -1164,16 +1156,8 @@ void LivoxViewerWindow::startSlamProcessing()
             rosbagConfig.allowLivoxDriver2PointCloud2 = config.allowRosbagDriver2PointCloud2;
             rosbagConfig.allowLivoxDriverPointCloud2SynthesizedTime =
                 config.allowRosbagDriverPointCloud2SynthesizedTime;
-            RosbagSlamSource source(rosbagConfig);
-            if (!source.load(sourcePath, &error)) {
-                postOutput(statusOutput(SlamStatusCode::Failed, error));
-                slamWorkerActive.store(false);
-                postControlUpdate();
-                return;
-            }
-            frames = source.frames();
-            summaryText = source.summaryText();
-            totalFrameCount = frames.size();
+            rosbagConfig.lidarToImuTimeOffsetNs = config.lidarToImuTimeOffsetNs;
+            rosbagSource = std::make_unique<RosbagSlamSource>(rosbagConfig);
         } else if (sourceKind == SlamOfflineSourceKind::Lvx) {
             if (!isLidarOnlyConfig(config)) {
                 postOutput(statusOutput(SlamStatusCode::MissingImu,
@@ -1202,39 +1186,35 @@ void LivoxViewerWindow::startSlamProcessing()
             postControlUpdate();
             return;
         }
-        postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
-        const QString sourceText = QDir::toNativeSeparators(sourcePath);
-        int64_t firstFrameStartNs = frames.isEmpty()
-            ? int64_t{0}
-            : frames.first().frameStartNs;
-
-        int64_t lastFrameEndNs = int64_t{0};
-        if (!frames.isEmpty()) {
-            const int64_t fallbackFrameDurationNs =
-                static_cast<int64_t>(std::max<int>(1, config.inputFrameDurationMs)) * int64_t{1000000};
-            const int64_t fallbackFrameEndNs = frames.last().frameStartNs + fallbackFrameDurationNs;
-            lastFrameEndNs = std::max<int64_t>(frames.last().frameEndNs, fallbackFrameEndNs);
+        if (!summaryText.isEmpty()) {
+            postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
         }
-
-        const uint64_t fallbackFrameCount = static_cast<uint64_t>(std::max(1, totalFrameCount));
-        const uint64_t fallbackFrameDurationMs =
-            static_cast<uint64_t>(std::max<int>(1, config.inputFrameDurationMs));
-        const uint64_t totalDurationNs =
-            firstFrameStartNs >= 0 && lastFrameEndNs > firstFrameStartNs
-                ? static_cast<uint64_t>(lastFrameEndNs - firstFrameStartNs)
-                : fallbackFrameCount * fallbackFrameDurationMs * uint64_t{1000000};
-        auto makeTimeText = [totalDurationNs](uint64_t elapsedNs) {
+        const QString sourceText = QDir::toNativeSeparators(sourcePath);
+        const bool streamingSource = pcapSource || rosbagSource;
+        int64_t firstFrameStartNs = 0;
+        int64_t lastFrameEndNs = 0;
+        uint64_t totalDurationNs = streamingSource
+            ? 0
+            : static_cast<uint64_t>(std::max(1, totalFrameCount)) *
+                  static_cast<uint64_t>(std::max(1, config.inputFrameDurationMs)) * uint64_t{1000000};
+        auto makeTimeText = [&totalDurationNs](uint64_t elapsedNs) {
+            if (totalDurationNs == 0) {
+                return QStringLiteral("时间 %1")
+                    .arg(formatSlamTimeNs(elapsedNs, std::max<uint64_t>(elapsedNs, uint64_t{1})));
+            }
             const uint64_t clampedElapsedNs = std::min(elapsedNs, totalDurationNs);
             return QStringLiteral("时间 %1 / %2")
                 .arg(formatSlamTimeNs(clampedElapsedNs, totalDurationNs))
                 .arg(formatSlamTimeNs(totalDurationNs, totalDurationNs));
         };
         auto makeFrameText = [](int value, int maximum) {
-            return QStringLiteral("帧 %1 / %2").arg(value).arg(maximum);
+            return maximum > 0
+                ? QStringLiteral("帧 %1 / %2").arg(value).arg(maximum)
+                : QStringLiteral("帧 %1").arg(value);
         };
         postProgress(0,
                      totalFrameCount,
-                     false,
+                     streamingSource,
                      sourceText,
                      makeTimeText(0),
                      makeFrameText(0, totalFrameCount));
@@ -1259,7 +1239,6 @@ void LivoxViewerWindow::startSlamProcessing()
         SlamOutput lastOutput;
         bool hasLastOutput = false;
         int progressFrames = 0;
-        int vectorFrameIndex = 0;
         QString sourceReadError;
         HighRateOdometryPredictor offlineOdometryPredictor;
 
@@ -1315,43 +1294,55 @@ void LivoxViewerWindow::startSlamProcessing()
             return false;
         };
 
-        while (!slamWorkerCancel.load()) {
-            SlamInputFrame frame;
-            if (lvxSource) {
-                if (!lvxSource->readNextFrame(&frame, &slamWorkerCancel, &sourceReadError)) {
-                    break;
-                }
-            } else {
-                if (vectorFrameIndex >= frames.size()) {
-                    break;
-                }
-                frame = std::move(frames[vectorFrameIndex++]);
-            }
+        auto processFrame = [this,
+                             &backend,
+                             &config,
+                             replayMode,
+                             &elapsed,
+                             &processedFrames,
+                             &droppedFrames,
+                             &hasFirstFrameStart,
+                             &firstFrameStartNs,
+                             &firstReplayFrameEndNs,
+                             &lastVisitedFrameStartNs,
+                             &lastFrameEndNs,
+                             &replayClock,
+                             &offlineOdometryPredictor,
+                             &waitForReplayTarget,
+                             &waitUntilRunning,
+                             &postOutput,
+                             &postProgress,
+                             &sourceText,
+                             &makeTimeText,
+                             &makeFrameText,
+                             &totalFrameCount,
+                             &lastOutput,
+                             &hasLastOutput,
+                             &progressFrames,
+                             &error](SlamInputFrame&& frame) {
             if (slamWorkerCancel.load()) {
-                break;
+                return false;
             }
             ++progressFrames;
             lastVisitedFrameStartNs = frame.frameStartNs;
+            lastFrameEndNs = frame.frameEndNs > frame.frameStartNs
+                ? frame.frameEndNs
+                : frame.frameStartNs + int64_t(config.inputFrameDurationMs) * int64_t{1000000};
             if (!hasFirstFrameStart) {
                 hasFirstFrameStart = true;
                 firstFrameStartNs = frame.frameStartNs;
-                firstReplayFrameEndNs = frame.frameEndNs > frame.frameStartNs
-                    ? frame.frameEndNs
-                    : frame.frameStartNs + int64_t(config.inputFrameDurationMs) * int64_t{1000000};
+                firstReplayFrameEndNs = lastFrameEndNs;
                 replayClock.start();
             }
             if (!isLidarOnlyConfig(config)) {
                 offlineOdometryPredictor.appendSamples(frame.imuSamples);
             }
-            const int64_t replayFrameEndNs = frame.frameEndNs > frame.frameStartNs
-                ? frame.frameEndNs
-                : frame.frameStartNs + int64_t(config.inputFrameDurationMs) * int64_t{1000000};
             if (replayMode == SlamReplayMode::Timed &&
-                !waitForReplayTarget(replayTargetMs(firstReplayFrameEndNs, replayFrameEndNs))) {
-                break;
+                !waitForReplayTarget(replayTargetMs(firstReplayFrameEndNs, lastFrameEndNs))) {
+                return false;
             }
             if (!waitUntilRunning()) {
-                break;
+                return false;
             }
             const uint64_t elapsedFrameNs =
                 frame.frameStartNs >= firstFrameStartNs ? uint64_t(frame.frameStartNs - firstFrameStartNs) : 0ULL;
@@ -1359,11 +1350,11 @@ void LivoxViewerWindow::startSlamProcessing()
                 ++droppedFrames;
                 postProgress(progressFrames,
                              totalFrameCount,
-                             false,
+                             totalFrameCount <= 0,
                              sourceText,
                              makeTimeText(elapsedFrameNs),
                              makeFrameText(progressFrames, totalFrameCount));
-                continue;
+                return true;
             }
 
             SlamOutput output;
@@ -1387,7 +1378,7 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             postProgress(progressFrames,
                          totalFrameCount,
-                         false,
+                         totalFrameCount <= 0,
                          sourceText,
                          makeTimeText(elapsedFrameNs),
                          makeFrameText(progressFrames, totalFrameCount));
@@ -1395,17 +1386,47 @@ void LivoxViewerWindow::startSlamProcessing()
             if (!accepted &&
                 output.status != SlamStatusCode::InitializingImu &&
                 output.status != SlamStatusCode::TimeSyncError) {
-                break;
+                return false;
             }
+            return true;
+        };
+
+        if (pcapSource) {
+            pcapSource->streamFrames(sourcePath,
+                                     !isLidarOnlyConfig(config),
+                                     &slamWorkerCancel,
+                                     processFrame,
+                                     &sourceReadError);
+            summaryText = pcapSource->summaryText();
+        } else if (rosbagSource) {
+            rosbagSource->streamFrames(sourcePath,
+                                       &slamWorkerCancel,
+                                       processFrame,
+                                       &sourceReadError);
+            summaryText = rosbagSource->summaryText();
+        } else {
+            while (!slamWorkerCancel.load()) {
+                SlamInputFrame frame;
+                if (!lvxSource->readNextFrame(&frame, &slamWorkerCancel, &sourceReadError)) {
+                    break;
+                }
+                if (!processFrame(std::move(frame))) {
+                    break;
+                }
+            }
+            summaryText = lvxSource->summaryText();
+        }
+        if (!summaryText.isEmpty()) {
+            postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
         }
 
         backend.stop();
         const bool cancelled = slamWorkerCancel.load();
         const bool sourceReadFailed = !cancelled && !sourceReadError.isEmpty();
-        if (lvxSource) {
-            postLog(QStringLiteral("[SLAM] %1").arg(lvxSource->summaryText()));
-            if (!cancelled && !sourceReadFailed) {
-                totalFrameCount = progressFrames;
+        if (!cancelled && !sourceReadFailed) {
+            totalFrameCount = progressFrames;
+            if (hasFirstFrameStart && lastFrameEndNs > firstFrameStartNs) {
+                totalDurationNs = uint64_t(lastFrameEndNs - firstFrameStartNs);
             }
         }
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
@@ -1425,10 +1446,10 @@ void LivoxViewerWindow::startSlamProcessing()
         uint64_t finalElapsedNs = totalDurationNs;
         if (cancelled || sourceReadFailed) {
             finalElapsedNs = 0;
-            if (progressFrames > 0) {
+            if (hasFirstFrameStart && progressFrames > 0) {
                 const int64_t elapsedNs = lastVisitedFrameStartNs - firstFrameStartNs;
                 if (elapsedNs > 0) {
-                    finalElapsedNs = std::min<uint64_t>(uint64_t(elapsedNs), totalDurationNs);
+                    finalElapsedNs = uint64_t(elapsedNs);
                 }
             }
         }

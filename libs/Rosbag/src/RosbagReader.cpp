@@ -205,6 +205,40 @@ QString topicListText(const QVector<Rosbag::Connection>& connections)
     return topics.join(QStringLiteral(", "));
 }
 
+bool mergeConnectionRecord(const RawRecord& record,
+                           QVector<Rosbag::Connection>& connections,
+                           QString* error)
+{
+    uint32_t conn = 0;
+    if (!readFieldU32(record.header, QStringLiteral("conn"), &conn)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：connection record 缺少 conn 字段。");
+        }
+        return false;
+    }
+
+    QHash<QString, QByteArray> dataFields;
+    if (!parseHeaderFields(record.data, &dataFields, error)) {
+        return false;
+    }
+
+    Rosbag::Connection connection;
+    connection.id = int(conn);
+    connection.topic = readFieldString(record.header, QStringLiteral("topic"));
+    connection.type = readFieldString(dataFields, QStringLiteral("type"));
+    connection.md5sum = readFieldString(dataFields, QStringLiteral("md5sum"));
+    connection.messageDefinition = readFieldString(dataFields, QStringLiteral("message_definition"));
+    connection.fields = dataFields;
+
+    const int existing = connectionIndexById(connections, connection.id);
+    if (existing >= 0) {
+        connections[existing] = std::move(connection);
+    } else {
+        connections.push_back(std::move(connection));
+    }
+    return true;
+}
+
 struct Lz4DecompressionContextDeleter {
     void operator()(LZ4F_dctx* context) const
     {
@@ -293,6 +327,236 @@ bool decompressLz4Frame(const QByteArray& compressed,
 
 namespace Rosbag {
 
+bool Reader::readConnections(const QString& filePath, QString* error)
+{
+    clear();
+    summary_.filePath = filePath;
+
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：无法打开文件 %1。").arg(filePath);
+        }
+        return false;
+    }
+
+    if (file.readLine() != QByteArray("#ROSBAG V2.0\n")) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：文件头不是 ROS1 bag v2.0。");
+        }
+        return false;
+    }
+
+    RawRecord fileHeader;
+    bool eof = false;
+    if (!readRecord(file, &fileHeader, &eof, error) || opCode(fileHeader.header) != kOpFileHeader) {
+        if (error != nullptr && error->isEmpty()) {
+            *error = QStringLiteral("ROSbag 加载失败：缺少 file header record。");
+        }
+        return false;
+    }
+
+    uint32_t connCount = 0;
+    uint32_t chunkCount = 0;
+    uint64_t indexPosition = 0;
+    readFieldU32(fileHeader.header, QStringLiteral("conn_count"), &connCount);
+    readFieldU32(fileHeader.header, QStringLiteral("chunk_count"), &chunkCount);
+    if (!readFieldU64(fileHeader.header, QStringLiteral("index_pos"), &indexPosition) ||
+        indexPosition >= uint64_t(file.size()) || !file.seek(qint64(indexPosition))) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：file header 中的 index_pos 无效。");
+        }
+        return false;
+    }
+    summary_.connectionCount = int(connCount);
+    summary_.chunkCount = int(chunkCount);
+
+    while (!file.atEnd()) {
+        RawRecord record;
+        QString readError;
+        if (!readRecord(file, &record, &eof, &readError)) {
+            if (eof) {
+                break;
+            }
+            if (error != nullptr) {
+                *error = readError;
+            }
+            return false;
+        }
+        if (opCode(record.header) == kOpConnection &&
+            !mergeConnectionRecord(record, connections_, error)) {
+            return false;
+        }
+    }
+
+    summary_.connectionCount = connections_.size();
+    if (connections_.isEmpty()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：索引区未找到 topic connection。");
+        }
+        return false;
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+bool Reader::streamMessages(const QString& filePath,
+                            const QSet<int>& connectionIds,
+                            const std::atomic_bool* cancellationRequested,
+                            const std::function<bool(const SerializedMessage&)>& consumer,
+                            QString* error)
+{
+    QFile file(filePath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：无法打开文件 %1。").arg(filePath);
+        }
+        return false;
+    }
+    if (file.readLine() != QByteArray("#ROSBAG V2.0\n")) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROSbag 加载失败：文件头不是 ROS1 bag v2.0。");
+        }
+        return false;
+    }
+
+    summary_.messageCount = 0;
+    summary_.startTimestampNs = 0;
+    summary_.endTimestampNs = 0;
+    for (Connection& connection : connections_) {
+        connection.messageCount = 0;
+    }
+
+    bool consumerStopped = false;
+    auto processRecord = [this,
+                          &connectionIds,
+                          cancellationRequested,
+                          &consumer,
+                          error,
+                          &consumerStopped](const RawRecord& record,
+                                            auto&& processRecordRef) -> bool {
+        if ((cancellationRequested && cancellationRequested->load()) || consumerStopped) {
+            return false;
+        }
+
+        const uint8_t op = opCode(record.header);
+        if (op == kOpChunk) {
+            const QString compression = readFieldString(record.header, QStringLiteral("compression"));
+            uint32_t uncompressedSize = 0;
+            if (!readFieldU32(record.header, QStringLiteral("size"), &uncompressedSize)) {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROSbag 加载失败：chunk record 缺少 size 字段。");
+                }
+                return false;
+            }
+
+            QByteArray chunkData;
+            if (compression == QStringLiteral("none")) {
+                chunkData = record.data;
+            } else if (compression == QStringLiteral("lz4")) {
+                if (!decompressLz4Frame(record.data, uncompressedSize, &chunkData, error)) {
+                    return false;
+                }
+            } else {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROSbag 加载失败：不支持压缩 chunk '%1'。").arg(compression);
+                }
+                return false;
+            }
+
+            QBuffer buffer(&chunkData);
+            if (!buffer.open(QIODevice::ReadOnly)) {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROSbag 加载失败：无法读取 chunk。");
+                }
+                return false;
+            }
+            while (!buffer.atEnd()) {
+                RawRecord inner;
+                bool eof = false;
+                QString innerError;
+                if (!readRecord(buffer, &inner, &eof, &innerError)) {
+                    if (eof) {
+                        break;
+                    }
+                    if (error != nullptr) {
+                        *error = innerError;
+                    }
+                    return false;
+                }
+                if (!processRecordRef(inner, processRecordRef)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        if (op != kOpMsgData) {
+            return true;
+        }
+
+        uint32_t conn = 0;
+        int64_t timestampNs = 0;
+        if (!readFieldU32(record.header, QStringLiteral("conn"), &conn) ||
+            !readFieldTimeNs(record.header, QStringLiteral("time"), &timestampNs)) {
+            if (error != nullptr) {
+                *error = QStringLiteral("ROSbag 加载失败：message data record 缺少 conn 或 time 字段。");
+            }
+            return false;
+        }
+        if (!connectionIds.isEmpty() && !connectionIds.contains(int(conn))) {
+            return true;
+        }
+
+        SerializedMessage message;
+        message.connectionId = int(conn);
+        message.timestampNs = timestampNs;
+        message.data = record.data;
+        const int index = connectionIndexById(connections_, message.connectionId);
+        if (index >= 0) {
+            connections_[index].messageCount++;
+            message.topic = connections_.at(index).topic;
+            message.type = connections_.at(index).type;
+        }
+        summary_.messageCount++;
+        if (summary_.messageCount == 1 || timestampNs < summary_.startTimestampNs) {
+            summary_.startTimestampNs = timestampNs;
+        }
+        if (summary_.messageCount == 1 || timestampNs > summary_.endTimestampNs) {
+            summary_.endTimestampNs = timestampNs;
+        }
+        consumerStopped = !consumer(message);
+        return !consumerStopped;
+    };
+
+    while (!file.atEnd()) {
+        if (cancellationRequested && cancellationRequested->load()) {
+            return false;
+        }
+        RawRecord record;
+        bool eof = false;
+        QString readError;
+        if (!readRecord(file, &record, &eof, &readError)) {
+            if (eof) {
+                break;
+            }
+            if (error != nullptr) {
+                *error = readError;
+            }
+            return false;
+        }
+        if (!processRecord(record, processRecord)) {
+            return false;
+        }
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
 bool Reader::read(const QString& filePath, QString* error)
 {
     clear();
@@ -327,37 +591,7 @@ bool Reader::read(const QString& filePath, QString* error)
             return true;
         }
         case kOpConnection: {
-            uint32_t conn = 0;
-            if (!readFieldU32(record.header, QStringLiteral("conn"), &conn)) {
-                if (error != nullptr) {
-                    *error = QStringLiteral("ROSbag 加载失败：connection record 缺少 conn 字段。");
-                }
-                return false;
-            }
-            QHash<QString, QByteArray> dataFields;
-            if (!parseHeaderFields(record.data, &dataFields, error)) {
-                return false;
-            }
-
-            Connection connection;
-            connection.id = int(conn);
-            connection.topic = readFieldString(record.header, QStringLiteral("topic"));
-            connection.type = readFieldString(dataFields, QStringLiteral("type"));
-            connection.md5sum = readFieldString(dataFields, QStringLiteral("md5sum"));
-            connection.messageDefinition = readFieldString(dataFields, QStringLiteral("message_definition"));
-            connection.fields = dataFields;
-
-            const int existing = connectionIndexById(connections_, connection.id);
-            if (existing >= 0) {
-                connections_[existing].topic = connection.topic;
-                connections_[existing].type = connection.type;
-                connections_[existing].md5sum = connection.md5sum;
-                connections_[existing].messageDefinition = connection.messageDefinition;
-                connections_[existing].fields = connection.fields;
-            } else {
-                connections_.push_back(std::move(connection));
-            }
-            return true;
+            return mergeConnectionRecord(record, connections_, error);
         }
         case kOpChunk: {
             const QString compression = readFieldString(record.header, QStringLiteral("compression"));

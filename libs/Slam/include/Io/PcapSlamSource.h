@@ -8,6 +8,8 @@
 #include <QVector>
 
 #include <cstdint>
+#include <atomic>
+#include <functional>
 
 struct PcapSlamDeviceInfo {
     uint32_t lidarId = 0;
@@ -43,6 +45,11 @@ public:
     void setFrameDurationMs(int frameDurationMs);
     int frameDurationMs() const;
     bool load(const QString& filePath, QString* error);
+    bool streamFrames(const QString& filePath,
+                      bool requireImu,
+                      const std::atomic_bool* cancellationRequested,
+                      const std::function<bool(SlamInputFrame&&)>& consumer,
+                      QString* error);
     void clear();
 
     int frameCount() const;

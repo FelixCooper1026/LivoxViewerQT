@@ -139,6 +139,176 @@ QString sqlErrorText(const QSqlQuery& query)
 
 namespace Rosbag {
 
+bool Ros2BagReader::readConnections(const QString& filePath, QString* error)
+{
+    clear();
+    summary_.filePath = filePath;
+    const QVector<QString> db3Files = resolveDb3Files(filePath, error);
+    if (db3Files.isEmpty()) {
+        return false;
+    }
+
+    for (const QString& db3Path : db3Files) {
+        const QString connectionName = QStringLiteral("livoxviewer_ros2bag_topics_%1")
+                                           .arg(QUuid::createUuid().toString(QUuid::Id128));
+        bool ok = true;
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+            db.setDatabaseName(db3Path);
+            if (!db.open()) {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROS2 db3 加载失败：无法打开 %1：%2")
+                                 .arg(db3Path, db.lastError().text());
+                }
+                ok = false;
+            } else {
+                QSqlQuery topicQuery(db);
+                if (!topicQuery.exec(QStringLiteral(
+                        "SELECT id, name, type, serialization_format FROM topics ORDER BY id"))) {
+                    if (error != nullptr) {
+                        *error = QStringLiteral("ROS2 db3 加载失败：读取 topics 表失败：%1")
+                                     .arg(sqlErrorText(topicQuery));
+                    }
+                    ok = false;
+                } else {
+                    while (topicQuery.next()) {
+                        Connection connection;
+                        connection.id = topicQuery.value(0).toInt();
+                        connection.topic = topicQuery.value(1).toString();
+                        connection.type = topicQuery.value(2).toString();
+                        connection.fields.insert(QStringLiteral("serialization_format"),
+                                                 topicQuery.value(3).toString().toUtf8());
+                        const int existing = connectionIndexById(connections_, connection.id);
+                        if (existing < 0) {
+                            connections_.push_back(std::move(connection));
+                        }
+                    }
+                }
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(connectionName);
+        if (!ok) {
+            return false;
+        }
+    }
+
+    summary_.connectionCount = connections_.size();
+    summary_.chunkCount = db3Files.size();
+    if (connections_.isEmpty()) {
+        if (error != nullptr) {
+            *error = QStringLiteral("ROS2 db3 加载失败：未找到任何 topic。");
+        }
+        return false;
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
+bool Ros2BagReader::streamMessages(const QString& filePath,
+                                   const QSet<int>& connectionIds,
+                                   const std::atomic_bool* cancellationRequested,
+                                   const std::function<bool(const SerializedMessage&)>& consumer,
+                                   QString* error)
+{
+    const QVector<QString> db3Files = resolveDb3Files(filePath, error);
+    if (db3Files.isEmpty()) {
+        return false;
+    }
+
+    summary_.messageCount = 0;
+    summary_.startTimestampNs = 0;
+    summary_.endTimestampNs = 0;
+    for (Connection& connection : connections_) {
+        connection.messageCount = 0;
+    }
+
+    QString queryText = QStringLiteral("SELECT topic_id, timestamp, data FROM messages");
+    if (!connectionIds.isEmpty()) {
+        QStringList ids;
+        ids.reserve(connectionIds.size());
+        for (int id : connectionIds) {
+            ids.push_back(QString::number(id));
+        }
+        queryText += QStringLiteral(" WHERE topic_id IN (%1)").arg(ids.join(QLatin1Char(',')));
+    }
+    queryText += QStringLiteral(" ORDER BY timestamp, id");
+
+    for (const QString& db3Path : db3Files) {
+        if (cancellationRequested && cancellationRequested->load()) {
+            return false;
+        }
+        const QString connectionName = QStringLiteral("livoxviewer_ros2bag_stream_%1")
+                                           .arg(QUuid::createUuid().toString(QUuid::Id128));
+        bool ok = true;
+        bool consumerStopped = false;
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+            db.setDatabaseName(db3Path);
+            if (!db.open()) {
+                if (error != nullptr) {
+                    *error = QStringLiteral("ROS2 db3 加载失败：无法打开 %1：%2")
+                                 .arg(db3Path, db.lastError().text());
+                }
+                ok = false;
+            } else {
+                QSqlQuery messageQuery(db);
+                messageQuery.setForwardOnly(true);
+                if (!messageQuery.exec(queryText)) {
+                    if (error != nullptr) {
+                        *error = QStringLiteral("ROS2 db3 加载失败：读取 messages 表失败：%1")
+                                     .arg(sqlErrorText(messageQuery));
+                    }
+                    ok = false;
+                } else {
+                    while (messageQuery.next()) {
+                        if (cancellationRequested && cancellationRequested->load()) {
+                            ok = false;
+                            break;
+                        }
+                        SerializedMessage message;
+                        message.connectionId = messageQuery.value(0).toInt();
+                        message.timestampNs = messageQuery.value(1).toLongLong();
+                        message.data = messageQuery.value(2).toByteArray();
+                        const int index = connectionIndexById(connections_, message.connectionId);
+                        if (index >= 0) {
+                            connections_[index].messageCount++;
+                            message.topic = connections_.at(index).topic;
+                            message.type = connections_.at(index).type;
+                        }
+                        summary_.messageCount++;
+                        if (summary_.messageCount == 1 || message.timestampNs < summary_.startTimestampNs) {
+                            summary_.startTimestampNs = message.timestampNs;
+                        }
+                        if (summary_.messageCount == 1 || message.timestampNs > summary_.endTimestampNs) {
+                            summary_.endTimestampNs = message.timestampNs;
+                        }
+                        if (!consumer(message)) {
+                            consumerStopped = true;
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                db.close();
+            }
+        }
+        QSqlDatabase::removeDatabase(connectionName);
+        if (!ok) {
+            return false;
+        }
+        if (consumerStopped) {
+            return false;
+        }
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
+    return true;
+}
+
 bool Ros2BagReader::read(const QString& filePath, QString* error)
 {
     clear();

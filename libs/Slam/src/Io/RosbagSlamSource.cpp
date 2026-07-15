@@ -6,6 +6,7 @@
 #include "Core/FastLioInputSynchronizer.h"
 
 #include <QFileInfo>
+#include <QSet>
 
 #include <algorithm>
 #include <cmath>
@@ -1069,6 +1070,424 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         summary_.messages.push_back(QStringLiteral("ROSbag IMU 样本未完整覆盖所有 SLAM 输入帧，未覆盖帧将在离线 worker 中跳过。"));
     } else if (!config_.requireImu && summary_.hasImu && summary_.framesWithCompleteImuCoverage < summary_.frameCount) {
         summary_.messages.push_back(QStringLiteral("ROSbag IMU 样本未完整覆盖所有点云帧，普通播放仍会显示点云。"));
+    }
+    return true;
+}
+
+bool RosbagSlamSource::streamFrames(const QString& filePath,
+                                    const std::atomic_bool* cancellationRequested,
+                                    const std::function<bool(SlamInputFrame&&)>& consumer,
+                                    QString* error)
+{
+    clear();
+    summary_.filePath = filePath;
+    const QString suffix = QFileInfo(filePath).suffix().toLower();
+    const bool useRos2Reader = suffix == QStringLiteral("db3") ||
+                               suffix == QStringLiteral("yaml") ||
+                               suffix == QStringLiteral("yml");
+    summary_.format = useRos2Reader ? QStringLiteral("ROS2 db3") : QStringLiteral("ROS1 bag");
+
+    Rosbag::Reader ros1Reader;
+    Rosbag::Ros2BagReader ros2Reader;
+    const bool metadataOk = useRos2Reader
+        ? ros2Reader.readConnections(filePath, &errorMessage_)
+        : ros1Reader.readConnections(filePath, &errorMessage_);
+    if (!metadataOk) {
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+
+    const QVector<Rosbag::Connection> connections = useRos2Reader
+        ? ros2Reader.connections()
+        : ros1Reader.connections();
+    for (const Rosbag::Connection& connection : connections) {
+        RosbagSlamTopicInfo topic;
+        topic.topic = connection.topic;
+        topic.type = connection.type;
+        summary_.topics.push_back(topic);
+    }
+
+    const Rosbag::Connection* lidarConnection = config_.lidarTopic.isEmpty()
+        ? autoSelectLidarConnection(connections)
+        : findConnectionByTopic(connections, config_.lidarTopic);
+    if (lidarConnection == nullptr) {
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：未找到 LiDAR topic。已发现 topic: %1。")
+                            .arg(topicListText(summary_.topics));
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    const Rosbag::Connection* imuConnection = config_.imuTopic.isEmpty()
+        ? autoSelectImuConnection(connections)
+        : findConnectionByTopic(connections, config_.imuTopic);
+    if (imuConnection == nullptr && config_.requireImu) {
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：未找到 IMU topic。已发现 topic: %1。")
+                            .arg(topicListText(summary_.topics));
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+
+    summary_.lidarTopic = lidarConnection->topic;
+    summary_.lidarType = lidarConnection->type;
+    if (imuConnection != nullptr) {
+        summary_.imuTopic = imuConnection->topic;
+        summary_.imuType = imuConnection->type;
+    }
+    const bool lidarIsCustomMsg = isLivoxCustomMsgType(lidarConnection->type);
+    const bool lidarIsPointCloud2 = isPointCloud2Type(lidarConnection->type);
+    if (!lidarIsCustomMsg && !lidarIsPointCloud2) {
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 类型 %2 不受支持。")
+                            .arg(lidarConnection->topic, lidarConnection->type);
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+
+    enum class PointCloud2Mode {
+        Unknown,
+        Driver2Timestamp,
+        DriverSynthesized,
+        GenericRelativeSeconds,
+        GenericRelativeMilliseconds,
+        GenericSynthesized
+    };
+    struct PendingPointCloud2 {
+        Rosbag::PointCloud2Msg cloud;
+        int64_t fallbackFrameStartNs = 0;
+    };
+
+    PointCloud2Mode pointCloud2Mode = PointCloud2Mode::Unknown;
+    PendingPointCloud2 pendingCloud;
+    bool hasPendingCloud = false;
+    FastLioInputSynchronizer synchronizer;
+    uint64_t nextSequence = 0;
+    bool consumerStopped = false;
+
+    auto updateFrameSummary = [this](const SlamInputFrame& frame) {
+        if (summary_.frameCount == 0) {
+            summary_.startTimestampNs = frame.frameStartNs;
+            summary_.endTimestampNs = frame.frameEndNs;
+        } else {
+            summary_.startTimestampNs = std::min(summary_.startTimestampNs, frame.frameStartNs);
+            summary_.endTimestampNs = std::max(summary_.endTimestampNs, frame.frameEndNs);
+        }
+        ++summary_.frameCount;
+        summary_.pointCount += uint64_t(frame.points.size());
+        if (frame.hasCompleteImuCoverage) {
+            ++summary_.framesWithCompleteImuCoverage;
+        }
+        summary_.hasPointOffsetTime = summary_.hasPointOffsetTime || frame.hasPointOffsetTime;
+    };
+    auto emitReadyFrames = [&]() {
+        SlamInputFrame ready;
+        while (synchronizer.trySync(&ready)) {
+            ready.sequence = uint64_t(summary_.frameCount);
+            updateFrameSummary(ready);
+            if (!consumer(std::move(ready))) {
+                consumerStopped = true;
+                return false;
+            }
+        }
+        return true;
+    };
+    auto submitFrame = [&](SlamInputFrame&& frame) {
+        if (config_.requireImu) {
+            synchronizer.pushLidarFrame(std::move(frame));
+            return emitReadyFrames();
+        }
+        frame.sequence = uint64_t(summary_.frameCount);
+        updateFrameSummary(frame);
+        if (!consumer(std::move(frame))) {
+            consumerStopped = true;
+            return false;
+        }
+        return true;
+    };
+    auto configurePointCloud2Mode = [&](const Rosbag::PointCloud2Msg& cloud) {
+        if (isLivoxDriver2PointCloud2Layout(cloud)) {
+            if (!config_.allowLivoxDriver2PointCloud2) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 是 livox_ros_driver2 PointCloud2，但当前运行配置未允许该格式。")
+                                    .arg(lidarConnection->topic);
+                return false;
+            }
+            pointCloud2Mode = PointCloud2Mode::Driver2Timestamp;
+            summary_.lidarFormat = QStringLiteral("Livox driver2 PointCloud2");
+            summary_.pointTimeMode = QStringLiteral("PointCloud2 absolute timestamp(ns)");
+            return true;
+        }
+        if (isLivoxDriverPointCloud2Layout(cloud)) {
+            if (!config_.allowLivoxDriverPointCloud2SynthesizedTime &&
+                !config_.synthesizePointOffsetTime) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 不允许合成点内时间。")
+                                    .arg(lidarConnection->topic);
+                return false;
+            }
+            pointCloud2Mode = PointCloud2Mode::DriverSynthesized;
+            summary_.lidarFormat = QStringLiteral("Livox driver PointCloud2");
+            summary_.pointTimeMode = QStringLiteral("Synthesized offset_time(ns)");
+            summary_.messages.push_back(QStringLiteral("ROSbag 提示：livox_ros_driver PointCloud2 已按相邻帧周期合成 offset_time。"));
+            return true;
+        }
+        if (isGenericTimedPointCloud2Layout(cloud)) {
+            PointCloud2FrameTiming timing = PointCloud2FrameTiming::Synthesized;
+            QString timingError;
+            if (!inferGenericPointCloud2Timing(cloud, &timing, &timingError)) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 time 字段解析失败：%2")
+                                    .arg(lidarConnection->topic, timingError);
+                return false;
+            }
+            pointCloud2Mode = timing == PointCloud2FrameTiming::RelativeMilliseconds
+                ? PointCloud2Mode::GenericRelativeMilliseconds
+                : PointCloud2Mode::GenericRelativeSeconds;
+            summary_.lidarFormat = QStringLiteral("Generic PointCloud2 x/y/z/intensity/ring/time");
+            summary_.pointTimeMode = timing == PointCloud2FrameTiming::RelativeMilliseconds
+                ? QStringLiteral("PointCloud2 relative time(ms)")
+                : QStringLiteral("PointCloud2 relative time(s)");
+            return true;
+        }
+        if (isGenericXyzPointCloud2Layout(cloud)) {
+            if (!config_.allowLivoxDriverPointCloud2SynthesizedTime &&
+                !config_.synthesizePointOffsetTime) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 不允许合成点内时间。")
+                                    .arg(lidarConnection->topic);
+                return false;
+            }
+            pointCloud2Mode = PointCloud2Mode::GenericSynthesized;
+            summary_.lidarFormat = QStringLiteral("Generic PointCloud2 x/y/z");
+            summary_.pointTimeMode = QStringLiteral("Synthesized offset_time(ns)");
+            summary_.messages.push_back(QStringLiteral("ROSbag 提示：通用 PointCloud2 已按相邻帧周期合成 offset_time。"));
+            return true;
+        }
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 的 PointCloud2 字段布局不受支持。")
+                            .arg(lidarConnection->topic);
+        return false;
+    };
+    auto pointCloud2LayoutMatches = [&](const Rosbag::PointCloud2Msg& cloud) {
+        return (pointCloud2Mode == PointCloud2Mode::Driver2Timestamp && isLivoxDriver2PointCloud2Layout(cloud)) ||
+               (pointCloud2Mode == PointCloud2Mode::DriverSynthesized && isLivoxDriverPointCloud2Layout(cloud)) ||
+               ((pointCloud2Mode == PointCloud2Mode::GenericRelativeSeconds ||
+                 pointCloud2Mode == PointCloud2Mode::GenericRelativeMilliseconds) &&
+                isGenericTimedPointCloud2Layout(cloud)) ||
+               (pointCloud2Mode == PointCloud2Mode::GenericSynthesized && isGenericXyzPointCloud2Layout(cloud));
+    };
+    auto submitPointCloud2 = [&](const PendingPointCloud2& pending, int64_t nextFrameStartNs) {
+        PointCloud2FrameTiming timing = PointCloud2FrameTiming::Synthesized;
+        PointCloud2PointLayout layout = PointCloud2PointLayout::Livox;
+        if (pointCloud2Mode == PointCloud2Mode::Driver2Timestamp) {
+            timing = PointCloud2FrameTiming::Driver2AbsoluteNs;
+        } else if (pointCloud2Mode == PointCloud2Mode::GenericRelativeSeconds) {
+            timing = PointCloud2FrameTiming::RelativeSeconds;
+            layout = PointCloud2PointLayout::GenericTimed;
+        } else if (pointCloud2Mode == PointCloud2Mode::GenericRelativeMilliseconds) {
+            timing = PointCloud2FrameTiming::RelativeMilliseconds;
+            layout = PointCloud2PointLayout::GenericTimed;
+        } else if (pointCloud2Mode == PointCloud2Mode::GenericSynthesized) {
+            layout = PointCloud2PointLayout::GenericXyz;
+        }
+
+        SlamInputFrame frame;
+        QString parseError;
+        if (!buildPointCloud2Frame(pending.cloud,
+                                   filePath,
+                                   nextSequence++,
+                                   pending.fallbackFrameStartNs,
+                                   nextFrameStartNs,
+                                   layout,
+                                   timing,
+                                   config_.frameDurationMs,
+                                   &frame,
+                                   &parseError)) {
+            errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 PointCloud2 转换失败：%2")
+                                .arg(lidarConnection->topic, parseError);
+            return false;
+        }
+        return submitFrame(std::move(frame));
+    };
+
+    QSet<int> selectedConnectionIds;
+    selectedConnectionIds.insert(lidarConnection->id);
+    if (imuConnection != nullptr) {
+        selectedConnectionIds.insert(imuConnection->id);
+    }
+
+    auto consumeMessage = [&](const Rosbag::SerializedMessage& message) {
+        if (cancellationRequested && cancellationRequested->load()) {
+            return false;
+        }
+        if (imuConnection != nullptr && message.connectionId == imuConnection->id) {
+            Rosbag::ImuMsg imu;
+            QString parseError;
+            if (!parseImuMessage(imuConnection->type, message.data, &imu, &parseError)) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU topic %1 解析失败：%2")
+                                    .arg(imuConnection->topic, parseError);
+                return false;
+            }
+            const SlamImuSample sample = toSlamImuSample(imu, config_.lidarToImuTimeOffsetNs);
+            if (summary_.imuSampleCount == 0) {
+                summary_.imuStartTimestampNs = sample.timestampNs;
+                summary_.imuEndTimestampNs = sample.timestampNs;
+            } else {
+                summary_.imuStartTimestampNs = std::min(summary_.imuStartTimestampNs, sample.timestampNs);
+                summary_.imuEndTimestampNs = std::max(summary_.imuEndTimestampNs, sample.timestampNs);
+            }
+            ++summary_.imuMessageCount;
+            ++summary_.imuSampleCount;
+            summary_.hasImu = true;
+            if (config_.requireImu) {
+                synchronizer.pushImuSample(sample);
+                return emitReadyFrames();
+            }
+            return true;
+        }
+        if (message.connectionId != lidarConnection->id) {
+            return true;
+        }
+
+        ++summary_.lidarMessageCount;
+        if (lidarIsCustomMsg) {
+            Rosbag::LivoxCustomMsg livoxMsg;
+            QString parseError;
+            if (!parseLivoxCustomMessage(lidarConnection->type, message.data, &livoxMsg, &parseError)) {
+                errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 解析失败：%2")
+                                    .arg(lidarConnection->topic, parseError);
+                return false;
+            }
+            summary_.lidarFormat = QStringLiteral("Livox CustomMsg");
+            summary_.pointTimeMode = QStringLiteral("CustomMsg offset_time(ns)");
+            if (livoxMsg.points.isEmpty()) {
+                ++summary_.emptyLidarMessageCount;
+                return true;
+            }
+            int64_t frameStartNs = message.timestampNs;
+            if (config_.useLivoxCustomTimebase && livoxMsg.timebaseNs > 0) {
+                frameStartNs = int64_t(livoxMsg.timebaseNs);
+            } else if (config_.useHeaderStamp && livoxMsg.header.stampNs > 0) {
+                frameStartNs = livoxMsg.header.stampNs;
+            }
+            SlamInputFrame frame;
+            frame.sequence = nextSequence++;
+            frame.sourceId = livoxMsg.lidarId;
+            frame.frameStartNs = frameStartNs;
+            frame.frameEndNs = frameStartNs;
+            frame.timeSource = SlamTimeSource::LivoxPacketTimestamp;
+            frame.hasPointOffsetTime = true;
+            frame.sourceName = filePath;
+            frame.points.reserve(livoxMsg.points.size());
+            for (const Rosbag::LivoxCustomPoint& sourcePoint : livoxMsg.points) {
+                SlamPoint point = toSlamPoint(sourcePoint);
+                frame.frameEndNs = std::max(frame.frameEndNs, frameStartNs + point.offsetNs);
+                frame.points.push_back(point);
+            }
+            return submitFrame(std::move(frame));
+        }
+
+        Rosbag::PointCloud2Msg cloud;
+        QString parseError;
+        if (!parsePointCloud2Message(lidarConnection->type, message.data, &cloud, &parseError)) {
+            errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 PointCloud2 解析失败：%2")
+                                .arg(lidarConnection->topic, parseError);
+            return false;
+        }
+        if (pointCloud2PointCount(cloud) <= 0) {
+            ++summary_.emptyLidarMessageCount;
+            return true;
+        }
+        if (pointCloud2Mode == PointCloud2Mode::Unknown && !configurePointCloud2Mode(cloud)) {
+            return false;
+        }
+        if (!pointCloud2LayoutMatches(cloud)) {
+            errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 的 PointCloud2 字段布局发生变化。")
+                                .arg(lidarConnection->topic);
+            return false;
+        }
+
+        PendingPointCloud2 current;
+        current.fallbackFrameStartNs = message.timestampNs;
+        current.cloud = std::move(cloud);
+        const bool synthesized = pointCloud2Mode == PointCloud2Mode::DriverSynthesized ||
+                                 pointCloud2Mode == PointCloud2Mode::GenericSynthesized;
+        if (!synthesized) {
+            return submitPointCloud2(current, 0);
+        }
+        if (hasPendingCloud) {
+            const int64_t nextFrameStartNs = current.cloud.header.stampNs > 0
+                ? current.cloud.header.stampNs
+                : current.fallbackFrameStartNs;
+            if (!submitPointCloud2(pendingCloud, nextFrameStartNs)) {
+                return false;
+            }
+        }
+        pendingCloud = std::move(current);
+        hasPendingCloud = true;
+        return true;
+    };
+
+    const bool streamOk = useRos2Reader
+        ? ros2Reader.streamMessages(filePath,
+                                    selectedConnectionIds,
+                                    cancellationRequested,
+                                    consumeMessage,
+                                    &errorMessage_)
+        : ros1Reader.streamMessages(filePath,
+                                    selectedConnectionIds,
+                                    cancellationRequested,
+                                    consumeMessage,
+                                    &errorMessage_);
+    if (!streamOk) {
+        if (error != nullptr && !errorMessage_.isEmpty()) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    if (hasPendingCloud && !submitPointCloud2(pendingCloud, 0)) {
+        if (error != nullptr && !errorMessage_.isEmpty()) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    if (!emitReadyFrames()) {
+        return false;
+    }
+    if (consumerStopped) {
+        return false;
+    }
+
+    summary_.hasCompleteImuCoverage = !config_.requireImu ||
+        (summary_.frameCount > 0 && summary_.framesWithCompleteImuCoverage == summary_.frameCount);
+    for (RosbagSlamTopicInfo& topic : summary_.topics) {
+        if (topic.topic == summary_.lidarTopic) {
+            topic.messageCount = int64_t(summary_.lidarMessageCount);
+        } else if (topic.topic == summary_.imuTopic) {
+            topic.messageCount = int64_t(summary_.imuMessageCount);
+        }
+    }
+    if (config_.requireImu && !summary_.hasImu) {
+        errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU topic 没有可用样本。");
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    if (summary_.frameCount == 0) {
+        errorMessage_ = summary_.lidarMessageCount > summary_.emptyLidarMessageCount
+            ? QStringLiteral("ROSbag 加载失败：IMU 样本未覆盖任何 LiDAR 帧。")
+            : QStringLiteral("ROSbag 加载失败：LiDAR topic 未生成有效 SLAM 输入帧。");
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    if (!config_.requireImu && !summary_.hasImu) {
+        summary_.messages.push_back(QStringLiteral("ROSbag 未包含 IMU topic，已按纯激光模式流式处理。"));
+    }
+    if (error != nullptr) {
+        error->clear();
     }
     return true;
 }

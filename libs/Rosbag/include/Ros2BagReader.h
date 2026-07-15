@@ -3,13 +3,23 @@
 
 #include "RosbagTypes.h"
 
+#include <QSet>
 #include <QVector>
+
+#include <atomic>
+#include <functional>
 
 namespace Rosbag {
 
 class Ros2BagReader {
 public:
     bool read(const QString& filePath, QString* error);
+    bool readConnections(const QString& filePath, QString* error);
+    bool streamMessages(const QString& filePath,
+                        const QSet<int>& connectionIds,
+                        const std::atomic_bool* cancellationRequested,
+                        const std::function<bool(const SerializedMessage&)>& consumer,
+                        QString* error);
     void clear();
 
     const QVector<Connection>& connections() const;

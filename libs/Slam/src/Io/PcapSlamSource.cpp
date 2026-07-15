@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -670,6 +671,281 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
         frames_ = syncFastLioInputFrames(std::move(frames_), imuSamples);
     }
     finalizeSummary(frames_, imuSamples, summary_);
+    return true;
+}
+
+bool PcapSlamSource::streamFrames(const QString& filePath,
+                                  bool requireImu,
+                                  const std::atomic_bool* cancellationRequested,
+                                  const std::function<bool(SlamInputFrame&&)>& consumer,
+                                  QString* error)
+{
+    clear();
+    summary_.filePath = filePath;
+
+    char errbuf[PCAP_ERRBUF_SIZE] = {};
+    std::unique_ptr<pcap_t, decltype(&pcap_close)> handle(openOfflinePcap(filePath, errbuf), &pcap_close);
+    if (!handle) {
+        errorMessage_ = QString("无法打开抓包文件:\n%1").arg(errbuf);
+        summary_.status = SlamStatusCode::Failed;
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+
+    QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
+    QMap<QString, uint32_t> dataSourceIps;
+    QSet<uint32_t> pointLidarIds;
+    FastLioInputSynchronizer synchronizer;
+    SlamInputFrame currentFrame;
+    bool hasFrame = false;
+    uint64_t nextSequence = 0;
+    int emittedFrames = 0;
+    bool hasLastPointPacketTime = false;
+    int64_t lastPointPacketTimeNs = 0;
+    uint64_t avia2PointPacketCount = 0;
+    uint64_t avia2MissingPointTimingPacketCount = 0;
+    int64_t avia2PointRate = 0;
+    QVector<SlamInputFrame> pendingAvia2Frames;
+    bool consumerStopped = false;
+
+    auto updateFrameSummary = [this](const SlamInputFrame& frame) {
+        if (summary_.frameCount == 0) {
+            summary_.startTimestampNs = frame.frameStartNs;
+            summary_.endTimestampNs = frame.frameEndNs;
+        } else {
+            summary_.startTimestampNs = std::min(summary_.startTimestampNs, frame.frameStartNs);
+            summary_.endTimestampNs = std::max(summary_.endTimestampNs, frame.frameEndNs);
+        }
+        ++summary_.frameCount;
+        if (frame.hasCompleteImuCoverage) {
+            ++summary_.framesWithCompleteImuCoverage;
+        }
+    };
+    auto emitReadyFrames = [&]() {
+        SlamInputFrame ready;
+        while (synchronizer.trySync(&ready)) {
+            ready.sequence = uint64_t(emittedFrames++);
+            updateFrameSummary(ready);
+            if (!consumer(std::move(ready))) {
+                consumerStopped = true;
+                return false;
+            }
+        }
+        return true;
+    };
+    auto emitFrame = [&](SlamInputFrame&& frame) {
+        if (requireImu) {
+            synchronizer.pushLidarFrame(std::move(frame));
+            return emitReadyFrames();
+        }
+        frame.sequence = uint64_t(emittedFrames++);
+        updateFrameSummary(frame);
+        if (!consumer(std::move(frame))) {
+            consumerStopped = true;
+            return false;
+        }
+        return true;
+    };
+    auto synthesizeAvia2Timing = [](SlamInputFrame& frame, int64_t pointRate) {
+        for (qsizetype i = 0; i < frame.points.size(); ++i) {
+            SlamPoint& point = frame.points[i];
+            point.offsetNs = int64_t(i) * int64_t{1000000000} / pointRate;
+            point.hasOffsetTime = true;
+        }
+        frame.frameEndNs = frame.frameStartNs + frame.points.last().offsetNs;
+        frame.hasPointOffsetTime = true;
+        frame.timeSource = SlamTimeSource::SynthesizedFromPacketInterval;
+    };
+    auto flushPendingAvia2Frames = [&]() {
+        if (pendingAvia2Frames.isEmpty()) {
+            return true;
+        }
+        avia2PointRate = inferAvia2PointRate(pendingAvia2Frames, frameDurationNs_);
+        reconstructAvia2PointTiming(pendingAvia2Frames, avia2PointRate, frameDurationNs_);
+        for (SlamInputFrame& frame : pendingAvia2Frames) {
+            if (!emitFrame(std::move(frame))) {
+                return false;
+            }
+        }
+        pendingAvia2Frames.clear();
+        return true;
+    };
+    auto submitRawFrame = [&](SlamInputFrame&& frame) {
+        if (frame.deviceType == kLivoxLidarTypeAvia2 && !frame.hasPointOffsetTime) {
+            if (avia2PointRate == 0) {
+                pendingAvia2Frames.push_back(std::move(frame));
+                if (pendingAvia2Frames.size() < 3) {
+                    return true;
+                }
+                return flushPendingAvia2Frames();
+            }
+            synthesizeAvia2Timing(frame, avia2PointRate);
+        }
+        return emitFrame(std::move(frame));
+    };
+    auto finishCurrentFrame = [&]() {
+        if (!hasFrame || currentFrame.points.isEmpty()) {
+            currentFrame = SlamInputFrame();
+            hasFrame = false;
+            return true;
+        }
+        SlamInputFrame completed = std::move(currentFrame);
+        currentFrame = SlamInputFrame();
+        hasFrame = false;
+        return submitRawFrame(std::move(completed));
+    };
+
+    struct pcap_pkthdr* packetHeader = nullptr;
+    const u_char* packetData = nullptr;
+    int res = 0;
+    while ((res = pcap_next_ex(handle.get(), &packetHeader, &packetData)) >= 0) {
+        if (cancellationRequested && cancellationRequested->load()) {
+            return false;
+        }
+        if (res == 0 || packetHeader == nullptr) {
+            continue;
+        }
+
+        PcapUdp::PacketInfo udpInfo;
+        if (!PcapUdp::tryExtractUdp(packetData, packetHeader->caplen, udpInfo) || udpInfo.payload == nullptr) {
+            continue;
+        }
+        if (udpInfo.srcPort == PcapUdp::kLivoxPushDataPort) {
+            PushMsgParser::mergePushPacket(udpInfo.srcIp,
+                                           udpInfo.payload,
+                                           udpInfo.payloadLen,
+                                           pushDevicesByIp);
+            continue;
+        }
+
+        const uint32_t lidarId = udpInfo.srcIp.isEmpty() ? 0u : PushMsgParser::ipToLidarId(udpInfo.srcIp);
+        if (udpInfo.srcPort == PcapUdp::kLivoxIMUPort) {
+            QVector<SlamImuSample> samples;
+            parseImuPayload(udpInfo.payload, udpInfo.payloadLen, lidarId, summary_, samples);
+            if (requireImu) {
+                for (const SlamImuSample& sample : samples) {
+                    synchronizer.pushImuSample(sample);
+                }
+                if (!emitReadyFrames()) {
+                    return false;
+                }
+            }
+            continue;
+        }
+        if (udpInfo.srcPort != PcapUdp::kLivoxPointCloudPort ||
+            !PointParser::isLivoxPointCloudPayload(udpInfo.payload, udpInfo.payloadLen)) {
+            continue;
+        }
+
+        LivoxPayloadHeader header;
+        if (!parseLivoxPayloadHeader(udpInfo.payload, udpInfo.payloadLen, header)) {
+            continue;
+        }
+        if (hasLastPointPacketTime && header.timestampNs < lastPointPacketTimeNs) {
+            ++summary_.outOfOrderPointPacketCount;
+            continue;
+        }
+        hasLastPointPacketTime = true;
+        lastPointPacketTimeNs = header.timestampNs;
+        dataSourceIps.insert(udpInfo.srcIp, lidarId);
+        pointLidarIds.insert(lidarId);
+        if (pointLidarIds.size() > 1) {
+            errorMessage_ = QStringLiteral("SLAM MVP 仅支持单雷达 PCAP，当前文件包含多个点云源。");
+            summary_.status = SlamStatusCode::Failed;
+            if (error != nullptr) {
+                *error = errorMessage_;
+            }
+            return false;
+        }
+
+        const PushMsgParser::PushDeviceRecord device = pushDevicesByIp.value(udpInfo.srcIp);
+        const uint8_t deviceType = device.deviceType;
+        const int lineCount = LivoxCore::lineCountForDeviceType(deviceType);
+        if (!hasFrame) {
+            resetFrame(currentFrame, nextSequence++, lidarId, deviceType, header.timestampNs, filePath);
+            hasFrame = true;
+        } else if (header.timestampNs - currentFrame.frameStartNs >= frameDurationNs_) {
+            if (!finishCurrentFrame()) {
+                return false;
+            }
+            resetFrame(currentFrame, nextSequence++, lidarId, deviceType, header.timestampNs, filePath);
+            hasFrame = true;
+        } else if (currentFrame.deviceType == 0 && deviceType != 0) {
+            currentFrame.deviceType = deviceType;
+        }
+
+        if (!hasPointOffsetTime(header)) {
+            ++summary_.missingPointOffsetPacketCount;
+        }
+        if (deviceType == kLivoxLidarTypeAvia2) {
+            ++avia2PointPacketCount;
+            if (!hasPointOffsetTime(header)) {
+                ++avia2MissingPointTimingPacketCount;
+            }
+        }
+        const qsizetype pointCountBefore = currentFrame.points.size();
+        if (appendPointPayload(udpInfo.payload, udpInfo.payloadLen, header, lineCount, currentFrame)) {
+            ++summary_.pointPacketCount;
+            summary_.pointCount += uint64_t(currentFrame.points.size() - pointCountBefore);
+        }
+    }
+
+    if (res == -1) {
+        errorMessage_ = QStringLiteral("PCAP 读取失败：%1").arg(QString::fromLocal8Bit(pcap_geterr(handle.get())));
+        summary_.status = SlamStatusCode::Failed;
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+
+    if (!finishCurrentFrame() || !flushPendingAvia2Frames() || !emitReadyFrames()) {
+        return false;
+    }
+    if (consumerStopped) {
+        return false;
+    }
+
+    summary_.devices = toDeviceInfo(PushMsgParser::finalizeDevices(pushDevicesByIp, dataSourceIps));
+    summary_.hasImu = summary_.imuSampleCount > 0;
+    summary_.hasPointOffsetTime = summary_.missingPointOffsetPacketCount == 0;
+    if (avia2PointPacketCount == summary_.pointPacketCount &&
+        avia2MissingPointTimingPacketCount == avia2PointPacketCount &&
+        avia2PointRate > 0) {
+        summary_.missingPointOffsetPacketCount = 0;
+        summary_.hasPointOffsetTime = true;
+        summary_.messages.push_back(
+            avia2PointRate == kAvia2NormalPointRate
+                ? QStringLiteral("Avia2 Normal 点云已按 350000 点/秒重建点内时间。")
+                : QStringLiteral("Avia2 Focus 点云已按 100000 点/秒重建点内时间。"));
+    }
+
+    if (summary_.pointPacketCount == 0) {
+        errorMessage_ = QStringLiteral("文件已解析，但未生成有效的 SLAM 输入帧。");
+        summary_.status = SlamStatusCode::Failed;
+    } else if (requireImu && !summary_.hasImu) {
+        errorMessage_ = QStringLiteral("PCAP 未解析到 IMU payload。");
+        summary_.status = SlamStatusCode::MissingImu;
+    } else if (requireImu && summary_.frameCount == 0) {
+        errorMessage_ = QStringLiteral("PCAP IMU 样本未覆盖任何 LiDAR 帧。");
+        summary_.status = SlamStatusCode::TimeSyncError;
+    } else {
+        summary_.status = (summary_.outOfOrderPointPacketCount > 0 ||
+                           summary_.missingPointOffsetPacketCount > 0)
+            ? SlamStatusCode::TimeSyncError
+            : SlamStatusCode::Running;
+    }
+    if (!errorMessage_.isEmpty()) {
+        if (error != nullptr) {
+            *error = errorMessage_;
+        }
+        return false;
+    }
+    if (error != nullptr) {
+        error->clear();
+    }
     return true;
 }
 
