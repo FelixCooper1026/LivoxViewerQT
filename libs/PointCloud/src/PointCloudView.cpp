@@ -1299,10 +1299,23 @@ void PointCloudView::paintGL()
         return;
     }
 
+    // QPainter overlays share this context and may leave platform-dependent state behind.
+    // Establish the scene-rendering state before choosing the direct or EDL framebuffer.
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_RASTERIZER_DISCARD);
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    glDisable(GL_SAMPLE_COVERAGE);
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_PROGRAM_POINT_SIZE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
+    glDepthRange(0.0, 1.0);
     glClearDepth(1.0);
+    glBlendEquation(GL_FUNC_ADD);
 
     bool edlActive = false;
     if (m_edlConfig.enabled && m_edlRenderer) {
@@ -1413,32 +1426,6 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("uSelectionEnabled", 0);
     m_program->setUniformValue("uPersistEnabled", 0);
     setPrimitiveState(false, false);
-
-    // 绘制网格
-    if (m_gridVisible) {
-        if (edlActive) {
-            // 网格保留在场景颜色中，但不向 qEDL 的场景深度纹理写入深度。
-            glDepthMask(GL_FALSE);
-        } else {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_LINE_SMOOTH);
-            glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-        }
-        glLineWidth(1.0f);
-        if (m_gridVertexCount > 0) {
-            m_gridVao.bind();
-            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
-            m_gridVao.release();
-        }
-        if (edlActive) {
-            glDepthMask(GL_TRUE);
-        } else {
-            glDisable(GL_LINE_SMOOTH);
-            glDisable(GL_BLEND);
-        }
-    }
-    glLineWidth(1.0f);
 
     // ==========================================
     // 3. 准备绘制点云：恢复并设置点云的选择状态逻辑
@@ -1561,6 +1548,35 @@ void PointCloudView::paintGL()
         m_stlModelVao.release();
         m_program->setUniformValue("uModelLighting", 0);
     }
+
+    // 网格最后写入场景颜色，复用已经完成的点云深度，不参与 qEDL 深度生成。
+    if (m_gridVisible) {
+        m_program->setUniformValue("uSelectionEnabled", 0);
+        m_program->setUniformValue("uPersistEnabled", 0);
+        m_program->setUniformValue("uModelLighting", 0);
+        setPrimitiveState(false, false);
+        if (edlActive) {
+            glDepthMask(GL_FALSE);
+        } else {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnable(GL_LINE_SMOOTH);
+            glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+        }
+        glLineWidth(1.0f);
+        if (m_gridVertexCount > 0) {
+            m_gridVao.bind();
+            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
+            m_gridVao.release();
+        }
+        if (edlActive) {
+            glDepthMask(GL_TRUE);
+        } else {
+            glDisable(GL_LINE_SMOOTH);
+            glDisable(GL_BLEND);
+        }
+    }
+    glLineWidth(1.0f);
 
     if (edlActive) {
         m_program->release();
