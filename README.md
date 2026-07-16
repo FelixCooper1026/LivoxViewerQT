@@ -1,6 +1,6 @@
-# LivoxViewerQT 2.2.0
+# LivoxViewerQT
 
-LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制、离线播放和 SLAM 工具。2.2.0 集成 FAST_LIO 风格后端与 M-detector 动态目标检测，支持实时点云、LVX2/PCAP/ROSbag 离线播放，以及在线/离线 SLAM 复验。
+LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制、离线播放和 SLAM 工具。集成 FAST_LIO 风格后端与 M-detector 动态目标检测，支持实时点云、LVX2/PCAP/ROSbag 离线播放，以及在线/离线 SLAM 复验。
 
 ## 功能概览
 
@@ -11,8 +11,8 @@ LivoxViewerQT 是一个基于 Qt/CMake 的 Livox 激光雷达可视化、控制�
 - LVX、LVX2、PCAP/PCAPNG/CAP、ROS1 bag、ROS2 db3/metadata.yaml 离线点云回放
 - ROSbag 播放支持 ROS1 uncompressed/lz4 chunk、Livox CustomMsg、Livox/通用 PointCloud2 和无 IMU 纯 XYZ 点云
 - 剪枝移植后的 FAST_LIO 后端，支持在线 SLAM 与离线 SLAM
-- SLAM 功能包含轨迹、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 全局地图导出
-- M-detector 动态目标检测，支持无聚类事件点模式与聚类增强模式，并提供逐项调参提示
+- SLAM 功能包含 LIO/LO 模式建图、轨迹、世界系/机体系点云显示、CSV/TUM 轨迹导出、PCD/LAS 全局地图导出
+- 基于 M-detector 的动态目标检测，支持无聚类事件点模式与聚类增强模式
 - 动态检测可独立显示瞬时世界系当前帧与动态目标点，不依赖历史地图点云累计
 - 点云裁切支持动态检测的瞬时世界系当前帧和动态目标 overlay
 - 命令行离线 SLAM 诊断工具 `SlamReplayTool`
@@ -143,8 +143,8 @@ build\cmd-msvc-Release\Release\SlamReplayTool.exe --diagnose --source-only --max
 
 | 数据源 | 普通离线播放 | 离线 SLAM | 说明 |
 |---|---|---|---|
-| LVX2 | 支持 | 不作为 SLAM 输入 | LVX2 文件仅包含点云，无 IMU 数据 |
-| PCAP/PCAPNG/CAP | 支持 | 支持 | SLAM 要求 IMU 和点内时间覆盖 |
+| LVX/LVX2 | 支持 | 支持 | LVX/LVX2 文件仅包含点云，仅支持 LO 模式建图 |
+| PCAP/PCAPNG/CAP | 支持 | 支持 | LIO 模式要求 IMU 和点内时间覆盖 |
 | ROS1 `.bag` | 支持 | 支持 | 支持 uncompressed 和 lz4 chunk |
 | ROS2 `.db3` / `metadata.yaml` | 支持 | 支持 | 支持 SQLite3 storage |
 
@@ -153,5 +153,3 @@ ROSbag LiDAR topic 支持 Livox CustomMsg、Livox driver2 PointCloud2、允许�
 ## 许可证
 
 本项目采用 GNU General Public License v2.0 only（GPL-2.0-only），详见 [LICENSE](LICENSE)。
-
-SLAM 模块移植了 FAST-LIO 和 M-detector 的代码；两者均采用 GNU GPL v2。FAST-LIO 的原始许可证副本保留在 `libs/Slam/third_party/fast_lio/LICENSE`。
