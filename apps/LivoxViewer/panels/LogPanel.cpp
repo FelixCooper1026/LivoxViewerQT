@@ -264,6 +264,8 @@ void LivoxViewerWindow::createSlamStatusPanel()
 
     QVBoxLayout* mapBody = nullptr;
     QFrame* mapGroup = createSlamStatusGroup(QStringLiteral("地图与点云信息"), fieldFrame, &mapBody);
+    addField(mapBody, mapGroup, QStringLiteral("关键帧数"));
+    addField(mapBody, mapGroup, QStringLiteral("回环约束数"));
     addField(mapBody, mapGroup, QStringLiteral("局部 ikd-tree 有效点数"));
     addField(mapBody, mapGroup, QStringLiteral("世界系点云总数"));
     addField(mapBody, mapGroup, QStringLiteral("机体系当前帧点数"));
@@ -412,6 +414,8 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     if (QLabel* memoryLabel = slamStatusFields.value(QStringLiteral("内存占用"), nullptr)) {
         memoryLabel->setToolTip(QStringLiteral("轨迹点数: %1\n%2").arg(state.trajectoryPoints, memoryText));
     }
+    setField(QStringLiteral("关键帧数"), state.keyframeCount);
+    setField(QStringLiteral("回环约束数"), state.loopClosureCount);
     setField(QStringLiteral("局部 ikd-tree 有效点数"), state.mapPoints);
     setField(QStringLiteral("世界系点云总数"), state.worldFramePoints);
     setField(QStringLiteral("机体系当前帧点数"), state.bodyFramePoints);

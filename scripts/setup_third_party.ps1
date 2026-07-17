@@ -45,7 +45,11 @@ function Install-ZipDependency {
     }
 
     Write-Host "Extracting $Name..."
-    Expand-Archive -LiteralPath $archivePath -DestinationPath $extractRoot -Force
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    & tar.exe -xf $archivePath -C $extractRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Name extraction failed with exit code $LASTEXITCODE"
+    }
 
     $sourceRoot = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
     if ($null -eq $sourceRoot) {
@@ -68,5 +72,139 @@ Install-ZipDependency `
     -ArchiveName "eigen-3.4.0.zip" `
     -InstallDirName "eigen-3.4.0" `
     -RequiredFile "Eigen/Core"
+
+$eigenRoot = Join-Path $thirdPartyRoot "eigen-3.4.0"
+$eigenConfig = Join-Path $eigenRoot "share\eigen3\cmake"
+New-Item -ItemType Directory -Force -Path $eigenConfig | Out-Null
+$eigenRootCMake = $eigenRoot.Replace('\', '/')
+$eigenPackageConfig = @"
+set(EIGEN3_FOUND TRUE)
+set(EIGEN3_VERSION "3.4.0")
+set(EIGEN3_VERSION_STRING "3.4.0")
+set(EIGEN3_INCLUDE_DIR "$eigenRootCMake")
+set(EIGEN3_INCLUDE_DIRS "$eigenRootCMake")
+if(NOT TARGET Eigen3::Eigen)
+    add_library(Eigen3::Eigen INTERFACE IMPORTED)
+    set_target_properties(Eigen3::Eigen PROPERTIES INTERFACE_INCLUDE_DIRECTORIES "$eigenRootCMake")
+endif()
+"@
+Set-Content -LiteralPath (Join-Path $eigenConfig "Eigen3Config.cmake") `
+    -Value $eigenPackageConfig `
+    -Encoding Ascii
+
+Install-ZipDependency `
+    -Name "Boost 1.82.0" `
+    -Url "https://archives.boost.io/release/1.82.0/source/boost_1_82_0.zip" `
+    -ArchiveName "boost-1.82.0.zip" `
+    -InstallDirName "boost-1.82.0" `
+    -RequiredFile "boost/version.hpp"
+
+Install-ZipDependency `
+    -Name "GTSAM 4.2.0 source" `
+    -Url "https://codeload.github.com/borglab/gtsam/zip/refs/tags/4.2.0" `
+    -ArchiveName "gtsam-4.2.0.zip" `
+    -InstallDirName "gtsam-4.2.0" `
+    -RequiredFile "CMakeLists.txt"
+
+$boostRoot = Join-Path $thirdPartyRoot "boost-1.82.0"
+$boostLibraryDir = Join-Path $boostRoot "stage\lib"
+$boostSerializationLibrary = Get-ChildItem -LiteralPath $boostLibraryDir -Filter "*serialization*.lib" -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $boostSerializationLibrary -or $Force) {
+    Write-Host "Building Boost libraries..."
+    Push-Location $boostRoot
+    try {
+        & cmd.exe /c bootstrap.bat
+        if ($LASTEXITCODE -ne 0) {
+            throw "Boost bootstrap failed with exit code $LASTEXITCODE"
+        }
+        $clPath = (Get-Command cl.exe -ErrorAction Stop).Source.Replace('\', '/')
+        $vcvarsPath = (Join-Path $env:VCINSTALLDIR "Auxiliary\Build\vcvars64.bat").Replace('\', '/')
+        $boostProjectConfig = @"
+import option ;
+using msvc : 14.3 : "$clPath" : <setup>"$vcvarsPath" ;
+option.set keep-going : false ;
+"@
+        Set-Content -LiteralPath (Join-Path $boostRoot "project-config.jam") `
+            -Value $boostProjectConfig `
+            -Encoding Ascii
+        & .\b2.exe `
+            --with-serialization `
+            --with-system `
+            --with-filesystem `
+            --with-thread `
+            --with-program_options `
+            --with-date_time `
+            --with-timer `
+            --with-chrono `
+            --with-regex `
+            variant=debug,release `
+            link=static `
+            runtime-link=shared `
+            address-model=64 `
+            threading=multi `
+            toolset=msvc-14.3 `
+            stage `
+            -j $env:NUMBER_OF_PROCESSORS
+        if ($LASTEXITCODE -ne 0) {
+            throw "Boost build failed with exit code $LASTEXITCODE"
+        }
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+$gtsamSource = Join-Path $thirdPartyRoot "gtsam-4.2.0"
+$gtsamBuild = Join-Path $thirdPartyRoot ".build\gtsam-4.2.0"
+$gtsamInstall = Join-Path $thirdPartyRoot "gtsam-4.2.0-install"
+$gtsamConfig = Join-Path $gtsamInstall "CMake\GTSAMConfig.cmake"
+if (-not (Test-Path -LiteralPath $gtsamConfig) -or $Force) {
+    if ($Force) {
+        if (Test-Path -LiteralPath $gtsamBuild) {
+            Remove-Item -LiteralPath $gtsamBuild -Recurse -Force
+        }
+        if (Test-Path -LiteralPath $gtsamInstall) {
+            Remove-Item -LiteralPath $gtsamInstall -Recurse -Force
+        }
+    }
+    $generator = if ($env:CMAKE_GENERATOR) { $env:CMAKE_GENERATOR } else { "Visual Studio 17 2022" }
+    $platform = if ($env:CMAKE_PLATFORM) { $env:CMAKE_PLATFORM } else { "x64" }
+    $boostConfig = Join-Path $boostLibraryDir "cmake\Boost-1.82.0"
+    Write-Host "Configuring GTSAM 4.2.0..."
+    & cmake `
+        -S $gtsamSource `
+        -B $gtsamBuild `
+        -G $generator `
+        -A $platform `
+        "-DCMAKE_INSTALL_PREFIX=$gtsamInstall" `
+        "-DEigen3_DIR=$eigenConfig" `
+        "-DBOOST_ROOT=$boostRoot" `
+        "-DBOOST_LIBRARYDIR=$boostLibraryDir" `
+        "-DBoost_DIR=$boostConfig" `
+        -DBoost_COMPILER=-vc143 `
+        -DCMAKE_POLICY_DEFAULT_CMP0167=NEW `
+        -DCMAKE_POLICY_DEFAULT_CMP0057=NEW `
+        -DBoost_NO_SYSTEM_PATHS=ON `
+        -DGTSAM_USE_SYSTEM_EIGEN=ON `
+        -DGTSAM_BUILD_TESTS=OFF `
+        -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF `
+        -DGTSAM_BUILD_UNSTABLE=OFF `
+        -DGTSAM_BUILD_PYTHON=OFF `
+        -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF `
+        -DBUILD_SHARED_LIBS=OFF `
+        -DGTSAM_WITH_TBB=OFF `
+        "-DGTSAM_COMPILE_OPTIONS_PRIVATE_COMMON=/W3;/GR;/EHsc;/Zm300"
+    if ($LASTEXITCODE -ne 0) {
+        throw "GTSAM configure failed with exit code $LASTEXITCODE"
+    }
+
+    foreach ($configuration in @("Release", "Debug")) {
+        Write-Host "Building and installing GTSAM $configuration..."
+        & cmake --build $gtsamBuild --target install --config $configuration --parallel 1
+        if ($LASTEXITCODE -ne 0) {
+            throw "GTSAM $configuration build failed with exit code $LASTEXITCODE"
+        }
+    }
+}
 
 Write-Host "Third-party dependencies are ready."

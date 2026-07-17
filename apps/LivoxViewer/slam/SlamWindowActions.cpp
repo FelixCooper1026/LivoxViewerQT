@@ -1042,11 +1042,15 @@ void LivoxViewerWindow::startSlamProcessing()
             odometryStop.store(true);
             odometryWorker.join();
             liveSlamSource.setOdometryImuEnabled(false);
+            SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
+            error.clear();
+            backend.finalize(&finalOutput, &error);
             backend.stop();
             const bool cancelled = slamWorkerCancel.load();
-            SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
             finalOutput.status = SlamStatusCode::Stopped;
-            finalOutput.message = cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("在线 SLAM 已结束。");
+            finalOutput.message = error.isEmpty()
+                ? (cancelled ? QStringLiteral("SLAM 已停止。") : QStringLiteral("在线 SLAM 已结束。"))
+                : error;
             finalOutput.newTrajectoryPoints.clear();
             finalOutput.newGlobalMapPoints.clear();
             const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
@@ -1420,6 +1424,9 @@ void LivoxViewerWindow::startSlamProcessing()
             postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
         }
 
+        SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
+        error.clear();
+        backend.finalize(&finalOutput, &error);
         backend.stop();
         const bool cancelled = slamWorkerCancel.load();
         const bool sourceReadFailed = !cancelled && !sourceReadError.isEmpty();
@@ -1429,12 +1436,13 @@ void LivoxViewerWindow::startSlamProcessing()
                 totalDurationNs = uint64_t(lastFrameEndNs - firstFrameStartNs);
             }
         }
-        SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
         finalOutput.status = sourceReadFailed ? SlamStatusCode::Failed : SlamStatusCode::Stopped;
-        finalOutput.message = sourceReadFailed
+        finalOutput.message = !error.isEmpty()
+            ? error
+            : (sourceReadFailed
             ? sourceReadError
             : (cancelled ? QStringLiteral("SLAM 已停止。")
-                         : QStringLiteral("%1 SLAM 已完成。").arg(sourceDisplayName));
+                         : QStringLiteral("%1 SLAM 已完成。").arg(sourceDisplayName)));
         finalOutput.droppedFrameCount = droppedFrames;
         if (processedFrames > 0) {
             const double elapsedSec = qMax(0.001, double(elapsed.elapsed()) / 1000.0);
@@ -1552,9 +1560,35 @@ void LivoxViewerWindow::clearSlamDisplay()
 
 void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
 {
-    if (!slamRuntimeConfig.publishWorldFrameCloud ||
-        output.publishedWorldFramePoints.isEmpty() ||
-        !slamPointCloudView) {
+    if (!slamRuntimeConfig.publishWorldFrameCloud || !slamPointCloudView) {
+        return;
+    }
+
+    if (output.optimizedGlobalMapReset && !output.optimizedGlobalMapPoints.isEmpty()) {
+        int64_t timestampNs = output.currentPose.timestampNs;
+        if (timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
+            timestampNs = slamWorldPointSegments.back().timestampNs;
+        }
+
+        SlamWorldPointSegment optimizedMapSegment;
+        optimizedMapSegment.timestampNs = timestampNs;
+        optimizedMapSegment.points.reserve(output.optimizedGlobalMapPoints.size());
+        for (const SlamPoint& point : output.optimizedGlobalMapPoints) {
+            optimizedMapSegment.points.push_back(toPointCloudPoint(point));
+        }
+
+        slamWorldPointSegments.clear();
+        slamWorldPointSegments.push_back(std::move(optimizedMapSegment));
+        slamWorldDisplayedSegmentStart = 0;
+        slamWorldDisplayedSegmentEnd = 0;
+        slamPointCloudView->clearPointCloudSegments();
+        if (slamWorldFrameVisible) {
+            refreshSlamWorldPointCloud();
+        }
+        return;
+    }
+
+    if (output.publishedWorldFramePoints.isEmpty()) {
         return;
     }
 

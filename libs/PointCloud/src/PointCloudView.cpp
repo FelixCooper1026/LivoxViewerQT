@@ -1038,6 +1038,13 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamTrajectoryVertexCount);
     uploadSlamRenderBuffer(this,
                            m_program,
+                           m_slamRenderSnapshot.loopClosureVertices,
+                           m_slamLoopClosureVbo,
+                           m_slamLoopClosureVao,
+                           m_slamLoopClosureBufferCapacityBytes,
+                           m_slamLoopClosureVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
                            m_slamRenderSnapshot.poseAxisVertices,
                            m_slamPoseAxisVbo,
                            m_slamPoseAxisVao,
@@ -1080,12 +1087,16 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamPoseAxisVao.destroy();
     m_slamTrajectoryVbo.destroy();
     m_slamTrajectoryVao.destroy();
+    m_slamLoopClosureVbo.destroy();
+    m_slamLoopClosureVao.destroy();
     m_slamTrajectoryBufferCapacityBytes = 0;
+    m_slamLoopClosureBufferCapacityBytes = 0;
     m_slamPoseAxisBufferCapacityBytes = 0;
     m_slamWorldFrameBufferCapacityBytes = 0;
     m_slamBodyFrameBufferCapacityBytes = 0;
     m_slamDynamicObjectBufferCapacityBytes = 0;
     m_slamTrajectoryVertexCount = 0;
+    m_slamLoopClosureVertexCount = 0;
     m_slamPoseAxisVertexCount = 0;
     m_slamWorldFrameVertexCount = 0;
     m_slamBodyFrameVertexCount = 0;
@@ -1612,6 +1623,15 @@ void PointCloudView::paintGL()
         m_slamTrajectoryVao.bind();
         glDrawArrays(GL_LINE_STRIP, 0, m_slamTrajectoryVertexCount);
         m_slamTrajectoryVao.release();
+        glLineWidth(1.0f);
+        glEnable(GL_DEPTH_TEST);
+    }
+    if (m_slamLoopClosureVertexCount > 1 && m_slamLoopClosureVao.isCreated()) {
+        glDisable(GL_DEPTH_TEST);
+        glLineWidth(m_slamRenderSnapshot.trajectoryLineWidthPx);
+        m_slamLoopClosureVao.bind();
+        glDrawArrays(GL_LINES, 0, m_slamLoopClosureVertexCount);
+        m_slamLoopClosureVao.release();
         glLineWidth(1.0f);
         glEnable(GL_DEPTH_TEST);
     }

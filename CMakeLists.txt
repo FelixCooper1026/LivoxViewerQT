@@ -146,7 +146,7 @@ set(SLAM_FAST_LIO_COMPAT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/libs/Slam/third_party
 set(THIRD_PARTY_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third-party")
 set(SLAM_EIGEN_INCLUDE_DIR "${THIRD_PARTY_ROOT}/eigen-3.4.0")
 if(WIN32)
-    set(SETUP_THIRD_PARTY_COMMAND "pwsh -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
+    set(SETUP_THIRD_PARTY_COMMAND "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.ps1\"")
 else()
     set(SETUP_THIRD_PARTY_COMMAND "bash \"${CMAKE_CURRENT_SOURCE_DIR}/scripts/setup_third_party.sh\"")
 endif()
@@ -155,11 +155,40 @@ if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
     message(FATAL_ERROR "Eigen headers are required at ${SLAM_EIGEN_INCLUDE_DIR}. Run: ${SETUP_THIRD_PARTY_COMMAND}")
 endif()
 
+set(SLAM_GTSAM_INSTALL_DIR "${THIRD_PARTY_ROOT}/gtsam-4.2.0-install")
+if(EXISTS "${SLAM_GTSAM_INSTALL_DIR}/CMake/GTSAMConfig.cmake")
+    list(PREPEND CMAKE_PREFIX_PATH "${SLAM_GTSAM_INSTALL_DIR}")
+    set(GTSAM_DIR "${SLAM_GTSAM_INSTALL_DIR}/CMake")
+endif()
+
+set(Eigen3_DIR "${SLAM_EIGEN_INCLUDE_DIR}/share/eigen3/cmake")
+set(BOOST_ROOT "${THIRD_PARTY_ROOT}/boost-1.82.0")
+set(BOOST_LIBRARYDIR "${BOOST_ROOT}/stage/lib")
+set(Boost_DIR "${BOOST_LIBRARYDIR}/cmake/Boost-1.82.0")
+if(MSVC)
+    set(Boost_COMPILER "-vc143")
+endif()
+set(Boost_NO_SYSTEM_PATHS ON)
+if(POLICY CMP0144)
+    cmake_policy(SET CMP0144 NEW)
+endif()
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
+
 find_package(OpenMP REQUIRED COMPONENTS CXX)
+find_package(GTSAM REQUIRED)
 
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
 message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
+message(STATUS "FAST_LIO_SAM GTSAM: ${GTSAM_VERSION}")
+
+set(SLAM_FAST_LIO_SAM_SOURCES
+    libs/Slam/src/Backends/FastLioSam/FastLioSamPoseGraph.cpp
+    libs/Slam/src/Backends/FastLioSam/FastLioSamLoopClosure.cpp
+    libs/Slam/src/Backends/FastLioSam/FastLioSamMapBuilder.cpp
+)
 
 # 第三方轻量库
 set(THIRD_PARTY_LZ4_DIR "${THIRD_PARTY_ROOT}/lz4-1.10.0")
@@ -246,6 +275,7 @@ set(SOURCES
     libs/Slam/src/Core/SlamInputQueue.cpp
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    ${SLAM_FAST_LIO_SAM_SOURCES}
     libs/DynamicObject/src/DynamicObjectDetector.cpp
     libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Export/SlamMapExport.cpp
@@ -329,6 +359,11 @@ set(SOURCES
     libs/Slam/include/Core/SlamRuntimeConfig.h
     libs/Slam/include/Core/SlamTypes.h
     libs/Slam/include/Backends/FastLio/FastLioSlamBackend.h
+    libs/Slam/include/Backends/FastLioSam/FastLioSamTypes.h
+    libs/Slam/include/Backends/FastLioSam/FastLioSamBackendState.h
+    libs/Slam/include/Backends/FastLioSam/FastLioSamPoseGraph.h
+    libs/Slam/include/Backends/FastLioSam/FastLioSamLoopClosure.h
+    libs/Slam/include/Backends/FastLioSam/FastLioSamMapBuilder.h
     libs/DynamicObject/include/DynamicObjectDetector.h
     libs/DynamicObject/include/DynamicObjectCluster.h
     libs/Slam/include/Export/SlamMapExport.h
@@ -552,7 +587,7 @@ else()
     message(WARNING "Livox SDK library not linked - application may not function properly")
 endif()
 
-target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
+target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX third_party_lz4 gtsam)
 
 # 平台特定的系统库
 if(IS_LINUX)
@@ -609,6 +644,7 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
+    ${SLAM_FAST_LIO_SAM_SOURCES}
     libs/DynamicObject/src/DynamicObjectDetector.cpp
     libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
@@ -646,7 +682,7 @@ else()
     target_link_libraries(SlamReplayTool PRIVATE Qt5::Core Qt5::Gui Qt5::Sql)
 endif()
 
-target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4)
+target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4 gtsam)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(SlamReplayTool PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)

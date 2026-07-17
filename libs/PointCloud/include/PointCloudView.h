@@ -245,6 +245,10 @@ private:
     QOpenGLVertexArrayObject m_slamTrajectoryVao;
     qsizetype m_slamTrajectoryBufferCapacityBytes = 0;
     int m_slamTrajectoryVertexCount = 0;
+    QOpenGLBuffer m_slamLoopClosureVbo;
+    QOpenGLVertexArrayObject m_slamLoopClosureVao;
+    qsizetype m_slamLoopClosureBufferCapacityBytes = 0;
+    int m_slamLoopClosureVertexCount = 0;
     QOpenGLBuffer m_slamPoseAxisVbo;
     QOpenGLVertexArrayObject m_slamPoseAxisVao;
     qsizetype m_slamPoseAxisBufferCapacityBytes = 0;

@@ -23,6 +23,8 @@ public:
         QString droppedFrames;
         QString currentPose;
         QString trajectoryPoints;
+        QString keyframeCount;
+        QString loopClosureCount;
         QString memoryUsage;
         QString mapPoints;
         QString worldFramePoints;
@@ -40,6 +42,7 @@ public:
     const SlamOutput& latestOutput() const { return m_latestOutput; }
     DisplayState displayState() const { return m_displayState; }
     QVector<SlamTrajectoryPoint> trajectorySnapshot() const { return m_trajectory; }
+    QVector<SlamTrajectoryPoint> unoptimizedTrajectorySnapshot() const { return m_unoptimizedTrajectory; }
     QVector<SlamPoint> globalMapSnapshot() const { return m_globalMapPoints; }
 
 public slots:
@@ -82,7 +85,10 @@ private:
     SlamOutput m_latestOutput;
     DisplayState m_displayState;
     QVector<SlamTrajectoryPoint> m_trajectory;
+    QVector<SlamTrajectoryPoint> m_unoptimizedTrajectory;
     QVector<SlamPoint> m_globalMapPoints;
+    QVector<SlamPoint> m_unoptimizedGlobalMapPoints;
+    QVector<SlamLoopClosureEdge> m_loopClosureEdges;
     quint64 m_worldFramePointTotal = 0;
     QString m_errorMessage;
     QTimer m_refreshTimer;
@@ -104,6 +110,8 @@ private:
     bool m_bodyFrameVisible = true;
     bool m_dynamicObjectVisible = true;
     bool m_hasCurrentPose = false;
+    bool m_hasOptimizedTrajectory = false;
+    bool m_hasOptimizedGlobalMap = false;
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

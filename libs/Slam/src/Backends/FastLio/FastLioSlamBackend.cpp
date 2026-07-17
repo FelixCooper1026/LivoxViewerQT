@@ -1,4 +1,7 @@
 #include "Backends/FastLio/FastLioSlamBackend.h"
+#include "Backends/FastLioSam/FastLioSamBackendState.h"
+#include "Backends/FastLioSam/FastLioSamLoopClosure.h"
+#include "Backends/FastLioSam/FastLioSamPoseGraph.h"
 
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
@@ -14,11 +17,6 @@
 #include <vector>
 
 #include <pcl/filters/voxel_grid.h>
-
-#include "DynamicObjectDetector.h"
-#include "IMU_Processing.hpp"
-#include "ikd-Tree/ikd_Tree.h"
-#include "use-ikfom.hpp"
 
 namespace {
 
@@ -90,6 +88,27 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
     if (!std::isfinite(config.preprocessScanRateHz) || config.preprocessScanRateHz <= 0.0 ||
         config.inputFrameDurationMs <= 0) {
         assignError(error, QStringLiteral("SLAM 配置无效：扫描频率和聚帧周期必须大于 0。"));
+        return false;
+    }
+    if (config.odometrySurfLeafSize <= 0.0f ||
+        config.mappingCornerLeafSize <= 0.0f ||
+        config.mappingSurfLeafSize <= 0.0f ||
+        config.numberOfCores <= 0 ||
+        config.mappingProcessInterval <= 0.0 ||
+        config.surroundingKeyframeAddingDistThreshold <= 0.0f ||
+        config.surroundingKeyframeAddingAngleThreshold <= 0.0f ||
+        config.surroundingKeyframeDensity <= 0.0f ||
+        config.surroundingKeyframeSearchRadius <= 0.0f ||
+        config.loopClosureFrequency <= 0.0f ||
+        config.surroundingKeyframeSize <= 0 ||
+        config.historyKeyframeSearchRadius <= 0.0f ||
+        config.historyKeyframeSearchTimeDiff <= 0.0f ||
+        config.historyKeyframeSearchNum <= 0 ||
+        config.historyKeyframeFitnessScore <= 0.0f ||
+        config.globalMapVisualizationSearchRadius <= 0.0f ||
+        config.globalMapVisualizationPoseDensity <= 0.0f ||
+        config.globalMapVisualizationLeafSize <= 0.0f) {
+        assignError(error, QStringLiteral("SLAM 配置无效：FAST_LIO_SAM 关键帧、回环和地图参数必须大于 0。"));
         return false;
     }
     if (!isFiniteArray(config.extrinsicT_L_I, 3) ||
@@ -182,8 +201,9 @@ DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConf
     return detectorConfig;
 }
 
-struct FastLioAlgorithmState {
-    explicit FastLioAlgorithmState(const SlamRuntimeConfig& runtimeConfig)
+} // namespace
+
+FastLioAlgorithmState::FastLioAlgorithmState(const SlamRuntimeConfig& runtimeConfig)
         : config(runtimeConfig),
           featsFromMap(new PointCloudXYZI()),
           featsUndistort(new PointCloudXYZI()),
@@ -247,64 +267,16 @@ struct FastLioAlgorithmState {
                 Eigen::Matrix3d::Identity() * kLoInitialMotionCov;
             kf.change_P(covariance);
         }
-    }
+    sam.downSizeFilterICP.setLeafSize(config.mappingSurfLeafSize,
+                                      config.mappingSurfLeafSize,
+                                      config.mappingSurfLeafSize);
+    sam.downSizeFilterSurroundingKeyPoses.setLeafSize(config.surroundingKeyframeDensity,
+                                                       config.surroundingKeyframeDensity,
+                                                       config.surroundingKeyframeDensity);
+    sam.reconstructKdTree = config.reconstructKdTree;
+}
 
-    SlamRuntimeConfig config;
-    double filterSizeSurf = 0.5;
-    double filterSizeMap = 0.5;
-    double cubeLen = 200.0;
-    float detRange = 300.0f;
-    double fovDeg = 180.0;
-    double fovDegUsed = 179.9;
-    double halfFovCos = 0.0;
-    double totalResidual = 0.0;
-    double resMeanLast = 0.05;
-    double firstLidarTime = 0.0;
-    bool firstScan = true;
-    bool ekfInited = false;
-    bool localMapInitialized = false;
-    bool lidarOnly = false;
-    bool currentFrameHasPointOffsetTime = false;
-    bool hasLoReferencePose = false;
-    int64_t loReferenceTimestampNs = 0;
-    V3D loReferencePosition = Zero3d;
-    M3D loReferenceRotation = Eye3d;
-    int effectiveFeatureNum = 0;
-    int featsDownSize = 0;
-    int trajectoryPointCount = 0;
-    int globalMapPointCount = 0;
-
-    PointCloudXYZI::Ptr featsFromMap;
-    PointCloudXYZI::Ptr featsUndistort;
-    PointCloudXYZI::Ptr featsDownBody;
-    PointCloudXYZI::Ptr featsDownWorld;
-    PointCloudXYZI::Ptr normvec;
-    PointCloudXYZI::Ptr laserCloudOri;
-    PointCloudXYZI::Ptr corrNormvect;
-    pcl::VoxelGrid<PointType> downSizeFilterSurf;
-    pcl::VoxelGrid<PointType> downSizeFilterMap;
-    KD_TREE<PointType> ikdtree;
-
-    V3F xAxisPointBody;
-    V3F xAxisPointWorld;
-    V3D eulerCur;
-    V3D positionLast;
-    V3D lidarTWrImu;
-    M3D lidarRWrImu;
-    vect3 posLid;
-    MeasureGroup measures;
-    esekfom::esekf<state_ikfom, 12, input_ikfom> kf;
-    state_ikfom statePoint;
-    BoxPointType localMapPoints;
-    std::vector<BoxPointType> cubNeedRemove;
-    std::vector<PointVector> nearestPoints;
-    std::vector<char> pointSelectedSurf;
-    std::vector<float> resLast;
-    std::unique_ptr<ImuProcess> imuProcessor;
-    std::unique_ptr<DynamicObjectDetector> dynamicObjectDetector;
-
-    static void hShareModel(state_ikfom& s, esekfom::dyn_share_datastruct<double>& ekfomData);
-};
+namespace {
 
 thread_local FastLioAlgorithmState* activeFastLioState = nullptr;
 
@@ -624,6 +596,8 @@ void mapIncremental(FastLioAlgorithmState& state, PointVector& addedPoints)
     addedPoints.insert(addedPoints.end(), pointNoNeedDownsample.begin(), pointNoNeedDownsample.end());
 }
 
+} // namespace
+
 void FastLioAlgorithmState::hShareModel(state_ikfom& s, esekfom::dyn_share_datastruct<double>& ekfomData)
 {
     FastLioAlgorithmState& state = *activeFastLioState;
@@ -715,6 +689,8 @@ void FastLioAlgorithmState::hShareModel(state_ikfom& s, esekfom::dyn_share_datas
     }
 }
 
+namespace {
+
 SlamPose toSlamPose(const FastLioAlgorithmState& state, int64_t timestampNs)
 {
     SlamPose pose;
@@ -757,6 +733,20 @@ void appendTrajectoryOutput(FastLioAlgorithmState& state, SlamOutput* output, in
     output->newTrajectoryPoints.push_back(trajectoryPoint);
     ++state.trajectoryPointCount;
     output->trajectoryPointCount = state.trajectoryPointCount;
+
+    ++state.unoptimizedPoseFrameCount;
+    if (state.unoptimizedPoseFrameCount % 10 == 0) {
+        const V3D rotationVector(Log(state.statePoint.rot.toRotationMatrix()));
+        PointTypePose pose;
+        pose.x = static_cast<float>(state.statePoint.pos(0));
+        pose.y = static_cast<float>(state.statePoint.pos(1));
+        pose.z = static_cast<float>(state.statePoint.pos(2));
+        pose.roll = static_cast<float>(rotationVector(0));
+        pose.pitch = static_cast<float>(rotationVector(1));
+        pose.yaw = static_cast<float>(rotationVector(2));
+        pose.time = static_cast<double>(timestampNs) * kNsToSeconds;
+        state.sam.fastlioUnoptimizedCloudKeyPoses6D->push_back(pose);
+    }
 }
 
 void appendPublishedWorldFrameOutput(FastLioAlgorithmState& state, SlamOutput* output)
@@ -946,7 +936,12 @@ struct FastLioSlamBackend::FastLioState : FastLioAlgorithmState {
 
 FastLioSlamBackend::FastLioSlamBackend() = default;
 
-FastLioSlamBackend::~FastLioSlamBackend() = default;
+FastLioSlamBackend::~FastLioSlamBackend()
+{
+    if (state_) {
+        stop();
+    }
+}
 
 bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
 {
@@ -966,6 +961,7 @@ bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
     }
 
     state_ = std::make_unique<FastLioState>(config_);
+    startLoopClosureThread(*state_);
     message_.clear();
     status_ = SlamStatusCode::Starting;
     assignError(error, QString());
@@ -974,13 +970,20 @@ bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
 
 void FastLioSlamBackend::stop()
 {
+    if (state_) {
+        stopLoopClosureThread(*state_);
+    }
     state_.reset();
     status_ = SlamStatusCode::Stopped;
 }
 
 bool FastLioSlamBackend::reset(QString* error)
 {
+    if (state_) {
+        stopLoopClosureThread(*state_);
+    }
     state_ = std::make_unique<FastLioState>(config_);
+    startLoopClosureThread(*state_);
     message_.clear();
     status_ = SlamStatusCode::Idle;
     assignError(error, QString());
@@ -1093,6 +1096,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         appendPublishedWorldFrameOutput(state, output);
         appendPublishedBodyFrameOutput(state, output);
         appendGlobalMapOutput(state, output);
+        appendFastLioSamOutput(state, output);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());
@@ -1110,6 +1114,7 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         appendPublishedWorldFrameOutput(state, output);
         appendPublishedBodyFrameOutput(state, output);
         appendGlobalMapOutput(state, output);
+        appendFastLioSamOutput(state, output);
         fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
         status_ = SlamStatusCode::Running;
         assignError(error, QString());
@@ -1138,6 +1143,10 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         appendDynamicObjectOutput(state, output, frame.frameEndNs);
     removeDynamicPointsFromBackendFrame(state, dynamicLabels);
 
+    getCurPose(state);
+    saveKeyFramesAndFactor(state);
+    correctPoses(state);
+
     PointVector addedPoints;
     mapIncremental(state, addedPoints);
 
@@ -1145,8 +1154,29 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     appendPublishedWorldFrameOutput(state, output);
     appendPublishedBodyFrameOutput(state, output);
     appendGlobalMapOutput(state, output);
+    appendFastLioSamOutput(state, output);
     fillRunningOutput(state, output, frame.frameEndNs, (omp_get_wtime() - startedAt) * 1000.0);
     status_ = SlamStatusCode::Running;
+    assignError(error, QString());
+    return true;
+}
+
+bool FastLioSlamBackend::finalize(SlamOutput* output, QString* error)
+{
+    if (!state_) {
+        assignError(error, QStringLiteral("FAST_LIO backend has not been started."));
+        return false;
+    }
+
+    stopLoopClosureThread(*state_);
+    if (state_->config.loopClosureEnableFlag) {
+        performLoopClosure(*state_);
+        flushPendingLoopFactors(*state_);
+    }
+    state_->optimizedTrajectoryResetPending = true;
+    state_->pendingOptimizedTrajectory = state_->optimizedPath;
+    state_->optimizedGlobalMapResetPending = true;
+    appendFastLioSamOutput(*state_, output);
     assignError(error, QString());
     return true;
 }

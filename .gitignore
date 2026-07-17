@@ -98,6 +98,9 @@ agent.md
 third-party/.downloads/
 third-party/eigen-3.4.0/
 third-party/boost-1.82.0/
+third-party/gtsam-4.2.0/
+third-party/gtsam-4.2.0-install/
+third-party/.build/
 
 # System files
 .DS_Store

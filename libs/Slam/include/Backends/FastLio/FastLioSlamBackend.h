@@ -28,6 +28,7 @@ public:
     void stop() override;
     bool reset(QString* error) override;
     bool processFrame(const SlamInputFrame& frame, SlamOutput* output, QString* error) override;
+    bool finalize(SlamOutput* output, QString* error);
     SlamStatusCode status() const override;
     FastLioPredictionState predictionState(int64_t timestampNs) const;
 

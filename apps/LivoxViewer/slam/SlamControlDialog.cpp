@@ -66,6 +66,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
     addField(form, QStringLiteral("轨迹点数"));
+    addField(form, QStringLiteral("关键帧数"));
+    addField(form, QStringLiteral("回环约束数"));
     addField(form, QStringLiteral("局部 ikd-tree 有效点数"));
     addField(form, QStringLiteral("世界系点云总数"));
     addField(form, QStringLiteral("机体系当前帧点数"));
@@ -154,6 +156,8 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
+    m_fields.value(QStringLiteral("关键帧数"))->setText(state.keyframeCount);
+    m_fields.value(QStringLiteral("回环约束数"))->setText(state.loopClosureCount);
     m_fields.value(QStringLiteral("局部 ikd-tree 有效点数"))->setText(state.mapPoints);
     m_fields.value(QStringLiteral("世界系点云总数"))->setText(state.worldFramePoints);
     m_fields.value(QStringLiteral("机体系当前帧点数"))->setText(state.bodyFramePoints);

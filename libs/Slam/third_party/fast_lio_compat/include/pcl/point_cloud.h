@@ -36,6 +36,10 @@ public:
 
     PointT& operator[](std::size_t index) { return points[index]; }
     const PointT& operator[](std::size_t index) const { return points[index]; }
+    PointT& front() { return points.front(); }
+    const PointT& front() const { return points.front(); }
+    PointT& back() { return points.back(); }
+    const PointT& back() const { return points.back(); }
 
     PointCloud& operator+=(const PointCloud& other)
     {

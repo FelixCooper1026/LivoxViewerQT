@@ -5,6 +5,7 @@
 #include <QSettings>
 
 #include <cstdint>
+#include <limits>
 
 enum class SlamLidarTemplate {
     Mid360Mid360S = 0,
@@ -37,6 +38,29 @@ struct SlamRuntimeConfig {
     int maxIterations = 3;
     double filterSizeSurfM = 0.5;
     double filterSizeMapM = 0.5;
+    float odometrySurfLeafSize = 0.2f;
+    float mappingCornerLeafSize = 0.2f;
+    float mappingSurfLeafSize = 0.2f;
+    float zTolerance = std::numeric_limits<float>::max();
+    float rotationTolerance = std::numeric_limits<float>::max();
+    int numberOfCores = 2;
+    double mappingProcessInterval = 0.15;
+    float surroundingKeyframeAddingDistThreshold = 20.0f;
+    float surroundingKeyframeAddingAngleThreshold = 0.2f;
+    float surroundingKeyframeDensity = 1.0f;
+    float surroundingKeyframeSearchRadius = 50.0f;
+    bool loopClosureEnableFlag = false;
+    float loopClosureFrequency = 1.0f;
+    int surroundingKeyframeSize = 50;
+    float historyKeyframeSearchRadius = 10.0f;
+    float historyKeyframeSearchTimeDiff = 30.0f;
+    int historyKeyframeSearchNum = 25;
+    float historyKeyframeFitnessScore = 0.3f;
+    float globalMapVisualizationSearchRadius = 1000.0f;
+    float globalMapVisualizationPoseDensity = 10.0f;
+    float globalMapVisualizationLeafSize = 1.0f;
+    bool visualizeIkdtreeMap = false;
+    bool reconstructKdTree = false;
     double preprocessScanRateHz = 10.0;
     int inputFrameDurationMs = 100;
     bool allowRosbagDriver2PointCloud2 = true;

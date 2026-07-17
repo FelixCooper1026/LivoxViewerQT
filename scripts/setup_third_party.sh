@@ -74,4 +74,89 @@ install_tar_dependency \
     "eigen-3.4.0" \
     "Eigen/Core"
 
+eigen_root="$third_party_root/eigen-3.4.0"
+eigen_config="$eigen_root/share/eigen3/cmake"
+mkdir -p "$eigen_config"
+printf '%s\n' \
+    'set(EIGEN3_FOUND TRUE)' \
+    'set(EIGEN3_VERSION "3.4.0")' \
+    'set(EIGEN3_VERSION_STRING "3.4.0")' \
+    "set(EIGEN3_INCLUDE_DIR \"$eigen_root\")" \
+    "set(EIGEN3_INCLUDE_DIRS \"$eigen_root\")" \
+    'if(NOT TARGET Eigen3::Eigen)' \
+    '    add_library(Eigen3::Eigen INTERFACE IMPORTED)' \
+    "    set_target_properties(Eigen3::Eigen PROPERTIES INTERFACE_INCLUDE_DIRECTORIES \"$eigen_root\")" \
+    'endif()' \
+    > "$eigen_config/Eigen3Config.cmake"
+
+install_tar_dependency \
+    "Boost 1.82.0" \
+    "https://archives.boost.io/release/1.82.0/source/boost_1_82_0.tar.gz" \
+    "boost-1.82.0.tar.gz" \
+    "boost-1.82.0" \
+    "boost/version.hpp"
+
+install_tar_dependency \
+    "GTSAM 4.2.0 source" \
+    "https://codeload.github.com/borglab/gtsam/tar.gz/refs/tags/4.2.0" \
+    "gtsam-4.2.0.tar.gz" \
+    "gtsam-4.2.0" \
+    "CMakeLists.txt"
+
+boost_root="$third_party_root/boost-1.82.0"
+boost_library_dir="$boost_root/stage/lib"
+if ! find "$boost_library_dir" -maxdepth 1 -type f -name '*serialization*' -print -quit 2>/dev/null | grep -q . || [[ "$force" -eq 1 ]]; then
+    echo "Building Boost libraries..."
+    (
+        cd "$boost_root"
+        ./bootstrap.sh
+        ./b2 \
+            --with-serialization \
+            --with-system \
+            --with-filesystem \
+            --with-thread \
+            --with-program_options \
+            --with-date_time \
+            --with-timer \
+            --with-chrono \
+            --with-regex \
+            variant=debug,release \
+            link=static \
+            threading=multi \
+            stage \
+            -j "$(getconf _NPROCESSORS_ONLN)"
+    )
+fi
+
+gtsam_source="$third_party_root/gtsam-4.2.0"
+gtsam_build="$third_party_root/.build/gtsam-4.2.0"
+gtsam_install="$third_party_root/gtsam-4.2.0-install"
+gtsam_config="$gtsam_install/CMake/GTSAMConfig.cmake"
+if [[ ! -f "$gtsam_config" || "$force" -eq 1 ]]; then
+    if [[ "$force" -eq 1 ]]; then
+        rm -rf "$gtsam_build" "$gtsam_install"
+    fi
+    cmake \
+        -S "$gtsam_source" \
+        -B "$gtsam_build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$gtsam_install" \
+        -DEigen3_DIR="$third_party_root/eigen-3.4.0/share/eigen3/cmake" \
+        -DBOOST_ROOT="$boost_root" \
+        -DBOOST_LIBRARYDIR="$boost_library_dir" \
+        -DBoost_DIR="$boost_library_dir/cmake/Boost-1.82.0" \
+        -DCMAKE_POLICY_DEFAULT_CMP0167=NEW \
+        -DCMAKE_POLICY_DEFAULT_CMP0057=NEW \
+        -DBoost_NO_SYSTEM_PATHS=ON \
+        -DGTSAM_USE_SYSTEM_EIGEN=ON \
+        -DGTSAM_BUILD_TESTS=OFF \
+        -DGTSAM_BUILD_EXAMPLES_ALWAYS=OFF \
+        -DGTSAM_BUILD_UNSTABLE=OFF \
+        -DGTSAM_BUILD_PYTHON=OFF \
+        -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DGTSAM_WITH_TBB=OFF
+    cmake --build "$gtsam_build" --target install --parallel
+fi
+
 echo "Third-party dependencies are ready."

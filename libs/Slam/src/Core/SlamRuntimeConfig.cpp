@@ -287,6 +287,77 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
         config.maxIterations);
     config.filterSizeSurfM = settings.value(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM).toDouble();
     config.filterSizeMapM = settings.value(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM).toDouble();
+    config.odometrySurfLeafSize = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("odometrySurfLeafSize")), config.odometrySurfLeafSize).toDouble(),
+        config.odometrySurfLeafSize));
+    config.mappingCornerLeafSize = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("mappingCornerLeafSize")), config.mappingCornerLeafSize).toDouble(),
+        config.mappingCornerLeafSize));
+    config.mappingSurfLeafSize = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("mappingSurfLeafSize")), config.mappingSurfLeafSize).toDouble(),
+        config.mappingSurfLeafSize));
+    config.zTolerance = settings.value(key(prefix, QStringLiteral("zTolerance")), config.zTolerance).toFloat();
+    config.rotationTolerance = settings.value(key(prefix, QStringLiteral("rotationTolerance")), config.rotationTolerance).toFloat();
+    config.numberOfCores = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("numberOfCores")), config.numberOfCores).toInt(),
+        config.numberOfCores);
+    config.mappingProcessInterval = validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("mappingProcessInterval")), config.mappingProcessInterval).toDouble(),
+        config.mappingProcessInterval);
+    config.surroundingKeyframeAddingDistThreshold = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("surroundingKeyframeAddingDistThreshold")),
+                       config.surroundingKeyframeAddingDistThreshold).toDouble(),
+        config.surroundingKeyframeAddingDistThreshold));
+    config.surroundingKeyframeAddingAngleThreshold = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("surroundingKeyframeAddingAngleThreshold")),
+                       config.surroundingKeyframeAddingAngleThreshold).toDouble(),
+        config.surroundingKeyframeAddingAngleThreshold));
+    config.surroundingKeyframeDensity = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("surroundingKeyframeDensity")), config.surroundingKeyframeDensity).toDouble(),
+        config.surroundingKeyframeDensity));
+    config.surroundingKeyframeSearchRadius = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("surroundingKeyframeSearchRadius")),
+                       config.surroundingKeyframeSearchRadius).toDouble(),
+        config.surroundingKeyframeSearchRadius));
+    config.loopClosureEnableFlag = settings.value(
+        key(prefix, QStringLiteral("loopClosureEnableFlag")), config.loopClosureEnableFlag).toBool();
+    config.loopClosureFrequency = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("loopClosureFrequency")), config.loopClosureFrequency).toDouble(),
+        config.loopClosureFrequency));
+    config.surroundingKeyframeSize = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("surroundingKeyframeSize")), config.surroundingKeyframeSize).toInt(),
+        config.surroundingKeyframeSize);
+    config.historyKeyframeSearchRadius = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("historyKeyframeSearchRadius")),
+                       config.historyKeyframeSearchRadius).toDouble(),
+        config.historyKeyframeSearchRadius));
+    config.historyKeyframeSearchTimeDiff = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("historyKeyframeSearchTimeDiff")),
+                       config.historyKeyframeSearchTimeDiff).toDouble(),
+        config.historyKeyframeSearchTimeDiff));
+    config.historyKeyframeSearchNum = validPositiveInt(
+        settings.value(key(prefix, QStringLiteral("historyKeyframeSearchNum")), config.historyKeyframeSearchNum).toInt(),
+        config.historyKeyframeSearchNum);
+    config.historyKeyframeFitnessScore = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("historyKeyframeFitnessScore")),
+                       config.historyKeyframeFitnessScore).toDouble(),
+        config.historyKeyframeFitnessScore));
+    config.globalMapVisualizationSearchRadius = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("globalMapVisualizationSearchRadius")),
+                       config.globalMapVisualizationSearchRadius).toDouble(),
+        config.globalMapVisualizationSearchRadius));
+    config.globalMapVisualizationPoseDensity = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("globalMapVisualizationPoseDensity")),
+                       config.globalMapVisualizationPoseDensity).toDouble(),
+        config.globalMapVisualizationPoseDensity));
+    config.globalMapVisualizationLeafSize = static_cast<float>(validPositiveDouble(
+        settings.value(key(prefix, QStringLiteral("globalMapVisualizationLeafSize")),
+                       config.globalMapVisualizationLeafSize).toDouble(),
+        config.globalMapVisualizationLeafSize));
+    config.visualizeIkdtreeMap = settings.value(
+        key(prefix, QStringLiteral("visualizeIkdtreeMap")), config.visualizeIkdtreeMap).toBool();
+    config.reconstructKdTree = settings.value(
+        key(prefix, QStringLiteral("reconstructKdTree")), config.reconstructKdTree).toBool();
     const bool hasScanRate = settings.contains(key(prefix, QStringLiteral("preprocessScanRateHz")));
     const bool hasFrameDuration = settings.contains(key(prefix, QStringLiteral("inputFrameDurationMs")));
     config.preprocessScanRateHz = validScanRateHz(
@@ -427,6 +498,35 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("maxIterations")), config.maxIterations);
     settings.setValue(key(prefix, QStringLiteral("filterSizeSurfM")), config.filterSizeSurfM);
     settings.setValue(key(prefix, QStringLiteral("filterSizeMapM")), config.filterSizeMapM);
+    settings.setValue(key(prefix, QStringLiteral("odometrySurfLeafSize")), config.odometrySurfLeafSize);
+    settings.setValue(key(prefix, QStringLiteral("mappingCornerLeafSize")), config.mappingCornerLeafSize);
+    settings.setValue(key(prefix, QStringLiteral("mappingSurfLeafSize")), config.mappingSurfLeafSize);
+    settings.setValue(key(prefix, QStringLiteral("zTolerance")), config.zTolerance);
+    settings.setValue(key(prefix, QStringLiteral("rotationTolerance")), config.rotationTolerance);
+    settings.setValue(key(prefix, QStringLiteral("numberOfCores")), config.numberOfCores);
+    settings.setValue(key(prefix, QStringLiteral("mappingProcessInterval")), config.mappingProcessInterval);
+    settings.setValue(key(prefix, QStringLiteral("surroundingKeyframeAddingDistThreshold")),
+                      config.surroundingKeyframeAddingDistThreshold);
+    settings.setValue(key(prefix, QStringLiteral("surroundingKeyframeAddingAngleThreshold")),
+                      config.surroundingKeyframeAddingAngleThreshold);
+    settings.setValue(key(prefix, QStringLiteral("surroundingKeyframeDensity")), config.surroundingKeyframeDensity);
+    settings.setValue(key(prefix, QStringLiteral("surroundingKeyframeSearchRadius")),
+                      config.surroundingKeyframeSearchRadius);
+    settings.setValue(key(prefix, QStringLiteral("loopClosureEnableFlag")), config.loopClosureEnableFlag);
+    settings.setValue(key(prefix, QStringLiteral("loopClosureFrequency")), config.loopClosureFrequency);
+    settings.setValue(key(prefix, QStringLiteral("surroundingKeyframeSize")), config.surroundingKeyframeSize);
+    settings.setValue(key(prefix, QStringLiteral("historyKeyframeSearchRadius")), config.historyKeyframeSearchRadius);
+    settings.setValue(key(prefix, QStringLiteral("historyKeyframeSearchTimeDiff")), config.historyKeyframeSearchTimeDiff);
+    settings.setValue(key(prefix, QStringLiteral("historyKeyframeSearchNum")), config.historyKeyframeSearchNum);
+    settings.setValue(key(prefix, QStringLiteral("historyKeyframeFitnessScore")), config.historyKeyframeFitnessScore);
+    settings.setValue(key(prefix, QStringLiteral("globalMapVisualizationSearchRadius")),
+                      config.globalMapVisualizationSearchRadius);
+    settings.setValue(key(prefix, QStringLiteral("globalMapVisualizationPoseDensity")),
+                      config.globalMapVisualizationPoseDensity);
+    settings.setValue(key(prefix, QStringLiteral("globalMapVisualizationLeafSize")),
+                      config.globalMapVisualizationLeafSize);
+    settings.setValue(key(prefix, QStringLiteral("visualizeIkdtreeMap")), config.visualizeIkdtreeMap);
+    settings.setValue(key(prefix, QStringLiteral("reconstructKdTree")), config.reconstructKdTree);
     settings.setValue(key(prefix, QStringLiteral("preprocessScanRateHz")), config.preprocessScanRateHz);
     settings.setValue(key(prefix, QStringLiteral("inputFrameDurationMs")), config.inputFrameDurationMs);
     settings.setValue(key(prefix, QStringLiteral("allowRosbagDriver2PointCloud2")), true);

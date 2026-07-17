@@ -33,6 +33,7 @@ struct SlamRenderSnapshot {
     float poseAxisLineWidthPx = 3.0f;
     SlamRenderPose currentPose;
     QVector<SlamRenderVertex> trajectoryVertices;
+    QVector<SlamRenderVertex> loopClosureVertices;
     QVector<SlamRenderVertex> poseAxisVertices;
     QVector<SlamRenderVertex> worldFrameVertices;
     QVector<SlamRenderVertex> bodyFrameVertices;

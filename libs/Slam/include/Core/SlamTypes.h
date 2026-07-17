@@ -107,6 +107,11 @@ struct SlamTrajectoryPoint {
     double quality = 1.0;
 };
 
+struct SlamLoopClosureEdge {
+    int currentKeyframeId = -1;
+    int previousKeyframeId = -1;
+};
+
 enum class SlamStatusCode {
     Idle,
     Starting,
@@ -126,11 +131,16 @@ struct SlamOutput {
     SlamPose currentPose;
     bool currentPoseValid = false;
     QVector<SlamTrajectoryPoint> newTrajectoryPoints;
+    bool optimizedTrajectoryReset = false;
+    QVector<SlamTrajectoryPoint> optimizedTrajectory;
     QVector<SlamPoint> publishedWorldFramePoints;
     QVector<SlamPoint> publishedBodyFramePoints;
     QVector<SlamPoint> dynamicDetectionFrameWorldPoints;
     QVector<SlamDynamicPoint> dynamicWorldFramePoints;
     QVector<SlamPoint> newGlobalMapPoints;
+    bool optimizedGlobalMapReset = false;
+    QVector<SlamPoint> optimizedGlobalMapPoints;
+    QVector<SlamLoopClosureEdge> loopClosureEdges;
     SlamDynamicObjectStats dynamicObjectStats;
     QString message;
     double inputFps = 0.0;
@@ -139,6 +149,8 @@ struct SlamOutput {
     int mapPointCount = 0;
     int globalMapPointCount = 0;
     int trajectoryPointCount = 0;
+    int keyframeCount = 0;
+    int loopClosureCount = 0;
     bool imuHealthy = false;
     bool odometryOnly = false;
 };

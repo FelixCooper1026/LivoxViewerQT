@@ -1658,6 +1658,39 @@ void LivoxViewerWindow::showPreferencesDialog()
         usePreferenceControlColumn(spin);
         return spin;
     };
+    SwitchCheckBox* slamLoopClosureCheck = createSlamSwitch(slamRuntimeConfig.loopClosureEnableFlag);
+    QDoubleSpinBox* slamKeyframeDistanceSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.surroundingKeyframeAddingDistThreshold, 0.1, 1000.0, 1, 0.5, QStringLiteral(" m"));
+    QDoubleSpinBox* slamKeyframeAngleSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.surroundingKeyframeAddingAngleThreshold, 0.001, 3.142, 3, 0.01, QStringLiteral(" rad"));
+    QDoubleSpinBox* slamLoopClosureFrequencySpin = createSlamDoubleSpin(
+        slamRuntimeConfig.loopClosureFrequency, 0.1, 100.0, 1, 0.1, QStringLiteral(" Hz"));
+    QDoubleSpinBox* slamHistoryKeyframeSearchRadiusSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.historyKeyframeSearchRadius, 0.1, 1000.0, 1, 0.5, QStringLiteral(" m"));
+    QDoubleSpinBox* slamHistoryKeyframeSearchTimeDiffSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.historyKeyframeSearchTimeDiff, 0.1, 3600.0, 1, 1.0, QStringLiteral(" s"));
+    QSpinBox* slamHistoryKeyframeSearchNumSpin = createSlamIntSpin(
+        slamRuntimeConfig.historyKeyframeSearchNum, 1, 1000);
+    QDoubleSpinBox* slamHistoryKeyframeFitnessScoreSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.historyKeyframeFitnessScore, 0.001, 10.0, 3, 0.01, QString());
+    SwitchCheckBox* slamReconstructKdTreeCheck = createSlamSwitch(slamRuntimeConfig.reconstructKdTree);
+    const QVector<QWidget*> slamLoopClosureControls = {
+        slamLoopClosureFrequencySpin,
+        slamHistoryKeyframeSearchRadiusSpin,
+        slamHistoryKeyframeSearchTimeDiffSpin,
+        slamHistoryKeyframeSearchNumSpin,
+        slamHistoryKeyframeFitnessScoreSpin,
+        slamReconstructKdTreeCheck
+    };
+    auto syncSlamLoopClosureControls = [slamLoopClosureCheck, slamLoopClosureControls]() {
+        const bool enabled = slamLoopClosureCheck->isChecked();
+        for (QWidget* control : slamLoopClosureControls) {
+            control->setEnabled(enabled);
+        }
+    };
+    connect(slamLoopClosureCheck, &QCheckBox::toggled, &dlg,
+            [syncSlamLoopClosureControls](bool) { syncSlamLoopClosureControls(); });
+    syncSlamLoopClosureControls();
     QDoubleSpinBox* slamDynamicClusterVoxelSizeSpin = createSlamDoubleSpin(
         slamRuntimeConfig.dynamicObjectClusterVoxelSizeM, 0.05, 2.0, 2, 0.05, QStringLiteral(" m"));
     QSpinBox* slamDynamicClusterExtendVoxelSpin = createSlamIntSpin(
@@ -1898,6 +1931,15 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamPublishDenseCheck->setChecked(runtimeDefaults.publishDenseFrameCloud);
         slamPublishBodyCheck->setChecked(runtimeDefaults.publishBodyFrameCloud);
         slamSaveMapCheck->setChecked(runtimeDefaults.saveMap);
+        slamLoopClosureCheck->setChecked(runtimeDefaults.loopClosureEnableFlag);
+        slamKeyframeDistanceSpin->setValue(runtimeDefaults.surroundingKeyframeAddingDistThreshold);
+        slamKeyframeAngleSpin->setValue(runtimeDefaults.surroundingKeyframeAddingAngleThreshold);
+        slamLoopClosureFrequencySpin->setValue(runtimeDefaults.loopClosureFrequency);
+        slamHistoryKeyframeSearchRadiusSpin->setValue(runtimeDefaults.historyKeyframeSearchRadius);
+        slamHistoryKeyframeSearchTimeDiffSpin->setValue(runtimeDefaults.historyKeyframeSearchTimeDiff);
+        slamHistoryKeyframeSearchNumSpin->setValue(runtimeDefaults.historyKeyframeSearchNum);
+        slamHistoryKeyframeFitnessScoreSpin->setValue(runtimeDefaults.historyKeyframeFitnessScore);
+        slamReconstructKdTreeCheck->setChecked(runtimeDefaults.reconstructKdTree);
         slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicObjectDetectionEnabled);
         slamDynamicRemovalCheck->setChecked(runtimeDefaults.dynamicObjectRemovalEnabled);
         slamDynamicClusterCheck->setChecked(runtimeDefaults.dynamicObjectClusterEnabled);
@@ -1930,6 +1972,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicCase3OcclusionChainLengthSpin->setValue(
             runtimeDefaults.dynamicObjectCase3OcclusionChainLength);
         syncSlamPublishControls();
+        syncSlamLoopClosureControls();
         syncSlamDynamicControls();
     };
     auto slamRuntimeConfigFromControls = [&](SlamLidarTemplate lidarTemplate) {
@@ -1966,6 +2009,15 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
         config.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
         config.saveMap = slamSaveMapCheck->isChecked();
+        config.loopClosureEnableFlag = slamLoopClosureCheck->isChecked();
+        config.surroundingKeyframeAddingDistThreshold = slamKeyframeDistanceSpin->value();
+        config.surroundingKeyframeAddingAngleThreshold = slamKeyframeAngleSpin->value();
+        config.loopClosureFrequency = slamLoopClosureFrequencySpin->value();
+        config.historyKeyframeSearchRadius = slamHistoryKeyframeSearchRadiusSpin->value();
+        config.historyKeyframeSearchTimeDiff = slamHistoryKeyframeSearchTimeDiffSpin->value();
+        config.historyKeyframeSearchNum = slamHistoryKeyframeSearchNumSpin->value();
+        config.historyKeyframeFitnessScore = slamHistoryKeyframeFitnessScoreSpin->value();
+        config.reconstructKdTree = slamReconstructKdTreeCheck->isChecked();
         config.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
         config.dynamicObjectRemovalEnabled =
             config.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
@@ -2233,6 +2285,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QWidget* slamImuNoiseTab = createSlamSettingsTab(QStringLiteral("IMU 噪声"));
     QWidget* slamExtrinsicTab = createSlamSettingsTab(QStringLiteral("LiDAR-IMU 外参"));
     QWidget* slamPublishTab = createSlamSettingsTab(QStringLiteral("点云输出"));
+    QWidget* slamLoopClosureTab = createSlamSettingsTab(QStringLiteral("回环优化"));
     QWidget* slamDynamicTab = createSlamSettingsTab(QStringLiteral("动态检测"));
     QWidget* slamVisualTab = createSlamSettingsTab(QStringLiteral("显示样式"));
 
@@ -2240,6 +2293,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     QVBoxLayout* slamImuNoiseTabLayout = qobject_cast<QVBoxLayout*>(slamImuNoiseTab->layout());
     QVBoxLayout* slamExtrinsicTabLayout = qobject_cast<QVBoxLayout*>(slamExtrinsicTab->layout());
     QVBoxLayout* slamPublishTabLayout = qobject_cast<QVBoxLayout*>(slamPublishTab->layout());
+    QVBoxLayout* slamLoopClosureTabLayout = qobject_cast<QVBoxLayout*>(slamLoopClosureTab->layout());
     QVBoxLayout* slamDynamicTabLayout = qobject_cast<QVBoxLayout*>(slamDynamicTab->layout());
     QVBoxLayout* slamVisualTabLayout = qobject_cast<QVBoxLayout*>(slamVisualTab->layout());
 
@@ -2350,6 +2404,49 @@ void LivoxViewerWindow::showPreferencesDialog()
                      slamSaveMapCheck);
     slamPublishTabLayout->addWidget(slamPublishSection);
     slamPublishTabLayout->addStretch();
+
+    QFrame* slamKeyframeSection = createPreferenceSection(slamLoopClosureTab);
+    addPreferenceRow(slamKeyframeSection,
+                     "关键帧距离阈值",
+                     "surroundingKeyframeAddingDistThreshold，当前位置相对上一关键帧的平移达到该值时保存新关键帧；小场景需要适当减小",
+                     slamKeyframeDistanceSpin);
+    addPreferenceRow(slamKeyframeSection,
+                     "关键帧角度阈值",
+                     "surroundingKeyframeAddingAngleThreshold，当前位置相对上一关键帧的任一欧拉角变化达到该值时保存新关键帧",
+                     slamKeyframeAngleSpin);
+    slamLoopClosureTabLayout->addWidget(slamKeyframeSection);
+
+    QFrame* slamLoopClosureSection = createPreferenceSection(slamLoopClosureTab);
+    addPreferenceRow(slamLoopClosureSection,
+                     "启用回环检测",
+                     "loopClosureEnableFlag，启动独立回环检测线程；新设置在下一次开始 SLAM 建图时生效",
+                     slamLoopClosureCheck);
+    addPreferenceRow(slamLoopClosureSection,
+                     "检测频率",
+                     "loopClosureFrequency，每秒执行回环候选搜索和 ICP 匹配的次数",
+                     slamLoopClosureFrequencySpin);
+    addPreferenceRow(slamLoopClosureSection,
+                     "历史搜索半径",
+                     "historyKeyframeSearchRadius，在优化关键帧轨迹中搜索历史回环候选的空间半径",
+                     slamHistoryKeyframeSearchRadiusSpin);
+    addPreferenceRow(slamLoopClosureSection,
+                     "最小时间间隔",
+                     "historyKeyframeSearchTimeDiff，当前关键帧与历史候选必须相隔的最短时间；回到旧位置前需超过此时间",
+                     slamHistoryKeyframeSearchTimeDiffSpin);
+    addPreferenceRow(slamLoopClosureSection,
+                     "历史子地图帧数",
+                     "historyKeyframeSearchNum，历史候选前后参与 ICP 子地图拼接的关键帧数量",
+                     slamHistoryKeyframeSearchNumSpin);
+    addPreferenceRow(slamLoopClosureSection,
+                     "ICP 适配度阈值",
+                     "historyKeyframeFitnessScore，ICP 适配度分数必须小于该值才接受回环约束，值越小越严格",
+                     slamHistoryKeyframeFitnessScoreSpin);
+    addPreferenceRow(slamLoopClosureSection,
+                     "回环后重建 ikd-tree",
+                     "reconstructKdTree，回环优化历史位姿后使用优化关键帧重新构建 FAST-LIO 局部地图",
+                     slamReconstructKdTreeCheck);
+    slamLoopClosureTabLayout->addWidget(slamLoopClosureSection);
+    slamLoopClosureTabLayout->addStretch();
 
     auto addDynamicPreferenceRow = [](QFrame* section,
                                       const QString& title,
@@ -2732,6 +2829,15 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.publishDenseFrameCloud = slamPublishDenseCheck->isChecked();
     slamRuntimeConfig.publishBodyFrameCloud = slamPublishBodyCheck->isChecked();
     slamRuntimeConfig.saveMap = slamSaveMapCheck->isChecked();
+    slamRuntimeConfig.loopClosureEnableFlag = slamLoopClosureCheck->isChecked();
+    slamRuntimeConfig.surroundingKeyframeAddingDistThreshold = slamKeyframeDistanceSpin->value();
+    slamRuntimeConfig.surroundingKeyframeAddingAngleThreshold = slamKeyframeAngleSpin->value();
+    slamRuntimeConfig.loopClosureFrequency = slamLoopClosureFrequencySpin->value();
+    slamRuntimeConfig.historyKeyframeSearchRadius = slamHistoryKeyframeSearchRadiusSpin->value();
+    slamRuntimeConfig.historyKeyframeSearchTimeDiff = slamHistoryKeyframeSearchTimeDiffSpin->value();
+    slamRuntimeConfig.historyKeyframeSearchNum = slamHistoryKeyframeSearchNumSpin->value();
+    slamRuntimeConfig.historyKeyframeFitnessScore = slamHistoryKeyframeFitnessScoreSpin->value();
+    slamRuntimeConfig.reconstructKdTree = slamReconstructKdTreeCheck->isChecked();
     slamRuntimeConfig.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
     slamRuntimeConfig.dynamicObjectRemovalEnabled =
         slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
@@ -2913,6 +3019,17 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishDenseFrameCloud != previousSlamPublishDense ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
         slamRuntimeConfig.saveMap != previousSlamSaveMap ||
+        slamRuntimeConfig.loopClosureEnableFlag != previousSlamRuntimeConfig.loopClosureEnableFlag ||
+        slamRuntimeConfig.surroundingKeyframeAddingDistThreshold !=
+            previousSlamRuntimeConfig.surroundingKeyframeAddingDistThreshold ||
+        slamRuntimeConfig.surroundingKeyframeAddingAngleThreshold !=
+            previousSlamRuntimeConfig.surroundingKeyframeAddingAngleThreshold ||
+        slamRuntimeConfig.loopClosureFrequency != previousSlamRuntimeConfig.loopClosureFrequency ||
+        slamRuntimeConfig.historyKeyframeSearchRadius != previousSlamRuntimeConfig.historyKeyframeSearchRadius ||
+        slamRuntimeConfig.historyKeyframeSearchTimeDiff != previousSlamRuntimeConfig.historyKeyframeSearchTimeDiff ||
+        slamRuntimeConfig.historyKeyframeSearchNum != previousSlamRuntimeConfig.historyKeyframeSearchNum ||
+        slamRuntimeConfig.historyKeyframeFitnessScore != previousSlamRuntimeConfig.historyKeyframeFitnessScore ||
+        slamRuntimeConfig.reconstructKdTree != previousSlamRuntimeConfig.reconstructKdTree ||
         slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection ||
         slamDynamicConfigChanged ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||

@@ -313,6 +313,12 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
         return result;
     }
 
+    SlamOutput finalOutput;
+    error.clear();
+    if (!backend.finalize(&finalOutput, &error)) {
+        result.error = error;
+        return result;
+    }
     backend.stop();
     result.ok = true;
     return result;

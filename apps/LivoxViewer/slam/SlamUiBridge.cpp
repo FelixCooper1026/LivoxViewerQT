@@ -246,10 +246,16 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     }
     appendTrajectory(output);
     appendGlobalMap(output);
+    if (!output.loopClosureEdges.isEmpty()) {
+        m_loopClosureEdges += output.loopClosureEdges;
+    }
     if (output.status == SlamStatusCode::Running) {
         m_worldFramePointTotal += quint64(output.publishedWorldFramePoints.size());
     }
     m_latestOutput.newGlobalMapPoints.clear();
+    m_latestOutput.optimizedTrajectory.clear();
+    m_latestOutput.optimizedGlobalMapPoints.clear();
+    m_latestOutput.loopClosureEdges.clear();
 }
 
 void SlamUiBridge::setWorldFrameColor(const QColor& color)
@@ -404,7 +410,12 @@ void SlamUiBridge::resetCurrentPose()
 void SlamUiBridge::clearDisplay()
 {
     m_trajectory.clear();
+    m_unoptimizedTrajectory.clear();
     m_globalMapPoints.clear();
+    m_unoptimizedGlobalMapPoints.clear();
+    m_loopClosureEdges.clear();
+    m_hasOptimizedTrajectory = false;
+    m_hasOptimizedGlobalMap = false;
     m_worldFramePointTotal = 0;
     m_latestOutput.publishedWorldFramePoints.clear();
     m_latestOutput.publishedBodyFramePoints.clear();
@@ -436,15 +447,20 @@ void SlamUiBridge::refreshStatus()
     m_displayState.droppedFrames = QString::number(m_latestOutput.droppedFrameCount);
     m_displayState.currentPose = formatPose(m_latestOutput.currentPose);
     m_displayState.trajectoryPoints = QString::number(m_trajectory.size());
+    m_displayState.keyframeCount = QString::number(m_latestOutput.keyframeCount);
+    m_displayState.loopClosureCount = QString::number(m_latestOutput.loopClosureCount);
     const quint64 snapshotBytes =
         vectorBytes(snapshot.trajectoryVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.loopClosureVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.poseAxisVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.worldFrameVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.bodyFrameVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.dynamicObjectVertices.size(), sizeof(SlamRenderVertex));
     const quint64 uiBytes =
         vectorBytes(m_trajectory.size(), sizeof(SlamTrajectoryPoint)) +
+        vectorBytes(m_unoptimizedTrajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_unoptimizedGlobalMapPoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.dynamicDetectionFrameWorldPoints.size(), sizeof(SlamPoint)) +
@@ -516,6 +532,18 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
         for (const SlamTrajectoryPoint& point : m_trajectory) {
             snapshot.trajectoryVertices.push_back(renderVertex(posePosition(point.pose), r, g, b));
         }
+        snapshot.loopClosureVertices.reserve(m_loopClosureEdges.size() * 2);
+        for (const SlamLoopClosureEdge& edge : m_loopClosureEdges) {
+            if (edge.currentKeyframeId < 0 || edge.previousKeyframeId < 0 ||
+                edge.currentKeyframeId >= m_trajectory.size() ||
+                edge.previousKeyframeId >= m_trajectory.size()) {
+                continue;
+            }
+            snapshot.loopClosureVertices.push_back(renderVertex(
+                posePosition(m_trajectory.at(edge.currentKeyframeId).pose), 0.9f, 0.9f, 0.0f));
+            snapshot.loopClosureVertices.push_back(renderVertex(
+                posePosition(m_trajectory.at(edge.previousKeyframeId).pose), 0.9f, 0.9f, 0.0f));
+        }
     }
 
     if (m_poseAxisVisible) {
@@ -577,17 +605,47 @@ QVector<SlamRenderVertex> SlamUiBridge::buildPoseAxisVertices() const
 void SlamUiBridge::appendTrajectory(const SlamOutput& output)
 {
     if (!output.newTrajectoryPoints.isEmpty()) {
-        m_trajectory += output.newTrajectoryPoints;
-        if (m_trajectory.size() > kMaxTrajectoryPoints) {
-            m_trajectory.erase(m_trajectory.begin(), m_trajectory.begin() + (m_trajectory.size() - kMaxTrajectoryPoints));
+        m_unoptimizedTrajectory += output.newTrajectoryPoints;
+        if (m_unoptimizedTrajectory.size() > kMaxTrajectoryPoints) {
+            m_unoptimizedTrajectory.erase(
+                m_unoptimizedTrajectory.begin(),
+                m_unoptimizedTrajectory.begin() +
+                    (m_unoptimizedTrajectory.size() - kMaxTrajectoryPoints));
         }
+        if (!m_hasOptimizedTrajectory) {
+            m_trajectory += output.newTrajectoryPoints;
+        }
+    }
+    if (output.optimizedTrajectoryReset) {
+        m_trajectory.clear();
+        m_hasOptimizedTrajectory = true;
+    }
+    if (!output.optimizedTrajectory.isEmpty()) {
+        if (!m_hasOptimizedTrajectory) {
+            m_trajectory.clear();
+            m_hasOptimizedTrajectory = true;
+        }
+        m_trajectory += output.optimizedTrajectory;
     }
 }
 
 void SlamUiBridge::appendGlobalMap(const SlamOutput& output)
 {
-    if (output.newGlobalMapPoints.isEmpty()) {
-        return;
+    if (!output.newGlobalMapPoints.isEmpty()) {
+        m_unoptimizedGlobalMapPoints += output.newGlobalMapPoints;
+        if (!m_hasOptimizedGlobalMap) {
+            m_globalMapPoints += output.newGlobalMapPoints;
+        }
     }
-    m_globalMapPoints += output.newGlobalMapPoints;
+    if (output.optimizedGlobalMapReset) {
+        m_globalMapPoints.clear();
+        m_hasOptimizedGlobalMap = true;
+    }
+    if (!output.optimizedGlobalMapPoints.isEmpty()) {
+        if (!m_hasOptimizedGlobalMap) {
+            m_globalMapPoints.clear();
+            m_hasOptimizedGlobalMap = true;
+        }
+        m_globalMapPoints += output.optimizedGlobalMapPoints;
+    }
 }
