@@ -235,6 +235,12 @@ void KD_TREE<PointType>::multi_thread_rebuild()
 {
     bool terminated = false;
     KD_TREE_NODE *father_ptr, **new_node_ptr;
+    auto termination_requested = [this]() {
+        pthread_mutex_lock(&termination_flag_mutex_lock);
+        const bool requested = termination_flag;
+        pthread_mutex_unlock(&termination_flag_mutex_lock);
+        return requested;
+    };
     pthread_mutex_lock(&termination_flag_mutex_lock);
     terminated = termination_flag;
     pthread_mutex_unlock(&termination_flag_mutex_lock);
@@ -265,6 +271,12 @@ void KD_TREE<PointType>::multi_thread_rebuild()
             while (search_mutex_counter != 0)
             {
                 pthread_mutex_unlock(&search_flag_mutex);
+                if (termination_requested())
+                {
+                    pthread_mutex_lock(&search_flag_mutex);
+                    search_mutex_counter = 0;
+                    break;
+                }
                 usleep(1);
                 pthread_mutex_lock(&search_flag_mutex);
             }
@@ -292,6 +304,11 @@ void KD_TREE<PointType>::multi_thread_rebuild()
                 int tmp_counter = 0;
                 while (!Rebuild_Logger.empty())
                 {
+                    if (termination_requested())
+                    {
+                        Rebuild_Logger.clear();
+                        break;
+                    }
                     Operation = Rebuild_Logger.front();
                     max_queue_size = max(max_queue_size, Rebuild_Logger.size());
                     Rebuild_Logger.pop();
@@ -312,6 +329,12 @@ void KD_TREE<PointType>::multi_thread_rebuild()
             while (search_mutex_counter != 0)
             {
                 pthread_mutex_unlock(&search_flag_mutex);
+                if (termination_requested())
+                {
+                    pthread_mutex_lock(&search_flag_mutex);
+                    search_mutex_counter = 0;
+                    break;
+                }
                 usleep(1);
                 pthread_mutex_lock(&search_flag_mutex);
             }
@@ -1679,7 +1702,6 @@ void KD_TREE<PointType>::delete_tree_nodes(KD_TREE_NODE **root)
 {
     if (*root == nullptr)
         return;
-    Push_Down(*root);
     delete_tree_nodes(&(*root)->left_son_ptr);
     delete_tree_nodes(&(*root)->right_son_ptr);
 

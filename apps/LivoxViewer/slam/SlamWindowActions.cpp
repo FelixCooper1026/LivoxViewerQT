@@ -39,6 +39,7 @@ namespace {
 
 constexpr int64_t kSlamWorldHistoryRetentionNs = int64_t{600000} * int64_t{1000000};
 constexpr std::chrono::milliseconds kOdometryPublishPeriod(5);
+constexpr qint64 kFastReplayUiPublishIntervalMs = 100;
 
 bool isLidarOnlyConfig(const SlamRuntimeConfig& config)
 {
@@ -1115,6 +1116,7 @@ void LivoxViewerWindow::startSlamProcessing()
     slamProgressValue = 0;
     slamProgressMaximum = 0;
     slamProgressIndeterminate = true;
+    slamFinalLoopClosureActive = false;
     slamProgressSourceText = QDir::toNativeSeparators(sourcePath);
     slamProgressTimeText = QStringLiteral("时间 - / -");
     slamProgressFrameText = QStringLiteral("帧 0 / 0");
@@ -1135,6 +1137,12 @@ void LivoxViewerWindow::startSlamProcessing()
         auto postOutput = [this](SlamOutput output) {
             QMetaObject::invokeMethod(this, [this, output = std::move(output)]() mutable {
                 submitSlamOutputForUi(output);
+                updateSlamControlBarUi();
+            }, Qt::QueuedConnection);
+        };
+        auto postOutputBatch = [this](QVector<SlamOutput> outputs) {
+            QMetaObject::invokeMethod(this, [this, outputs = std::move(outputs)]() mutable {
+                submitSlamOutputsForUi(outputs);
                 updateSlamControlBarUi();
             }, Qt::QueuedConnection);
         };
@@ -1273,6 +1281,53 @@ void LivoxViewerWindow::startSlamProcessing()
         int progressFrames = 0;
         QString sourceReadError;
         HighRateOdometryPredictor offlineOdometryPredictor;
+        QElapsedTimer fastOutputPublishClock;
+        QElapsedTimer fastProgressPublishClock;
+        fastOutputPublishClock.start();
+        fastProgressPublishClock.start();
+        QVector<SlamOutput> pendingFastOutputs;
+
+        auto publishOfflineOutput = [replayMode,
+                                     &postOutput,
+                                     &postOutputBatch,
+                                     &fastOutputPublishClock,
+                                     &pendingFastOutputs](SlamOutput output, bool force) {
+            if (replayMode == SlamReplayMode::Fast) {
+                pendingFastOutputs.push_back(std::move(output));
+                if (!force && fastOutputPublishClock.elapsed() < kFastReplayUiPublishIntervalMs) {
+                    return;
+                }
+                postOutputBatch(std::move(pendingFastOutputs));
+                pendingFastOutputs.clear();
+                fastOutputPublishClock.restart();
+                return;
+            }
+            postOutput(std::move(output));
+        };
+
+        auto publishOfflineProgress = [replayMode,
+                                       &postProgress,
+                                       &fastProgressPublishClock,
+                                       &sourceText,
+                                       &makeTimeText,
+                                       &makeFrameText,
+                                       &progressFrames,
+                                       &totalFrameCount](uint64_t elapsedFrameNs, bool force) {
+            if (replayMode == SlamReplayMode::Fast &&
+                !force &&
+                fastProgressPublishClock.elapsed() < kFastReplayUiPublishIntervalMs) {
+                return;
+            }
+            postProgress(progressFrames,
+                         totalFrameCount,
+                         totalFrameCount <= 0,
+                         sourceText,
+                         makeTimeText(elapsedFrameNs),
+                         makeFrameText(progressFrames, totalFrameCount));
+            if (replayMode == SlamReplayMode::Fast) {
+                fastProgressPublishClock.restart();
+            }
+        };
 
         auto waitUntilRunning = [this, &pausedReplayMs]() {
             if (!slamWorkerPaused.load()) {
@@ -1342,11 +1397,8 @@ void LivoxViewerWindow::startSlamProcessing()
                              &offlineOdometryPredictor,
                              &waitForReplayTarget,
                              &waitUntilRunning,
-                             &postOutput,
-                             &postProgress,
-                             &sourceText,
-                             &makeTimeText,
-                             &makeFrameText,
+                             &publishOfflineOutput,
+                             &publishOfflineProgress,
                              &totalFrameCount,
                              &lastOutput,
                              &hasLastOutput,
@@ -1380,12 +1432,7 @@ void LivoxViewerWindow::startSlamProcessing()
                 frame.frameStartNs >= firstFrameStartNs ? uint64_t(frame.frameStartNs - firstFrameStartNs) : 0ULL;
             if (!isLidarOnlyConfig(config) && !frame.hasCompleteImuCoverage) {
                 ++droppedFrames;
-                postProgress(progressFrames,
-                             totalFrameCount,
-                             totalFrameCount <= 0,
-                             sourceText,
-                             makeTimeText(elapsedFrameNs),
-                             makeFrameText(progressFrames, totalFrameCount));
+                publishOfflineProgress(elapsedFrameNs, false);
                 return true;
             }
 
@@ -1401,23 +1448,19 @@ void LivoxViewerWindow::startSlamProcessing()
             }
             lastOutput = output;
             hasLastOutput = true;
-            postOutput(output);
             if (!isLidarOnlyConfig(config)) {
                 const FastLioPredictionState correction = backend.predictionState(frame.frameEndNs);
                 if (correction.valid) {
                     offlineOdometryPredictor.applyCorrection(correction);
                 }
             }
-            postProgress(progressFrames,
-                         totalFrameCount,
-                         totalFrameCount <= 0,
-                         sourceText,
-                         makeTimeText(elapsedFrameNs),
-                         makeFrameText(progressFrames, totalFrameCount));
+            const bool continueProcessing = accepted ||
+                output.status == SlamStatusCode::InitializingImu ||
+                output.status == SlamStatusCode::TimeSyncError;
+            publishOfflineOutput(std::move(output), !continueProcessing);
+            publishOfflineProgress(elapsedFrameNs, !continueProcessing);
 
-            if (!accepted &&
-                output.status != SlamStatusCode::InitializingImu &&
-                output.status != SlamStatusCode::TimeSyncError) {
+            if (!continueProcessing) {
                 return false;
             }
             return true;
@@ -1450,6 +1493,33 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         if (!summaryText.isEmpty()) {
             postLog(QStringLiteral("[SLAM] %1").arg(summaryText));
+        }
+
+        uint64_t lastElapsedFrameNs = 0;
+        if (hasFirstFrameStart && lastVisitedFrameStartNs > firstFrameStartNs) {
+            lastElapsedFrameNs = uint64_t(lastVisitedFrameStartNs - firstFrameStartNs);
+        }
+        if (replayMode == SlamReplayMode::Fast && !pendingFastOutputs.isEmpty()) {
+            postOutputBatch(std::move(pendingFastOutputs));
+            pendingFastOutputs.clear();
+            fastOutputPublishClock.restart();
+        }
+        if (replayMode == SlamReplayMode::Fast) {
+            publishOfflineProgress(lastElapsedFrameNs, true);
+        }
+
+        const bool finalLoopClosure = !slamWorkerCancel.load() &&
+            sourceReadError.isEmpty() &&
+            config.loopClosureEnableFlag;
+        if (finalLoopClosure) {
+            QMetaObject::invokeMethod(this, [this]() {
+                slamFinalLoopClosureActive = true;
+                slamProgressIndeterminate = true;
+                slamProgressTimeText = QStringLiteral("正在执行最终回环优化并重建全局地图…");
+                postSlamStatus(SlamStatusCode::Running,
+                               QStringLiteral("正在执行最终回环优化并重建全局地图…"));
+                updateSlamControlBarUi();
+            }, Qt::QueuedConnection);
         }
 
         SlamOutput finalOutput = hasLastOutput ? lastOutput : statusOutput(SlamStatusCode::Stopped, QString());
@@ -1500,6 +1570,12 @@ void LivoxViewerWindow::startSlamProcessing()
                      makeTimeText(finalElapsedNs),
                      makeFrameText(finalProgress, totalFrameCount));
         postOutput(finalOutput);
+        if (finalLoopClosure) {
+            QMetaObject::invokeMethod(this, [this]() {
+                slamFinalLoopClosureActive = false;
+                updateSlamControlBarUi();
+            }, Qt::QueuedConnection);
+        }
         slamWorkerActive.store(false);
         postControlUpdate();
     });
@@ -1545,6 +1621,7 @@ void LivoxViewerWindow::finishSlamWorkerUi()
         slamWorker.join();
     }
     const bool stoppedByUser = slamWorkerStopping.exchange(false);
+    slamFinalLoopClosureActive = false;
     if (stoppedByUser) {
         if (slamResetPending) {
             slamResetPending = false;
@@ -1575,6 +1652,7 @@ void LivoxViewerWindow::clearSlamDisplay()
     slamProgressValue = 0;
     slamProgressMaximum = 0;
     slamProgressIndeterminate = false;
+    slamFinalLoopClosureActive = false;
     slamProgressSourceText.clear();
     slamProgressTimeText.clear();
     slamProgressFrameText.clear();
@@ -1590,7 +1668,7 @@ void LivoxViewerWindow::clearSlamDisplay()
     updateSlamControlBarUi();
 }
 
-void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
+void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output, bool refreshDisplay)
 {
     if (!slamRuntimeConfig.publishWorldFrameCloud || !slamPointCloudView) {
         return;
@@ -1601,7 +1679,7 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
         slamWorldDisplayedSegmentStart = 0;
         slamWorldDisplayedSegmentEnd = 0;
         slamPointCloudView->clearPointCloudSegments();
-        if (slamWorldFrameVisible) {
+        if (refreshDisplay && slamWorldFrameVisible) {
             refreshSlamWorldPointCloud();
         }
     }
@@ -1642,7 +1720,7 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
         slamWorldDisplayedSegmentEnd = std::max(slamWorldDisplayedSegmentStart,
                                                 slamWorldDisplayedSegmentEnd - removedHistorySegmentCount);
     }
-    if (slamWorldFrameVisible) {
+    if (refreshDisplay && slamWorldFrameVisible) {
         refreshSlamWorldPointCloud();
     }
 }
@@ -2198,6 +2276,21 @@ void LivoxViewerWindow::submitSlamOutputForUi(const SlamOutput& output)
     }
     appendSlamWorldFramePoints(output);
     ensureSlamUiBridge()->receiveSlamOutput(output);
+}
+
+void LivoxViewerWindow::submitSlamOutputsForUi(const QVector<SlamOutput>& outputs)
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    for (const SlamOutput& output : outputs) {
+        if (isSlamErrorStatus(output.status) && !output.message.isEmpty()) {
+            logMessage(QStringLiteral("[SLAM] %1").arg(output.message));
+        }
+        appendSlamWorldFramePoints(output, false);
+        bridge->receiveSlamOutput(output);
+    }
+    if (slamWorldFrameVisible && !outputs.isEmpty()) {
+        refreshSlamWorldPointCloud();
+    }
 }
 
 void LivoxViewerWindow::postSlamStatus(SlamStatusCode status, const QString& message)

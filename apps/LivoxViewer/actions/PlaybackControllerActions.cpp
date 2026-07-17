@@ -1160,10 +1160,14 @@ void LivoxViewerWindow::updateSlamControlBarUi()
     const bool hasWorker = slamWorker.joinable();
     const bool paused = active && slamWorkerPaused.load();
     const bool stopping = slamWorkerStopping.load();
+    const bool finalLoopClosing = slamFinalLoopClosureActive;
     if (slamStartButton) {
         if (stopping) {
             slamStartButton->setText(QStringLiteral("停止中…"));
             slamStartButton->setToolTip(QStringLiteral("正在释放 SLAM 后端资源"));
+        } else if (finalLoopClosing) {
+            slamStartButton->setText(QStringLiteral("回环中…"));
+            slamStartButton->setToolTip(QStringLiteral("正在执行最终回环优化并重建全局地图"));
         } else if (active && !paused) {
             slamStartButton->setText(QStringLiteral("暂停"));
             slamStartButton->setToolTip(QStringLiteral("暂停 SLAM worker"));
@@ -1174,10 +1178,10 @@ void LivoxViewerWindow::updateSlamControlBarUi()
             slamStartButton->setText(QStringLiteral("开始"));
             slamStartButton->setToolTip(QStringLiteral("开始 SLAM worker"));
         }
-        slamStartButton->setEnabled(!stopping);
+        slamStartButton->setEnabled(!stopping && !finalLoopClosing);
     }
     if (slamStopButton) {
-        slamStopButton->setEnabled(!stopping && (active || hasWorker));
+        slamStopButton->setEnabled(!stopping && !finalLoopClosing && (active || hasWorker));
     }
     if (slamClearButton) {
         slamClearButton->setEnabled(!active);
@@ -1192,7 +1196,7 @@ void LivoxViewerWindow::updateSlamControlBarUi()
         slamExportMapButton->setEnabled(!slamMapExportActive.load());
     }
     if (slamProgressBar) {
-        if (slamProgressIndeterminate && active) {
+        if (finalLoopClosing || (slamProgressIndeterminate && active)) {
             slamProgressBar->setRange(0, 0);
         } else {
             const int maximum = std::max(1, slamProgressMaximum);
@@ -1233,9 +1237,11 @@ void LivoxViewerWindow::updateSlamControlBarUi()
                                              : QStringLiteral("SLAM 模式"));
     }
     const QString modeText = isOfflineSlamMode() ? QStringLiteral("离线SLAM") : QStringLiteral("在线SLAM");
-    const QString stateText = active
-        ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
-        : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行"));
+    const QString stateText = finalLoopClosing
+        ? QStringLiteral("正在回环")
+        : (active
+               ? (paused ? QStringLiteral("已暂停") : QStringLiteral("运行中"))
+               : (hasWorker ? QStringLiteral("已结束") : QStringLiteral("未运行")));
     const QString sourceText = isOfflineSlamMode()
         ? (!slamProgressSourceText.isEmpty()
                ? slamProgressSourceText
@@ -1251,7 +1257,9 @@ void LivoxViewerWindow::updateSlamControlBarUi()
                                                                            slamSourceLabel->width()));
     }
     if (slamTimeLabel) {
-        QString timeText = slamProgressTimeText;
+        QString timeText = finalLoopClosing
+            ? QStringLiteral("正在执行最终回环优化并重建全局地图…")
+            : slamProgressTimeText;
         if (timeText.isEmpty()) {
             timeText = isOfflineSlamMode() ? QStringLiteral("时间 - / -") : QStringLiteral("输入 FPS: 0.0");
         }

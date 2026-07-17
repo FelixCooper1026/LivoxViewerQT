@@ -223,7 +223,8 @@ private:
     void postSlamStatus(SlamStatusCode status, const QString& message);
     int ensureSlamVisualizationTab(const QString& sourcePath = QString());
     bool isSlamPointCloudTab(int tabId) const;
-    void appendSlamWorldFramePoints(const SlamOutput& output);
+    void submitSlamOutputsForUi(const QVector<SlamOutput>& outputs);
+    void appendSlamWorldFramePoints(const SlamOutput& output, bool refreshDisplay = true);
     void correctSlamWorldPointSegments(const QVector<SlamTrajectoryPoint>& optimizedTrajectory);
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
@@ -499,6 +500,7 @@ private:
     int slamProgressValue = 0;
     int slamProgressMaximum = 0;
     bool slamProgressIndeterminate = false;
+    bool slamFinalLoopClosureActive = false;
     QString slamProgressSourceText;
     QString slamProgressTimeText;
     QString slamProgressFrameText;

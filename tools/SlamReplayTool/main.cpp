@@ -6,6 +6,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFileInfo>
 #include <QStringList>
 #include <QTextStream>
@@ -136,6 +137,12 @@ struct ReplaySummary {
     int mapFrames = 0;
     int globalMapPoints = 0;
     int mapPoints = 0;
+    int keyframeCount = 0;
+    int loopClosureCount = 0;
+    int optimizedMapPoints = 0;
+    qint64 processingMs = 0;
+    qint64 finalizeMs = 0;
+    qint64 stopMs = 0;
     SlamPose finalPose;
 };
 
@@ -273,6 +280,8 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
         return result;
     }
 
+    QElapsedTimer processingTimer;
+    processingTimer.start();
     for (const SlamInputFrame& frame : frames) {
         if (config.imuEnabled && !frame.hasCompleteImuCoverage) {
             ++result.skippedIncompleteImuFrames;
@@ -301,8 +310,11 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
             result.globalMapPoints += output.newGlobalMapPoints.size();
         }
         result.mapPoints = output.mapPointCount;
+        result.keyframeCount = output.keyframeCount;
+        result.loopClosureCount = output.loopClosureCount;
         result.finalPose = output.currentPose;
     }
+    result.processingMs = processingTimer.elapsed();
 
     if (result.processedFrames == 0) {
         result.error = QStringLiteral("no input frame was processed");
@@ -315,11 +327,20 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
 
     SlamOutput finalOutput;
     error.clear();
+    QElapsedTimer finalizeTimer;
+    finalizeTimer.start();
     if (!backend.finalize(&finalOutput, &error)) {
         result.error = error;
         return result;
     }
+    result.finalizeMs = finalizeTimer.elapsed();
+    result.keyframeCount = finalOutput.keyframeCount;
+    result.loopClosureCount = finalOutput.loopClosureCount;
+    result.optimizedMapPoints = finalOutput.optimizedGlobalMapPoints.size();
+    QElapsedTimer stopTimer;
+    stopTimer.start();
     backend.stop();
+    result.stopMs = stopTimer.elapsed();
     result.ok = true;
     return result;
 }
@@ -453,6 +474,8 @@ int runDiagnostic(const QStringList& inputPaths,
                   int maxFrames,
                   bool sourceOnly,
                   bool lidarOnly,
+                  bool loopClosure,
+                  bool saveMap,
                   QTextStream& out)
 {
     bool allOk = true;
@@ -462,6 +485,9 @@ int runDiagnostic(const QStringList& inputPaths,
         config.allowPureLidar = lidarOnly;
         config.imuEnabled = !lidarOnly;
         config.backendType = lidarOnly ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
+        config.loopClosureEnableFlag = loopClosure;
+        config.deterministicOfflineLoopClosure = loopClosure;
+        config.saveMap = saveMap;
         out << "DIAG_BEGIN path=" << filePath
             << " template=" << templateName(config.lidarTemplate)
             << " detRangeM=" << config.detRangeM
@@ -538,6 +564,12 @@ int runDiagnostic(const QStringList& inputPaths,
             << " running=" << replay.runningFrames
             << " trajectory=" << replay.trajectoryPoints
             << " mapPoints=" << replay.mapPoints
+            << " keyframes=" << replay.keyframeCount
+            << " loops=" << replay.loopClosureCount
+            << " optimizedMapPoints=" << replay.optimizedMapPoints
+            << " processingMs=" << replay.processingMs
+            << " finalizeMs=" << replay.finalizeMs
+            << " stopMs=" << replay.stopMs
             << " finalPose=[" << replay.finalPose.tx << "," << replay.finalPose.ty << "," << replay.finalPose.tz << "]\n";
         out << "DIAG_END path=" << filePath << " ok=1\n";
         out.flush();
@@ -549,7 +581,7 @@ void printUsage(QTextStream& out)
 {
     out << "Usage:\n";
     out << "  SlamReplayTool <with_imu.pcap> <no_imu.pcap>\n";
-    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
+    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--loop-closure] [--save-map] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
 }
 
 } // namespace
@@ -564,6 +596,8 @@ int main(int argc, char* argv[])
         int maxFrames = 0;
         bool sourceOnly = false;
         bool lidarOnly = false;
+        bool loopClosure = false;
+        bool saveMap = false;
         QStringList inputPaths;
         for (int i = 2; i < args.size(); ++i) {
             if (args.at(i) == QStringLiteral("--source-only")) {
@@ -572,6 +606,14 @@ int main(int argc, char* argv[])
             }
             if (args.at(i) == QStringLiteral("--lidar-only")) {
                 lidarOnly = true;
+                continue;
+            }
+            if (args.at(i) == QStringLiteral("--loop-closure")) {
+                loopClosure = true;
+                continue;
+            }
+            if (args.at(i) == QStringLiteral("--save-map")) {
+                saveMap = true;
                 continue;
             }
             if (args.at(i) == QStringLiteral("--max-frames") && i + 1 < args.size()) {
@@ -584,7 +626,7 @@ int main(int argc, char* argv[])
             printUsage(out);
             return 2;
         }
-        return runDiagnostic(inputPaths, maxFrames, sourceOnly, lidarOnly, out);
+        return runDiagnostic(inputPaths, maxFrames, sourceOnly, lidarOnly, loopClosure, saveMap, out);
     }
 
     if (argc == 3) {
