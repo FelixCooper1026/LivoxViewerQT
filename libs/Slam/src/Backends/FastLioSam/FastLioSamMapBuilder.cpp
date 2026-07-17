@@ -171,13 +171,18 @@ QVector<SlamPoint> buildOptimizedGlobalMap(FastLioAlgorithmState& state)
 
     std::vector<PointCloudXYZI::Ptr> keyframes;
     pcl::PointCloud<PointTypePose>::Ptr poses(new pcl::PointCloud<PointTypePose>());
+    std::size_t pointCount = 0;
     {
         std::lock_guard<std::mutex> lock(state.sam.poseMutex);
         keyframes = state.sam.surfCloudKeyFrames;
         *poses = *state.sam.cloudKeyPoses6D;
+        for (const PointCloudXYZI::Ptr& keyframe : keyframes) {
+            pointCount += keyframe->size();
+        }
     }
 
     PointCloudXYZI::Ptr globalSurfCloud(new PointCloudXYZI());
+    globalSurfCloud->reserve(pointCount);
     const int keyframeCount = static_cast<int>(poses->size());
     for (int i = 0; i < keyframeCount; ++i) {
         *globalSurfCloud += *transformPointCloud(

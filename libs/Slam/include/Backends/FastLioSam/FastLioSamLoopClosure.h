@@ -9,6 +9,7 @@ void loopFindNearKeyframes(FastLioAlgorithmState& state,
                            int key,
                            int searchNum);
 void performLoopClosure(FastLioAlgorithmState& state);
+bool performDeterministicLoopClosure(FastLioAlgorithmState& state, bool forceLatest);
 void updateLoopClosureVisualization(FastLioAlgorithmState& state);
 void loopClosureThread(FastLioAlgorithmState* state);
 void startLoopClosureThread(FastLioAlgorithmState& state);

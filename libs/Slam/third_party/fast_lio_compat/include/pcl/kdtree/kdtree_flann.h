@@ -53,6 +53,22 @@ public:
                        std::vector<int>& indices,
                        std::vector<float>& squaredDistances) const
     {
+        if (k == 1) {
+            int bestIndex = -1;
+            float bestDistance = std::numeric_limits<float>::infinity();
+            nearestOneSearch(root_.get(), query, bestIndex, bestDistance);
+            if (bestIndex < 0) {
+                indices.clear();
+                squaredDistances.clear();
+                return 0;
+            }
+            indices.resize(1);
+            squaredDistances.resize(1);
+            indices.front() = bestIndex;
+            squaredDistances.front() = bestDistance;
+            return 1;
+        }
+
         using Candidate = std::pair<float, int>;
         std::priority_queue<Candidate> candidates;
         nearestKSearch(root_.get(), query, k, candidates);
@@ -166,6 +182,30 @@ private:
             : candidates.top().first;
         if (delta * delta < worstDistance) {
             nearestKSearch(farNode, query, k, candidates);
+        }
+    }
+
+    void nearestOneSearch(const Node* node,
+                          const PointT& query,
+                          int& bestIndex,
+                          float& bestDistance) const
+    {
+        if (node == nullptr) {
+            return;
+        }
+        const PointT& point = cloud_->points[static_cast<std::size_t>(node->index)];
+        const float distance = squaredDistance(query, point);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestIndex = node->index;
+        }
+
+        const float delta = coordinate(query, node->axis) - coordinate(point, node->axis);
+        const Node* nearNode = delta < 0.0f ? node->left.get() : node->right.get();
+        const Node* farNode = delta < 0.0f ? node->right.get() : node->left.get();
+        nearestOneSearch(nearNode, query, bestIndex, bestDistance);
+        if (delta * delta < bestDistance) {
+            nearestOneSearch(farNode, query, bestIndex, bestDistance);
         }
     }
 

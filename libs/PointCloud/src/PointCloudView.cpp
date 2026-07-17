@@ -2240,13 +2240,14 @@ void PointCloudView::uploadPointCloudPoints(QVector<PointCloudPoint>&& points)
 
 void PointCloudView::uploadPointCloudSegment(PointCloudSegment& segment)
 {
-    if (!uploadPointCloudBuffer(this,
-                                m_program,
-                                segment.points,
-                                segment.vbo,
-                                segment.vao,
-                                segment.bufferCapacityBytes,
-                                segment.pointCount)) {
+    segment.sourceUploadPending = !uploadPointCloudBuffer(this,
+                                                          m_program,
+                                                          segment.points,
+                                                          segment.vbo,
+                                                          segment.vao,
+                                                          segment.bufferCapacityBytes,
+                                                          segment.pointCount);
+    if (segment.sourceUploadPending) {
         m_pointCloudGpuUploadPending = true;
     }
 }
@@ -2313,13 +2314,16 @@ void PointCloudView::syncPendingPointCloudBuffers()
             if (!segment) {
                 continue;
             }
-            synced = uploadPointCloudBuffer(this,
-                                            m_program,
-                                            segment->points,
-                                            segment->vbo,
-                                            segment->vao,
-                                            segment->bufferCapacityBytes,
-                                            segment->pointCount) && synced;
+            if (segment->sourceUploadPending) {
+                segment->sourceUploadPending = !uploadPointCloudBuffer(this,
+                                                                       m_program,
+                                                                       segment->points,
+                                                                       segment->vbo,
+                                                                       segment->vao,
+                                                                       segment->bufferCapacityBytes,
+                                                                       segment->pointCount);
+                synced = !segment->sourceUploadPending && synced;
+            }
             if (!segment->clippedPoints.isEmpty() || segment->clippedVbo.isCreated()) {
                 synced = uploadPointCloudBuffer(this,
                                                 m_program,
@@ -3196,6 +3200,7 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
                     continue;
                 }
                 colorize(segment->points);
+                segment->sourceUploadPending = true;
                 m_pointCloudGpuUploadPending = true;
                 segment->clippedPoints.clear();
                 segment->clippedPointCount = 0;
@@ -3223,6 +3228,7 @@ void PointCloudView::recolorCurrentPointCloud(const std::function<void(QVector<P
                     continue;
                 }
                 colorize(segment->points);
+                segment->sourceUploadPending = true;
                 m_pointCloudGpuUploadPending = true;
                 if (selectionNeedsUpdate) {
                     segment->selectedPoints.clear();

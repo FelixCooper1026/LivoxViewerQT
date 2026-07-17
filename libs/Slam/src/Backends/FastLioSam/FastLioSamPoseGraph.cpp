@@ -163,7 +163,9 @@ void updateOptimizedPath(FastLioAlgorithmState& state, const PointTypePose& pose
 {
     const SlamTrajectoryPoint point = optimizedTrajectoryPoint(pose);
     state.optimizedPath.push_back(point);
-    state.pendingOptimizedTrajectory.push_back(point);
+    if (!state.config.deterministicOfflineLoopClosure) {
+        state.pendingOptimizedTrajectory.push_back(point);
+    }
 }
 
 void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
@@ -204,7 +206,12 @@ void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
     state.kf.change_x(stateUpdated);
 
     PointCloudXYZI::Ptr thisSurfKeyFrame(new PointCloudXYZI());
-    pcl::copyPointCloud(*state.featsUndistort, *thisSurfKeyFrame);
+    pcl::VoxelGrid<PointType> keyframeFilter;
+    keyframeFilter.setLeafSize(state.config.mappingSurfLeafSize,
+                               state.config.mappingSurfLeafSize,
+                               state.config.mappingSurfLeafSize);
+    keyframeFilter.setInputCloud(state.featsUndistort);
+    keyframeFilter.filter(*thisSurfKeyFrame);
     {
         std::lock_guard<std::mutex> lock(sam.poseMutex);
         sam.cloudKeyPoses3D->push_back(thisPose3D);
@@ -213,7 +220,6 @@ void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
     }
 
     updateOptimizedPath(state, thisPose6D);
-    appendOptimizedKeyframeMap(state, thisSurfKeyFrame, thisPose6D);
 }
 
 void correctPoses(FastLioAlgorithmState& state)
@@ -223,11 +229,15 @@ void correctPoses(FastLioAlgorithmState& state)
         return;
     }
 
+    const bool publishOptimization = !state.config.deterministicOfflineLoopClosure;
+    const gtsam::Pose3 latestPoseBeforeOptimization =
+        pclPointTogtsamPose3(sam.cloudKeyPoses6D->back());
+    const gtsam::Pose3 currentPoseBeforeOptimization = trans2gtsamPose(sam.transformTobeMapped);
     state.optimizedPath.clear();
     state.pendingOptimizedTrajectory.clear();
-    state.optimizedTrajectoryResetPending = true;
+    state.optimizedTrajectoryResetPending = publishOptimization;
     state.pendingOptimizedGlobalMapPoints.clear();
-    state.optimizedGlobalMapResetPending = true;
+    state.optimizedGlobalMapResetPending = publishOptimization;
 
     const int numPoses = static_cast<int>(sam.isamCurrentEstimate.size());
     {
@@ -252,7 +262,32 @@ void correctPoses(FastLioAlgorithmState& state)
         }
     }
 
-    reconstructIKdTree(state);
+    const gtsam::Pose3 latestPose =
+        sam.isamCurrentEstimate.at<gtsam::Pose3>(sam.isamCurrentEstimate.size() - 1);
+    const gtsam::Pose3 correctedCurrentPose =
+        latestPose.compose(latestPoseBeforeOptimization.inverse()).compose(
+            currentPoseBeforeOptimization);
+    state_ikfom stateUpdated = state.kf.get_x();
+    stateUpdated.pos = Eigen::Vector3d(correctedCurrentPose.translation().x(),
+                                       correctedCurrentPose.translation().y(),
+                                       correctedCurrentPose.translation().z());
+    stateUpdated.rot = eulerToQuat(
+        static_cast<float>(correctedCurrentPose.rotation().roll()),
+        static_cast<float>(correctedCurrentPose.rotation().pitch()),
+        static_cast<float>(correctedCurrentPose.rotation().yaw()));
+    state.statePoint = stateUpdated;
+    state.kf.change_x(stateUpdated);
+    state.eulerCur = SO3ToEuler(state.statePoint.rot);
+    state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
+
+    if (!publishOptimization) {
+        state.pendingOptimizedTrajectory.clear();
+        state.pendingOptimizedGlobalMapPoints.clear();
+    }
+
+    if (!state.finalizing) {
+        reconstructIKdTree(state);
+    }
     sam.aLoopIsClosed = false;
 }
 

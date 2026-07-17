@@ -303,6 +303,7 @@ private:
         int pointCount = 0;
         int clippedPointCount = 0;
         int selectedPointCount = 0;
+        bool sourceUploadPending = true;
 
         PointCloudSegment()
             : vbo(QOpenGLBuffer::VertexBuffer)

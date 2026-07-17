@@ -786,6 +786,12 @@ void appendGlobalMapOutput(FastLioAlgorithmState& state, SlamOutput* output)
         return;
     }
 
+    if (state.config.publishWorldFrameCloud && state.config.publishDenseFrameCloud) {
+        output->newGlobalMapPoints = output->publishedWorldFramePoints;
+        state.globalMapPointCount += output->newGlobalMapPoints.size();
+        return;
+    }
+
     output->newGlobalMapPoints.reserve(static_cast<int>(state.featsUndistort->points.size()));
     PointType worldPoint;
     for (const PointType& bodyPoint : state.featsUndistort->points) {
@@ -1145,6 +1151,11 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
 
     getCurPose(state);
     saveKeyFramesAndFactor(state);
+    if (state.config.loopClosureEnableFlag &&
+        state.config.deterministicOfflineLoopClosure &&
+        performDeterministicLoopClosure(state, false)) {
+        flushPendingLoopFactors(state);
+    }
     correctPoses(state);
 
     PointVector addedPoints;
@@ -1168,10 +1179,18 @@ bool FastLioSlamBackend::finalize(SlamOutput* output, QString* error)
         return false;
     }
 
+    state_->finalizing = true;
     stopLoopClosureThread(*state_);
     if (state_->config.loopClosureEnableFlag) {
-        performLoopClosure(*state_);
+        if (state_->config.deterministicOfflineLoopClosure) {
+            performDeterministicLoopClosure(*state_, true);
+        } else {
+            performLoopClosure(*state_);
+        }
         flushPendingLoopFactors(*state_);
+    }
+    if (output != nullptr && output->currentPoseValid) {
+        output->currentPose = toSlamPose(*state_, output->currentPose.timestampNs);
     }
     state_->optimizedTrajectoryResetPending = true;
     state_->pendingOptimizedTrajectory = state_->optimizedPath;

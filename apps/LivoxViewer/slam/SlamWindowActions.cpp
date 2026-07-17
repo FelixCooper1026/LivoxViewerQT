@@ -33,6 +33,7 @@
 #include <utility>
 
 #include <Eigen/Geometry>
+#include <omp.h>
 
 namespace {
 
@@ -1075,6 +1076,10 @@ void LivoxViewerWindow::startSlamProcessing()
                 : error;
             finalOutput.newTrajectoryPoints.clear();
             finalOutput.newGlobalMapPoints.clear();
+            finalOutput.publishedWorldFramePoints.clear();
+            finalOutput.publishedBodyFramePoints.clear();
+            finalOutput.dynamicDetectionFrameWorldPoints.clear();
+            finalOutput.dynamicWorldFramePoints.clear();
             const LiveLidarSlamSourceStats stats = liveSlamSource.stats();
             finalOutput.inputFps = stats.inputFps;
             finalOutput.droppedFrameCount = int(stats.droppedFrameCount) + skippedFrames;
@@ -1100,7 +1105,8 @@ void LivoxViewerWindow::startSlamProcessing()
     const QString sourceDisplayName = slamOfflineSourceDisplayName.isEmpty()
         ? offlineSourceKindForPath(sourcePath)
         : slamOfflineSourceDisplayName;
-    const SlamRuntimeConfig config = slamRuntimeConfig;
+    SlamRuntimeConfig config = slamRuntimeConfig;
+    config.deterministicOfflineLoopClosure = true;
     const SlamReplayMode replayMode = slamReplayMode;
     slamWorkerCancel.store(false);
     slamWorkerPaused.store(false);
@@ -1472,6 +1478,10 @@ void LivoxViewerWindow::startSlamProcessing()
         }
         finalOutput.newTrajectoryPoints.clear();
         finalOutput.newGlobalMapPoints.clear();
+        finalOutput.publishedWorldFramePoints.clear();
+        finalOutput.publishedBodyFramePoints.clear();
+        finalOutput.dynamicDetectionFrameWorldPoints.clear();
+        finalOutput.dynamicWorldFramePoints.clear();
         const int finalProgress = cancelled || sourceReadFailed ? progressFrames : totalFrameCount;
         uint64_t finalElapsedNs = totalDurationNs;
         if (cancelled || sourceReadFailed) {
@@ -1669,7 +1679,12 @@ void LivoxViewerWindow::correctSlamWorldPointSegments(
                                correction.translation()});
     }
 
-    for (SlamWorldPointSegment& segment : slamWorldPointSegments) {
+    SlamWorldPointSegment* segments = slamWorldPointSegments.data();
+    const int segmentCount = slamWorldPointSegments.size();
+    const int threadCount = std::max(1, slamRuntimeConfig.numberOfCores);
+#pragma omp parallel for num_threads(threadCount)
+    for (int segmentIndex = 0; segmentIndex < segmentCount; ++segmentIndex) {
+        SlamWorldPointSegment& segment = segments[segmentIndex];
         const auto upper = std::lower_bound(
             corrections.cbegin(),
             corrections.cend(),

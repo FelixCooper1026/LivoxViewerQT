@@ -25,6 +25,7 @@
 #include <QVector>
 
 #include <atomic>
+#include <condition_variable>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -68,8 +69,12 @@ struct FastLioSamBackendState {
 
     std::mutex poseMutex;
     std::mutex loopInfoMutex;
+    std::mutex loopThreadMutex;
+    std::condition_variable loopThreadCondition;
     std::atomic_bool stopRequested{false};
     std::thread loopThread;
+    int lastDeterministicLoopKeyframeId = -1;
+    double lastDeterministicLoopTime = 0.0;
     QVector<SlamLoopClosureEdge> pendingLoopClosureEdges;
 };
 
@@ -91,6 +96,7 @@ struct FastLioAlgorithmState {
     bool firstScan = true;
     bool ekfInited = false;
     bool localMapInitialized = false;
+    bool finalizing = false;
     bool lidarOnly = false;
     bool currentFrameHasPointOffsetTime = false;
     bool hasLoReferencePose = false;

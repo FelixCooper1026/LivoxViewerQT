@@ -51,6 +51,7 @@ struct SlamRuntimeConfig {
     float surroundingKeyframeSearchRadius = 50.0f;
     bool loopClosureEnableFlag = false;
     float loopClosureFrequency = 1.0f;
+    bool deterministicOfflineLoopClosure = false;
     int surroundingKeyframeSize = 50;
     float historyKeyframeSearchRadius = 10.0f;
     float historyKeyframeSearchTimeDiff = 30.0f;

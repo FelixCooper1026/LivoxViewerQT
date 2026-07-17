@@ -34,7 +34,7 @@ bool detectLoopClosureDistance(FastLioAlgorithmState& state, int* latestId, int*
 
     for (const int id : candidateIndices) {
         if (std::abs(sam.copyCloudKeyPoses6D->points[static_cast<std::size_t>(id)].time -
-                     state.measures.lidar_end_time) >
+                     sam.copyCloudKeyPoses6D->back().time) >
             state.config.historyKeyframeSearchTimeDiff) {
             loopKeyPre = id;
             break;
@@ -57,22 +57,35 @@ void loopFindNearKeyframes(FastLioAlgorithmState& state,
     auto& sam = state.sam;
     nearKeyframes->clear();
     const int poseCount = static_cast<int>(sam.copyCloudKeyPoses6D->size());
+    struct KeyframePose {
+        PointCloudXYZI::Ptr cloud;
+        PointTypePose pose;
+    };
+    std::vector<KeyframePose> keyframes;
+    std::size_t pointCount = 0;
 
-    for (int offset = -searchNum; offset <= searchNum; ++offset) {
-        const int keyNear = key + offset;
-        PointCloudXYZI::Ptr keyframe;
-        {
-            std::lock_guard<std::mutex> lock(sam.poseMutex);
+    {
+        std::lock_guard<std::mutex> lock(sam.poseMutex);
+        for (int offset = -searchNum; offset <= searchNum; ++offset) {
+            const int keyNear = key + offset;
             const int cloudCount = static_cast<int>(sam.surfCloudKeyFrames.size());
             if (keyNear < 0 || keyNear >= poseCount || keyNear >= cloudCount) {
                 continue;
             }
-            keyframe = sam.surfCloudKeyFrames[static_cast<std::size_t>(keyNear)];
+            const PointCloudXYZI::Ptr& keyframe =
+                sam.surfCloudKeyFrames[static_cast<std::size_t>(keyNear)];
+            pointCount += keyframe->size();
+            keyframes.push_back(
+                {keyframe, sam.copyCloudKeyPoses6D->points[static_cast<std::size_t>(keyNear)]});
         }
+    }
+
+    nearKeyframes->reserve(pointCount);
+    for (const KeyframePose& keyframe : keyframes) {
         *nearKeyframes += *transformPointCloud(
             state,
-            keyframe,
-            &sam.copyCloudKeyPoses6D->points[static_cast<std::size_t>(keyNear)]);
+            keyframe.cloud,
+            &keyframe.pose);
     }
 
     if (nearKeyframes->empty()) {
@@ -87,12 +100,11 @@ void loopFindNearKeyframes(FastLioAlgorithmState& state,
 void performLoopClosure(FastLioAlgorithmState& state)
 {
     auto& sam = state.sam;
-    if (sam.cloudKeyPoses3D->empty()) {
-        return;
-    }
-
     {
         std::lock_guard<std::mutex> lock(sam.poseMutex);
+        if (sam.cloudKeyPoses3D->empty()) {
+            return;
+        }
         *sam.copyCloudKeyPoses3D = *sam.cloudKeyPoses3D;
         *sam.copyCloudKeyPoses6D = *sam.cloudKeyPoses6D;
     }
@@ -108,6 +120,9 @@ void performLoopClosure(FastLioAlgorithmState& state)
     loopFindNearKeyframes(state, currentKeyframeCloud, loopKeyCur, 0);
     loopFindNearKeyframes(
         state, previousKeyframeCloud, loopKeyPre, state.config.historyKeyframeSearchNum);
+    if (currentKeyframeCloud->empty() || previousKeyframeCloud->empty()) {
+        return;
+    }
 
     pcl::IterativeClosestPoint<PointType, PointType> icp;
     icp.setMaxCorrespondenceDistance(150);
@@ -152,6 +167,35 @@ void performLoopClosure(FastLioAlgorithmState& state)
     }
 }
 
+bool performDeterministicLoopClosure(FastLioAlgorithmState& state, bool forceLatest)
+{
+    auto& sam = state.sam;
+    int latestId = -1;
+    double latestTime = 0.0;
+    {
+        std::lock_guard<std::mutex> lock(sam.poseMutex);
+        if (sam.cloudKeyPoses6D->empty()) {
+            return false;
+        }
+        latestId = static_cast<int>(sam.cloudKeyPoses6D->size()) - 1;
+        latestTime = sam.cloudKeyPoses6D->back().time;
+    }
+    if (latestId == sam.lastDeterministicLoopKeyframeId) {
+        return false;
+    }
+
+    const double periodSec = 1.0 / state.config.loopClosureFrequency;
+    if (!forceLatest && sam.lastDeterministicLoopKeyframeId >= 0 &&
+        latestTime - sam.lastDeterministicLoopTime < periodSec) {
+        return false;
+    }
+
+    sam.lastDeterministicLoopKeyframeId = latestId;
+    sam.lastDeterministicLoopTime = latestTime;
+    performLoopClosure(state);
+    return true;
+}
+
 void updateLoopClosureVisualization(FastLioAlgorithmState& state)
 {
     static_cast<void>(state);
@@ -163,15 +207,23 @@ void loopClosureThread(FastLioAlgorithmState* state)
         return;
     }
     const double periodSec = 1.0 / state->config.loopClosureFrequency;
-    while (!state->sam.stopRequested.load()) {
-        std::this_thread::sleep_for(std::chrono::duration<double>(periodSec));
+    std::unique_lock<std::mutex> lock(state->sam.loopThreadMutex);
+    while (!state->sam.loopThreadCondition.wait_for(
+        lock,
+        std::chrono::duration<double>(periodSec),
+        [state]() { return state->sam.stopRequested.load(); })) {
+        lock.unlock();
         performLoopClosure(*state);
         updateLoopClosureVisualization(*state);
+        lock.lock();
     }
 }
 
 void startLoopClosureThread(FastLioAlgorithmState& state)
 {
+    if (!state.config.loopClosureEnableFlag || state.config.deterministicOfflineLoopClosure) {
+        return;
+    }
     state.sam.stopRequested.store(false);
     state.sam.loopThread = std::thread(loopClosureThread, &state);
 }
@@ -179,6 +231,7 @@ void startLoopClosureThread(FastLioAlgorithmState& state)
 void stopLoopClosureThread(FastLioAlgorithmState& state)
 {
     state.sam.stopRequested.store(true);
+    state.sam.loopThreadCondition.notify_one();
     if (state.sam.loopThread.joinable()) {
         state.sam.loopThread.join();
     }

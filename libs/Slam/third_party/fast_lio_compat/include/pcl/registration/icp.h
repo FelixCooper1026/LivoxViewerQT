@@ -33,13 +33,19 @@ public:
         targetTree.setInputCloud(target_);
 
         double previousFitness = std::numeric_limits<double>::max();
+        std::vector<Eigen::Vector3d> matchedSource;
+        std::vector<Eigen::Vector3d> matchedTarget;
+        matchedSource.reserve(source_->points.size());
+        matchedTarget.reserve(source_->points.size());
+        std::vector<int> indices;
+        std::vector<float> squaredDistances;
+        indices.reserve(1);
+        squaredDistances.reserve(1);
         for (int iteration = 0; iteration < maximumIterations_; ++iteration) {
             Eigen::Vector3d sourceCentroid = Eigen::Vector3d::Zero();
             Eigen::Vector3d targetCentroid = Eigen::Vector3d::Zero();
-            std::vector<Eigen::Vector3d> matchedSource;
-            std::vector<Eigen::Vector3d> matchedTarget;
-            matchedSource.reserve(source_->points.size());
-            matchedTarget.reserve(source_->points.size());
+            matchedSource.clear();
+            matchedTarget.clear();
 
             for (const SourcePointT& sourcePoint : source_->points) {
                 const Eigen::Vector4f transformed = finalTransformation_ *
@@ -49,8 +55,6 @@ public:
                 query.y = transformed.y();
                 query.z = transformed.z();
 
-                std::vector<int> indices;
-                std::vector<float> squaredDistances;
                 if (targetTree.nearestKSearch(query, 1, indices, squaredDistances) != 1 ||
                     squaredDistances.front() > maxCorrespondenceDistance_ * maxCorrespondenceDistance_) {
                     continue;

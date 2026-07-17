@@ -192,6 +192,7 @@ void KD_TREE<PointType>::root_alpha(float &alpha_bal, float &alpha_del)
 template <typename PointType>
 void KD_TREE<PointType>::start_thread()
 {
+    termination_flag = false;
     pthread_mutex_init(&termination_flag_mutex_lock, NULL);
     pthread_mutex_init(&rebuild_ptr_mutex_lock, NULL);
     pthread_mutex_init(&rebuild_logger_mutex_lock, NULL);
@@ -209,7 +210,10 @@ void KD_TREE<PointType>::stop_thread()
     termination_flag = true;
     pthread_mutex_unlock(&termination_flag_mutex_lock);
     if (rebuild_thread)
+    {
         pthread_join(rebuild_thread, NULL);
+        rebuild_thread = pthread_t();
+    }
     pthread_mutex_destroy(&termination_flag_mutex_lock);
     pthread_mutex_destroy(&rebuild_logger_mutex_lock);
     pthread_mutex_destroy(&rebuild_ptr_mutex_lock);
@@ -420,6 +424,19 @@ void KD_TREE<PointType>::Build(PointVector point_cloud)
     Update(STATIC_ROOT_NODE);
     STATIC_ROOT_NODE->TreeSize = 0;
     Root_Node = STATIC_ROOT_NODE->left_son_ptr;
+}
+
+template <typename PointType>
+void KD_TREE<PointType>::reconstruct(const PointVector &point_cloud)
+{
+    stop_thread();
+    Rebuild_Ptr = nullptr;
+    rebuild_flag = false;
+    search_mutex_counter = 0;
+    Rebuild_Logger.clear();
+    PointVector().swap(Rebuild_PCL_Storage);
+    Build(point_cloud);
+    start_thread();
 }
 
 template <typename PointType>
