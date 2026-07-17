@@ -49,7 +49,6 @@ struct FastLioSamBackendState {
     gtsam::Values optimizedEstimate;
     std::unique_ptr<gtsam::ISAM2> isam;
     gtsam::Values isamCurrentEstimate;
-    Eigen::MatrixXd poseCovariance;
 
     bool aLoopIsClosed = false;
     bool potentialLoopFlag = false;

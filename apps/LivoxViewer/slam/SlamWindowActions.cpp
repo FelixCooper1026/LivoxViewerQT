@@ -211,6 +211,28 @@ PointCloudPoint toPointCloudPoint(const SlamPoint& point)
     return result;
 }
 
+Eigen::Isometry3d slamPoseTransform(const SlamPose& pose)
+{
+    Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
+    transform.linear() = Eigen::Quaterniond(pose.qw, pose.qx, pose.qy, pose.qz)
+                             .normalized()
+                             .toRotationMatrix();
+    transform.translation() = Eigen::Vector3d(pose.tx, pose.ty, pose.tz);
+    return transform;
+}
+
+void setSlamPoseTransform(SlamPose& pose, const Eigen::Isometry3d& transform)
+{
+    const Eigen::Quaterniond rotation(transform.rotation());
+    pose.tx = transform.translation().x();
+    pose.ty = transform.translation().y();
+    pose.tz = transform.translation().z();
+    pose.qx = rotation.x();
+    pose.qy = rotation.y();
+    pose.qz = rotation.z();
+    pose.qw = rotation.w();
+}
+
 qint64 replayTargetMs(int64_t firstFrameStartNs, int64_t frameStartNs)
 {
     const int64_t elapsedNs = frameStartNs - firstFrameStartNs;
@@ -1564,28 +1586,14 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
         return;
     }
 
-    if (output.optimizedGlobalMapReset && !output.optimizedGlobalMapPoints.isEmpty()) {
-        int64_t timestampNs = output.currentPose.timestampNs;
-        if (timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
-            timestampNs = slamWorldPointSegments.back().timestampNs;
-        }
-
-        SlamWorldPointSegment optimizedMapSegment;
-        optimizedMapSegment.timestampNs = timestampNs;
-        optimizedMapSegment.points.reserve(output.optimizedGlobalMapPoints.size());
-        for (const SlamPoint& point : output.optimizedGlobalMapPoints) {
-            optimizedMapSegment.points.push_back(toPointCloudPoint(point));
-        }
-
-        slamWorldPointSegments.clear();
-        slamWorldPointSegments.push_back(std::move(optimizedMapSegment));
+    if (output.optimizedTrajectoryReset && !output.optimizedTrajectory.isEmpty()) {
+        correctSlamWorldPointSegments(output.optimizedTrajectory);
         slamWorldDisplayedSegmentStart = 0;
         slamWorldDisplayedSegmentEnd = 0;
         slamPointCloudView->clearPointCloudSegments();
         if (slamWorldFrameVisible) {
             refreshSlamWorldPointCloud();
         }
-        return;
     }
 
     if (output.publishedWorldFramePoints.isEmpty()) {
@@ -1594,6 +1602,7 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
 
     SlamWorldPointSegment segment;
     segment.timestampNs = output.currentPose.timestampNs;
+    segment.pose = output.currentPose;
     if (segment.timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
         segment.timestampNs =
             slamWorldPointSegments.back().timestampNs +
@@ -1625,6 +1634,80 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output)
     }
     if (slamWorldFrameVisible) {
         refreshSlamWorldPointCloud();
+    }
+}
+
+void LivoxViewerWindow::correctSlamWorldPointSegments(
+    const QVector<SlamTrajectoryPoint>& optimizedTrajectory)
+{
+    if (slamWorldPointSegments.isEmpty()) {
+        return;
+    }
+
+    struct PoseCorrection {
+        int64_t timestampNs = 0;
+        Eigen::Quaterniond rotation = Eigen::Quaterniond::Identity();
+        Eigen::Vector3d translation = Eigen::Vector3d::Zero();
+    };
+
+    QVector<PoseCorrection> corrections;
+    corrections.reserve(optimizedTrajectory.size());
+    int segmentIndex = 0;
+    for (const SlamTrajectoryPoint& optimizedPoint : optimizedTrajectory) {
+        while (segmentIndex + 1 < slamWorldPointSegments.size() &&
+               std::abs(slamWorldPointSegments.at(segmentIndex + 1).timestampNs -
+                        optimizedPoint.pose.timestampNs) <
+                   std::abs(slamWorldPointSegments.at(segmentIndex).timestampNs -
+                            optimizedPoint.pose.timestampNs)) {
+            ++segmentIndex;
+        }
+        const Eigen::Isometry3d correction =
+            slamPoseTransform(optimizedPoint.pose) *
+            slamPoseTransform(slamWorldPointSegments.at(segmentIndex).pose).inverse();
+        corrections.push_back({optimizedPoint.pose.timestampNs,
+                               Eigen::Quaterniond(correction.rotation()),
+                               correction.translation()});
+    }
+
+    for (SlamWorldPointSegment& segment : slamWorldPointSegments) {
+        const auto upper = std::lower_bound(
+            corrections.cbegin(),
+            corrections.cend(),
+            segment.timestampNs,
+            [](const PoseCorrection& correction, int64_t timestampNs) {
+                return correction.timestampNs < timestampNs;
+            });
+
+        Eigen::Quaterniond rotation;
+        Eigen::Vector3d translation;
+        if (upper == corrections.cbegin()) {
+            rotation = upper->rotation;
+            translation = upper->translation;
+        } else if (upper == corrections.cend()) {
+            rotation = corrections.back().rotation;
+            translation = corrections.back().translation;
+        } else {
+            const PoseCorrection& before = *(upper - 1);
+            const double alpha = double(segment.timestampNs - before.timestampNs) /
+                                 double(upper->timestampNs - before.timestampNs);
+            rotation = before.rotation.slerp(alpha, upper->rotation).normalized();
+            translation = before.translation * (1.0 - alpha) + upper->translation * alpha;
+        }
+
+        const Eigen::Matrix3f rotationMatrix = rotation.toRotationMatrix().cast<float>();
+        const Eigen::Vector3f translationVector = translation.cast<float>();
+        for (PointCloudPoint& point : segment.points) {
+            const Eigen::Vector3f corrected =
+                rotationMatrix * Eigen::Vector3f(point.x, point.y, point.z) + translationVector;
+            point.x = corrected.x();
+            point.y = corrected.y();
+            point.z = corrected.z();
+        }
+
+        Eigen::Isometry3d correctionTransform = Eigen::Isometry3d::Identity();
+        correctionTransform.linear() = rotation.toRotationMatrix();
+        correctionTransform.translation() = translation;
+        setSlamPoseTransform(segment.pose, correctionTransform * slamPoseTransform(segment.pose));
     }
 }
 

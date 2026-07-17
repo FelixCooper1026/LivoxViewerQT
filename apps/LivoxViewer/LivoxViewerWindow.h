@@ -224,6 +224,7 @@ private:
     int ensureSlamVisualizationTab(const QString& sourcePath = QString());
     bool isSlamPointCloudTab(int tabId) const;
     void appendSlamWorldFramePoints(const SlamOutput& output);
+    void correctSlamWorldPointSegments(const QVector<SlamTrajectoryPoint>& optimizedTrajectory);
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
     void finishSlamWorkerUi();
@@ -451,6 +452,7 @@ private:
     };
     struct SlamWorldPointSegment {
         int64_t timestampNs = 0;
+        SlamPose pose;
         QVector<PointCloudPoint> points;
     };
     SlamInputMode slamInputMode = SlamInputMode::Offline;

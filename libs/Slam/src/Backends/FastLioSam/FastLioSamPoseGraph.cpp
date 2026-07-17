@@ -195,8 +195,6 @@ void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
     thisPose6D.yaw = static_cast<float>(latestEstimate.rotation().yaw());
     thisPose6D.time = state.measures.lidar_end_time;
 
-    sam.poseCovariance = sam.isam->marginalCovariance(sam.isamCurrentEstimate.size() - 1);
-
     state_ikfom stateUpdated = state.kf.get_x();
     stateUpdated.pos = Eigen::Vector3d(latestEstimate.translation().x(),
                                        latestEstimate.translation().y(),

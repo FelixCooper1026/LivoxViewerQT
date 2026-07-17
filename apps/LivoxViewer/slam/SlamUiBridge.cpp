@@ -235,6 +235,11 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
         m_latestOutput.currentPoseValid = retainedPoseValid;
         m_hasCurrentPose = retainedPoseValid;
     }
+    if (output.optimizedTrajectoryReset && !output.optimizedTrajectory.isEmpty()) {
+        m_latestOutput.currentPose = output.optimizedTrajectory.back().pose;
+        m_latestOutput.currentPoseValid = true;
+        m_hasCurrentPose = true;
+    }
     emit renderPoseReady(renderPose(m_latestOutput.currentPose, m_hasCurrentPose));
     if (isErrorStatus(output.status)) {
         m_errorMessage = errorDisplayMessage(output);

@@ -4,7 +4,7 @@
 
 #include <cassert>
 #include <cmath>
-#include <map>
+#include <unordered_map>
 
 namespace pcl {
 
@@ -33,15 +33,19 @@ public:
             long long y = 0;
             long long z = 0;
 
-            bool operator<(const VoxelKey& other) const
+            bool operator==(const VoxelKey& other) const
             {
-                if (x != other.x) {
-                    return x < other.x;
-                }
-                if (y != other.y) {
-                    return y < other.y;
-                }
-                return z < other.z;
+                return x == other.x && y == other.y && z == other.z;
+            }
+        };
+
+        struct VoxelKeyHash {
+            std::size_t operator()(const VoxelKey& key) const
+            {
+                std::size_t seed = std::hash<long long>{}(key.x);
+                seed ^= std::hash<long long>{}(key.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                seed ^= std::hash<long long>{}(key.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+                return seed;
             }
         };
 
@@ -53,7 +57,8 @@ public:
             int count = 0;
         };
 
-        std::map<VoxelKey, Accumulator> voxels;
+        std::unordered_map<VoxelKey, Accumulator, VoxelKeyHash> voxels;
+        voxels.reserve(input_->points.size());
         for (const PointT& point : input_->points) {
             const VoxelKey key{
                 static_cast<long long>(std::floor(point.x / leafX_)),
