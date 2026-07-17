@@ -17,7 +17,6 @@
 
 namespace {
 
-constexpr float kModelMillimetersToMeters = 0.001f;
 constexpr float kTwoPi = 6.28318530717958647692f;
 const QQuaternion kModelYawAlignment = QQuaternion::fromAxisAndAngle(QVector3D(0.0f, 0.0f, 1.0f), 180.0f);
 
@@ -46,12 +45,14 @@ private:
     bool m_madeCurrent = false;
 };
 
-ImuRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
+ImuRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex,
+                                           bool sourceXReversed,
+                                           float sourceUnitToMeters)
 {
     return {
-        (sourceXReversed ? vertex.x : -vertex.x) * kModelMillimetersToMeters,
-        vertex.z * kModelMillimetersToMeters,
-        vertex.y * kModelMillimetersToMeters,
+        (sourceXReversed ? vertex.x : -vertex.x) * sourceUnitToMeters,
+        vertex.z * sourceUnitToMeters,
+        vertex.y * sourceUnitToMeters,
         0.72f,
         0.76f,
         0.78f,
@@ -63,6 +64,7 @@ ImuRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool 
 
 QVector<ImuRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices,
                                                       bool sourceXReversed,
+                                                      float sourceUnitToMeters,
                                                       float& modelScale)
 {
     QVector<ImuRenderVertex> transformed;
@@ -88,9 +90,9 @@ QVector<ImuRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Ve
     };
 
     for (int i = 0; i + 2 < vertices.size(); i += 3) {
-        ImuRenderVertex a = transformDeviceModelVertex(vertices.at(i), sourceXReversed);
-        ImuRenderVertex b = transformDeviceModelVertex(vertices.at(i + 1), sourceXReversed);
-        ImuRenderVertex c = transformDeviceModelVertex(vertices.at(i + 2), sourceXReversed);
+        ImuRenderVertex a = transformDeviceModelVertex(vertices.at(i), sourceXReversed, sourceUnitToMeters);
+        ImuRenderVertex b = transformDeviceModelVertex(vertices.at(i + 1), sourceXReversed, sourceUnitToMeters);
+        ImuRenderVertex c = transformDeviceModelVertex(vertices.at(i + 2), sourceXReversed, sourceUnitToMeters);
         QVector3D normal = QVector3D::crossProduct(
             QVector3D(b.x - a.x, b.y - a.y, b.z - a.z),
             QVector3D(c.x - a.x, c.y - a.y, c.z - a.z));
@@ -215,6 +217,7 @@ void ImuOrientationView::setDeviceModelName(const QString& modelName)
     m_modelVertices = transformDeviceModelVertices(
         mesh.triangles,
         DeviceModelResource::sourceXReversedForKey(modelKey),
+        DeviceModelResource::sourceUnitToMetersForKey(modelKey),
         m_modelScale);
     m_modelLoaded = true;
     m_statusText.clear();

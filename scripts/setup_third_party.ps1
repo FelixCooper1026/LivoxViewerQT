@@ -11,6 +11,27 @@ $downloadRoot = Join-Path $thirdPartyRoot ".downloads"
 New-Item -ItemType Directory -Force -Path $thirdPartyRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $downloadRoot | Out-Null
 
+$vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+$vsInstall = & $vswhere `
+    -latest `
+    -products * `
+    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+    -property installationPath
+$vsVersion = & $vswhere `
+    -latest `
+    -products * `
+    -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+    -property installationVersion
+if (-not $vsInstall) {
+    throw "Visual Studio with the MSVC x64 toolset was not found"
+}
+$vcvarsPath = Join-Path $vsInstall "VC\Auxiliary\Build\vcvars64.bat"
+$msvcToolsRoot = Join-Path $vsInstall "VC\Tools\MSVC"
+$msvcTools = Get-ChildItem -LiteralPath $msvcToolsRoot -Directory |
+    Sort-Object { [version]$_.Name } -Descending |
+    Select-Object -First 1
+$clPath = Join-Path $msvcTools.FullName "bin\Hostx64\x64\cl.exe"
+
 function Install-ZipDependency {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -113,15 +134,15 @@ if ($null -eq $boostSerializationLibrary -or $Force) {
     Write-Host "Building Boost libraries..."
     Push-Location $boostRoot
     try {
-        & cmd.exe /c bootstrap.bat
+        & cmd.exe /d /c "call `"$vcvarsPath`" >nul && call bootstrap.bat vc143"
         if ($LASTEXITCODE -ne 0) {
             throw "Boost bootstrap failed with exit code $LASTEXITCODE"
         }
-        $clPath = (Get-Command cl.exe -ErrorAction Stop).Source.Replace('\', '/')
-        $vcvarsPath = (Join-Path $env:VCINSTALLDIR "Auxiliary\Build\vcvars64.bat").Replace('\', '/')
+        $boostClPath = $clPath.Replace('\', '/')
+        $boostVcvarsPath = $vcvarsPath.Replace('\', '/')
         $boostProjectConfig = @"
 import option ;
-using msvc : 14.3 : "$clPath" : <setup>"$vcvarsPath" ;
+using msvc : 14.3 : "$boostClPath" : <setup>"$boostVcvarsPath" ;
 option.set keep-going : false ;
 "@
         Set-Content -LiteralPath (Join-Path $boostRoot "project-config.jam") `
@@ -167,7 +188,15 @@ if (-not (Test-Path -LiteralPath $gtsamConfig) -or $Force) {
             Remove-Item -LiteralPath $gtsamInstall -Recurse -Force
         }
     }
-    $generator = if ($env:CMAKE_GENERATOR) { $env:CMAKE_GENERATOR } else { "Visual Studio 17 2022" }
+    $vsMajor = ([version]$vsVersion).Major
+    $defaultGenerator = switch ($vsMajor) {
+        18 { "Visual Studio 18 2026" }
+        17 { "Visual Studio 17 2022" }
+        16 { "Visual Studio 16 2019" }
+        15 { "Visual Studio 15 2017" }
+        default { throw "Unsupported Visual Studio version: $vsMajor" }
+    }
+    $generator = if ($env:CMAKE_GENERATOR) { $env:CMAKE_GENERATOR } else { $defaultGenerator }
     $platform = if ($env:CMAKE_PLATFORM) { $env:CMAKE_PLATFORM } else { "x64" }
     $boostConfig = Join-Path $boostLibraryDir "cmake\Boost-1.82.0"
     Write-Host "Configuring GTSAM 4.2.0..."
@@ -182,6 +211,7 @@ if (-not (Test-Path -LiteralPath $gtsamConfig) -or $Force) {
         "-DBOOST_LIBRARYDIR=$boostLibraryDir" `
         "-DBoost_DIR=$boostConfig" `
         -DBoost_COMPILER=-vc143 `
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" `
         -DCMAKE_POLICY_DEFAULT_CMP0167=NEW `
         -DCMAKE_POLICY_DEFAULT_CMP0057=NEW `
         -DBoost_NO_SYSTEM_PATHS=ON `

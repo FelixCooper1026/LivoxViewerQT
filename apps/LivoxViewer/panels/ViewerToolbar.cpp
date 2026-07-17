@@ -696,7 +696,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             }
 
             const bool sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
-            pointCloudView->setStlModelMesh(mesh, sourceXReversed);
+            const float sourceUnitToMeters = DeviceModelResource::sourceUnitToMetersForKey(modelKey);
+            pointCloudView->setStlModelMesh(mesh, sourceXReversed, sourceUnitToMeters);
             pointCloudView->setProperty("stlModelKey", modelKey);
             syncPointCloudStlModelAction();
             statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));

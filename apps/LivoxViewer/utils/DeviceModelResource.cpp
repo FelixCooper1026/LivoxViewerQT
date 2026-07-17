@@ -6,24 +6,30 @@ namespace DeviceModelResource {
 
 QString modelKeyForName(QString modelName)
 {
-    modelName = modelName.trimmed();
-    const QString lower = modelName.toLower();
-    if (lower.contains(QStringLiteral("mid360s"))) {
+    const QString lower = modelName.trimmed().toLower();
+    QString normalized;
+    normalized.reserve(lower.size());
+    for (const QChar character : lower) {
+        if (character.isLetterOrNumber()) {
+            normalized.append(character);
+        }
+    }
+    if (normalized.contains(QStringLiteral("mid360s"))) {
         return QStringLiteral("Mid360S");
     }
-    if (lower.contains(QStringLiteral("mid360l"))) {
-        return QStringLiteral("Mid360l");
+    if (normalized.contains(QStringLiteral("mid360l")) || normalized == QStringLiteral("360l")) {
+        return QStringLiteral("Mid360L");
     }
-    if (lower.contains(QStringLiteral("mid360"))) {
+    if (normalized.contains(QStringLiteral("mid360"))) {
         return QStringLiteral("Mid360");
     }
-    if (lower.contains(QStringLiteral("avia2"))) {
+    if (normalized.contains(QStringLiteral("avia2"))) {
         return QStringLiteral("Avia2");
     }
-    if (lower.contains(QStringLiteral("hap"))) {
+    if (normalized.contains(QStringLiteral("hap"))) {
         return QStringLiteral("HAP");
     }
-    if (lower == QStringLiteral("pa") || lower.contains(QStringLiteral("livox pa"))) {
+    if (normalized == QStringLiteral("pa") || normalized.contains(QStringLiteral("livoxpa"))) {
         return QStringLiteral("PA");
     }
     return {};
@@ -44,6 +50,11 @@ QString modelPathForName(const QString& modelName)
 bool sourceXReversedForKey(const QString& modelKey)
 {
     return modelKey == QStringLiteral("Avia2");
+}
+
+float sourceUnitToMetersForKey(const QString& modelKey)
+{
+    return modelKey == QStringLiteral("Mid360L") ? 1.0f : 0.001f;
 }
 
 } // namespace DeviceModelResource

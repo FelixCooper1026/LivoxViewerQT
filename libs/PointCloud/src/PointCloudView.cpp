@@ -52,7 +52,6 @@ private:
     bool m_madeCurrent = false;
 };
 
-constexpr float kModelMillimetersToMeters = 0.001f;
 constexpr float kDefaultCameraDistance = 25.0f;
 constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
@@ -95,12 +94,14 @@ QStringList supportedPlaybackDropFiles(const QMimeData* mimeData)
     return files;
 }
 
-StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool sourceXReversed)
+StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex,
+                                           bool sourceXReversed,
+                                           float sourceUnitToMeters)
 {
     return {
-        (sourceXReversed ? vertex.x : -vertex.x) * kModelMillimetersToMeters,
-        vertex.z * kModelMillimetersToMeters,
-        vertex.y * kModelMillimetersToMeters,
+        (sourceXReversed ? vertex.x : -vertex.x) * sourceUnitToMeters,
+        vertex.z * sourceUnitToMeters,
+        vertex.y * sourceUnitToMeters,
         0.72f,
         0.76f,
         0.78f,
@@ -110,14 +111,16 @@ StlRenderVertex transformDeviceModelVertex(const StlModel::Vertex& vertex, bool 
     };
 }
 
-QVector<StlRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices, bool sourceXReversed)
+QVector<StlRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Vertex>& vertices,
+                                                      bool sourceXReversed,
+                                                      float sourceUnitToMeters)
 {
     QVector<StlRenderVertex> transformed;
     transformed.reserve(vertices.size());
     for (int i = 0; i + 2 < vertices.size(); i += 3) {
-        StlRenderVertex a = transformDeviceModelVertex(vertices.at(i), sourceXReversed);
-        StlRenderVertex b = transformDeviceModelVertex(vertices.at(i + 1), sourceXReversed);
-        StlRenderVertex c = transformDeviceModelVertex(vertices.at(i + 2), sourceXReversed);
+        StlRenderVertex a = transformDeviceModelVertex(vertices.at(i), sourceXReversed, sourceUnitToMeters);
+        StlRenderVertex b = transformDeviceModelVertex(vertices.at(i + 1), sourceXReversed, sourceUnitToMeters);
+        StlRenderVertex c = transformDeviceModelVertex(vertices.at(i + 2), sourceXReversed, sourceUnitToMeters);
         QVector3D normal = QVector3D::crossProduct(
             QVector3D(b.x - a.x, b.y - a.y, b.z - a.z),
             QVector3D(c.x - a.x, c.y - a.y, c.z - a.z));
@@ -3531,9 +3534,13 @@ void PointCloudView::setCrossSectionControlsVisible(bool visible)
     update();
 }
 
-void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh, bool sourceXReversed)
+void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh,
+                                     bool sourceXReversed,
+                                     float sourceUnitToMeters)
 {
-    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles, sourceXReversed);
+    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles,
+                                                      sourceXReversed,
+                                                      sourceUnitToMeters);
     m_stlModelVisible = true;
     uploadStlModelVertices();
     update();

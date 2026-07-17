@@ -9,6 +9,7 @@ QString modelKeyForName(QString modelName);
 QString modelPathForKey(const QString& modelKey);
 QString modelPathForName(const QString& modelName);
 bool sourceXReversedForKey(const QString& modelKey);
+float sourceUnitToMetersForKey(const QString& modelKey);
 
 } // namespace DeviceModelResource
 
