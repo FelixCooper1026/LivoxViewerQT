@@ -564,6 +564,7 @@ int runDiagnostic(const QStringList& inputPaths,
             << " running=" << replay.runningFrames
             << " trajectory=" << replay.trajectoryPoints
             << " mapPoints=" << replay.mapPoints
+            << " denseGlobalMapPoints=" << replay.globalMapPoints
             << " keyframes=" << replay.keyframeCount
             << " loops=" << replay.loopClosureCount
             << " optimizedMapPoints=" << replay.optimizedMapPoints

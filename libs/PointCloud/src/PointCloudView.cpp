@@ -6,7 +6,9 @@
 #include <limits>
 #include <utility>
 #include <QMouseEvent>
+#include <QLineF>
 #include <QPainter>
+#include <QPen>
 #include <QPointF>
 #include <QRectF>
 #include <QLinearGradient>
@@ -1620,24 +1622,6 @@ void PointCloudView::paintGL()
         setPrimitiveState(false, false);
     }
 
-    if (m_slamTrajectoryVertexCount > 1 && m_slamTrajectoryVao.isCreated()) {
-        glDisable(GL_DEPTH_TEST);
-        glLineWidth(m_slamRenderSnapshot.trajectoryLineWidthPx);
-        m_slamTrajectoryVao.bind();
-        glDrawArrays(GL_LINE_STRIP, 0, m_slamTrajectoryVertexCount);
-        m_slamTrajectoryVao.release();
-        glLineWidth(1.0f);
-        glEnable(GL_DEPTH_TEST);
-    }
-    if (m_slamLoopClosureVertexCount > 1 && m_slamLoopClosureVao.isCreated()) {
-        glDisable(GL_DEPTH_TEST);
-        glLineWidth(m_slamRenderSnapshot.trajectoryLineWidthPx);
-        m_slamLoopClosureVao.bind();
-        glDrawArrays(GL_LINES, 0, m_slamLoopClosureVertexCount);
-        m_slamLoopClosureVao.release();
-        glLineWidth(1.0f);
-        glEnable(GL_DEPTH_TEST);
-    }
     if (m_slamPoseAxisVertexCount > 0 && m_slamPoseAxisVao.isCreated()) {
         glDisable(GL_DEPTH_TEST);
         m_slamPoseAxisVao.bind();
@@ -1713,6 +1697,55 @@ void PointCloudView::paintGL()
     // ==========================================
     // 5. 绘制 2D 叠加层 (文本、UI组件等)
     // ==========================================
+
+    // Windows 的 OpenGL 核心模式通常将 glLineWidth 钳制为 1 px。
+    // 将轨迹投影到屏幕后交给 QPainter 绘制，使首选项中的像素线宽真实生效。
+    if (m_slamRenderSnapshot.trajectoryVertices.size() > 1 ||
+        m_slamRenderSnapshot.loopClosureVertices.size() > 1) {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const QMatrix4x4 mvp = m_projection * m_modelView;
+        const qreal lineWidth = qreal(m_slamRenderSnapshot.trajectoryLineWidthPx);
+
+        const auto screenLines = [&](const QVector<SlamRenderVertex>& vertices, int step) {
+            QVector<QLineF> lines;
+            lines.reserve(step == 1 ? vertices.size() - 1 : vertices.size() / 2);
+            for (int i = 0; i + 1 < vertices.size(); i += step) {
+                const SlamRenderVertex& a = vertices.at(i);
+                const SlamRenderVertex& b = vertices.at(i + 1);
+                QPointF screenA;
+                QPointF screenB;
+                if (projectClippedSegmentToScreen(QVector3D(a.x, a.y, a.z),
+                                                  QVector3D(b.x, b.y, b.z),
+                                                  mvp,
+                                                  width(),
+                                                  height(),
+                                                  screenA,
+                                                  screenB)) {
+                    lines.push_back(QLineF(screenA, screenB));
+                }
+            }
+            return lines;
+        };
+
+        if (m_slamRenderSnapshot.trajectoryVertices.size() > 1) {
+            const SlamRenderVertex& color = m_slamRenderSnapshot.trajectoryVertices.front();
+            QPen pen(QColor::fromRgbF(color.r, color.g, color.b));
+            pen.setWidthF(lineWidth);
+            pen.setCapStyle(Qt::RoundCap);
+            pen.setJoinStyle(Qt::RoundJoin);
+            painter.setPen(pen);
+            painter.drawLines(screenLines(m_slamRenderSnapshot.trajectoryVertices, 1));
+        }
+        if (m_slamRenderSnapshot.loopClosureVertices.size() > 1) {
+            const SlamRenderVertex& color = m_slamRenderSnapshot.loopClosureVertices.front();
+            QPen pen(QColor::fromRgbF(color.r, color.g, color.b));
+            pen.setWidthF(lineWidth);
+            pen.setCapStyle(Qt::RoundCap);
+            painter.setPen(pen);
+            painter.drawLines(screenLines(m_slamRenderSnapshot.loopClosureVertices, 2));
+        }
+    }
 
     // 绘制坐标轴标签 "X", "Y", "Z" (基于 Overlay 轴的位置)
     {

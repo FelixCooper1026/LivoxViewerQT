@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 2.3.2
+    VERSION 2.3.3
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -520,6 +520,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     # MSVC设置
     target_compile_options(LivoxViewerQT PRIVATE
+        /MP
         /utf-8
         /W4
         $<$<CONFIG:Debug>:/Od /Zi /DDEBUG>
@@ -653,7 +654,7 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
 )
 
-add_executable(SlamReplayTool ${SLAM_REPLAY_TOOL_SOURCES})
+add_executable(SlamReplayTool EXCLUDE_FROM_ALL ${SLAM_REPLAY_TOOL_SOURCES})
 
 target_include_directories(SlamReplayTool PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -685,7 +686,7 @@ endif()
 target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4 gtsam)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
-    target_compile_options(SlamReplayTool PRIVATE /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
+    target_compile_options(SlamReplayTool PRIVATE /MP /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
     target_compile_definitions(SlamReplayTool PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX WIN32_LEAN_AND_MEAN)
 endif()
 

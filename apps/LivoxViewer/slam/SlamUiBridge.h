@@ -76,18 +76,26 @@ signals:
     void poseAxisVerticesReady(const QVector<SlamRenderVertex>& vertices);
 
 private:
+    struct DenseGlobalMapSegment {
+        SlamPose pose;
+        QVector<SlamPoint> points;
+    };
+
     void refreshStatus();
     SlamRenderSnapshot buildRenderSnapshot();
     QVector<SlamRenderVertex> buildPoseAxisVertices() const;
     void appendTrajectory(const SlamOutput& output);
     void appendGlobalMap(const SlamOutput& output);
+    void correctDenseGlobalMap(const QVector<SlamTrajectoryPoint>& optimizedTrajectory);
+    void rebuildDenseGlobalMapSnapshot();
+    qsizetype denseGlobalMapPointCount() const;
 
     SlamOutput m_latestOutput;
     DisplayState m_displayState;
     QVector<SlamTrajectoryPoint> m_trajectory;
     QVector<SlamTrajectoryPoint> m_unoptimizedTrajectory;
     QVector<SlamPoint> m_globalMapPoints;
-    QVector<SlamPoint> m_unoptimizedGlobalMapPoints;
+    QVector<DenseGlobalMapSegment> m_denseGlobalMapSegments;
     QVector<SlamLoopClosureEdge> m_loopClosureEdges;
     quint64 m_worldFramePointTotal = 0;
     QString m_errorMessage;
@@ -109,6 +117,8 @@ private:
     bool m_worldFrameVisible = true;
     bool m_bodyFrameVisible = true;
     bool m_dynamicObjectVisible = true;
+    SlamPose m_initialPose;
+    bool m_hasInitialPose = false;
     bool m_hasCurrentPose = false;
     bool m_hasOptimizedTrajectory = false;
     bool m_hasOptimizedGlobalMap = false;

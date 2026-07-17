@@ -79,6 +79,8 @@ CMakeLists.txt.user
 # build scripts
 scripts/*
 !scripts/
+!scripts/compile.bat
+!scripts/compile.sh
 !scripts/setup_third_party.ps1
 !scripts/setup_third_party.sh
 

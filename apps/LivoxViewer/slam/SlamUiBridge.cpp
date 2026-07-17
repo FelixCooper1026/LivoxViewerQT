@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <Eigen/Geometry>
+
 namespace {
 
 constexpr int kMaxTrajectoryPoints = 200000;
@@ -48,6 +50,28 @@ SlamRenderVertex renderDynamicPoint(const SlamDynamicPoint& point, const QColor&
 QVector3D posePosition(const SlamPose& pose)
 {
     return QVector3D(float(pose.tx), float(pose.ty), float(pose.tz));
+}
+
+Eigen::Isometry3d poseTransform(const SlamPose& pose)
+{
+    Eigen::Quaterniond rotation(pose.qw, pose.qx, pose.qy, pose.qz);
+    rotation.normalize();
+    Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
+    transform.linear() = rotation.toRotationMatrix();
+    transform.translation() = Eigen::Vector3d(pose.tx, pose.ty, pose.tz);
+    return transform;
+}
+
+void setPoseTransform(SlamPose& pose, const Eigen::Isometry3d& transform)
+{
+    const Eigen::Quaterniond rotation(transform.rotation());
+    pose.tx = transform.translation().x();
+    pose.ty = transform.translation().y();
+    pose.tz = transform.translation().z();
+    pose.qx = rotation.x();
+    pose.qy = rotation.y();
+    pose.qz = rotation.z();
+    pose.qw = rotation.w();
 }
 
 SlamRenderPose renderPose(const SlamPose& pose, bool valid)
@@ -200,6 +224,24 @@ void appendPoseAxisMesh(QVector<SlamRenderVertex>& vertices,
     }
 }
 
+void appendPoseAxes(QVector<SlamRenderVertex>& vertices,
+                    const SlamPose& pose,
+                    float axisLength,
+                    float diameter)
+{
+    const QVector3D origin = posePosition(pose);
+    const QQuaternion rotation(float(pose.qw),
+                               float(pose.qx),
+                               float(pose.qy),
+                               float(pose.qz));
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
+                       axisLength, diameter, 1.0f, 0.05f, 0.05f);
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)),
+                       axisLength, diameter, 0.05f, 1.0f, 0.05f);
+    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)),
+                       axisLength, diameter, 0.1f, 0.35f, 1.0f);
+}
+
 } // namespace
 
 SlamUiBridge::SlamUiBridge(QObject* parent)
@@ -219,6 +261,10 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
         m_latestOutput.currentPose = output.currentPose;
         m_latestOutput.currentPoseValid = output.currentPoseValid;
         m_hasCurrentPose = output.currentPoseValid;
+        if (output.currentPoseValid && !m_hasInitialPose) {
+            m_initialPose = output.currentPose;
+            m_hasInitialPose = true;
+        }
         m_displayState.currentPose = formatPose(output.currentPose);
         emit displayStateChanged();
         emit renderPoseReady(renderPose(output.currentPose, m_hasCurrentPose));
@@ -230,6 +276,10 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     m_latestOutput = output;
     if (output.currentPoseValid) {
         m_hasCurrentPose = true;
+        if (!m_hasInitialPose) {
+            m_initialPose = output.currentPose;
+            m_hasInitialPose = true;
+        }
     } else {
         m_latestOutput.currentPose = retainedPose;
         m_latestOutput.currentPoseValid = retainedPoseValid;
@@ -417,7 +467,7 @@ void SlamUiBridge::clearDisplay()
     m_trajectory.clear();
     m_unoptimizedTrajectory.clear();
     m_globalMapPoints.clear();
-    m_unoptimizedGlobalMapPoints.clear();
+    m_denseGlobalMapSegments.clear();
     m_loopClosureEdges.clear();
     m_hasOptimizedTrajectory = false;
     m_hasOptimizedGlobalMap = false;
@@ -432,6 +482,8 @@ void SlamUiBridge::clearDisplay()
     m_latestOutput.currentPose = SlamPose();
     m_latestOutput.currentPoseValid = false;
     m_hasCurrentPose = false;
+    m_initialPose = SlamPose();
+    m_hasInitialPose = false;
     m_errorMessage.clear();
     emit renderPoseReady(SlamRenderPose());
     emit renderSnapshotReady(buildRenderSnapshot());
@@ -465,7 +517,7 @@ void SlamUiBridge::refreshStatus()
         vectorBytes(m_trajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_unoptimizedTrajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
-        vectorBytes(m_unoptimizedGlobalMapPoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(denseGlobalMapPointCount(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.dynamicDetectionFrameWorldPoints.size(), sizeof(SlamPoint)) +
@@ -591,19 +643,14 @@ QVector<SlamRenderVertex> SlamUiBridge::buildPoseAxisVertices() const
         return vertices;
     }
 
-    const QVector3D origin = posePosition(m_latestOutput.currentPose);
-    const QQuaternion rotation(float(m_latestOutput.currentPose.qw),
-                               float(m_latestOutput.currentPose.qx),
-                               float(m_latestOutput.currentPose.qy),
-                               float(m_latestOutput.currentPose.qz));
     const float diameter = poseAxisDiameterFromLineWidth(m_poseAxisLineWidthPx);
-    vertices.reserve(288);
-    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f)),
-                       m_poseAxisLengthM, diameter, 1.0f, 0.05f, 0.05f);
-    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 1.0f, 0.0f)),
-                       m_poseAxisLengthM, diameter, 0.05f, 1.0f, 0.05f);
-    appendPoseAxisMesh(vertices, origin, rotation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f)),
-                       m_poseAxisLengthM, diameter, 0.1f, 0.35f, 1.0f);
+    vertices.reserve((m_hasInitialPose ? 288 : 0) + (m_hasCurrentPose ? 288 : 0));
+    if (m_hasInitialPose) {
+        appendPoseAxes(vertices, m_initialPose, m_poseAxisLengthM, diameter);
+    }
+    if (m_hasCurrentPose) {
+        appendPoseAxes(vertices, m_latestOutput.currentPose, m_poseAxisLengthM, diameter);
+    }
     return vertices;
 }
 
@@ -637,11 +684,22 @@ void SlamUiBridge::appendTrajectory(const SlamOutput& output)
 void SlamUiBridge::appendGlobalMap(const SlamOutput& output)
 {
     if (!output.newGlobalMapPoints.isEmpty()) {
-        m_unoptimizedGlobalMapPoints += output.newGlobalMapPoints;
-        if (!m_hasOptimizedGlobalMap) {
-            m_globalMapPoints += output.newGlobalMapPoints;
-        }
+        DenseGlobalMapSegment segment;
+        segment.pose = output.currentPose;
+        segment.points = output.newGlobalMapPoints;
+        m_denseGlobalMapSegments.push_back(std::move(segment));
+        m_globalMapPoints += output.newGlobalMapPoints;
     }
+
+    if (!m_denseGlobalMapSegments.isEmpty()) {
+        if (output.optimizedTrajectoryReset && !output.optimizedTrajectory.isEmpty()) {
+            correctDenseGlobalMap(output.optimizedTrajectory);
+            rebuildDenseGlobalMapSnapshot();
+            m_hasOptimizedGlobalMap = true;
+        }
+        return;
+    }
+
     if (output.optimizedGlobalMapReset) {
         m_globalMapPoints.clear();
         m_hasOptimizedGlobalMap = true;
@@ -653,4 +711,96 @@ void SlamUiBridge::appendGlobalMap(const SlamOutput& output)
         }
         m_globalMapPoints += output.optimizedGlobalMapPoints;
     }
+}
+
+void SlamUiBridge::correctDenseGlobalMap(
+    const QVector<SlamTrajectoryPoint>& optimizedTrajectory)
+{
+    struct PoseCorrection {
+        int64_t timestampNs = 0;
+        Eigen::Quaterniond rotation = Eigen::Quaterniond::Identity();
+        Eigen::Vector3d translation = Eigen::Vector3d::Zero();
+    };
+
+    QVector<PoseCorrection> corrections;
+    corrections.reserve(optimizedTrajectory.size());
+    int segmentIndex = 0;
+    for (const SlamTrajectoryPoint& optimizedPoint : optimizedTrajectory) {
+        while (segmentIndex + 1 < m_denseGlobalMapSegments.size() &&
+               std::abs(m_denseGlobalMapSegments.at(segmentIndex + 1).pose.timestampNs -
+                        optimizedPoint.pose.timestampNs) <
+                   std::abs(m_denseGlobalMapSegments.at(segmentIndex).pose.timestampNs -
+                            optimizedPoint.pose.timestampNs)) {
+            ++segmentIndex;
+        }
+        const Eigen::Isometry3d correction =
+            poseTransform(optimizedPoint.pose) *
+            poseTransform(m_denseGlobalMapSegments.at(segmentIndex).pose).inverse();
+        corrections.push_back({optimizedPoint.pose.timestampNs,
+                               Eigen::Quaterniond(correction.rotation()),
+                               correction.translation()});
+    }
+
+    DenseGlobalMapSegment* segments = m_denseGlobalMapSegments.data();
+    const int segmentCount = m_denseGlobalMapSegments.size();
+#pragma omp parallel for
+    for (int index = 0; index < segmentCount; ++index) {
+        DenseGlobalMapSegment& segment = segments[index];
+        const auto upper = std::lower_bound(
+            corrections.cbegin(),
+            corrections.cend(),
+            segment.pose.timestampNs,
+            [](const PoseCorrection& correction, int64_t timestampNs) {
+                return correction.timestampNs < timestampNs;
+            });
+
+        Eigen::Quaterniond rotation;
+        Eigen::Vector3d translation;
+        if (upper == corrections.cbegin()) {
+            rotation = upper->rotation;
+            translation = upper->translation;
+        } else if (upper == corrections.cend()) {
+            rotation = corrections.back().rotation;
+            translation = corrections.back().translation;
+        } else {
+            const PoseCorrection& before = *(upper - 1);
+            const double alpha = double(segment.pose.timestampNs - before.timestampNs) /
+                                 double(upper->timestampNs - before.timestampNs);
+            rotation = before.rotation.slerp(alpha, upper->rotation).normalized();
+            translation = before.translation * (1.0 - alpha) + upper->translation * alpha;
+        }
+
+        const Eigen::Matrix3f rotationMatrix = rotation.toRotationMatrix().cast<float>();
+        const Eigen::Vector3f translationVector = translation.cast<float>();
+        for (SlamPoint& point : segment.points) {
+            const Eigen::Vector3f corrected =
+                rotationMatrix * Eigen::Vector3f(point.x, point.y, point.z) + translationVector;
+            point.x = corrected.x();
+            point.y = corrected.y();
+            point.z = corrected.z();
+        }
+
+        Eigen::Isometry3d correctionTransform = Eigen::Isometry3d::Identity();
+        correctionTransform.linear() = rotation.toRotationMatrix();
+        correctionTransform.translation() = translation;
+        setPoseTransform(segment.pose, correctionTransform * poseTransform(segment.pose));
+    }
+}
+
+void SlamUiBridge::rebuildDenseGlobalMapSnapshot()
+{
+    m_globalMapPoints.clear();
+    m_globalMapPoints.reserve(denseGlobalMapPointCount());
+    for (const DenseGlobalMapSegment& segment : m_denseGlobalMapSegments) {
+        m_globalMapPoints += segment.points;
+    }
+}
+
+qsizetype SlamUiBridge::denseGlobalMapPointCount() const
+{
+    qsizetype pointCount = 0;
+    for (const DenseGlobalMapSegment& segment : m_denseGlobalMapSegments) {
+        pointCount += segment.points.size();
+    }
+    return pointCount;
 }

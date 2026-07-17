@@ -45,7 +45,7 @@ struct SlamRuntimeConfig {
     float rotationTolerance = std::numeric_limits<float>::max();
     int numberOfCores = 2;
     double mappingProcessInterval = 0.15;
-    float surroundingKeyframeAddingDistThreshold = 20.0f;
+    float surroundingKeyframeAddingDistThreshold = 5.0f;
     float surroundingKeyframeAddingAngleThreshold = 0.2f;
     float surroundingKeyframeDensity = 1.0f;
     float surroundingKeyframeSearchRadius = 50.0f;
