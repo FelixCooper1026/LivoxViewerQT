@@ -10,6 +10,7 @@
 #include <QColor>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QHideEvent>
 #include <QMatrix4x4>
 #include <QMutex>
@@ -225,6 +226,7 @@ private:
     QVector3D orbitCameraPosition() const;
     void syncViewerPositionFromOrbit();
     void syncOrbitTargetFromViewer();
+    void advanceSlamFollowSmoothing();
     QSize edlPhysicalSize() const;
     QSize widgetPhysicalSize() const;
 
@@ -350,7 +352,14 @@ private:
     QVector3D m_viewerPosition;
     QVector3D m_slamFollowPosition;
     QQuaternion m_slamFollowOrientation;
+    QVector3D m_slamFollowTargetPosition;
+    QQuaternion m_slamFollowTargetOrientation;
+    float m_slamFollowDistanceM = 10.05f;
+    float m_slamFollowYawDeg = 180.0f;
+    float m_slamFollowPitchDeg = 5.71f;
     bool m_slamFollowPoseValid = false;
+    QTimer* m_slamFollowSmoothingTimer = nullptr;
+    QElapsedTimer m_slamFollowSmoothingClock;
     Qt::MouseButton m_activeButton;
     QPoint m_lastMousePos;
     bool m_mousePressed;

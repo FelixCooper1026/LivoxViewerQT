@@ -25,6 +25,7 @@
 #include <QThread>
 #include <QUrl>
 #include <QVector4D>
+#include <QtMath>
 #include <QtConcurrent/QtConcurrentRun>
 
 namespace {
@@ -58,10 +59,13 @@ constexpr float kDefaultCameraDistance = 25.0f;
 constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
-constexpr float kSlamFollowDistanceM = 6.0f;
-constexpr float kSlamFollowHeightM = 1.5f;
 constexpr float kSlamFollowLookAheadM = 4.0f;
 constexpr float kSlamFollowTargetHeightM = 0.5f;
+constexpr float kSlamFollowPositionSmoothingSeconds = 0.12f;
+constexpr float kSlamFollowOrientationSmoothingSeconds = 0.22f;
+constexpr float kSlamFollowOrbitSensitivityDeg = 0.3f;
+constexpr float kSlamFollowMinDistanceM = 0.5f;
+constexpr float kSlamFollowMaxDistanceM = 500.0f;
 
 bool isSupportedPlaybackDropFile(const QString& filePath)
 {
@@ -497,6 +501,12 @@ PointCloudView::PointCloudView(QWidget *parent)
     m_selectionPublishDebounceTimer->setSingleShot(true);
     m_selectionPublishDebounceTimer->setInterval(150);
     connect(m_selectionPublishDebounceTimer, &QTimer::timeout, this, &PointCloudView::startSelectionPublishJob);
+
+    m_slamFollowSmoothingTimer = new QTimer(this);
+    m_slamFollowSmoothingTimer->setTimerType(Qt::PreciseTimer);
+    m_slamFollowSmoothingTimer->setInterval(16);
+    connect(m_slamFollowSmoothingTimer, &QTimer::timeout,
+            this, &PointCloudView::advanceSlamFollowSmoothing);
 }
 
 PointCloudView::~PointCloudView()
@@ -1309,6 +1319,34 @@ void PointCloudView::syncOrbitTargetFromViewer()
     m_target = m_viewerPosition + cameraForward() * m_distance;
 }
 
+void PointCloudView::advanceSlamFollowSmoothing()
+{
+    if (m_projectionMode != ProjectionMode::SlamPoseFollow || !m_slamFollowPoseValid) {
+        m_slamFollowSmoothingTimer->stop();
+        m_slamFollowSmoothingClock.invalidate();
+        return;
+    }
+
+    const float elapsedSeconds = float(m_slamFollowSmoothingClock.restart()) / 1000.0f;
+    const float positionAlpha = 1.0f - std::exp(-elapsedSeconds / kSlamFollowPositionSmoothingSeconds);
+    const float orientationAlpha = 1.0f - std::exp(-elapsedSeconds / kSlamFollowOrientationSmoothingSeconds);
+    m_slamFollowPosition += (m_slamFollowTargetPosition - m_slamFollowPosition) * positionAlpha;
+    m_slamFollowOrientation = QQuaternion::slerp(m_slamFollowOrientation,
+                                                 m_slamFollowTargetOrientation,
+                                                 orientationAlpha).normalized();
+
+    const bool positionSettled = (m_slamFollowTargetPosition - m_slamFollowPosition).lengthSquared() < 1e-6f;
+    const bool orientationSettled = std::abs(QQuaternion::dotProduct(m_slamFollowOrientation,
+                                                                     m_slamFollowTargetOrientation)) > 0.999999f;
+    if (positionSettled && orientationSettled) {
+        m_slamFollowPosition = m_slamFollowTargetPosition;
+        m_slamFollowOrientation = m_slamFollowTargetOrientation;
+        m_slamFollowSmoothingTimer->stop();
+        m_slamFollowSmoothingClock.invalidate();
+    }
+    update();
+}
+
 void PointCloudView::paintGL()
 {
     if (!m_program) {
@@ -1392,12 +1430,17 @@ void PointCloudView::paintGL()
     } else if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
         const QVector3D forward = m_slamFollowOrientation.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f));
         const QVector3D up = m_slamFollowOrientation.rotatedVector(QVector3D(0.0f, 0.0f, 1.0f));
-        const QVector3D cameraPosition = m_slamFollowPosition
-            - forward * kSlamFollowDistanceM
-            + up * kSlamFollowHeightM;
         const QVector3D lookTarget = m_slamFollowPosition
             + forward * kSlamFollowLookAheadM
             + up * kSlamFollowTargetHeightM;
+        const float yawRadians = qDegreesToRadians(m_slamFollowYawDeg);
+        const float pitchRadians = qDegreesToRadians(m_slamFollowPitchDeg);
+        const float horizontalDistance = m_slamFollowDistanceM * std::cos(pitchRadians);
+        const QVector3D localCameraOffset(horizontalDistance * std::cos(yawRadians),
+                                          horizontalDistance * std::sin(yawRadians),
+                                          m_slamFollowDistanceM * std::sin(pitchRadians));
+        const QVector3D cameraPosition = lookTarget
+            + m_slamFollowOrientation.rotatedVector(localCameraOffset);
         const QVector3D viewDirection = (lookTarget - cameraPosition).normalized();
         m_modelView.setToIdentity();
         m_modelView.lookAt(cameraPosition, lookTarget, up);
@@ -1407,10 +1450,13 @@ void PointCloudView::paintGL()
 
     // 设置基础投影矩阵    
     m_projection.setToIdentity();
-    const float nearPlane = std::clamp(m_distance * kNearPlaneDistanceRatio,
+    const float cameraDistance = m_projectionMode == ProjectionMode::SlamPoseFollow
+        ? m_slamFollowDistanceM
+        : m_distance;
+    const float nearPlane = std::clamp(cameraDistance * kNearPlaneDistanceRatio,
                                        kMinimumNearPlane,
                                        kDefaultNearPlane);
-    float farPlane = qMax(1000.0f, m_distance * 10.0f); // 永远比当前视距大一个数量级
+    float farPlane = qMax(1000.0f, cameraDistance * 10.0f); // 永远比当前视距大一个数量级
     const float fovY = 45.0f;
     const float aspect = float(qMax(1, width())) / float(qMax(1, height()));
     if (m_projectionMode != ProjectionMode::Orthographic) {
@@ -2004,10 +2050,22 @@ void PointCloudView::setSlamFollowPose(const SlamRenderPose& pose)
 {
     Q_ASSERT(qApp);
     Q_ASSERT(QThread::currentThread() == qApp->thread());
+    const bool hadValidPose = m_slamFollowPoseValid;
     m_slamFollowPoseValid = pose.valid;
     if (pose.valid) {
-        m_slamFollowPosition = QVector3D(pose.tx, pose.ty, pose.tz);
-        m_slamFollowOrientation = QQuaternion(pose.qw, pose.qx, pose.qy, pose.qz).normalized();
+        m_slamFollowTargetPosition = QVector3D(pose.tx, pose.ty, pose.tz);
+        m_slamFollowTargetOrientation = QQuaternion(pose.qw, pose.qx, pose.qy, pose.qz).normalized();
+        if (!hadValidPose) {
+            m_slamFollowPosition = m_slamFollowTargetPosition;
+            m_slamFollowOrientation = m_slamFollowTargetOrientation;
+        } else if (m_projectionMode == ProjectionMode::SlamPoseFollow &&
+                   !m_slamFollowSmoothingTimer->isActive()) {
+            m_slamFollowSmoothingClock.start();
+            m_slamFollowSmoothingTimer->start();
+        }
+    } else {
+        m_slamFollowSmoothingTimer->stop();
+        m_slamFollowSmoothingClock.invalidate();
     }
     if (m_projectionMode == ProjectionMode::SlamPoseFollow) {
         update();
@@ -2101,10 +2159,14 @@ void PointCloudView::mousePressEvent(QMouseEvent *event)
         return;
     }
     // 相机操作：左键旋转 或 中键/右键平移
-    if (!(m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) &&
-        ((event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) ||
-         event->button() == Qt::MiddleButton ||
-         event->button() == Qt::RightButton)) {
+    const bool followOrbit = m_projectionMode == ProjectionMode::SlamPoseFollow &&
+                             event->button() == Qt::LeftButton &&
+                             !(event->modifiers() & Qt::ControlModifier);
+    if (followOrbit ||
+        (m_projectionMode != ProjectionMode::SlamPoseFollow &&
+         ((event->button() == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) ||
+          event->button() == Qt::MiddleButton ||
+          event->button() == Qt::RightButton))) {
         setCursor(Qt::ClosedHandCursor);
     }
 }
@@ -2143,7 +2205,17 @@ void PointCloudView::mouseMoveEvent(QMouseEvent *event)
         update();
         return;
     }
-    if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow) {
+        if (m_activeButton == Qt::LeftButton && !(event->modifiers() & Qt::ControlModifier)) {
+            m_slamFollowYawDeg = std::remainder(
+                m_slamFollowYawDeg - float(delta.x()) * kSlamFollowOrbitSensitivityDeg,
+                360.0f);
+            m_slamFollowPitchDeg = std::clamp(
+                m_slamFollowPitchDeg + float(delta.y()) * kSlamFollowOrbitSensitivityDeg,
+                -85.0f,
+                85.0f);
+            update();
+        }
         m_lastMousePos = event->pos();
         return;
     }
@@ -2222,7 +2294,12 @@ void PointCloudView::leaveEvent(QEvent *event)
 
 void PointCloudView::wheelEvent(QWheelEvent *event)
 {
-    if (m_projectionMode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+    if (m_projectionMode == ProjectionMode::SlamPoseFollow) {
+        const float factor = std::clamp(1.0f - event->angleDelta().y() * 0.001f, 0.1f, 10.0f);
+        m_slamFollowDistanceM = std::clamp(m_slamFollowDistanceM * factor,
+                                          kSlamFollowMinDistanceM,
+                                          kSlamFollowMaxDistanceM);
+        update();
         event->accept();
         return;
     }
@@ -3337,6 +3414,15 @@ void PointCloudView::setProjectionMode(ProjectionMode mode)
         syncOrbitTargetFromViewer();
     }
     m_projectionMode = mode;
+    if (mode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
+        m_slamFollowPosition = m_slamFollowTargetPosition;
+        m_slamFollowOrientation = m_slamFollowTargetOrientation;
+        m_slamFollowSmoothingTimer->stop();
+        m_slamFollowSmoothingClock.invalidate();
+    } else if (mode != ProjectionMode::SlamPoseFollow) {
+        m_slamFollowSmoothingTimer->stop();
+        m_slamFollowSmoothingClock.invalidate();
+    }
     update();
 }
 
