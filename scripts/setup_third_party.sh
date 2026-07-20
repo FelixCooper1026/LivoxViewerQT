@@ -120,6 +120,7 @@ if ! find "$boost_library_dir" -maxdepth 1 -type f -name '*serialization*' -prin
             --with-timer \
             --with-chrono \
             --with-regex \
+            --layout=tagged \
             variant=debug,release \
             link=static \
             threading=multi \
@@ -131,7 +132,7 @@ fi
 gtsam_source="$third_party_root/gtsam-4.2.0"
 gtsam_build="$third_party_root/.build/gtsam-4.2.0"
 gtsam_install="$third_party_root/gtsam-4.2.0-install"
-gtsam_config="$gtsam_install/CMake/GTSAMConfig.cmake"
+gtsam_config="$gtsam_install/lib/cmake/GTSAM/GTSAMConfig.cmake"
 if [[ ! -f "$gtsam_config" || "$force" -eq 1 ]]; then
     if [[ "$force" -eq 1 ]]; then
         rm -rf "$gtsam_build" "$gtsam_install"
@@ -145,6 +146,7 @@ if [[ ! -f "$gtsam_config" || "$force" -eq 1 ]]; then
         -DBOOST_ROOT="$boost_root" \
         -DBOOST_LIBRARYDIR="$boost_library_dir" \
         -DBoost_DIR="$boost_library_dir/cmake/Boost-1.82.0" \
+        -DBoost_USE_STATIC_LIBS=ON \
         -DCMAKE_POLICY_DEFAULT_CMP0167=NEW \
         -DCMAKE_POLICY_DEFAULT_CMP0057=NEW \
         -DBoost_NO_SYSTEM_PATHS=ON \
