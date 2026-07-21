@@ -156,15 +156,18 @@ if(NOT EXISTS "${SLAM_EIGEN_INCLUDE_DIR}/Eigen/Core")
 endif()
 
 set(SLAM_GTSAM_INSTALL_DIR "${THIRD_PARTY_ROOT}/gtsam-4.2.0-install")
-if(EXISTS "${SLAM_GTSAM_INSTALL_DIR}/CMake/GTSAMConfig.cmake")
-    list(PREPEND CMAKE_PREFIX_PATH "${SLAM_GTSAM_INSTALL_DIR}")
+list(PREPEND CMAKE_PREFIX_PATH "${SLAM_GTSAM_INSTALL_DIR}")
+if(WIN32)
     set(GTSAM_DIR "${SLAM_GTSAM_INSTALL_DIR}/CMake")
+else()
+    set(GTSAM_DIR "${SLAM_GTSAM_INSTALL_DIR}/lib/cmake/GTSAM")
 endif()
 
 set(Eigen3_DIR "${SLAM_EIGEN_INCLUDE_DIR}/share/eigen3/cmake")
 set(BOOST_ROOT "${THIRD_PARTY_ROOT}/boost-1.82.0")
 set(BOOST_LIBRARYDIR "${BOOST_ROOT}/stage/lib")
 set(Boost_DIR "${BOOST_LIBRARYDIR}/cmake/Boost-1.82.0")
+set(Boost_USE_STATIC_LIBS ON)
 if(MSVC)
     set(Boost_COMPILER "-vc143")
 endif()
@@ -740,6 +743,23 @@ endforeach()
 # =============================================================================
 # 安装配置
 # =============================================================================
+
+if(IS_WINDOWS)
+    get_target_property(QT_QMAKE_EXECUTABLE
+        Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
+    get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
+
+    add_custom_command(TARGET LivoxViewerQT POST_BUILD
+        COMMAND "${QT_BIN_DIR}/windeployqt.exe"
+            "$<IF:$<CONFIG:Debug>,--debug,--release>"
+            --no-compiler-runtime
+            --no-translations
+            --no-system-d3d-compiler
+            --no-opengl-sw
+            "$<TARGET_FILE:LivoxViewerQT>"
+        COMMENT "Deploying Qt runtime to build directory"
+    )
+endif()
 
 include(GNUInstallDirs)
 
