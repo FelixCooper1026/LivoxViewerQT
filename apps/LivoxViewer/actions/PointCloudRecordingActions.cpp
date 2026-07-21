@@ -3,6 +3,7 @@
 #include "PointCloudExport.h"
 #include "widgets/ParameterOptionButtons.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
@@ -265,12 +266,12 @@ void LivoxViewerWindow::stopLvx2Recording(bool flushPending)
 
 QString LivoxViewerWindow::debugLogOutputDir() const
 {
-    return QDir(QStringLiteral(LIVOX_VIEWER_SOURCE_DIR)).filePath(QStringLiteral("lidar_log/type_0"));
+    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("lidar_log/type_0"));
 }
 
 QString LivoxViewerWindow::debugPointCloudOutputDir() const
 {
-    return QStringLiteral(LIVOX_VIEWER_SOURCE_DIR);
+    return QCoreApplication::applicationDirPath();
 }
 
 bool LivoxViewerWindow::startPointCloudCapture(PointCloudCaptureFormat format,
