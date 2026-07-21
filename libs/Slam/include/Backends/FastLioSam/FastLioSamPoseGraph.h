@@ -10,6 +10,7 @@ bool saveFrame(FastLioAlgorithmState& state);
 void addOdomFactor(FastLioAlgorithmState& state);
 void addLoopFactor(FastLioAlgorithmState& state);
 void saveKeyFramesAndFactor(FastLioAlgorithmState& state);
+void saveFinalKeyFrameAndFactor(FastLioAlgorithmState& state);
 void correctPoses(FastLioAlgorithmState& state);
 void updateOptimizedPath(FastLioAlgorithmState& state, const PointTypePose& pose);
 void appendFastLioSamOutput(FastLioAlgorithmState& state, SlamOutput* output);

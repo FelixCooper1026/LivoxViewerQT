@@ -77,6 +77,7 @@ signals:
 
 private:
     struct DenseGlobalMapSegment {
+        int poseCorrectionEpoch = 0;
         SlamPose pose;
         QVector<SlamPoint> points;
     };

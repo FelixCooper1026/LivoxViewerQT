@@ -151,6 +151,7 @@ struct SlamOutput {
     int trajectoryPointCount = 0;
     int keyframeCount = 0;
     int loopClosureCount = 0;
+    int poseCorrectionEpoch = 0;
     bool imuHealthy = false;
     bool odometryOnly = false;
 };

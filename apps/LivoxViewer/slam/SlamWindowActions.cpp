@@ -1690,6 +1690,7 @@ void LivoxViewerWindow::appendSlamWorldFramePoints(const SlamOutput& output, boo
 
     SlamWorldPointSegment segment;
     segment.timestampNs = output.currentPose.timestampNs;
+    segment.poseCorrectionEpoch = output.poseCorrectionEpoch;
     segment.pose = output.currentPose;
     if (segment.timestampNs <= 0 && !slamWorldPointSegments.isEmpty()) {
         segment.timestampNs =
@@ -1738,8 +1739,7 @@ void LivoxViewerWindow::correctSlamWorldPointSegments(
         Eigen::Vector3d translation = Eigen::Vector3d::Zero();
     };
 
-    QVector<PoseCorrection> corrections;
-    corrections.reserve(optimizedTrajectory.size());
+    QVector<QVector<PoseCorrection>> correctionsByEpoch;
     int segmentIndex = 0;
     for (const SlamTrajectoryPoint& optimizedPoint : optimizedTrajectory) {
         while (segmentIndex + 1 < slamWorldPointSegments.size() &&
@@ -1752,9 +1752,13 @@ void LivoxViewerWindow::correctSlamWorldPointSegments(
         const Eigen::Isometry3d correction =
             slamPoseTransform(optimizedPoint.pose) *
             slamPoseTransform(slamWorldPointSegments.at(segmentIndex).pose).inverse();
-        corrections.push_back({optimizedPoint.pose.timestampNs,
-                               Eigen::Quaterniond(correction.rotation()),
-                               correction.translation()});
+        const int epoch = slamWorldPointSegments.at(segmentIndex).poseCorrectionEpoch;
+        if (correctionsByEpoch.size() <= epoch) {
+            correctionsByEpoch.resize(epoch + 1);
+        }
+        correctionsByEpoch[epoch].push_back({optimizedPoint.pose.timestampNs,
+                                             Eigen::Quaterniond(correction.rotation()),
+                                             correction.translation()});
     }
 
     SlamWorldPointSegment* segments = slamWorldPointSegments.data();
@@ -1763,6 +1767,8 @@ void LivoxViewerWindow::correctSlamWorldPointSegments(
 #pragma omp parallel for num_threads(threadCount)
     for (int segmentIndex = 0; segmentIndex < segmentCount; ++segmentIndex) {
         SlamWorldPointSegment& segment = segments[segmentIndex];
+        const QVector<PoseCorrection>& corrections =
+            correctionsByEpoch.at(segment.poseCorrectionEpoch);
         const auto upper = std::lower_bound(
             corrections.cbegin(),
             corrections.cend(),

@@ -8,8 +8,11 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
+#include <QSettings>
 #include <QStringList>
 #include <QTextStream>
+
+#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <atomic>
@@ -140,6 +143,12 @@ struct ReplaySummary {
     int keyframeCount = 0;
     int loopClosureCount = 0;
     int optimizedMapPoints = 0;
+    qint64 finalKeyframeTailMs = 0;
+    double finalKeyframeTailDistanceM = 0.0;
+    double finalKeyframeTailZM = 0.0;
+    qint64 maxKeyframeTimestampDeltaMs = 0;
+    double correctedLast15SecZSpanM = 0.0;
+    double correctedMaxFrameStepM = 0.0;
     qint64 processingMs = 0;
     qint64 finalizeMs = 0;
     qint64 stopMs = 0;
@@ -282,6 +291,10 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
 
     QElapsedTimer processingTimer;
     processingTimer.start();
+    QVector<SlamPose> framePoses;
+    framePoses.reserve(frames.size());
+    QVector<int> framePoseEpochs;
+    framePoseEpochs.reserve(frames.size());
     for (const SlamInputFrame& frame : frames) {
         if (config.imuEnabled && !frame.hasCompleteImuCoverage) {
             ++result.skippedIncompleteImuFrames;
@@ -313,6 +326,10 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
         result.keyframeCount = output.keyframeCount;
         result.loopClosureCount = output.loopClosureCount;
         result.finalPose = output.currentPose;
+        if (output.currentPoseValid) {
+            framePoses.push_back(output.currentPose);
+            framePoseEpochs.push_back(output.poseCorrectionEpoch);
+        }
     }
     result.processingMs = processingTimer.elapsed();
 
@@ -326,6 +343,8 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
     }
 
     SlamOutput finalOutput;
+    finalOutput.currentPose = result.finalPose;
+    finalOutput.currentPoseValid = true;
     error.clear();
     QElapsedTimer finalizeTimer;
     finalizeTimer.start();
@@ -337,6 +356,105 @@ ReplaySummary runFrames(const QVector<SlamInputFrame>& frames, const SlamRuntime
     result.keyframeCount = finalOutput.keyframeCount;
     result.loopClosureCount = finalOutput.loopClosureCount;
     result.optimizedMapPoints = finalOutput.optimizedGlobalMapPoints.size();
+    result.finalPose = finalOutput.currentPose;
+    if (!finalOutput.optimizedTrajectory.isEmpty()) {
+        const SlamPose& finalKeyframePose = finalOutput.optimizedTrajectory.back().pose;
+        const double dx = finalOutput.currentPose.tx - finalKeyframePose.tx;
+        const double dy = finalOutput.currentPose.ty - finalKeyframePose.ty;
+        const double dz = finalOutput.currentPose.tz - finalKeyframePose.tz;
+        result.finalKeyframeTailMs =
+            (finalOutput.currentPose.timestampNs - finalKeyframePose.timestampNs) / 1000000;
+        result.finalKeyframeTailDistanceM = std::sqrt(dx * dx + dy * dy + dz * dz);
+        result.finalKeyframeTailZM = dz;
+
+        struct PoseCorrection {
+            int64_t timestampNs = 0;
+            Eigen::Quaterniond rotation = Eigen::Quaterniond::Identity();
+            Eigen::Vector3d translation = Eigen::Vector3d::Zero();
+        };
+        const auto poseTransform = [](const SlamPose& pose) {
+            Eigen::Isometry3d transform = Eigen::Isometry3d::Identity();
+            Eigen::Quaterniond quaternion(pose.qw, pose.qx, pose.qy, pose.qz);
+            quaternion.normalize();
+            transform.linear() = quaternion.toRotationMatrix();
+            transform.translation() = Eigen::Vector3d(pose.tx, pose.ty, pose.tz);
+            return transform;
+        };
+
+        QVector<QVector<PoseCorrection>> correctionsByEpoch;
+        int frameIndex = 0;
+        for (const SlamTrajectoryPoint& optimizedPoint : finalOutput.optimizedTrajectory) {
+            while (frameIndex + 1 < framePoses.size() &&
+                   std::abs(framePoses.at(frameIndex + 1).timestampNs -
+                            optimizedPoint.pose.timestampNs) <
+                       std::abs(framePoses.at(frameIndex).timestampNs -
+                                optimizedPoint.pose.timestampNs)) {
+                ++frameIndex;
+            }
+            result.maxKeyframeTimestampDeltaMs = std::max(
+                result.maxKeyframeTimestampDeltaMs,
+                qint64(std::abs(framePoses.at(frameIndex).timestampNs -
+                                optimizedPoint.pose.timestampNs) /
+                       1000000));
+            const Eigen::Isometry3d correction =
+                poseTransform(optimizedPoint.pose) * poseTransform(framePoses.at(frameIndex)).inverse();
+            const int epoch = framePoseEpochs.at(frameIndex);
+            if (correctionsByEpoch.size() <= epoch) {
+                correctionsByEpoch.resize(epoch + 1);
+            }
+            correctionsByEpoch[epoch].push_back({optimizedPoint.pose.timestampNs,
+                                                  Eigen::Quaterniond(correction.rotation()),
+                                                  correction.translation()});
+        }
+
+        QVector<Eigen::Vector3d> correctedPositions;
+        correctedPositions.reserve(framePoses.size());
+        for (int poseIndex = 0; poseIndex < framePoses.size(); ++poseIndex) {
+            const SlamPose& pose = framePoses.at(poseIndex);
+            const QVector<PoseCorrection>& corrections =
+                correctionsByEpoch.at(framePoseEpochs.at(poseIndex));
+            const auto upper = std::lower_bound(
+                corrections.cbegin(),
+                corrections.cend(),
+                pose.timestampNs,
+                [](const PoseCorrection& correction, int64_t timestampNs) {
+                    return correction.timestampNs < timestampNs;
+                });
+            Eigen::Quaterniond rotation;
+            Eigen::Vector3d translation;
+            if (upper == corrections.cbegin()) {
+                rotation = upper->rotation;
+                translation = upper->translation;
+            } else if (upper == corrections.cend()) {
+                rotation = corrections.back().rotation;
+                translation = corrections.back().translation;
+            } else {
+                const PoseCorrection& before = *(upper - 1);
+                const double alpha = double(pose.timestampNs - before.timestampNs) /
+                                     double(upper->timestampNs - before.timestampNs);
+                rotation = before.rotation.slerp(alpha, upper->rotation).normalized();
+                translation = before.translation * (1.0 - alpha) + upper->translation * alpha;
+            }
+            correctedPositions.push_back(
+                rotation * Eigen::Vector3d(pose.tx, pose.ty, pose.tz) + translation);
+        }
+
+        double minZ = std::numeric_limits<double>::infinity();
+        double maxZ = -std::numeric_limits<double>::infinity();
+        const int64_t last15SecStartNs = finalOutput.currentPose.timestampNs - int64_t{15000000000};
+        for (int index = 0; index < correctedPositions.size(); ++index) {
+            if (index > 0) {
+                result.correctedMaxFrameStepM = std::max(
+                    result.correctedMaxFrameStepM,
+                    (correctedPositions.at(index) - correctedPositions.at(index - 1)).norm());
+            }
+            if (framePoses.at(index).timestampNs >= last15SecStartNs) {
+                minZ = std::min(minZ, correctedPositions.at(index).z());
+                maxZ = std::max(maxZ, correctedPositions.at(index).z());
+            }
+        }
+        result.correctedLast15SecZSpanM = maxZ - minZ;
+    }
     QElapsedTimer stopTimer;
     stopTimer.start();
     backend.stop();
@@ -472,26 +590,49 @@ void printSourceSummary(const QString& text, QTextStream& out)
 
 int runDiagnostic(const QStringList& inputPaths,
                   int maxFrames,
+                  double keyframeDistanceM,
+                  double historyRadiusM,
                   bool sourceOnly,
                   bool lidarOnly,
                   bool loopClosure,
+                  bool useAppSettings,
                   bool saveMap,
                   QTextStream& out)
 {
     bool allOk = true;
     for (const QString& inputPath : inputPaths) {
         const QString filePath = resolveInputPath(inputPath);
-        SlamRuntimeConfig config = diagnosticConfigForPath(filePath);
+        SlamRuntimeConfig config = useAppSettings
+                                       ? loadSlamRuntimeConfig(
+                                             QSettings(QStringLiteral("Livox"),
+                                                       QStringLiteral("LivoxViewerQT")),
+                                             QStringLiteral("slam/runtime"))
+                                       : diagnosticConfigForPath(filePath);
+        config.publishWorldFrameCloud = false;
+        config.publishDenseFrameCloud = false;
+        config.publishBodyFrameCloud = false;
         config.allowPureLidar = lidarOnly;
         config.imuEnabled = !lidarOnly;
         config.backendType = lidarOnly ? QStringLiteral("FAST_LO") : QStringLiteral("FAST_LIO");
         config.loopClosureEnableFlag = loopClosure;
         config.deterministicOfflineLoopClosure = loopClosure;
+        if (keyframeDistanceM > 0.0) {
+            config.surroundingKeyframeAddingDistThreshold =
+                static_cast<float>(keyframeDistanceM);
+        }
+        if (historyRadiusM > 0.0) {
+            config.historyKeyframeSearchRadius = static_cast<float>(historyRadiusM);
+        }
         config.saveMap = saveMap;
         out << "DIAG_BEGIN path=" << filePath
             << " template=" << templateName(config.lidarTemplate)
             << " detRangeM=" << config.detRangeM
             << " blindM=" << config.blindMinRangeM
+            << " extrinsicT=[" << config.extrinsicT_L_I[0]
+            << "," << config.extrinsicT_L_I[1]
+            << "," << config.extrinsicT_L_I[2] << "]"
+            << " keyframeDistanceM=" << config.surroundingKeyframeAddingDistThreshold
+            << " historyRadiusM=" << config.historyKeyframeSearchRadius
             << " frameMs=" << config.inputFrameDurationMs << "\n";
         out.flush();
 
@@ -568,6 +709,12 @@ int runDiagnostic(const QStringList& inputPaths,
             << " keyframes=" << replay.keyframeCount
             << " loops=" << replay.loopClosureCount
             << " optimizedMapPoints=" << replay.optimizedMapPoints
+            << " finalKeyframeTailMs=" << replay.finalKeyframeTailMs
+            << " finalKeyframeTailDistanceM=" << replay.finalKeyframeTailDistanceM
+            << " finalKeyframeTailZM=" << replay.finalKeyframeTailZM
+            << " maxKeyframeTimestampDeltaMs=" << replay.maxKeyframeTimestampDeltaMs
+            << " correctedLast15SecZSpanM=" << replay.correctedLast15SecZSpanM
+            << " correctedMaxFrameStepM=" << replay.correctedMaxFrameStepM
             << " processingMs=" << replay.processingMs
             << " finalizeMs=" << replay.finalizeMs
             << " stopMs=" << replay.stopMs
@@ -582,7 +729,7 @@ void printUsage(QTextStream& out)
 {
     out << "Usage:\n";
     out << "  SlamReplayTool <with_imu.pcap> <no_imu.pcap>\n";
-    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--loop-closure] [--save-map] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
+    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--loop-closure] [--app-settings] [--save-map] [--keyframe-distance M] [--history-radius M] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
 }
 
 } // namespace
@@ -595,9 +742,12 @@ int main(int argc, char* argv[])
 
     if (args.size() >= 3 && args.at(1) == QStringLiteral("--diagnose")) {
         int maxFrames = 0;
+        double keyframeDistanceM = 0.0;
+        double historyRadiusM = 0.0;
         bool sourceOnly = false;
         bool lidarOnly = false;
         bool loopClosure = false;
+        bool useAppSettings = false;
         bool saveMap = false;
         QStringList inputPaths;
         for (int i = 2; i < args.size(); ++i) {
@@ -613,6 +763,10 @@ int main(int argc, char* argv[])
                 loopClosure = true;
                 continue;
             }
+            if (args.at(i) == QStringLiteral("--app-settings")) {
+                useAppSettings = true;
+                continue;
+            }
             if (args.at(i) == QStringLiteral("--save-map")) {
                 saveMap = true;
                 continue;
@@ -621,13 +775,30 @@ int main(int argc, char* argv[])
                 maxFrames = args.at(++i).toInt();
                 continue;
             }
+            if (args.at(i) == QStringLiteral("--keyframe-distance") && i + 1 < args.size()) {
+                keyframeDistanceM = args.at(++i).toDouble();
+                continue;
+            }
+            if (args.at(i) == QStringLiteral("--history-radius") && i + 1 < args.size()) {
+                historyRadiusM = args.at(++i).toDouble();
+                continue;
+            }
             inputPaths.push_back(args.at(i));
         }
         if (inputPaths.isEmpty()) {
             printUsage(out);
             return 2;
         }
-        return runDiagnostic(inputPaths, maxFrames, sourceOnly, lidarOnly, loopClosure, saveMap, out);
+        return runDiagnostic(inputPaths,
+                             maxFrames,
+                             keyframeDistanceM,
+                             historyRadiusM,
+                             sourceOnly,
+                             lidarOnly,
+                             loopClosure,
+                             useAppSettings,
+                             saveMap,
+                             out);
     }
 
     if (argc == 3) {

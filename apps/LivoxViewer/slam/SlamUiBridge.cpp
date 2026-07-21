@@ -285,11 +285,6 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
         m_latestOutput.currentPoseValid = retainedPoseValid;
         m_hasCurrentPose = retainedPoseValid;
     }
-    if (output.optimizedTrajectoryReset && !output.optimizedTrajectory.isEmpty()) {
-        m_latestOutput.currentPose = output.optimizedTrajectory.back().pose;
-        m_latestOutput.currentPoseValid = true;
-        m_hasCurrentPose = true;
-    }
     emit renderPoseReady(renderPose(m_latestOutput.currentPose, m_hasCurrentPose));
     if (isErrorStatus(output.status)) {
         m_errorMessage = errorDisplayMessage(output);
@@ -685,6 +680,7 @@ void SlamUiBridge::appendGlobalMap(const SlamOutput& output)
 {
     if (!output.newGlobalMapPoints.isEmpty()) {
         DenseGlobalMapSegment segment;
+        segment.poseCorrectionEpoch = output.poseCorrectionEpoch;
         segment.pose = output.currentPose;
         segment.points = output.newGlobalMapPoints;
         m_denseGlobalMapSegments.push_back(std::move(segment));
@@ -722,8 +718,7 @@ void SlamUiBridge::correctDenseGlobalMap(
         Eigen::Vector3d translation = Eigen::Vector3d::Zero();
     };
 
-    QVector<PoseCorrection> corrections;
-    corrections.reserve(optimizedTrajectory.size());
+    QVector<QVector<PoseCorrection>> correctionsByEpoch;
     int segmentIndex = 0;
     for (const SlamTrajectoryPoint& optimizedPoint : optimizedTrajectory) {
         while (segmentIndex + 1 < m_denseGlobalMapSegments.size() &&
@@ -736,9 +731,13 @@ void SlamUiBridge::correctDenseGlobalMap(
         const Eigen::Isometry3d correction =
             poseTransform(optimizedPoint.pose) *
             poseTransform(m_denseGlobalMapSegments.at(segmentIndex).pose).inverse();
-        corrections.push_back({optimizedPoint.pose.timestampNs,
-                               Eigen::Quaterniond(correction.rotation()),
-                               correction.translation()});
+        const int epoch = m_denseGlobalMapSegments.at(segmentIndex).poseCorrectionEpoch;
+        if (correctionsByEpoch.size() <= epoch) {
+            correctionsByEpoch.resize(epoch + 1);
+        }
+        correctionsByEpoch[epoch].push_back({optimizedPoint.pose.timestampNs,
+                                             Eigen::Quaterniond(correction.rotation()),
+                                             correction.translation()});
     }
 
     DenseGlobalMapSegment* segments = m_denseGlobalMapSegments.data();
@@ -746,6 +745,8 @@ void SlamUiBridge::correctDenseGlobalMap(
 #pragma omp parallel for
     for (int index = 0; index < segmentCount; ++index) {
         DenseGlobalMapSegment& segment = segments[index];
+        const QVector<PoseCorrection>& corrections =
+            correctionsByEpoch.at(segment.poseCorrectionEpoch);
         const auto upper = std::lower_bound(
             corrections.cbegin(),
             corrections.cend(),

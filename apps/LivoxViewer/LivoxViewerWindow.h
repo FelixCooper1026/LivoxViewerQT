@@ -453,6 +453,7 @@ private:
     };
     struct SlamWorldPointSegment {
         int64_t timestampNs = 0;
+        int poseCorrectionEpoch = 0;
         SlamPose pose;
         QVector<PointCloudPoint> points;
     };

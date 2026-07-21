@@ -168,12 +168,11 @@ void updateOptimizedPath(FastLioAlgorithmState& state, const PointTypePose& pose
     }
 }
 
-void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
+namespace {
+
+void saveCurrentFrameAndFactor(FastLioAlgorithmState& state)
 {
     auto& sam = state.sam;
-    if (!saveFrame(state)) {
-        return;
-    }
 
     addOdomFactor(state);
     addLoopFactor(state);
@@ -220,6 +219,25 @@ void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
     }
 
     updateOptimizedPath(state, thisPose6D);
+}
+
+} // namespace
+
+void saveKeyFramesAndFactor(FastLioAlgorithmState& state)
+{
+    if (!saveFrame(state)) {
+        return;
+    }
+    saveCurrentFrameAndFactor(state);
+}
+
+void saveFinalKeyFrameAndFactor(FastLioAlgorithmState& state)
+{
+    if (!state.sam.cloudKeyPoses6D->empty() &&
+        state.sam.cloudKeyPoses6D->back().time == state.measures.lidar_end_time) {
+        return;
+    }
+    saveCurrentFrameAndFactor(state);
 }
 
 void correctPoses(FastLioAlgorithmState& state)
@@ -279,6 +297,7 @@ void correctPoses(FastLioAlgorithmState& state)
     state.kf.change_x(stateUpdated);
     state.eulerCur = SO3ToEuler(state.statePoint.rot);
     state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
+    ++state.poseCorrectionEpoch;
 
     if (!publishOptimization) {
         state.pendingOptimizedTrajectory.clear();

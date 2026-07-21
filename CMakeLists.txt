@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT 
-    VERSION 2.3.3
+    VERSION 2.3.4
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -48,6 +48,7 @@ endif()
 
 # Windows 资源文件支持，用于编译 .rc 图标资源
 if(IS_WINDOWS)
+    set(CMAKE_VS_GLOBALS "VcpkgEnabled=false")
     enable_language(RC)
 endif()
 
@@ -720,44 +721,6 @@ if(LIVOX_SDK_AVAILABLE)
         "${LIVOX_SDK_PATH}"
         "$<TARGET_FILE_DIR:LivoxViewerQT>/livox_sdk_qt"
         COMMENT "Copying Livox SDK files to build directory"
-    )
-endif()
-
-# 复制配置文件到构建目录
-set(CONFIG_FILES
-    "config.json"
-    "mid360_config.json"
-)
-
-foreach(config_file ${CONFIG_FILES})
-    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${config_file}")
-        add_custom_command(TARGET LivoxViewerQT POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/${config_file}"
-            "$<TARGET_FILE_DIR:LivoxViewerQT>/${config_file}"
-            COMMENT "Copying ${config_file} to build directory"
-        )
-    endif()
-endforeach()
-
-# =============================================================================
-# 安装配置
-# =============================================================================
-
-if(IS_WINDOWS)
-    get_target_property(QT_QMAKE_EXECUTABLE
-        Qt${QT_VERSION_MAJOR}::qmake IMPORTED_LOCATION)
-    get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
-
-    add_custom_command(TARGET LivoxViewerQT POST_BUILD
-        COMMAND "${QT_BIN_DIR}/windeployqt.exe"
-            "$<IF:$<CONFIG:Debug>,--debug,--release>"
-            --no-compiler-runtime
-            --no-translations
-            --no-system-d3d-compiler
-            --no-opengl-sw
-            "$<TARGET_FILE:LivoxViewerQT>"
-        COMMENT "Deploying Qt runtime to build directory"
     )
 endif()
 

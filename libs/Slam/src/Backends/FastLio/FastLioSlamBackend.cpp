@@ -925,6 +925,7 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
     output->mapPointCount = state.ikdtree.validnum();
     output->globalMapPointCount = state.globalMapPointCount;
     output->trajectoryPointCount = state.trajectoryPointCount;
+    output->poseCorrectionEpoch = state.poseCorrectionEpoch;
     output->currentPose = toSlamPose(state, timestampNs);
     output->currentPoseValid = true;
     output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
@@ -1182,6 +1183,11 @@ bool FastLioSlamBackend::finalize(SlamOutput* output, QString* error)
     state_->finalizing = true;
     stopLoopClosureThread(*state_);
     if (state_->config.loopClosureEnableFlag) {
+        if (state_->trajectoryPointCount > 0) {
+            getCurPose(*state_);
+            saveFinalKeyFrameAndFactor(*state_);
+            correctPoses(*state_);
+        }
         if (state_->config.deterministicOfflineLoopClosure) {
             performDeterministicLoopClosure(*state_, true);
         } else {

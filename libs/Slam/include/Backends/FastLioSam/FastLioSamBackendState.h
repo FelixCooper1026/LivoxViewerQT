@@ -108,6 +108,7 @@ struct FastLioAlgorithmState {
     int trajectoryPointCount = 0;
     int globalMapPointCount = 0;
     int unoptimizedPoseFrameCount = 0;
+    int poseCorrectionEpoch = 0;
 
     PointCloudXYZI::Ptr featsFromMap;
     PointCloudXYZI::Ptr featsUndistort;
