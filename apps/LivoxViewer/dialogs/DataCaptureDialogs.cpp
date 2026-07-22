@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "dialogs/DialogWindowUtils.h"
+#include "dialogs/PacketCaptureDialog.h"
 #include "ThemeIconUtils.h"
 
 #include <QAbstractItemView>
@@ -1042,4 +1043,53 @@ void LivoxViewerWindow::showDebugCaptureDialog()
     refreshTimer->start(250);
     updateUi();
     dlg->show();
+}
+
+void LivoxViewerWindow::showPacketCaptureDialog()
+{
+    const QList<NetworkInterfaceService::NetworkInterfaceInfo> interfaces =
+        NetworkInterfaceService::availableLidarInterfaces();
+    const QString selectedSystemName = networkInterfaceCombo
+        ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
+        : selectedInterfaceName;
+    LidarDeviceInfo currentDevice;
+    const QString deviceSerialNumber = tryGetCurrentDevice(currentDevice) && !currentDevice.sn.isEmpty()
+        ? currentDevice.sn
+        : QStringLiteral("Unknown");
+
+    if (packetCaptureDialog) {
+        packetCaptureDialog->setInterfaces(interfaces, selectedSystemName);
+        packetCaptureDialog->setDeviceSerialNumber(deviceSerialNumber);
+        packetCaptureDialog->show();
+        packetCaptureDialog->raise();
+        packetCaptureDialog->activateWindow();
+        return;
+    }
+
+    PacketCaptureDialog* dialog = new PacketCaptureDialog(this);
+    packetCaptureDialog = dialog;
+    dialog->setInterfaces(interfaces, selectedSystemName);
+    dialog->setDeviceSerialNumber(deviceSerialNumber);
+    dialog->setInterfaceChangedHandler([this](const QString& systemName) {
+        if (!networkInterfaceCombo) {
+            return;
+        }
+        const int index = networkInterfaceCombo->findData(systemName, Qt::UserRole);
+        if (index >= 0 && index != networkInterfaceCombo->currentIndex()) {
+            networkInterfaceCombo->setCurrentIndex(index);
+        }
+    });
+
+    if (networkInterfaceCombo) {
+        connect(networkInterfaceCombo,
+                QOverload<int>::of(&QComboBox::currentIndexChanged),
+                dialog,
+                [this, dialog](int index) {
+                    if (index >= 0) {
+                        dialog->selectInterface(networkInterfaceCombo->itemData(index, Qt::UserRole).toString());
+                    }
+                });
+    }
+
+    dialog->show();
 }

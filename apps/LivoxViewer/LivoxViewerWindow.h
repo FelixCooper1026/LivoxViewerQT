@@ -99,6 +99,7 @@ class QDropEvent;
 QT_END_NAMESPACE
 class SlamControlDialog;
 class SlamUiBridge;
+class PacketCaptureDialog;
 QT_BEGIN_NAMESPACE
 
 class LivoxViewerWindow : public QMainWindow
@@ -212,6 +213,7 @@ private:
     void showImuCaptureDialog();
     void showParameterCaptureDialog();
     void showDebugCaptureDialog();
+    void showPacketCaptureDialog();
     void createDeviceActions();
     void createHelpActions();
     void createPlaybackActions(QMenu* toolsMenu);
@@ -552,6 +554,7 @@ private:
     QPointer<QDialog> imuCaptureDialog;
     QPointer<QDialog> parameterCaptureDialog;
     QPointer<QDialog> debugCaptureDialog;
+    QPointer<PacketCaptureDialog> packetCaptureDialog;
     // 多设备升级进度跟踪
     QMap<uint32_t, int> upgradeProgressMap;
     int upgradeTotalDevices = 0;  // 总设备数，用于进度显示

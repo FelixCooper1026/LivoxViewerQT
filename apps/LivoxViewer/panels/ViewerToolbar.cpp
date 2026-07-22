@@ -1214,6 +1214,13 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     captureGroup->addPrimaryWidget(createIconButton(pointCloudCaptureAction, captureGroup, toolbarIconSize));
     captureGroup->moreMenu()->addAction(pointCloudCaptureAction);
 
+    QAction* packetCaptureAction = new QAction(QIcon(":/icons/capture_packet.svg"), "网络抓包", this);
+    ThemeIconUtils::setThemedSvgIcon(packetCaptureAction, QStringLiteral(":/icons/capture_packet.svg"));
+    packetCaptureAction->setToolTip("网络数据抓包");
+    connect(packetCaptureAction, &QAction::triggered, this, &LivoxViewerWindow::showPacketCaptureDialog);
+    captureGroup->addPrimaryWidget(createIconButton(packetCaptureAction, captureGroup, toolbarIconSize));
+    captureGroup->moreMenu()->addAction(packetCaptureAction);
+
     QAction* imuCaptureAction = new QAction(QIcon(":/icons/capture_imu.svg"), "IMU数据采集", this);
     ThemeIconUtils::setThemedSvgIcon(imuCaptureAction, QStringLiteral(":/icons/capture_imu.svg"));
     imuCaptureAction->setToolTip("IMU数据采集");
