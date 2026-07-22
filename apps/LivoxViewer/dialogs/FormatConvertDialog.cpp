@@ -671,6 +671,14 @@ void LivoxViewerWindow::showFormatConvertDialog()
         "QLineEdit:disabled { color: #9aa0a6; }"
     );
     QToolButton* outputFolderButton = createIconButton(":/icons/convert_browse_folder.svg", "浏览", outputPathFrame);
+    outputFolderButton->setObjectName(QStringLiteral("InlineBrowseButton"));
+    outputFolderButton->setAutoRaise(false);
+    outputFolderButton->setIconSize(QSize(18, 18));
+    outputFolderButton->setFixedSize(28, 28);
+    outputFolderButton->setStyleSheet(QStringLiteral(
+        "QToolButton#InlineBrowseButton { border: none; border-radius: 3px; background: transparent; }"
+        "QToolButton#InlineBrowseButton:hover { background: palette(button); }"
+        "QToolButton#InlineBrowseButton:pressed { background: palette(midlight); }"));
     outputPathLayout->addWidget(outputDirEdit, 1);
     outputPathLayout->addWidget(outputFolderButton);
 
@@ -712,8 +720,8 @@ void LivoxViewerWindow::showFormatConvertDialog()
     startButton->setEnabled(false);
     startButton->setStyleSheet(
         "QPushButton {"
-        "  background: #18bff0;"
-        "  color: white;"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
         "  border: none;"
         "  border-radius: 6px;"
         "  font-weight: 600;"

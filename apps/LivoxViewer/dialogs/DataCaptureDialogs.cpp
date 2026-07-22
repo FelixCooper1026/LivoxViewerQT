@@ -104,9 +104,24 @@ QToolButton* createSmallIconButton(const QString& iconPath, const QString& toolt
     return button;
 }
 
-QToolButton* createBrowseButton(QWidget* parent)
+QToolButton* createBrowseButton(QLineEdit* pathEdit)
 {
-    return createSmallIconButton(QStringLiteral(":/icons/convert_browse_folder.svg"), QStringLiteral("浏览"), parent);
+    pathEdit->setMinimumHeight(32);
+    pathEdit->setTextMargins(0, 0, 32, 0);
+    QToolButton* button = createSmallIconButton(
+        QStringLiteral(":/icons/convert_browse_folder.svg"), QStringLiteral("浏览"), pathEdit);
+    button->setAutoRaise(false);
+    button->setIconSize(QSize(18, 18));
+    button->setFixedSize(28, 28);
+    button->setStyleSheet(QStringLiteral(
+        "QToolButton { border: none; border-radius: 3px; background: transparent; }"
+        "QToolButton:hover { background: palette(button); }"
+        "QToolButton:pressed { background: palette(midlight); }"));
+    QHBoxLayout* layout = new QHBoxLayout(pathEdit);
+    layout->setContentsMargins(0, 2, 2, 2);
+    layout->addStretch();
+    layout->addWidget(button);
+    return button;
 }
 
 QPushButton* createStartButton(const QString& text, QWidget* parent)
@@ -115,8 +130,8 @@ QPushButton* createStartButton(const QString& text, QWidget* parent)
     button->setMinimumSize(140, 44);
     button->setStyleSheet(
         "QPushButton {"
-        "  background: #18bff0;"
-        "  color: white;"
+        "  background: palette(highlight);"
+        "  color: palette(highlighted-text);"
         "  border: none;"
         "  border-radius: 6px;"
         "  font-weight: 600;"
@@ -527,10 +542,9 @@ void LivoxViewerWindow::showPointCloudCaptureDialog()
     QLineEdit* pathEdit = new QLineEdit(pathRow);
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
     pathEdit->setText(settings.value(QStringLiteral("save/lastPointCloudCaptureDir"), defaultDocumentsDir()).toString());
-    QToolButton* browseButton = createBrowseButton(pathRow);
+    QToolButton* browseButton = createBrowseButton(pathEdit);
     pathLayout->addWidget(pathLabel);
     pathLayout->addWidget(pathEdit, 1);
-    pathLayout->addWidget(browseButton);
     fieldsLayout->addWidget(pathRow);
 
     QPushButton* startButton = createStartButton(QStringLiteral("开始采集"), footer);
@@ -711,10 +725,9 @@ void LivoxViewerWindow::showImuCaptureDialog()
     QLineEdit* pathEdit = new QLineEdit(pathRow);
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
     pathEdit->setText(settings.value(QStringLiteral("save/lastIMUDir"), defaultDocumentsDir()).toString());
-    QToolButton* browseButton = createBrowseButton(pathRow);
+    QToolButton* browseButton = createBrowseButton(pathEdit);
     pathLayout->addWidget(pathLabel);
     pathLayout->addWidget(pathEdit, 1);
-    pathLayout->addWidget(browseButton);
     fieldsLayout->addWidget(pathRow);
 
     QPushButton* startButton = createStartButton(QStringLiteral("开始采集"), footer);
@@ -845,10 +858,9 @@ void LivoxViewerWindow::showParameterCaptureDialog()
     QLineEdit* pathEdit = new QLineEdit(pathRow);
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
     pathEdit->setText(settings.value(QStringLiteral("save/lastParameterDir"), defaultDocumentsDir()).toString());
-    QToolButton* browseButton = createBrowseButton(pathRow);
+    QToolButton* browseButton = createBrowseButton(pathEdit);
     pathLayout->addWidget(pathLabel);
     pathLayout->addWidget(pathEdit, 1);
-    pathLayout->addWidget(browseButton);
     fieldsLayout->addWidget(pathRow);
 
     QPushButton* startButton = createStartButton(QStringLiteral("开始采集"), footer);
@@ -1048,12 +1060,15 @@ void LivoxViewerWindow::showDebugCaptureDialog()
 void LivoxViewerWindow::showPacketCaptureDialog()
 {
     const QList<NetworkInterfaceService::NetworkInterfaceInfo> interfaces =
-        NetworkInterfaceService::availableLidarInterfaces();
-    const QString selectedSystemName = networkInterfaceCombo
-        ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
-        : selectedInterfaceName;
+        NetworkInterfaceService::availableCaptureInterfaces();
     LidarDeviceInfo currentDevice;
-    const QString deviceSerialNumber = tryGetCurrentDevice(currentDevice) && !currentDevice.sn.isEmpty()
+    const bool deviceConnected = tryGetCurrentDevice(currentDevice) && currentDevice.is_connected;
+    const QString selectedSystemName = deviceConnected
+        ? (networkInterfaceCombo
+               ? networkInterfaceCombo->currentData(Qt::UserRole).toString()
+               : selectedInterfaceName)
+        : QString();
+    const QString deviceSerialNumber = deviceConnected && !currentDevice.sn.isEmpty()
         ? currentDevice.sn
         : QStringLiteral("Unknown");
 
@@ -1071,7 +1086,8 @@ void LivoxViewerWindow::showPacketCaptureDialog()
     dialog->setInterfaces(interfaces, selectedSystemName);
     dialog->setDeviceSerialNumber(deviceSerialNumber);
     dialog->setInterfaceChangedHandler([this](const QString& systemName) {
-        if (!networkInterfaceCombo) {
+        LidarDeviceInfo device;
+        if (!networkInterfaceCombo || !tryGetCurrentDevice(device) || !device.is_connected) {
             return;
         }
         const int index = networkInterfaceCombo->findData(systemName, Qt::UserRole);
@@ -1085,7 +1101,8 @@ void LivoxViewerWindow::showPacketCaptureDialog()
                 QOverload<int>::of(&QComboBox::currentIndexChanged),
                 dialog,
                 [this, dialog](int index) {
-                    if (index >= 0) {
+                    LidarDeviceInfo device;
+                    if (index >= 0 && tryGetCurrentDevice(device) && device.is_connected) {
                         dialog->selectInterface(networkInterfaceCombo->itemData(index, Qt::UserRole).toString());
                     }
                 });

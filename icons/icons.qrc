@@ -43,6 +43,9 @@
     <file>edl_off.svg</file>
     <file>capture_camera.svg</file>
     <file>capture_packet.svg</file>
+    <file>packet_stat_captured.svg</file>
+    <file>packet_stat_bytes.svg</file>
+    <file>packet_stat_elapsed.svg</file>
     <file>capture_imu.svg</file>
     <file>capture_params.svg</file>
     <file>capture_debug.svg</file>

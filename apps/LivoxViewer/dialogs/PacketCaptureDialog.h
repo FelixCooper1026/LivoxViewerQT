@@ -6,6 +6,8 @@
 #include <QByteArray>
 #include <QDateTime>
 #include <QDialog>
+#include <QElapsedTimer>
+#include <QSet>
 #include <QString>
 #include <QVector>
 
@@ -13,14 +15,17 @@
 #include <functional>
 #include <thread>
 
-class QCheckBox;
 class QCloseEvent;
 class QComboBox;
+class QEvent;
 class QLabel;
 class QLineEdit;
 class QPushButton;
 class QRadioButton;
-class QTableWidget;
+class QTableView;
+class QTimer;
+class QToolButton;
+class PacketTableModel;
 
 class PacketCaptureDialog : public QDialog
 {
@@ -35,9 +40,12 @@ public:
     void setDeviceSerialNumber(const QString& serialNumber);
 
 protected:
+    void changeEvent(QEvent* event) override;
     void closeEvent(QCloseEvent* event) override;
 
 private:
+    friend class PacketTableModel;
+
     struct PacketRow {
         quint64 number = 0;
         double relativeTimeSec = 0.0;
@@ -62,18 +70,37 @@ private:
         int dataLinkType = 0;
     };
 
+    struct FilterState {
+        bool broadcast = false;
+        bool control = false;
+        bool pointCloud = false;
+        bool imu = false;
+        bool push = false;
+        bool ptp = false;
+        bool arp = false;
+        bool sourceIpEnabled = false;
+        bool destinationIpEnabled = false;
+        QString sourceIp;
+        QString destinationIp;
+    };
+
     void startCapture();
     void stopCapture();
     void captureLoop(QString systemName, QString ipv4);
     void appendPackets(QVector<PacketRow> packets);
-    void appendPacketToTable(const PacketRow& packet);
     void rebuildTable();
-    bool matchesFilter(const PacketRow& packet) const;
+    void updateStatistics();
+    void updateEmptyState();
+    void refreshTheme();
+    void showPacketDetails(int tableRow);
+    FilterState currentFilterState() const;
+    static bool matchesFilter(const PacketRow& packet, const FilterState& filter);
     void saveCapture();
     void updateDefaultFileName();
     QString selectedFilterName() const;
     void finishCapture(const QString& message, bool failed);
     void updateCaptureControls();
+    void clearCapturedAddresses();
     static QString captureDeviceName(const QString& systemName, const QString& ipv4, QString* errorMessage);
     static PacketRow decodePacket(const unsigned char* data,
                                   int capturedLength,
@@ -85,17 +112,17 @@ private:
                                   qint64 timestampUsec);
 
     QComboBox* m_interfaceCombo = nullptr;
-    QCheckBox* m_broadcastFilter = nullptr;
-    QCheckBox* m_controlFilter = nullptr;
-    QCheckBox* m_pointCloudFilter = nullptr;
-    QCheckBox* m_imuFilter = nullptr;
-    QCheckBox* m_pushFilter = nullptr;
-    QCheckBox* m_ptpFilter = nullptr;
-    QCheckBox* m_arpFilter = nullptr;
-    QCheckBox* m_sourceIpFilter = nullptr;
-    QCheckBox* m_destinationIpFilter = nullptr;
-    QLineEdit* m_sourceIpEdit = nullptr;
-    QLineEdit* m_destinationIpEdit = nullptr;
+    QToolButton* m_broadcastFilter = nullptr;
+    QToolButton* m_controlFilter = nullptr;
+    QToolButton* m_pointCloudFilter = nullptr;
+    QToolButton* m_imuFilter = nullptr;
+    QToolButton* m_pushFilter = nullptr;
+    QToolButton* m_ptpFilter = nullptr;
+    QToolButton* m_arpFilter = nullptr;
+    QToolButton* m_sourceIpFilter = nullptr;
+    QToolButton* m_destinationIpFilter = nullptr;
+    QComboBox* m_sourceIpCombo = nullptr;
+    QComboBox* m_destinationIpCombo = nullptr;
     QLineEdit* m_saveDirectoryEdit = nullptr;
     QLineEdit* m_fileNameEdit = nullptr;
     QRadioButton* m_saveAllRadio = nullptr;
@@ -104,9 +131,19 @@ private:
     QPushButton* m_stopButton = nullptr;
     QPushButton* m_clearButton = nullptr;
     QPushButton* m_saveButton = nullptr;
-    QLabel* m_statusLabel = nullptr;
-    QTableWidget* m_packetTable = nullptr;
+    QLabel* m_totalPacketsLabel = nullptr;
+    QLabel* m_visiblePacketsLabel = nullptr;
+    QLabel* m_totalBytesLabel = nullptr;
+    QLabel* m_elapsedTimeLabel = nullptr;
+    QLabel* m_emptyStateLabel = nullptr;
+    QTableView* m_packetTable = nullptr;
+    PacketTableModel* m_packetModel = nullptr;
+    QTimer* m_elapsedTimer = nullptr;
+    QElapsedTimer m_captureElapsed;
     QVector<PacketRow> m_packets;
+    QSet<QString> m_sourceAddresses;
+    QSet<QString> m_destinationAddresses;
+    quint64 m_totalBytes = 0;
     QString m_deviceSerialNumber = QStringLiteral("Unknown");
     QDateTime m_captureTimestamp;
     int m_dataLinkType = 0;
@@ -115,6 +152,7 @@ private:
     std::atomic_bool m_stopRequested{false};
     bool m_captureActive = false;
     bool m_fileNameCustomized = false;
+    bool m_refreshingTheme = false;
 };
 
 #endif // LIVOXVIEWER_DIALOGS_PACKETCAPTUREDIALOG_H

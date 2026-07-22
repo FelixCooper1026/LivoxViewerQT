@@ -2,8 +2,8 @@
 # 支持Windows (MSVC) 和 Linux (GCC/Clang) 平台
 
 cmake_minimum_required(VERSION 3.16)
-project(LivoxViewerQT 
-    VERSION 2.3.4
+project(LivoxViewerQT
+    VERSION 2.3.5
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )

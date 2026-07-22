@@ -80,6 +80,26 @@ QList<NetworkInterfaceInfo> availableLidarInterfaces()
     return interfaces;
 }
 
+QList<NetworkInterfaceInfo> availableCaptureInterfaces()
+{
+    QList<NetworkInterfaceInfo> interfaces;
+    for (const QNetworkInterface& iface : QNetworkInterface::allInterfaces()) {
+        const auto flags = iface.flags();
+        if ((flags & QNetworkInterface::IsLoopBack) ||
+            (flags & QNetworkInterface::IsPointToPoint) ||
+            isLikelyVirtualOrWirelessInterface(iface)) {
+            continue;
+        }
+
+        NetworkInterfaceInfo info;
+        info.systemName = iface.name();
+        info.displayName = iface.humanReadableName();
+        fillIpv4Info(iface, &info);
+        interfaces.append(info);
+    }
+    return interfaces;
+}
+
 std::optional<NetworkInterfaceInfo> findInterfaceByName(const QString& name)
 {
     for (const NetworkInterfaceInfo& info : availableLidarInterfaces()) {

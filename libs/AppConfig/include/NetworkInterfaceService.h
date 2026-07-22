@@ -29,6 +29,7 @@ QString calculateCompatibleHostIp(const QString& deviceIp);
 bool isLikelyVirtualOrWirelessInterface(const QNetworkInterface& iface);
 bool isValidLidarInterface(const QNetworkInterface& iface);
 QList<NetworkInterfaceInfo> availableLidarInterfaces();
+QList<NetworkInterfaceInfo> availableCaptureInterfaces();
 std::optional<NetworkInterfaceInfo> findInterfaceByName(const QString& name);
 std::optional<NetworkInterfaceInfo> findInterfaceByIp(const QString& ip);
 

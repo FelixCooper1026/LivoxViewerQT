@@ -42,9 +42,9 @@
 
 namespace {
 
-constexpr int kPanelVisibilityButtonSize = 28;
-constexpr int kPanelVisibilityIconSize = 24;
-constexpr int kPanelVisibilityButtonSpacing = 4;
+constexpr int kPanelVisibilityButtonSize = 26;
+constexpr int kPanelVisibilityIconSize = 22;
+constexpr int kPanelVisibilityButtonSpacing = 3;
 constexpr int kTitleBarHeight = 34;
 constexpr int kTitleBarLeftMargin = 2;
 constexpr int kTitleBarAppIconAreaWidth = 30;

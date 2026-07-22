@@ -1,18 +1,21 @@
 #include "dialogs/PacketCaptureDialog.h"
 
+#include "ThemeIconUtils.h"
 #include "dialogs/DialogWindowUtils.h"
 
 #include <QAbstractItemView>
-#include <QCheckBox>
+#include <QAbstractTableModel>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
+#include <QDialogButtonBox>
 #include <QDir>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFrame>
 #include <QGridLayout>
-#include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QHostAddress>
@@ -20,15 +23,19 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QMetaObject>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QRegularExpression>
 #include <QScrollBar>
+#include <QScopedValueRollback>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QSizePolicy>
 #include <QStandardPaths>
-#include <QTableWidget>
-#include <QTableWidgetItem>
+#include <QTableView>
+#include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -111,136 +118,378 @@ QString initialSaveDirectory()
         : savedDirectory;
 }
 
-void setPacketCell(QTableWidget* table, int row, int column, const QString& text)
+QString selectFolder(QWidget* parent, const QString& startDir, const QString& title)
 {
-    QTableWidgetItem* item = new QTableWidgetItem(text);
-    item->setTextAlignment(Qt::AlignCenter);
-    item->setToolTip(text);
-    table->setItem(row, column, item);
+    QFileDialog dialog(parent, title, startDir);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setOption(QFileDialog::ShowDirsOnly, true);
+    dialog.setFileMode(QFileDialog::Directory);
+    if (dialog.exec() != QDialog::Accepted) {
+        return {};
+    }
+    const QStringList selected = dialog.selectedFiles();
+    return selected.isEmpty() ? QString() : selected.first();
+}
+
+QString formatByteCount(quint64 bytes)
+{
+    constexpr double kKilobyte = 1024.0;
+    constexpr double kMegabyte = kKilobyte * 1024.0;
+    constexpr double kGigabyte = kMegabyte * 1024.0;
+    if (bytes >= quint64(kGigabyte)) {
+        return QStringLiteral("%1 GB").arg(double(bytes) / kGigabyte, 0, 'f', 1);
+    }
+    if (bytes >= quint64(kMegabyte)) {
+        return QStringLiteral("%1 MB").arg(double(bytes) / kMegabyte, 0, 'f', 1);
+    }
+    if (bytes >= quint64(kKilobyte)) {
+        return QStringLiteral("%1 KB").arg(double(bytes) / kKilobyte, 0, 'f', 1);
+    }
+    return QStringLiteral("%1 B").arg(bytes);
+}
+
+QString formatElapsedTime(qint64 milliseconds)
+{
+    const qint64 totalSeconds = milliseconds / 1000;
+    const qint64 hours = totalSeconds / 3600;
+    const qint64 minutes = (totalSeconds % 3600) / 60;
+    const qint64 seconds = totalSeconds % 60;
+    return QStringLiteral("%1:%2:%3")
+        .arg(hours, 2, 10, QLatin1Char('0'))
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(seconds, 2, 10, QLatin1Char('0'));
 }
 
 } // namespace
+
+class PacketTableModel : public QAbstractTableModel
+{
+public:
+    PacketTableModel(PacketCaptureDialog* dialog,
+                     QVector<PacketCaptureDialog::PacketRow>* packets)
+        : QAbstractTableModel(dialog)
+        , m_dialog(dialog)
+        , m_packets(packets)
+    {
+    }
+
+    int rowCount(const QModelIndex& parent = QModelIndex()) const override
+    {
+        return parent.isValid() ? 0 : m_visiblePacketIndexes.size();
+    }
+
+    int columnCount(const QModelIndex& parent = QModelIndex()) const override
+    {
+        return parent.isValid() ? 0 : 8;
+    }
+
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+    {
+        if (!index.isValid()) {
+            return {};
+        }
+
+        const PacketCaptureDialog::PacketRow& packet =
+            m_packets->at(m_visiblePacketIndexes.at(index.row()));
+        if (role == Qt::TextAlignmentRole) {
+            return index.column() == 0 || index.column() == 1 ||
+                       index.column() == 2 || index.column() == 3 ||
+                       index.column() == 4 || index.column() == 5
+                ? QVariant::fromValue(Qt::AlignCenter)
+                : QVariant::fromValue(Qt::AlignLeft | Qt::AlignVCenter);
+        }
+        if (role == Qt::ForegroundRole && index.column() == 4) {
+            if (packet.protocol == QStringLiteral("PTP")) {
+                return m_dialog->palette().color(QPalette::Highlight);
+            }
+            if (packet.protocol == QStringLiteral("ARP")) {
+                return QColor(QStringLiteral("#d18b28"));
+            }
+            if (packet.protocol.startsWith(QStringLiteral("TCP"))) {
+                return m_dialog->palette().color(QPalette::Link);
+            }
+        }
+        if (role == Qt::UserRole && index.column() == 0) {
+            return QVariant::fromValue<qulonglong>(packet.number);
+        }
+        if (role != Qt::DisplayRole && role != Qt::ToolTipRole) {
+            return {};
+        }
+
+        switch (index.column()) {
+        case 0: return QString::number(packet.number);
+        case 1: return QString::number(packet.relativeTimeSec, 'f', 6);
+        case 2: return packet.source;
+        case 3: return packet.destination;
+        case 4: return packet.protocol;
+        case 5: return QString::number(packet.length);
+        case 6: return packet.ports;
+        case 7: return packet.payloadHex;
+        default: return {};
+        }
+    }
+
+    QVariant headerData(int section,
+                        Qt::Orientation orientation,
+                        int role = Qt::DisplayRole) const override
+    {
+        if (orientation != Qt::Horizontal || role != Qt::DisplayRole) {
+            return QAbstractTableModel::headerData(section, orientation, role);
+        }
+        static const QStringList headers = {
+            QStringLiteral("序号"), QStringLiteral("时间"), QStringLiteral("源地址"),
+            QStringLiteral("目标地址"), QStringLiteral("协议"), QStringLiteral("长度"),
+            QStringLiteral("端口"), QStringLiteral("内容")
+        };
+        return headers.at(section);
+    }
+
+    void clearPackets()
+    {
+        beginResetModel();
+        m_packets->clear();
+        m_visiblePacketIndexes.clear();
+        endResetModel();
+    }
+
+    void appendVisiblePackets(const QVector<int>& packetIndexes)
+    {
+        if (packetIndexes.isEmpty()) {
+            return;
+        }
+        const int firstRow = m_visiblePacketIndexes.size();
+        beginInsertRows(QModelIndex(), firstRow, firstRow + packetIndexes.size() - 1);
+        m_visiblePacketIndexes.append(packetIndexes);
+        endInsertRows();
+    }
+
+    template<typename Predicate>
+    void rebuild(Predicate matches)
+    {
+        QVector<int> visiblePacketIndexes;
+        visiblePacketIndexes.reserve(m_packets->size());
+        for (int i = 0; i < m_packets->size(); ++i) {
+            if (matches(m_packets->at(i))) {
+                visiblePacketIndexes.append(i);
+            }
+        }
+        beginResetModel();
+        m_visiblePacketIndexes.swap(visiblePacketIndexes);
+        endResetModel();
+    }
+
+    const PacketCaptureDialog::PacketRow& packetAt(int tableRow) const
+    {
+        return m_packets->at(m_visiblePacketIndexes.at(tableRow));
+    }
+
+    void refreshProtocolColors()
+    {
+        if (!m_visiblePacketIndexes.isEmpty()) {
+            emit dataChanged(index(0, 4), index(rowCount() - 1, 4), {Qt::ForegroundRole});
+        }
+    }
+
+private:
+    PacketCaptureDialog* m_dialog;
+    QVector<PacketCaptureDialog::PacketRow>* m_packets;
+    QVector<int> m_visiblePacketIndexes;
+};
 
 PacketCaptureDialog::PacketCaptureDialog(QWidget* parent)
     : QDialog(parent)
 {
     DialogWindowUtils::enableTopLevelWindowControls(this);
     setAttribute(Qt::WA_DeleteOnClose);
-    setWindowTitle(QStringLiteral("网络数据抓包"));
-    resize(1320, 760);
-    setMinimumSize(980, 620);
+    setObjectName(QStringLiteral("packetCaptureDialog"));
+    setWindowTitle(QStringLiteral("网络数据抓包 - LivoxViewerQT"));
+    resize(1360, 820);
+    setMinimumSize(1080, 680);
 
     QVBoxLayout* root = new QVBoxLayout(this);
-    root->setContentsMargins(14, 14, 14, 14);
+    root->setContentsMargins(16, 14, 16, 16);
     root->setSpacing(10);
 
-    QWidget* captureRow = new QWidget(this);
-    QHBoxLayout* captureLayout = new QHBoxLayout(captureRow);
+    QFrame* captureToolbar = new QFrame(this);
+    captureToolbar->setObjectName(QStringLiteral("captureToolbar"));
+    QHBoxLayout* captureLayout = new QHBoxLayout(captureToolbar);
     captureLayout->setContentsMargins(0, 0, 0, 0);
     captureLayout->setSpacing(8);
-    captureLayout->addWidget(new QLabel(QStringLiteral("网卡"), captureRow));
-    m_interfaceCombo = new QComboBox(captureRow);
-    m_interfaceCombo->setMinimumWidth(300);
+    QLabel* interfaceLabel = new QLabel(QStringLiteral("网卡"), captureToolbar);
+    interfaceLabel->setFixedWidth(40);
+    captureLayout->addWidget(interfaceLabel);
+    m_interfaceCombo = new QComboBox(captureToolbar);
+    m_interfaceCombo->setMinimumWidth(0);
+    m_interfaceCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_interfaceCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_interfaceCombo->setToolTip(QStringLiteral("选择用于网络抓包的网络接口"));
     captureLayout->addWidget(m_interfaceCombo, 1);
-    m_startButton = new QPushButton(QStringLiteral("开始抓包"), captureRow);
-    m_stopButton = new QPushButton(QStringLiteral("停止"), captureRow);
-    m_clearButton = new QPushButton(QStringLiteral("清空"), captureRow);
+    m_startButton = new QPushButton(QStringLiteral("开始抓包"), captureToolbar);
+    m_startButton->setObjectName(QStringLiteral("primaryButton"));
+    m_startButton->setMinimumWidth(110);
+    m_stopButton = new QPushButton(QStringLiteral("停止"), captureToolbar);
+    m_stopButton->setObjectName(QStringLiteral("dangerButton"));
+    m_stopButton->setMinimumWidth(88);
+    m_clearButton = new QPushButton(QStringLiteral("清空"), captureToolbar);
+    m_clearButton->setObjectName(QStringLiteral("secondaryButton"));
+    m_clearButton->setMinimumWidth(88);
     captureLayout->addWidget(m_startButton);
     captureLayout->addWidget(m_stopButton);
     captureLayout->addWidget(m_clearButton);
-    root->addWidget(captureRow);
+    root->addWidget(captureToolbar);
 
-    QGroupBox* filterGroup = new QGroupBox(QStringLiteral("显示筛选（可多选）"), this);
-    QGridLayout* filterLayout = new QGridLayout(filterGroup);
-    filterLayout->setContentsMargins(10, 8, 10, 8);
-    filterLayout->setHorizontalSpacing(14);
-    filterLayout->setVerticalSpacing(8);
-    m_broadcastFilter = new QCheckBox(QStringLiteral("广播（56000）"), filterGroup);
-    m_controlFilter = new QCheckBox(QStringLiteral("控制指令（56100）"), filterGroup);
-    m_pointCloudFilter = new QCheckBox(QStringLiteral("点云数据"), filterGroup);
-    m_imuFilter = new QCheckBox(QStringLiteral("IMU 数据"), filterGroup);
-    m_pushFilter = new QCheckBox(QStringLiteral("推送信息"), filterGroup);
-    m_ptpFilter = new QCheckBox(QStringLiteral("PTP 报文"), filterGroup);
-    m_arpFilter = new QCheckBox(QStringLiteral("ARP 握手包"), filterGroup);
-    filterLayout->addWidget(m_broadcastFilter, 0, 0);
-    filterLayout->addWidget(m_controlFilter, 0, 1);
-    filterLayout->addWidget(m_pointCloudFilter, 0, 2);
-    filterLayout->addWidget(m_imuFilter, 0, 3);
-    filterLayout->addWidget(m_pushFilter, 0, 4);
-    filterLayout->addWidget(m_ptpFilter, 0, 5);
-    filterLayout->addWidget(m_arpFilter, 0, 6);
+    QFrame* filterCard = new QFrame(this);
+    filterCard->setObjectName(QStringLiteral("filterCard"));
+    QVBoxLayout* filterCardLayout = new QVBoxLayout(filterCard);
+    filterCardLayout->setContentsMargins(10, 4, 0, 4);
+    filterCardLayout->setSpacing(8);
+    QHBoxLayout* filterChipLayout = new QHBoxLayout();
+    filterChipLayout->setSpacing(8);
+    auto createFilterChip = [filterCard](const QString& text) {
+        QToolButton* button = new QToolButton(filterCard);
+        button->setObjectName(QStringLiteral("filterChip"));
+        button->setText(text);
+        button->setCheckable(true);
+        button->setCursor(Qt::PointingHandCursor);
+        return button;
+    };
+    m_broadcastFilter = createFilterChip(QStringLiteral("广播 56000"));
+    m_controlFilter = createFilterChip(QStringLiteral("控制 56100"));
+    m_pointCloudFilter = createFilterChip(QStringLiteral("点云 56300"));
+    m_imuFilter = createFilterChip(QStringLiteral("IMU 56400"));
+    m_pushFilter = createFilterChip(QStringLiteral("推送 56200"));
+    m_ptpFilter = createFilterChip(QStringLiteral("PTP"));
+    m_arpFilter = createFilterChip(QStringLiteral("ARP"));
+    for (QToolButton* filter : {m_broadcastFilter, m_controlFilter, m_pointCloudFilter,
+                                m_imuFilter, m_pushFilter, m_ptpFilter, m_arpFilter}) {
+        filterChipLayout->addWidget(filter);
+    }
+    m_sourceIpFilter = createFilterChip(QStringLiteral("源 IP"));
+    m_sourceIpCombo = new QComboBox(filterCard);
+    m_sourceIpCombo->setFixedHeight(32);
+    m_sourceIpCombo->setFixedWidth(190);
+    m_sourceIpCombo->setVisible(false);
+    m_destinationIpFilter = createFilterChip(QStringLiteral("目标 IP"));
+    m_destinationIpCombo = new QComboBox(filterCard);
+    m_destinationIpCombo->setFixedHeight(32);
+    m_destinationIpCombo->setFixedWidth(190);
+    m_destinationIpCombo->setVisible(false);
+    filterChipLayout->addWidget(m_sourceIpFilter);
+    filterChipLayout->addWidget(m_sourceIpCombo);
+    filterChipLayout->addWidget(m_destinationIpFilter);
+    filterChipLayout->addWidget(m_destinationIpCombo);
+    filterChipLayout->addStretch();
+    filterCardLayout->addLayout(filterChipLayout);
+    root->addWidget(filterCard);
 
-    m_sourceIpFilter = new QCheckBox(QStringLiteral("源 IP"), filterGroup);
-    m_sourceIpEdit = new QLineEdit(filterGroup);
-    m_sourceIpEdit->setPlaceholderText(QStringLiteral("输入源 IP"));
-    m_sourceIpEdit->setEnabled(false);
-    m_destinationIpFilter = new QCheckBox(QStringLiteral("目标 IP"), filterGroup);
-    m_destinationIpEdit = new QLineEdit(filterGroup);
-    m_destinationIpEdit->setPlaceholderText(QStringLiteral("输入目标 IP"));
-    m_destinationIpEdit->setEnabled(false);
-    filterLayout->addWidget(m_sourceIpFilter, 1, 0);
-    filterLayout->addWidget(m_sourceIpEdit, 1, 1, 1, 2);
-    filterLayout->addWidget(m_destinationIpFilter, 1, 3);
-    filterLayout->addWidget(m_destinationIpEdit, 1, 4, 1, 3);
-    filterLayout->setColumnStretch(2, 1);
-    filterLayout->setColumnStretch(5, 1);
-    root->addWidget(filterGroup);
+    QFrame* statisticsBar = new QFrame(this);
+    statisticsBar->setObjectName(QStringLiteral("statisticsBar"));
+    QHBoxLayout* statisticsLayout = new QHBoxLayout(statisticsBar);
+    statisticsLayout->setContentsMargins(12, 8, 12, 8);
+    auto addMetric = [statisticsBar, statisticsLayout](const QString& iconPath, QLabel*& valueLabel) {
+        QWidget* metric = new QWidget(statisticsBar);
+        QHBoxLayout* metricLayout = new QHBoxLayout(metric);
+        metricLayout->setContentsMargins(0, 0, 0, 0);
+        metricLayout->setSpacing(8);
+        QLabel* iconLabel = new QLabel(metric);
+        ThemeIconUtils::setThemedSvgPixmap(iconLabel, iconPath, QSize(18, 18));
+        valueLabel = new QLabel(metric);
+        metricLayout->addStretch();
+        metricLayout->addWidget(iconLabel);
+        metricLayout->addWidget(valueLabel);
+        metricLayout->addStretch();
+        statisticsLayout->addWidget(metric, 1);
+    };
+    auto addMetricSeparator = [statisticsBar, statisticsLayout]() {
+        QFrame* separator = new QFrame(statisticsBar);
+        separator->setObjectName(QStringLiteral("metricSeparator"));
+        separator->setFixedSize(1, 24);
+        statisticsLayout->addWidget(separator);
+    };
+    addMetric(QStringLiteral(":/icons/packet_stat_captured.svg"), m_totalPacketsLabel);
+    addMetricSeparator();
+    addMetric(QStringLiteral(":/icons/eye.svg"), m_visiblePacketsLabel);
+    addMetricSeparator();
+    addMetric(QStringLiteral(":/icons/packet_stat_bytes.svg"), m_totalBytesLabel);
+    addMetricSeparator();
+    addMetric(QStringLiteral(":/icons/packet_stat_elapsed.svg"), m_elapsedTimeLabel);
+    root->addWidget(statisticsBar);
 
-    QGroupBox* saveGroup = new QGroupBox(QStringLiteral("PCAP 保存"), this);
-    QGridLayout* saveLayout = new QGridLayout(saveGroup);
-    saveLayout->setContentsMargins(10, 8, 10, 8);
-    saveLayout->setHorizontalSpacing(8);
-    saveLayout->setVerticalSpacing(8);
-    saveLayout->addWidget(new QLabel(QStringLiteral("保存目录"), saveGroup), 0, 0);
-    m_saveDirectoryEdit = new QLineEdit(initialSaveDirectory(), saveGroup);
-    QPushButton* browseButton = new QPushButton(QStringLiteral("浏览..."), saveGroup);
-    saveLayout->addWidget(m_saveDirectoryEdit, 0, 1, 1, 5);
-    saveLayout->addWidget(browseButton, 0, 6);
-    saveLayout->addWidget(new QLabel(QStringLiteral("文件名"), saveGroup), 1, 0);
-    m_fileNameEdit = new QLineEdit(saveGroup);
-    m_saveAllRadio = new QRadioButton(QStringLiteral("保存所有包"), saveGroup);
-    m_saveFilteredRadio = new QRadioButton(QStringLiteral("只保存筛选的包"), saveGroup);
-    m_saveAllRadio->setChecked(true);
-    m_saveButton = new QPushButton(QStringLiteral("保存 PCAP"), saveGroup);
-    QPushButton* openDirectoryButton = new QPushButton(QStringLiteral("打开保存目录"), saveGroup);
-    saveLayout->addWidget(m_fileNameEdit, 1, 1, 1, 2);
-    saveLayout->addWidget(m_saveAllRadio, 1, 3);
-    saveLayout->addWidget(m_saveFilteredRadio, 1, 4, 1, 2);
-    saveLayout->addWidget(m_saveButton, 1, 6);
-    saveLayout->addWidget(openDirectoryButton, 1, 7);
-    saveLayout->setColumnStretch(2, 1);
-    root->addWidget(saveGroup);
-
-    m_statusLabel = new QLabel(QStringLiteral("就绪。抓包停止后可手动保存全部或当前筛选的数据包。"), this);
-    m_statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    root->addWidget(m_statusLabel);
-
-    m_packetTable = new QTableWidget(this);
-    m_packetTable->setColumnCount(8);
-    m_packetTable->setHorizontalHeaderLabels({
-        QStringLiteral("序号"),
-        QStringLiteral("时间"),
-        QStringLiteral("源地址"),
-        QStringLiteral("目标地址"),
-        QStringLiteral("协议"),
-        QStringLiteral("长度"),
-        QStringLiteral("端口"),
-        QStringLiteral("内容")
-    });
+    m_packetTable = new QTableView(this);
+    m_packetTable->setObjectName(QStringLiteral("packetTable"));
+    m_packetModel = new PacketTableModel(this, &m_packets);
+    m_packetTable->setModel(m_packetModel);
     m_packetTable->verticalHeader()->setVisible(false);
+    m_packetTable->verticalHeader()->setDefaultSectionSize(30);
     m_packetTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_packetTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_packetTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_packetTable->setVerticalScrollMode(QAbstractItemView::ScrollPerItem);
     m_packetTable->setAlternatingRowColors(true);
     m_packetTable->setShowGrid(false);
     QHeaderView* packetHeader = m_packetTable->horizontalHeader();
     packetHeader->setDefaultAlignment(Qt::AlignCenter);
     packetHeader->setSectionResizeMode(QHeaderView::Interactive);
-    packetHeader->setStretchLastSection(false);
-    const int columnWidths[] = {70, 110, 165, 165, 85, 75, 125, 460};
-    for (int column = 0; column < 8; ++column) {
+    packetHeader->setSectionResizeMode(7, QHeaderView::Stretch);
+    const int columnWidths[] = {72, 110, 170, 170, 84, 76, 130};
+    for (int column = 0; column < 7; ++column) {
         m_packetTable->setColumnWidth(column, columnWidths[column]);
     }
+    m_emptyStateLabel = new QLabel(
+        QStringLiteral("暂无数据，点击“开始抓包”后显示数据包"), m_packetTable->viewport());
+    m_emptyStateLabel->setAlignment(Qt::AlignCenter);
+    m_emptyStateLabel->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 14px;"));
+    m_emptyStateLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    QVBoxLayout* emptyStateLayout = new QVBoxLayout(m_packetTable->viewport());
+    emptyStateLayout->addStretch();
+    emptyStateLayout->addWidget(m_emptyStateLabel, 0, Qt::AlignCenter);
+    emptyStateLayout->addStretch();
     root->addWidget(m_packetTable, 1);
+    root->addSpacing(12);
+
+    QFrame* saveCard = new QFrame(this);
+    saveCard->setObjectName(QStringLiteral("saveCard"));
+    QGridLayout* saveLayout = new QGridLayout(saveCard);
+    saveLayout->setContentsMargins(10, 4, 0, 0);
+    saveLayout->setHorizontalSpacing(8);
+    saveLayout->setVerticalSpacing(8);
+    saveLayout->addWidget(new QLabel(QStringLiteral("保存到"), saveCard), 0, 0);
+    m_saveDirectoryEdit = new QLineEdit(initialSaveDirectory(), saveCard);
+    m_saveDirectoryEdit->setObjectName(QStringLiteral("packetCaptureLineEdit"));
+    m_saveDirectoryEdit->setFixedHeight(32);
+    m_saveDirectoryEdit->setTextMargins(0, 0, 32, 0);
+    QToolButton* browseButton = new QToolButton(m_saveDirectoryEdit);
+    browseButton->setObjectName(QStringLiteral("inlineBrowseButton"));
+    ThemeIconUtils::setThemedSvgIcon(browseButton, QStringLiteral(":/icons/convert_browse_folder.svg"));
+    browseButton->setIconSize(QSize(18, 18));
+    browseButton->setToolTip(QStringLiteral("浏览"));
+    browseButton->setCursor(Qt::PointingHandCursor);
+    browseButton->setFixedSize(28, 28);
+    QHBoxLayout* browseLayout = new QHBoxLayout(m_saveDirectoryEdit);
+    browseLayout->setContentsMargins(0, 2, 2, 2);
+    browseLayout->addStretch();
+    browseLayout->addWidget(browseButton);
+    QPushButton* openDirectoryButton = new QPushButton(QStringLiteral("打开目录"), saveCard);
+    openDirectoryButton->setObjectName(QStringLiteral("secondaryButton"));
+    openDirectoryButton->setFixedHeight(32);
+    saveLayout->addWidget(m_saveDirectoryEdit, 0, 1, 1, 6);
+    saveLayout->addWidget(openDirectoryButton, 0, 7);
+    saveLayout->addWidget(new QLabel(QStringLiteral("文件名"), saveCard), 1, 0);
+    m_fileNameEdit = new QLineEdit(saveCard);
+    m_fileNameEdit->setObjectName(QStringLiteral("packetCaptureLineEdit"));
+    m_fileNameEdit->setFixedHeight(32);
+    saveLayout->addWidget(m_fileNameEdit, 1, 1, 1, 7);
+    m_saveAllRadio = new QRadioButton(QStringLiteral("保存所有包"), saveCard);
+    m_saveFilteredRadio = new QRadioButton(QStringLiteral("仅保存当前筛选"), saveCard);
+    m_saveAllRadio->setChecked(true);
+    m_saveButton = new QPushButton(QStringLiteral("保存 PCAP"), saveCard);
+    m_saveButton->setObjectName(QStringLiteral("primaryButton"));
+    m_saveButton->setMinimumWidth(150);
+    saveLayout->addWidget(m_saveAllRadio, 2, 1);
+    saveLayout->addWidget(m_saveFilteredRadio, 2, 2);
+    saveLayout->addWidget(m_saveButton, 2, 7);
+    saveLayout->setColumnStretch(5, 1);
+    root->addWidget(saveCard);
 
     connect(m_interfaceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         if (index >= 0 && m_interfaceChangedHandler) {
@@ -248,23 +497,23 @@ PacketCaptureDialog::PacketCaptureDialog(QWidget* parent)
         }
     });
 
-    const QList<QCheckBox*> typeFilters = {
+    const QList<QToolButton*> typeFilters = {
         m_broadcastFilter, m_controlFilter, m_pointCloudFilter, m_imuFilter,
         m_pushFilter, m_ptpFilter, m_arpFilter
     };
-    for (QCheckBox* filter : typeFilters) {
-        connect(filter, &QCheckBox::toggled, this, [this]() { rebuildTable(); });
+    for (QToolButton* filter : typeFilters) {
+        connect(filter, &QToolButton::toggled, this, [this]() { rebuildTable(); });
     }
-    connect(m_sourceIpFilter, &QCheckBox::toggled, this, [this](bool checked) {
-        m_sourceIpEdit->setEnabled(checked);
+    connect(m_sourceIpFilter, &QToolButton::toggled, this, [this](bool checked) {
+        m_sourceIpCombo->setVisible(checked);
         rebuildTable();
     });
-    connect(m_destinationIpFilter, &QCheckBox::toggled, this, [this](bool checked) {
-        m_destinationIpEdit->setEnabled(checked);
+    connect(m_destinationIpFilter, &QToolButton::toggled, this, [this](bool checked) {
+        m_destinationIpCombo->setVisible(checked);
         rebuildTable();
     });
-    connect(m_sourceIpEdit, &QLineEdit::textChanged, this, [this]() { rebuildTable(); });
-    connect(m_destinationIpEdit, &QLineEdit::textChanged, this, [this]() { rebuildTable(); });
+    connect(m_sourceIpCombo, &QComboBox::currentTextChanged, this, [this]() { rebuildTable(); });
+    connect(m_destinationIpCombo, &QComboBox::currentTextChanged, this, [this]() { rebuildTable(); });
     connect(m_fileNameEdit, &QLineEdit::textEdited, this, [this]() { m_fileNameCustomized = true; });
     connect(m_saveAllRadio, &QRadioButton::toggled, this, [this]() {
         if (!m_fileNameCustomized) {
@@ -274,35 +523,38 @@ PacketCaptureDialog::PacketCaptureDialog(QWidget* parent)
     connect(m_startButton, &QPushButton::clicked, this, [this]() { startCapture(); });
     connect(m_stopButton, &QPushButton::clicked, this, [this]() { stopCapture(); });
     connect(m_clearButton, &QPushButton::clicked, this, [this]() {
-        m_packets.clear();
-        m_packetTable->setRowCount(0);
+        m_packetModel->clearPackets();
+        clearCapturedAddresses();
+        m_totalBytes = 0;
+        updateStatistics();
+        updateEmptyState();
         updateCaptureControls();
-        m_statusLabel->setText(m_captureActive
-            ? QStringLiteral("抓包中 · 已清空当前数据")
-            : QStringLiteral("数据已清空"));
     });
-    connect(browseButton, &QPushButton::clicked, this, [this]() {
-        QFileDialog* directoryDialog = new QFileDialog(
-            this, QStringLiteral("选择 PCAP 保存目录"), m_saveDirectoryEdit->text());
-        directoryDialog->setFileMode(QFileDialog::Directory);
-        directoryDialog->setOption(QFileDialog::ShowDirsOnly);
-        directoryDialog->setOption(QFileDialog::DontUseNativeDialog);
-        directoryDialog->setModal(false);
-        directoryDialog->setAttribute(Qt::WA_DeleteOnClose);
-        connect(directoryDialog, &QFileDialog::fileSelected, this, [this](const QString& directory) {
+    connect(browseButton, &QToolButton::clicked, this, [this]() {
+        const QString directory = selectFolder(
+            this, m_saveDirectoryEdit->text().trimmed(), QStringLiteral("选择保存目录"));
+        if (!directory.isEmpty()) {
             m_saveDirectoryEdit->setText(directory);
             QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
             settings.setValue(QStringLiteral("save/lastPcapCaptureDir"), directory);
-        });
-        directoryDialog->open();
+        }
     });
     connect(m_saveButton, &QPushButton::clicked, this, [this]() { saveCapture(); });
     connect(openDirectoryButton, &QPushButton::clicked, this, [this]() {
         QDesktopServices::openUrl(QUrl::fromLocalFile(m_saveDirectoryEdit->text().trimmed()));
     });
+    connect(m_packetTable, &QTableView::doubleClicked, this, [this](const QModelIndex& index) {
+        showPacketDetails(index.row());
+    });
+
+    m_elapsedTimer = new QTimer(this);
+    connect(m_elapsedTimer, &QTimer::timeout, this, [this]() { updateStatistics(); });
 
     m_captureTimestamp = QDateTime::currentDateTime();
     updateDefaultFileName();
+    refreshTheme();
+    updateStatistics();
+    updateEmptyState();
     updateCaptureControls();
 }
 
@@ -314,6 +566,196 @@ PacketCaptureDialog::~PacketCaptureDialog()
     }
 }
 
+void PacketCaptureDialog::changeEvent(QEvent* event)
+{
+    QDialog::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange ||
+        event->type() == QEvent::ApplicationPaletteChange) {
+        refreshTheme();
+    }
+}
+
+void PacketCaptureDialog::refreshTheme()
+{
+    if (m_refreshingTheme) {
+        return;
+    }
+    QScopedValueRollback<bool> refreshingTheme(m_refreshingTheme, true);
+
+    const bool darkTheme = palette().color(QPalette::Window).lightness() < 128;
+    const QString borderColor = darkTheme ? QStringLiteral("#5f6268") : QStringLiteral("#dfe4ec");
+    const QString surfaceColor = darkTheme ? QStringLiteral("#292b2f") : QStringLiteral("#fafbfd");
+    const QString hoverColor = darkTheme ? QStringLiteral("#35383d") : QStringLiteral("#f3f5f8");
+    const QString pressedColor = darkTheme ? QStringLiteral("#45484e") : QStringLiteral("#e8ebf0");
+    const QString disabledColor = darkTheme ? QStringLiteral("#44474c") : QStringLiteral("#d8dde5");
+    const QColor highlight = palette().color(QPalette::Highlight);
+    const QString highlightHover = (darkTheme ? highlight.lighter(112) : highlight.darker(105)).name();
+    const QString highlightPressed = (darkTheme ? highlight.darker(112) : highlight.darker(115)).name();
+
+    setStyleSheet(QStringLiteral(R"(
+        QDialog#packetCaptureDialog {
+            background: palette(window);
+        }
+        QFrame#statisticsBar {
+            border: 1px solid %1;
+            border-radius: 4px;
+            background: %2;
+        }
+        QFrame#metricSeparator {
+            border: none;
+            background: %1;
+        }
+        QLineEdit#packetCaptureLineEdit {
+            min-height: 32px;
+            border: 1px solid %1;
+            border-radius: 4px;
+            background: palette(base);
+            color: palette(text);
+            padding: 0 10px;
+        }
+        QLineEdit#packetCaptureLineEdit:hover {
+            border-color: palette(mid);
+        }
+        QLineEdit#packetCaptureLineEdit:focus {
+            border-color: palette(highlight);
+        }
+        QToolButton#inlineBrowseButton {
+            border: none;
+            border-radius: 3px;
+            background: transparent;
+        }
+        QToolButton#inlineBrowseButton:hover {
+            background: %3;
+        }
+        QToolButton#inlineBrowseButton:pressed {
+            background: %4;
+        }
+        QPushButton#secondaryButton {
+            min-height: 32px;
+            border: 1px solid %1;
+            border-radius: 4px;
+            background: palette(button);
+            color: palette(button-text);
+            padding: 0 16px;
+        }
+        QPushButton#secondaryButton:hover {
+            border-color: palette(mid);
+            background: %3;
+        }
+        QPushButton#secondaryButton:pressed {
+            border-color: palette(mid);
+            background: %4;
+        }
+        QPushButton#secondaryButton:disabled {
+            border-color: %1;
+            background: %5;
+            color: palette(mid);
+        }
+        QPushButton#primaryButton {
+            min-height: 32px;
+            padding: 0 18px;
+            border: 1px solid palette(highlight);
+            border-radius: 4px;
+            background: palette(highlight);
+            color: palette(highlighted-text);
+        }
+        QPushButton#primaryButton:hover {
+            border-color: %6;
+            background: %6;
+        }
+        QPushButton#primaryButton:pressed {
+            border-color: %7;
+            background: %7;
+        }
+        QPushButton#primaryButton:disabled {
+            border-color: %5;
+            background: %5;
+            color: palette(mid);
+        }
+        QPushButton#dangerButton {
+            min-height: 32px;
+            padding: 0 16px;
+            border: 1px solid #b95855;
+            border-radius: 4px;
+            background: palette(button);
+            color: #d86a66;
+        }
+        QPushButton#dangerButton:hover {
+            background: %3;
+            border-color: #d86a66;
+        }
+        QPushButton#dangerButton:pressed {
+            background: %4;
+            border-color: #a94442;
+        }
+        QPushButton#dangerButton:disabled {
+            border-color: %1;
+            background: %5;
+            color: palette(mid);
+        }
+        QToolButton#filterChip {
+            min-height: 28px;
+            margin-left: 1px;
+            margin-right: 1px;
+            padding: 0 12px;
+            border: 1px solid %1;
+            border-radius: 15px;
+            background: palette(base);
+            color: palette(button-text);
+        }
+        QToolButton#filterChip:hover {
+            border-color: palette(mid);
+            background: %3;
+        }
+        QToolButton#filterChip:pressed {
+            border-color: palette(mid);
+            background: %4;
+        }
+        QToolButton#filterChip:checked {
+            border-color: palette(highlight);
+            background: palette(highlight);
+            color: palette(highlighted-text);
+        }
+        QToolButton#filterChip:checked:hover {
+            border-color: %6;
+            background: %6;
+        }
+        QToolButton#filterChip:checked:pressed {
+            border-color: %7;
+            background: %7;
+        }
+        QTableView#packetTable {
+            border: 1px solid %1;
+            border-radius: 4px;
+            gridline-color: %1;
+            background: palette(base);
+            color: palette(text);
+            alternate-background-color: palette(alternate-base);
+        }
+        QTableView#packetTable QHeaderView::section {
+            min-height: 34px;
+            border: none;
+            border-right: 1px solid %1;
+            border-bottom: 1px solid %1;
+            background: %2;
+            color: palette(window-text);
+            padding: 0 8px;
+        }
+    )").arg(borderColor,
+             surfaceColor,
+             hoverColor,
+             pressedColor,
+             disabledColor,
+             highlightHover,
+             highlightPressed));
+
+    ThemeIconUtils::refreshObject(this);
+    for (QWidget* child : findChildren<QWidget*>()) {
+        ThemeIconUtils::refreshObject(child);
+    }
+    m_packetModel->refreshProtocolColors();
+}
+
 void PacketCaptureDialog::setInterfaces(
     const QList<NetworkInterfaceService::NetworkInterfaceInfo>& interfaces,
     const QString& selectedSystemName)
@@ -322,16 +764,23 @@ void PacketCaptureDialog::setInterfaces(
         return;
     }
 
+    const QString currentSystemName = m_interfaceCombo->currentData().toString();
+    const QString targetSystemName = selectedSystemName.isEmpty()
+        ? currentSystemName
+        : selectedSystemName;
     QSignalBlocker blocker(m_interfaceCombo);
     m_interfaceCombo->clear();
     int selectedIndex = -1;
     for (int i = 0; i < interfaces.size(); ++i) {
         const NetworkInterfaceService::NetworkInterfaceInfo& interface = interfaces.at(i);
+        const QString address = interface.ipv4.isEmpty()
+            ? QStringLiteral("未活动 / 无 IPv4")
+            : interface.ipv4;
         m_interfaceCombo->addItem(
-            QStringLiteral("%1 - %2").arg(interface.displayName, interface.ipv4),
+            QStringLiteral("%1 - %2").arg(interface.displayName, address),
             interface.systemName);
         m_interfaceCombo->setItemData(i, interface.ipv4, Qt::UserRole + 1);
-        if (interface.systemName == selectedSystemName) {
+        if (interface.systemName == targetSystemName) {
             selectedIndex = i;
         }
     }
@@ -378,17 +827,20 @@ void PacketCaptureDialog::startCapture()
         return;
     }
 
-    m_packets.clear();
-    m_packetTable->setRowCount(0);
+    m_packetModel->clearPackets();
+    clearCapturedAddresses();
+    m_totalBytes = 0;
     m_dataLinkType = 0;
     m_captureTimestamp = QDateTime::currentDateTime();
     m_fileNameCustomized = false;
     updateDefaultFileName();
     m_stopRequested.store(false);
     m_captureActive = true;
+    m_captureElapsed.start();
+    m_elapsedTimer->start(250);
+    updateStatistics();
+    updateEmptyState();
     updateCaptureControls();
-    m_statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    m_statusLabel->setText(QStringLiteral("正在打开网卡并开始抓包..."));
 
     const QString systemName = m_interfaceCombo->itemData(interfaceIndex).toString();
     const QString ipv4 = m_interfaceCombo->itemData(interfaceIndex, Qt::UserRole + 1).toString();
@@ -407,9 +859,9 @@ void PacketCaptureDialog::stopCapture()
         m_captureThread.join();
     }
     m_captureActive = false;
+    m_elapsedTimer->stop();
+    updateStatistics();
     updateCaptureControls();
-    m_statusLabel->setText(QStringLiteral("抓包已停止 · 已捕获 %1 个数据包，可手动保存 PCAP")
-                               .arg(m_packets.size()));
 }
 
 QString PacketCaptureDialog::captureDeviceName(const QString& systemName,
@@ -687,86 +1139,157 @@ void PacketCaptureDialog::appendPackets(QVector<PacketRow> packets)
 {
     const bool scrollToBottom = m_packetTable->verticalScrollBar()->value() >=
         m_packetTable->verticalScrollBar()->maximum() - 1;
+    {
+        QSignalBlocker sourceBlocker(m_sourceIpCombo);
+        QSignalBlocker destinationBlocker(m_destinationIpCombo);
+        for (const PacketRow& packet : packets) {
+            const QHostAddress sourceAddress(packet.source);
+            if (!sourceAddress.isNull() && !m_sourceAddresses.contains(packet.source)) {
+                m_sourceAddresses.insert(packet.source);
+                m_sourceIpCombo->addItem(packet.source);
+            }
+            const QHostAddress destinationAddress(packet.destination);
+            if (!destinationAddress.isNull() && !m_destinationAddresses.contains(packet.destination)) {
+                m_destinationAddresses.insert(packet.destination);
+                m_destinationIpCombo->addItem(packet.destination);
+            }
+        }
+    }
+    const FilterState filter = currentFilterState();
+    QVector<int> visiblePacketIndexes;
+    visiblePacketIndexes.reserve(packets.size());
     for (PacketRow& packet : packets) {
         if (m_dataLinkType == 0) {
             m_dataLinkType = packet.dataLinkType;
         }
+        m_totalBytes += quint64(packet.originalLength);
         m_packets.append(std::move(packet));
-        const PacketRow& storedPacket = m_packets.constLast();
-        if (matchesFilter(storedPacket)) {
-            appendPacketToTable(storedPacket);
+        const int packetIndex = m_packets.size() - 1;
+        if (matchesFilter(m_packets.at(packetIndex), filter)) {
+            visiblePacketIndexes.append(packetIndex);
         }
     }
+    m_packetModel->appendVisiblePackets(visiblePacketIndexes);
     if (scrollToBottom) {
         m_packetTable->scrollToBottom();
     }
+    updateStatistics();
+    updateEmptyState();
     updateCaptureControls();
-    if (m_captureActive) {
-        m_statusLabel->setText(QStringLiteral("抓包中 · 已捕获 %1 个数据包 · 当前显示 %2 个")
-                                   .arg(m_packets.size())
-                                   .arg(m_packetTable->rowCount()));
-    }
-}
-
-void PacketCaptureDialog::appendPacketToTable(const PacketRow& packet)
-{
-    const int row = m_packetTable->rowCount();
-    m_packetTable->insertRow(row);
-    setPacketCell(m_packetTable, row, 0, QString::number(packet.number));
-    setPacketCell(m_packetTable, row, 1, QString::number(packet.relativeTimeSec, 'f', 6));
-    setPacketCell(m_packetTable, row, 2, packet.source);
-    setPacketCell(m_packetTable, row, 3, packet.destination);
-    setPacketCell(m_packetTable, row, 4, packet.protocol);
-    setPacketCell(m_packetTable, row, 5, QString::number(packet.length));
-    setPacketCell(m_packetTable, row, 6, packet.ports);
-    setPacketCell(m_packetTable, row, 7, packet.payloadHex);
 }
 
 void PacketCaptureDialog::rebuildTable()
 {
-    m_packetTable->setUpdatesEnabled(false);
-    m_packetTable->setRowCount(0);
-    for (const PacketRow& packet : m_packets) {
-        if (matchesFilter(packet)) {
-            appendPacketToTable(packet);
-        }
-    }
-    m_packetTable->setUpdatesEnabled(true);
-    m_packetTable->viewport()->update();
+    const FilterState filter = currentFilterState();
+    m_packetModel->rebuild([filter](const PacketRow& packet) {
+        return matchesFilter(packet, filter);
+    });
+    updateStatistics();
+    updateEmptyState();
     if (!m_fileNameCustomized) {
         updateDefaultFileName();
     }
-    m_statusLabel->setText(QStringLiteral("已捕获 %1 个数据包 · 当前显示 %2 个")
-                               .arg(m_packets.size())
-                               .arg(m_packetTable->rowCount()));
 }
 
-bool PacketCaptureDialog::matchesFilter(const PacketRow& packet) const
+void PacketCaptureDialog::updateStatistics()
 {
-    const bool hasTypeFilter = m_broadcastFilter->isChecked() ||
-                               m_controlFilter->isChecked() ||
-                               m_pointCloudFilter->isChecked() ||
-                               m_imuFilter->isChecked() ||
-                               m_pushFilter->isChecked() ||
-                               m_ptpFilter->isChecked() ||
-                               m_arpFilter->isChecked();
+    m_totalPacketsLabel->setText(QStringLiteral("已捕获  %L1").arg(m_packets.size()));
+    m_visiblePacketsLabel->setText(QStringLiteral("当前显示  %L1").arg(m_packetModel->rowCount()));
+    m_totalBytesLabel->setText(QStringLiteral("数据量  %1").arg(formatByteCount(m_totalBytes)));
+    const qint64 elapsedMilliseconds = m_captureElapsed.isValid() ? m_captureElapsed.elapsed() : 0;
+    m_elapsedTimeLabel->setText(
+        QStringLiteral("运行时间  %1").arg(formatElapsedTime(elapsedMilliseconds)));
+}
+
+void PacketCaptureDialog::updateEmptyState()
+{
+    const bool empty = m_packetModel->rowCount() == 0;
+    m_emptyStateLabel->setVisible(empty);
+    if (empty) {
+        m_emptyStateLabel->setText(m_packets.isEmpty()
+            ? QStringLiteral("暂无数据，点击“开始抓包”后显示数据包")
+            : QStringLiteral("当前筛选条件下暂无数据"));
+    }
+}
+
+void PacketCaptureDialog::showPacketDetails(int tableRow)
+{
+    const PacketRow* selectedPacket = &m_packetModel->packetAt(tableRow);
+
+    QDialog detailsDialog(this);
+    detailsDialog.setWindowTitle(QStringLiteral("数据包详情 #%1").arg(selectedPacket->number));
+    detailsDialog.resize(760, 520);
+    QVBoxLayout* detailsLayout = new QVBoxLayout(&detailsDialog);
+    QLabel* summaryLabel = new QLabel(
+        QStringLiteral("时间：%1 s    源地址：%2    目标地址：%3\n协议：%4    长度：%5    端口：%6")
+            .arg(QString::number(selectedPacket->relativeTimeSec, 'f', 6),
+                 selectedPacket->source,
+                 selectedPacket->destination,
+                 selectedPacket->protocol,
+                 QString::number(selectedPacket->length),
+                 selectedPacket->ports),
+        &detailsDialog);
+    summaryLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    QPlainTextEdit* payloadEdit = new QPlainTextEdit(selectedPacket->payloadHex, &detailsDialog);
+    payloadEdit->setReadOnly(true);
+    payloadEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &detailsDialog);
+    connect(buttons, &QDialogButtonBox::rejected, &detailsDialog, &QDialog::reject);
+    detailsLayout->addWidget(summaryLabel);
+    detailsLayout->addWidget(new QLabel(QStringLiteral("内容（Payload Hex）"), &detailsDialog));
+    detailsLayout->addWidget(payloadEdit, 1);
+    detailsLayout->addWidget(buttons);
+    detailsDialog.exec();
+}
+
+PacketCaptureDialog::FilterState PacketCaptureDialog::currentFilterState() const
+{
+    return {
+        m_broadcastFilter->isChecked(),
+        m_controlFilter->isChecked(),
+        m_pointCloudFilter->isChecked(),
+        m_imuFilter->isChecked(),
+        m_pushFilter->isChecked(),
+        m_ptpFilter->isChecked(),
+        m_arpFilter->isChecked(),
+        m_sourceIpFilter->isChecked(),
+        m_destinationIpFilter->isChecked(),
+        m_sourceIpCombo->currentText(),
+        m_destinationIpCombo->currentText()
+    };
+}
+
+void PacketCaptureDialog::clearCapturedAddresses()
+{
+    QSignalBlocker sourceBlocker(m_sourceIpCombo);
+    QSignalBlocker destinationBlocker(m_destinationIpCombo);
+    m_sourceAddresses.clear();
+    m_destinationAddresses.clear();
+    m_sourceIpCombo->clear();
+    m_destinationIpCombo->clear();
+}
+
+bool PacketCaptureDialog::matchesFilter(const PacketRow& packet, const FilterState& filter)
+{
+    const bool hasTypeFilter = filter.broadcast || filter.control || filter.pointCloud ||
+                               filter.imu || filter.push || filter.ptp || filter.arp;
     const bool matchesType = !hasTypeFilter ||
-                             (m_broadcastFilter->isChecked() && packet.broadcast) ||
-                             (m_controlFilter->isChecked() && packet.control) ||
-                             (m_pointCloudFilter->isChecked() && packet.pointCloud) ||
-                             (m_imuFilter->isChecked() && packet.imu) ||
-                             (m_pushFilter->isChecked() && packet.push) ||
-                             (m_ptpFilter->isChecked() && packet.ptp) ||
-                             (m_arpFilter->isChecked() && packet.arp);
+                             (filter.broadcast && packet.broadcast) ||
+                             (filter.control && packet.control) ||
+                             (filter.pointCloud && packet.pointCloud) ||
+                             (filter.imu && packet.imu) ||
+                             (filter.push && packet.push) ||
+                             (filter.ptp && packet.ptp) ||
+                             (filter.arp && packet.arp);
     if (!matchesType) {
         return false;
     }
-    if (m_sourceIpFilter->isChecked() &&
-        packet.source.compare(m_sourceIpEdit->text().trimmed(), Qt::CaseInsensitive) != 0) {
+    if (filter.sourceIpEnabled &&
+        packet.source.compare(filter.sourceIp, Qt::CaseInsensitive) != 0) {
         return false;
     }
-    if (m_destinationIpFilter->isChecked() &&
-        packet.destination.compare(m_destinationIpEdit->text().trimmed(), Qt::CaseInsensitive) != 0) {
+    if (filter.destinationIpEnabled &&
+        packet.destination.compare(filter.destinationIp, Qt::CaseInsensitive) != 0) {
         return false;
     }
     return true;
@@ -854,8 +1377,9 @@ void PacketCaptureDialog::saveCapture()
     }
 
     int savedCount = 0;
+    const FilterState filter = currentFilterState();
     for (const PacketRow& packet : m_packets) {
-        if (m_saveFilteredRadio->isChecked() && !matchesFilter(packet)) {
+        if (m_saveFilteredRadio->isChecked() && !matchesFilter(packet, filter)) {
             continue;
         }
         pcap_pkthdr header{};
@@ -873,10 +1397,6 @@ void PacketCaptureDialog::saveCapture()
 
     QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
     settings.setValue(QStringLiteral("save/lastPcapCaptureDir"), directory);
-    m_statusLabel->setStyleSheet(QStringLiteral("color: palette(mid);"));
-    m_statusLabel->setText(QStringLiteral("已保存 %1 个数据包至 %2")
-                               .arg(savedCount)
-                               .arg(QDir::toNativeSeparators(outputPath)));
     QMessageBox::information(this,
                              QStringLiteral("保存成功"),
                              QStringLiteral("已成功保存 %1 个数据包。\n%2")
@@ -890,11 +1410,12 @@ void PacketCaptureDialog::finishCapture(const QString& message, bool failed)
         m_captureThread.join();
     }
     m_captureActive = false;
+    m_elapsedTimer->stop();
+    updateStatistics();
     updateCaptureControls();
-    m_statusLabel->setStyleSheet(failed
-        ? QStringLiteral("color: #dc5050;")
-        : QStringLiteral("color: palette(mid);"));
-    m_statusLabel->setText(message);
+    if (failed) {
+        QMessageBox::warning(this, QStringLiteral("抓包失败"), message);
+    }
 }
 
 void PacketCaptureDialog::updateCaptureControls()
@@ -902,6 +1423,7 @@ void PacketCaptureDialog::updateCaptureControls()
     m_interfaceCombo->setEnabled(!m_captureActive);
     m_startButton->setEnabled(!m_captureActive && m_interfaceCombo->currentIndex() >= 0);
     m_stopButton->setEnabled(m_captureActive);
+    m_clearButton->setEnabled(!m_packets.isEmpty());
     m_saveButton->setEnabled(!m_captureActive && !m_packets.isEmpty());
     m_saveDirectoryEdit->setEnabled(!m_captureActive);
     m_fileNameEdit->setEnabled(!m_captureActive);
