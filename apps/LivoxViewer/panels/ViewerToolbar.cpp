@@ -98,10 +98,10 @@ public:
     }
 
 private:
-    int compactPriority(QLayoutItem* item) const
+    bool canCompact(QLayoutItem* item) const
     {
         QWidget* widget = item->widget();
-        return widget ? widget->property("toolbarCompactPriority").toInt() : 0;
+        return widget && widget->property("toolbarCanCompact").toBool();
     }
 
     int itemFullWidth(QLayoutItem* item, int lineWidth) const
@@ -141,7 +141,7 @@ private:
             const int minWidth = itemMinWidth(item, lineWidth);
             widths.append(fullWidth);
             minimums.append(minWidth);
-            if (compactPriority(item) > 0 && minWidth < fullWidth) {
+            if (canCompact(item) && minWidth < fullWidth) {
                 compactIndexes.append(i);
             }
         }
@@ -151,13 +151,8 @@ private:
             return widths;
         }
 
-        std::sort(compactIndexes.begin(), compactIndexes.end(), [this, &rowItems](int lhs, int rhs) {
-            const int lhsPriority = compactPriority(rowItems.at(lhs));
-            const int rhsPriority = compactPriority(rowItems.at(rhs));
-            if (lhsPriority == rhsPriority) {
-                return lhs > rhs;
-            }
-            return lhsPriority < rhsPriority;
+        std::sort(compactIndexes.begin(), compactIndexes.end(), [](int lhs, int rhs) {
+            return lhs > rhs;
         });
 
         for (int index : compactIndexes) {
@@ -304,10 +299,10 @@ public:
         update();
     }
 
-    void setCompactPriority(int priority)
+    void setCompactEnabled()
     {
-        m_compactPriority = priority;
-        setProperty("toolbarCompactPriority", priority);
+        m_canCompact = true;
+        setProperty("toolbarCanCompact", true);
     }
 
     void addPrimaryWidget(QWidget* widget)
@@ -329,7 +324,7 @@ public:
 
     QSize minimumSizeHint() const override
     {
-        return QSize(estimatedWidth(m_compactPriority > 0 ? 1 : -1, false, m_compactPriority > 0), height());
+        return QSize(estimatedWidth(m_canCompact ? 1 : -1, false, m_canCompact), height());
     }
 
 protected:
@@ -388,7 +383,7 @@ private:
 
         const int fullWidth = estimatedWidth(-1, true, false);
         const bool compact = widthNow < fullWidth;
-        const bool compactGroup = compact && m_compactPriority > 0;
+        const bool compactGroup = compact && m_canCompact;
 
         for (int i = 0; i < m_primaryWidgets.size(); ++i) {
             QWidget* widget = m_primaryWidgets.at(i);
@@ -408,7 +403,7 @@ private:
     QMenu* m_moreMenu = nullptr;
     QVector<QWidget*> m_primaryWidgets;
     QVector<QWidget*> m_secondaryWidgets;
-    int m_compactPriority = 0;
+    bool m_canCompact = false;
 };
 
 class ViewerToolbarContainer : public QWidget
@@ -582,7 +577,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     ensureDataOperationActions();
 
     ToolbarGroup* dataOperationGroup = new ToolbarGroup(QStringLiteral("数据操作"), viewerToolbar, 0);
-    dataOperationGroup->setCompactPriority(4);
+    dataOperationGroup->setCompactEnabled();
     dataOperationGroup->addPrimaryWidget(createIconButton(actionPlayPointCloud, dataOperationGroup, toolbarIconSize));
     dataOperationGroup->addPrimaryWidget(createIconButton(actionShowImuCharts, dataOperationGroup, toolbarIconSize));
     dataOperationGroup->addPrimaryWidget(createIconButton(actionSlamOnline, dataOperationGroup, toolbarIconSize));
@@ -595,6 +590,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(dataOperationGroup);
 
     ToolbarGroup* displayGroup = new ToolbarGroup(QStringLiteral("显示控制"), viewerToolbar);
+    displayGroup->setCompactEnabled();
     QAction* gridAction = new QAction(QIcon(":/icons/grid.svg"), "世界坐标网格", this);
     ThemeIconUtils::setThemedSvgIcon(gridAction, QStringLiteral(":/icons/grid.svg"));
     gridAction->setCheckable(true);
@@ -829,6 +825,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(displayGroup);
 
     ToolbarGroup* transformGroup = new ToolbarGroup("点云变换", viewerToolbar);
+    transformGroup->setCompactEnabled();
     projectionControlsGroup = transformGroup;
     QAction* projectionDepthAction = new QAction(QIcon(":/icons/projection_spherical.svg"), "球面投影", this);
     ThemeIconUtils::setThemedSvgIcon(projectionDepthAction, QStringLiteral(":/icons/projection_spherical.svg"));
@@ -877,7 +874,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     transformGroup->setVisible(false);
 
     ToolbarGroup* toolsGroup = new ToolbarGroup("点云工具", viewerToolbar);
-    toolsGroup->setCompactPriority(3);
+    toolsGroup->setCompactEnabled();
     QAction* measureAction = new QAction(QIcon(":/icons/measure.svg"), "点云测距", this);
     ThemeIconUtils::setThemedSvgIcon(measureAction, QStringLiteral(":/icons/measure.svg"));
     pointCloudMeasureAction = measureAction;
@@ -1088,7 +1085,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(toolsGroup);
 
     ToolbarGroup* projectionGroup = new ToolbarGroup("视角控制", viewerToolbar);
-    projectionGroup->setCompactPriority(4);
+    projectionGroup->setCompactEnabled();
     QActionGroup* projectionModeGroup = new QActionGroup(projectionGroup);
     projectionModeGroup->setExclusive(true);
 
@@ -1147,7 +1144,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(projectionGroup);
 
     ToolbarGroup* viewGroup = new ToolbarGroup("视图控制", viewerToolbar);
-    viewGroup->setCompactPriority(1);
+    viewGroup->setCompactEnabled();
     auto applyViewPreset = [this](int index) {
         PointCloudView::ViewPreset preset = PointCloudView::ViewPreset::Top;
         switch (index) {
@@ -1208,7 +1205,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     toolbarLayout->addWidget(viewGroup);
 
     ToolbarGroup* captureGroup = new ToolbarGroup("数据采集", viewerToolbar);
-    captureGroup->setCompactPriority(2);
+    captureGroup->setCompactEnabled();
 
     QAction* pointCloudCaptureAction = new QAction(QIcon(":/icons/capture_camera.svg"), "点云录制", this);
     ThemeIconUtils::setThemedSvgIcon(pointCloudCaptureAction, QStringLiteral(":/icons/capture_camera.svg"));

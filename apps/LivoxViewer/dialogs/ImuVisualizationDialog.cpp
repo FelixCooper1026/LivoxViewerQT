@@ -42,6 +42,13 @@
 #include <cmath>
 #include <limits>
 
+#ifdef Q_OS_WIN
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
 namespace {
 
 constexpr double kVisibleWindowSec = 5.0;
@@ -824,14 +831,20 @@ void ImuVisualizationDialog::setPinned(bool pinned)
             pinned ? QStringLiteral(":/icons/window_pin_active.svg") : QStringLiteral(":/icons/window_pin.svg"));
     }
 
+#ifdef Q_OS_WIN
+    SetWindowPos(reinterpret_cast<HWND>(winId()),
+                 pinned ? HWND_TOPMOST : HWND_NOTOPMOST,
+                 0,
+                 0,
+                 0,
+                 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+#else
     const QRect previousGeometry = geometry();
     setWindowFlag(Qt::WindowStaysOnTopHint, pinned);
     setGeometry(previousGeometry);
     show();
-    if (pinned) {
-        raise();
-        activateWindow();
-    }
+#endif
 }
 
 QWidget* ImuVisualizationDialog::createDeviceCard(const ImuVisualizationDeviceDescriptor& device)

@@ -42,8 +42,9 @@
 
 namespace {
 
-constexpr int kPanelVisibilityButtonSize = 24;
-constexpr int kPanelVisibilityIconSize = 22;
+constexpr int kPanelVisibilityButtonSize = 28;
+constexpr int kPanelVisibilityIconSize = 24;
+constexpr int kPanelVisibilityButtonSpacing = 4;
 constexpr int kTitleBarHeight = 34;
 constexpr int kTitleBarLeftMargin = 2;
 constexpr int kTitleBarAppIconAreaWidth = 30;
@@ -372,7 +373,7 @@ public:
             "  background: transparent;"
             "}"
             "QToolButton#WindowControlButton:hover {"
-            "  background: palette(alternate-base);"
+            "  background: rgba(128, 128, 128, 64);"
             "}"
             "QToolButton#WindowCloseButton {"
             "  border: none;"
@@ -491,7 +492,7 @@ QToolButton* createPanelVisibilityButton(QWidget* parent, const QString& iconPat
         "  padding: 1px;"
         "}"
         "QToolButton:hover {"
-        "  background: palette(alternate-base);"
+        "  background: rgba(128, 128, 128, 64);"
         "}"
     ));
     return button;
@@ -555,15 +556,15 @@ QWidget* LivoxViewerWindow::createCustomTitleBar(QWidget* panelControls)
     QToolButton* minimizeButton = createWindowControlButton(
         titleBar,
         QStringLiteral(":/icons/window_minimize.svg"),
-        QStringLiteral("Minimize"));
+        QStringLiteral("最小化"));
     maximizeRestoreButton = createWindowControlButton(
         titleBar,
         QStringLiteral(":/icons/window_maximize.svg"),
-        QStringLiteral("Maximize"));
+        QStringLiteral("最大化"));
     QToolButton* closeButton = createWindowControlButton(
         titleBar,
         QStringLiteral(":/icons/window_close.svg"),
-        QStringLiteral("Close"));
+        QStringLiteral("关闭"));
     closeButton->setObjectName(QStringLiteral("WindowCloseButton"));
     closeButton->installEventFilter(new CloseButtonHoverIconFilter(closeButton));
 
@@ -658,7 +659,7 @@ void LivoxViewerWindow::updateWindowControlButtons()
         ThemeIconUtils::setThemedSvgIcon(maximizeRestoreButton,
             maximized ? QStringLiteral(":/icons/window_restore.svg")
                       : QStringLiteral(":/icons/window_maximize.svg"));
-        maximizeRestoreButton->setToolTip(maximized ? QStringLiteral("Restore") : QStringLiteral("Maximize"));
+        maximizeRestoreButton->setToolTip(maximized ? QStringLiteral("恢复") : QStringLiteral("最大化"));
     }
 }
 
@@ -842,14 +843,15 @@ void LivoxViewerWindow::createMenusAndActions()
         "  spacing: 0px;"
         "}"
         "QMenuBar::item {"
-        "  padding: 7px 12px 7px 12px;"
+        "  padding: 5px 12px 5px 12px;"
         "  border: none;"
+        "  border-radius: 4px;"
         "  background: transparent;"
         "}"
         "QMenuBar::item:selected,"
         "QMenuBar::item:pressed {"
         "  border: none;"
-        "  background: palette(alternate-base);"
+        "  background: rgba(128, 128, 128, 64);"
         "}"
     ));
     fileMenu = menuBar->addMenu("文件");
@@ -866,7 +868,7 @@ void LivoxViewerWindow::createMenusAndActions()
     panelControls->setObjectName(QStringLiteral("PanelVisibilityControls"));
     QHBoxLayout* panelControlsLayout = new QHBoxLayout(panelControls);
     panelControlsLayout->setContentsMargins(0, 0, 6, 0);
-    panelControlsLayout->setSpacing(2);
+    panelControlsLayout->setSpacing(kPanelVisibilityButtonSpacing);
 
     QToolButton* leftPanelButton = createPanelVisibilityButton(
         panelControls,

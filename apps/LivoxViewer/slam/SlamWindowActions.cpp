@@ -16,6 +16,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QStatusBar>
@@ -816,6 +817,15 @@ void LivoxViewerWindow::startSlamProcessing()
     }
 
     if (slamInputMode == SlamInputMode::Online) {
+        if (connectedLidarDevicesSnapshot().isEmpty()) {
+            const QString message = QStringLiteral("没有可用的已连接设备，无法启动在线 SLAM。");
+            showSlamStatusPanel();
+            postSlamStatus(SlamStatusCode::Failed, message);
+            QMessageBox::warning(this, QStringLiteral("在线 SLAM"), message);
+            updateSlamControlBarUi();
+            return;
+        }
+
         const SlamRuntimeConfig config = slamRuntimeConfig;
         liveSlamSource.reset();
         liveSlamSource.setFrameDurationMs(config.inputFrameDurationMs);

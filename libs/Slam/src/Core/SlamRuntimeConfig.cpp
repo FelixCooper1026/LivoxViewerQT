@@ -8,6 +8,7 @@
 namespace {
 
 constexpr double kMid360ExtrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
+constexpr double kMid360LExtrinsicT_L_I[3] = {-0.023680, 0.0220500, 0.0438600};
 constexpr double kAviaExtrinsicT_L_I[3] = {0.04165, 0.02326, -0.0284};
 constexpr double kAvia2ExtrinsicT_L_I[3] = {-0.0563149, 0.0367201, -0.0297031};
 constexpr double kIdentityExtrinsicR_L_I[9] = {1.0, 0.0, 0.0,
@@ -77,7 +78,9 @@ bool isIdentityRotation(const double* values)
 void assignTemplateDefaultExtrinsic(SlamRuntimeConfig& config, SlamLidarTemplate lidarTemplate)
 {
     const double* extrinsicT = kMid360ExtrinsicT_L_I;
-    if (lidarTemplate == SlamLidarTemplate::Avia) {
+    if (lidarTemplate == SlamLidarTemplate::Mid360L) {
+        extrinsicT = kMid360LExtrinsicT_L_I;
+    } else if (lidarTemplate == SlamLidarTemplate::Avia) {
         extrinsicT = kAviaExtrinsicT_L_I;
     } else if (lidarTemplate == SlamLidarTemplate::Avia2) {
         extrinsicT = kAvia2ExtrinsicT_L_I;
@@ -164,32 +167,6 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         config.dynamicObjectClusterVoxelSizeM = 0.3;
         config.dynamicObjectClusterExtendVoxel = 5;
         config.dynamicObjectClusterMinVoxelCount = 2;
-        config.dynamicObjectClusterTrustThreshold = 0.1;
-        return;
-    }
-
-    if (lidarTemplate == SlamLidarTemplate::Mid360L) {
-        config.dynamicObjectHorizontalResolutionRad = 0.025;
-        config.dynamicObjectVerticalResolutionRad = 0.08;
-        config.detRangeM = 40.0;
-        config.fovDegree = 360.0;
-        config.blindMinRangeM = 0.1;
-        config.dynamicObjectDepthMapDurationSec = 0.4;
-        config.dynamicObjectVerticalFovDownDeg = -10.0;
-        config.dynamicObjectVerticalFovUpDeg = 35.0;
-        config.dynamicObjectHorizontalFovRightDeg = -180.0;
-        config.dynamicObjectHorizontalFovLeftDeg = 180.0;
-        config.dynamicObjectMinRangeM = 0.1;
-        config.dynamicObjectMaxRangeM = 40.0;
-        config.dynamicObjectCase1DepthMarginM = 0.5;
-        config.dynamicObjectCase2DepthMarginM = 0.3;
-        config.dynamicObjectCase3DepthMarginM = 0.15;
-        config.dynamicObjectCase1VoteThreshold = 3;
-        config.dynamicObjectCase2OcclusionChainLength = 3;
-        config.dynamicObjectCase3OcclusionChainLength = 3;
-        config.dynamicObjectClusterVoxelSizeM = 0.1;
-        config.dynamicObjectClusterExtendVoxel = 3;
-        config.dynamicObjectClusterMinVoxelCount = 1;
         config.dynamicObjectClusterTrustThreshold = 0.1;
         return;
     }
