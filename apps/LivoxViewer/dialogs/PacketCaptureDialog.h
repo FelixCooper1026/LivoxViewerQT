@@ -98,9 +98,13 @@ private:
     void saveCapture();
     void updateDefaultFileName();
     QString selectedFilterName() const;
-    void finishCapture(const QString& message, bool failed);
+    void finishCapture(const QString& message, bool failed, bool permissionDenied = false);
     void updateCaptureControls();
     void clearCapturedAddresses();
+#ifdef Q_OS_LINUX
+    void requestCapturePermission();
+    void capturePrivilegedLoop(const QString& deviceName);
+#endif
     static QString captureDeviceName(const QString& systemName, const QString& ipv4, QString* errorMessage);
     static PacketRow decodePacket(const unsigned char* data,
                                   int capturedLength,
@@ -153,6 +157,9 @@ private:
     bool m_captureActive = false;
     bool m_fileNameCustomized = false;
     bool m_refreshingTheme = false;
+#ifdef Q_OS_LINUX
+    bool m_usePrivilegedCaptureHelper = false;
+#endif
 };
 
 #endif // LIVOXVIEWER_DIALOGS_PACKETCAPTUREDIALOG_H

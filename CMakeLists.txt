@@ -606,6 +606,16 @@ if(IS_LINUX)
     find_library(PCAP_LIBRARY pcap)
     if(PCAP_LIBRARY)
         target_link_libraries(LivoxViewerQT PRIVATE ${PCAP_LIBRARY})
+        add_executable(LivoxPacketCaptureHelper
+            apps/LivoxViewer/helpers/PacketCaptureHelperMain.cpp
+            apps/LivoxViewer/helpers/PacketCaptureProtocol.h
+        )
+        target_include_directories(LivoxPacketCaptureHelper PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/apps/LivoxViewer
+        )
+        target_link_libraries(LivoxPacketCaptureHelper PRIVATE ${PCAP_LIBRARY})
+        target_compile_options(LivoxPacketCaptureHelper PRIVATE -Wall -Wextra -Wpedantic)
+        add_dependencies(LivoxViewerQT LivoxPacketCaptureHelper)
         message(STATUS "Linked libpcap: ${PCAP_LIBRARY}")
     else()
         message(WARNING "libpcap not found; install libpcap-dev for Pcap playback support")
@@ -772,6 +782,12 @@ install(TARGETS LivoxViewerQT
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
+
+if(TARGET LivoxPacketCaptureHelper)
+    install(TARGETS LivoxPacketCaptureHelper
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 
 if(IS_WINDOWS)
     # Windows特定安装

@@ -2,9 +2,13 @@
 
 #include "ThemeIconUtils.h"
 #include "dialogs/DialogWindowUtils.h"
+#ifdef Q_OS_LINUX
+#include "helpers/PacketCaptureProtocol.h"
+#endif
 
 #include <QAbstractItemView>
 #include <QAbstractTableModel>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDateTime>
@@ -24,6 +28,7 @@
 #include <QMessageBox>
 #include <QMetaObject>
 #include <QPlainTextEdit>
+#include <QProcess>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QRegularExpression>
@@ -56,6 +61,28 @@ constexpr quint16 kImuPortOld = 58000;
 constexpr quint16 kPushPort = 56200;
 constexpr quint16 kPtpEventPort = 319;
 constexpr quint16 kPtpGeneralPort = 320;
+
+#ifdef Q_OS_LINUX
+bool readProcessBytes(QProcess& process,
+                      char* destination,
+                      qint64 size,
+                      const std::atomic_bool& stopRequested)
+{
+    qint64 bytesRead = 0;
+    while (bytesRead < size && !stopRequested.load()) {
+        const QByteArray data = process.read(size - bytesRead);
+        if (!data.isEmpty()) {
+            std::memcpy(destination + bytesRead, data.constData(), std::size_t(data.size()));
+            bytesRead += data.size();
+            continue;
+        }
+        if (!process.waitForReadyRead(250) && process.state() == QProcess::NotRunning) {
+            break;
+        }
+    }
+    return bytesRead == size;
+}
+#endif
 
 quint16 readBigEndian16(const unsigned char* data)
 {
@@ -910,9 +937,9 @@ QString PacketCaptureDialog::captureDeviceName(const QString& systemName,
 
 void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
 {
-    auto postFinished = [this](QString message, bool failed) {
-        QMetaObject::invokeMethod(this, [this, message = std::move(message), failed]() {
-            finishCapture(message, failed);
+    auto postFinished = [this](QString message, bool failed, bool permissionDenied = false) {
+        QMetaObject::invokeMethod(this, [this, message = std::move(message), failed, permissionDenied]() {
+            finishCapture(message, failed, permissionDenied);
         }, Qt::QueuedConnection);
     };
     auto postPackets = [this](QVector<PacketRow> packets) {
@@ -928,11 +955,30 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
         return;
     }
 
+#ifdef Q_OS_LINUX
+    if (m_usePrivilegedCaptureHelper) {
+        capturePrivilegedLoop(deviceName);
+        return;
+    }
+#endif
+
     char errorBuffer[PCAP_ERRBUF_SIZE]{};
     const QByteArray encodedDeviceName = deviceName.toLocal8Bit();
-    pcap_t* capture = pcap_open_live(encodedDeviceName.constData(), 65535, 1, 250, errorBuffer);
+    pcap_t* capture = pcap_create(encodedDeviceName.constData(), errorBuffer);
     if (!capture) {
         postFinished(QStringLiteral("打开抓包网卡失败：%1").arg(QString::fromLocal8Bit(errorBuffer)), true);
+        return;
+    }
+    pcap_set_snaplen(capture, 65535);
+    pcap_set_promisc(capture, 1);
+    pcap_set_timeout(capture, 250);
+    const int activateResult = pcap_activate(capture);
+    if (activateResult < 0) {
+        const QString error = QString::fromLocal8Bit(pcap_geterr(capture));
+        const bool permissionDenied = activateResult == PCAP_ERROR_PERM_DENIED ||
+                                      activateResult == PCAP_ERROR_PROMISC_PERM_DENIED;
+        pcap_close(capture);
+        postFinished(QStringLiteral("打开抓包网卡失败：%1").arg(error), true, permissionDenied);
         return;
     }
 
@@ -998,6 +1044,117 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
         postFinished(QStringLiteral("抓包已停止，可手动保存 PCAP"), false);
     }
 }
+
+#ifdef Q_OS_LINUX
+void PacketCaptureDialog::capturePrivilegedLoop(const QString& deviceName)
+{
+    auto postFinished = [this](QString message, bool failed) {
+        QMetaObject::invokeMethod(this, [this, message = std::move(message), failed]() {
+            finishCapture(message, failed);
+        }, Qt::QueuedConnection);
+    };
+    auto postPackets = [this](QVector<PacketRow> packets) {
+        QMetaObject::invokeMethod(this, [this, packets = std::move(packets)]() mutable {
+            appendPackets(std::move(packets));
+        }, Qt::QueuedConnection);
+    };
+
+    const QString pkexecPath = QStandardPaths::findExecutable(
+        QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
+    const QString helperPath = QCoreApplication::applicationDirPath() +
+        QStringLiteral("/LivoxPacketCaptureHelper");
+    QProcess helper;
+    helper.start(pkexecPath, {helperPath, deviceName});
+    if (!helper.waitForStarted()) {
+        postFinished(QStringLiteral("无法启动抓包权限辅助程序。"), true);
+        return;
+    }
+
+    PacketCaptureProtocol::StreamHeader streamHeader;
+    if (!readProcessBytes(helper,
+                          reinterpret_cast<char*>(&streamHeader),
+                          sizeof(streamHeader),
+                          m_stopRequested)) {
+        helper.terminate();
+        helper.waitForFinished(1000);
+        if (m_stopRequested.load()) {
+            postFinished(QStringLiteral("抓包已停止，可手动保存 PCAP"), false);
+        } else {
+            const QString error = QString::fromLocal8Bit(helper.readAllStandardError()).trimmed();
+            postFinished(error.isEmpty()
+                             ? QStringLiteral("管理员验证未完成。")
+                             : error,
+                         true);
+        }
+        return;
+    }
+    if (streamHeader.magic != PacketCaptureProtocol::kStreamMagic) {
+        helper.terminate();
+        helper.waitForFinished(1000);
+        postFinished(QStringLiteral("抓包权限辅助程序协议不匹配。"), true);
+        return;
+    }
+
+    QVector<PacketRow> batch;
+    batch.reserve(kPacketBatchSize);
+    auto lastBatchPost = std::chrono::steady_clock::now();
+    quint64 packetNumber = 0;
+    double firstTimestamp = -1.0;
+    QString captureError;
+
+    while (!m_stopRequested.load()) {
+        PacketCaptureProtocol::PacketHeader packetHeader;
+        if (!readProcessBytes(helper,
+                              reinterpret_cast<char*>(&packetHeader),
+                              sizeof(packetHeader),
+                              m_stopRequested)) {
+            break;
+        }
+        QByteArray data(int(packetHeader.capturedLength), '\0');
+        if (!readProcessBytes(helper, data.data(), data.size(), m_stopRequested)) {
+            break;
+        }
+
+        const double timestamp = double(packetHeader.timestampSec) +
+                                 double(packetHeader.timestampUsec) / 1000000.0;
+        if (firstTimestamp < 0.0) {
+            firstTimestamp = timestamp;
+        }
+        ++packetNumber;
+        batch.append(decodePacket(
+            reinterpret_cast<const unsigned char*>(data.constData()),
+            int(packetHeader.capturedLength),
+            int(packetHeader.originalLength),
+            streamHeader.dataLinkType,
+            packetNumber,
+            timestamp - firstTimestamp,
+            packetHeader.timestampSec,
+            packetHeader.timestampUsec));
+        if (batch.size() >= kPacketBatchSize ||
+            std::chrono::steady_clock::now() - lastBatchPost >= std::chrono::milliseconds(100)) {
+            postPackets(std::move(batch));
+            batch.clear();
+            batch.reserve(kPacketBatchSize);
+            lastBatchPost = std::chrono::steady_clock::now();
+        }
+    }
+
+    if (!batch.isEmpty()) {
+        postPackets(std::move(batch));
+    }
+    helper.terminate();
+    helper.waitForFinished(1000);
+    if (!m_stopRequested.load()) {
+        captureError = QString::fromLocal8Bit(helper.readAllStandardError()).trimmed();
+    }
+
+    if (!captureError.isEmpty()) {
+        postFinished(QStringLiteral("抓包失败：%1").arg(captureError), true);
+    } else {
+        postFinished(QStringLiteral("抓包已停止，可手动保存 PCAP"), false);
+    }
+}
+#endif
 
 PacketCaptureDialog::PacketRow PacketCaptureDialog::decodePacket(const unsigned char* data,
                                                                  int capturedLength,
@@ -1404,8 +1561,11 @@ void PacketCaptureDialog::saveCapture()
                                  .arg(QDir::toNativeSeparators(outputPath)));
 }
 
-void PacketCaptureDialog::finishCapture(const QString& message, bool failed)
+void PacketCaptureDialog::finishCapture(const QString& message, bool failed, bool permissionDenied)
 {
+#ifndef Q_OS_LINUX
+    Q_UNUSED(permissionDenied);
+#endif
     if (m_captureThread.joinable()) {
         m_captureThread.join();
     }
@@ -1414,9 +1574,51 @@ void PacketCaptureDialog::finishCapture(const QString& message, bool failed)
     updateStatistics();
     updateCaptureControls();
     if (failed) {
+#ifdef Q_OS_LINUX
+        if (permissionDenied) {
+            requestCapturePermission();
+            return;
+        }
+#endif
         QMessageBox::warning(this, QStringLiteral("抓包失败"), message);
     }
 }
+
+#ifdef Q_OS_LINUX
+void PacketCaptureDialog::requestCapturePermission()
+{
+    QMessageBox prompt(this);
+    prompt.setIcon(QMessageBox::Information);
+    prompt.setWindowTitle(QStringLiteral("需要抓包权限"));
+    prompt.setText(QStringLiteral("当前用户没有网络抓包权限。"));
+    prompt.setInformativeText(QStringLiteral(
+        "点击“获取权限”后，系统将弹出管理员密码验证。\n"
+        "验证成功后将直接在当前窗口开始抓包。"));
+    QPushButton* authorizeButton = prompt.addButton(
+        QStringLiteral("获取权限"), QMessageBox::AcceptRole);
+    prompt.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    prompt.exec();
+    if (prompt.clickedButton() != authorizeButton) {
+        return;
+    }
+
+    const QString pkexecPath = QStandardPaths::findExecutable(
+        QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
+    const QString helperPath = QCoreApplication::applicationDirPath() +
+        QStringLiteral("/LivoxPacketCaptureHelper");
+    if (pkexecPath.isEmpty() || !QFileInfo::exists(helperPath)) {
+        QMessageBox::warning(
+            this,
+            QStringLiteral("无法获取权限"),
+            pkexecPath.isEmpty()
+                ? QStringLiteral("系统未安装 pkexec，请先安装 polkit。")
+                : QStringLiteral("未找到抓包权限辅助程序。"));
+        return;
+    }
+    m_usePrivilegedCaptureHelper = true;
+    startCapture();
+}
+#endif
 
 void PacketCaptureDialog::updateCaptureControls()
 {
