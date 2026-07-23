@@ -66,17 +66,23 @@ constexpr quint16 kPtpGeneralPort = 320;
 bool readProcessBytes(QProcess& process,
                       char* destination,
                       qint64 size,
-                      const std::atomic_bool& stopRequested)
+                      const std::atomic_bool& stopRequested,
+                      bool& stopSent)
 {
     qint64 bytesRead = 0;
-    while (bytesRead < size && !stopRequested.load()) {
+    while (bytesRead < size) {
+        if (stopRequested.load() && !stopSent) {
+            process.write("stop\n");
+            process.waitForBytesWritten(25);
+            stopSent = true;
+        }
         const QByteArray data = process.read(size - bytesRead);
         if (!data.isEmpty()) {
             std::memcpy(destination + bytesRead, data.constData(), std::size_t(data.size()));
             bytesRead += data.size();
             continue;
         }
-        if (!process.waitForReadyRead(250) && process.state() == QProcess::NotRunning) {
+        if (!process.waitForReadyRead(25) && process.state() == QProcess::NotRunning) {
             break;
         }
     }
@@ -588,6 +594,13 @@ PacketCaptureDialog::PacketCaptureDialog(QWidget* parent)
 PacketCaptureDialog::~PacketCaptureDialog()
 {
     m_stopRequested.store(true);
+#ifdef Q_OS_LINUX
+    {
+        std::lock_guard<std::mutex> lock(m_privilegedCaptureMutex);
+        m_privilegedWorkerShutdown = true;
+    }
+    m_privilegedCaptureCondition.notify_one();
+#endif
     if (m_captureThread.joinable()) {
         m_captureThread.join();
     }
@@ -871,9 +884,25 @@ void PacketCaptureDialog::startCapture()
 
     const QString systemName = m_interfaceCombo->itemData(interfaceIndex).toString();
     const QString ipv4 = m_interfaceCombo->itemData(interfaceIndex, Qt::UserRole + 1).toString();
-    m_captureThread = std::thread([this, systemName, ipv4]() {
-        captureLoop(systemName, ipv4);
-    });
+#ifdef Q_OS_LINUX
+    if (m_usePrivilegedCaptureHelper) {
+        {
+            std::lock_guard<std::mutex> lock(m_privilegedCaptureMutex);
+            m_privilegedSystemName = systemName;
+            m_privilegedIpv4 = ipv4;
+            m_privilegedCapturePending = true;
+        }
+        if (m_captureThread.joinable() && !m_privilegedWorkerRunning.load()) {
+            m_captureThread.join();
+        }
+        if (!m_captureThread.joinable()) {
+            m_captureThread = std::thread([this]() { privilegedCaptureWorker(); });
+        }
+        m_privilegedCaptureCondition.notify_one();
+        return;
+    }
+#endif
+    m_captureThread = std::thread([this, systemName, ipv4]() { captureLoop(systemName, ipv4); });
 }
 
 void PacketCaptureDialog::stopCapture()
@@ -882,13 +911,7 @@ void PacketCaptureDialog::stopCapture()
         return;
     }
     m_stopRequested.store(true);
-    if (m_captureThread.joinable()) {
-        m_captureThread.join();
-    }
-    m_captureActive = false;
-    m_elapsedTimer->stop();
-    updateStatistics();
-    updateCaptureControls();
+    m_stopButton->setEnabled(false);
 }
 
 QString PacketCaptureDialog::captureDeviceName(const QString& systemName,
@@ -954,13 +977,6 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
         postFinished(deviceError, true);
         return;
     }
-
-#ifdef Q_OS_LINUX
-    if (m_usePrivilegedCaptureHelper) {
-        capturePrivilegedLoop(deviceName);
-        return;
-    }
-#endif
 
     char errorBuffer[PCAP_ERRBUF_SIZE]{};
     const QByteArray encodedDeviceName = deviceName.toLocal8Bit();
@@ -1046,7 +1062,63 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
 }
 
 #ifdef Q_OS_LINUX
-void PacketCaptureDialog::capturePrivilegedLoop(const QString& deviceName)
+void PacketCaptureDialog::privilegedCaptureWorker()
+{
+    m_privilegedWorkerRunning.store(true);
+    auto postFinished = [this](QString message, bool failed) {
+        QMetaObject::invokeMethod(this, [this, message = std::move(message), failed]() {
+            finishCapture(message, failed);
+        }, Qt::QueuedConnection);
+    };
+
+    const QString pkexecPath = QStandardPaths::findExecutable(
+        QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
+    const QString helperPath = QCoreApplication::applicationDirPath() +
+        QStringLiteral("/LivoxPacketCaptureHelper");
+    QProcess helper;
+    helper.start(pkexecPath, {helperPath});
+    if (!helper.waitForStarted()) {
+        postFinished(QStringLiteral("无法启动抓包权限辅助程序。"), true);
+        m_privilegedWorkerRunning.store(false);
+        return;
+    }
+
+    while (true) {
+        QString systemName;
+        QString ipv4;
+        {
+            std::unique_lock<std::mutex> lock(m_privilegedCaptureMutex);
+            m_privilegedCaptureCondition.wait(lock, [this]() {
+                return m_privilegedCapturePending || m_privilegedWorkerShutdown;
+            });
+            if (m_privilegedWorkerShutdown) {
+                break;
+            }
+            systemName = m_privilegedSystemName;
+            ipv4 = m_privilegedIpv4;
+            m_privilegedCapturePending = false;
+        }
+
+        QString deviceError;
+        const QString deviceName = captureDeviceName(systemName, ipv4, &deviceError);
+        if (deviceName.isEmpty()) {
+            postFinished(deviceError, true);
+            continue;
+        }
+        capturePrivilegedSession(helper, deviceName);
+        if (helper.state() == QProcess::NotRunning) {
+            break;
+        }
+    }
+
+    helper.write("quit\n");
+    helper.waitForBytesWritten(250);
+    helper.closeWriteChannel();
+    helper.waitForFinished(1000);
+    m_privilegedWorkerRunning.store(false);
+}
+
+void PacketCaptureDialog::capturePrivilegedSession(QProcess& helper, const QString& deviceName)
 {
     auto postFinished = [this](QString message, bool failed) {
         QMetaObject::invokeMethod(this, [this, message = std::move(message), failed]() {
@@ -1059,39 +1131,30 @@ void PacketCaptureDialog::capturePrivilegedLoop(const QString& deviceName)
         }, Qt::QueuedConnection);
     };
 
-    const QString pkexecPath = QStandardPaths::findExecutable(
-        QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
-    const QString helperPath = QCoreApplication::applicationDirPath() +
-        QStringLiteral("/LivoxPacketCaptureHelper");
-    QProcess helper;
-    helper.start(pkexecPath, {helperPath, deviceName});
-    if (!helper.waitForStarted()) {
-        postFinished(QStringLiteral("无法启动抓包权限辅助程序。"), true);
-        return;
-    }
-
+    helper.write("start " + deviceName.toLocal8Bit() + '\n');
+    helper.waitForBytesWritten(250);
+    bool stopSent = false;
     PacketCaptureProtocol::StreamHeader streamHeader;
     if (!readProcessBytes(helper,
                           reinterpret_cast<char*>(&streamHeader),
                           sizeof(streamHeader),
-                          m_stopRequested)) {
-        helper.terminate();
-        helper.waitForFinished(1000);
+                          m_stopRequested,
+                          stopSent)) {
         if (m_stopRequested.load()) {
             postFinished(QStringLiteral("抓包已停止，可手动保存 PCAP"), false);
         } else {
             const QString error = QString::fromLocal8Bit(helper.readAllStandardError()).trimmed();
-            postFinished(error.isEmpty()
-                             ? QStringLiteral("管理员验证未完成。")
-                             : error,
-                         true);
+            postFinished(error.isEmpty() ? QStringLiteral("管理员验证未完成。") : error, true);
         }
         return;
     }
     if (streamHeader.magic != PacketCaptureProtocol::kStreamMagic) {
-        helper.terminate();
-        helper.waitForFinished(1000);
         postFinished(QStringLiteral("抓包权限辅助程序协议不匹配。"), true);
+        return;
+    }
+    if (streamHeader.dataLinkType < 0) {
+        const QString error = QString::fromLocal8Bit(helper.readAllStandardError()).trimmed();
+        postFinished(QStringLiteral("打开抓包网卡失败：%1").arg(error), true);
         return;
     }
 
@@ -1102,16 +1165,20 @@ void PacketCaptureDialog::capturePrivilegedLoop(const QString& deviceName)
     double firstTimestamp = -1.0;
     QString captureError;
 
-    while (!m_stopRequested.load()) {
+    while (true) {
         PacketCaptureProtocol::PacketHeader packetHeader;
         if (!readProcessBytes(helper,
                               reinterpret_cast<char*>(&packetHeader),
                               sizeof(packetHeader),
-                              m_stopRequested)) {
+                              m_stopRequested,
+                              stopSent)) {
+            break;
+        }
+        if (packetHeader.capturedLength == PacketCaptureProtocol::kCaptureStopped) {
             break;
         }
         QByteArray data(int(packetHeader.capturedLength), '\0');
-        if (!readProcessBytes(helper, data.data(), data.size(), m_stopRequested)) {
+        if (!readProcessBytes(helper, data.data(), data.size(), m_stopRequested, stopSent)) {
             break;
         }
 
@@ -1142,8 +1209,6 @@ void PacketCaptureDialog::capturePrivilegedLoop(const QString& deviceName)
     if (!batch.isEmpty()) {
         postPackets(std::move(batch));
     }
-    helper.terminate();
-    helper.waitForFinished(1000);
     if (!m_stopRequested.load()) {
         captureError = QString::fromLocal8Bit(helper.readAllStandardError()).trimmed();
     }
@@ -1566,7 +1631,11 @@ void PacketCaptureDialog::finishCapture(const QString& message, bool failed, boo
 #ifndef Q_OS_LINUX
     Q_UNUSED(permissionDenied);
 #endif
-    if (m_captureThread.joinable()) {
+    if (m_captureThread.joinable()
+#ifdef Q_OS_LINUX
+        && !m_usePrivilegedCaptureHelper
+#endif
+    ) {
         m_captureThread.join();
     }
     m_captureActive = false;
@@ -1587,21 +1656,6 @@ void PacketCaptureDialog::finishCapture(const QString& message, bool failed, boo
 #ifdef Q_OS_LINUX
 void PacketCaptureDialog::requestCapturePermission()
 {
-    QMessageBox prompt(this);
-    prompt.setIcon(QMessageBox::Information);
-    prompt.setWindowTitle(QStringLiteral("需要抓包权限"));
-    prompt.setText(QStringLiteral("当前用户没有网络抓包权限。"));
-    prompt.setInformativeText(QStringLiteral(
-        "点击“获取权限”后，系统将弹出管理员密码验证。\n"
-        "验证成功后将直接在当前窗口开始抓包。"));
-    QPushButton* authorizeButton = prompt.addButton(
-        QStringLiteral("获取权限"), QMessageBox::AcceptRole);
-    prompt.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
-    prompt.exec();
-    if (prompt.clickedButton() != authorizeButton) {
-        return;
-    }
-
     const QString pkexecPath = QStandardPaths::findExecutable(
         QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
     const QString helperPath = QCoreApplication::applicationDirPath() +

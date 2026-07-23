@@ -6,6 +6,7 @@
 namespace PacketCaptureProtocol {
 
 inline constexpr std::uint32_t kStreamMagic = 0x4C564350;
+inline constexpr std::uint32_t kCaptureStopped = 0xFFFFFFFFu;
 
 struct StreamHeader {
     std::uint32_t magic = kStreamMagic;

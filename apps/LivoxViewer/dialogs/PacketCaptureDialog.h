@@ -12,7 +12,9 @@
 #include <QVector>
 
 #include <atomic>
+#include <condition_variable>
 #include <functional>
+#include <mutex>
 #include <thread>
 
 class QCloseEvent;
@@ -20,6 +22,7 @@ class QComboBox;
 class QEvent;
 class QLabel;
 class QLineEdit;
+class QProcess;
 class QPushButton;
 class QRadioButton;
 class QTableView;
@@ -103,7 +106,8 @@ private:
     void clearCapturedAddresses();
 #ifdef Q_OS_LINUX
     void requestCapturePermission();
-    void capturePrivilegedLoop(const QString& deviceName);
+    void privilegedCaptureWorker();
+    void capturePrivilegedSession(QProcess& helper, const QString& deviceName);
 #endif
     static QString captureDeviceName(const QString& systemName, const QString& ipv4, QString* errorMessage);
     static PacketRow decodePacket(const unsigned char* data,
@@ -159,6 +163,13 @@ private:
     bool m_refreshingTheme = false;
 #ifdef Q_OS_LINUX
     bool m_usePrivilegedCaptureHelper = false;
+    std::mutex m_privilegedCaptureMutex;
+    std::condition_variable m_privilegedCaptureCondition;
+    QString m_privilegedSystemName;
+    QString m_privilegedIpv4;
+    bool m_privilegedCapturePending = false;
+    bool m_privilegedWorkerShutdown = false;
+    std::atomic_bool m_privilegedWorkerRunning{false};
 #endif
 };
 
