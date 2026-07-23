@@ -1075,8 +1075,18 @@ void PacketCaptureDialog::privilegedCaptureWorker()
         QStringLiteral("pkexec"), {QStringLiteral("/usr/bin"), QStringLiteral("/bin")});
     const QString helperPath = QCoreApplication::applicationDirPath() +
         QStringLiteral("/LivoxPacketCaptureHelper");
+    QStringList helperArguments{helperPath};
+    const QString appImagePath = qEnvironmentVariable("APPIMAGE");
+    if (!appImagePath.isEmpty()) {
+        helperArguments = {
+            QStringLiteral("/usr/bin/env"),
+            QStringLiteral("APPIMAGE_EXTRACT_AND_RUN=1"),
+            appImagePath,
+            QStringLiteral("--livox-packet-capture-helper")
+        };
+    }
     QProcess helper;
-    helper.start(pkexecPath, {helperPath});
+    helper.start(pkexecPath, helperArguments);
     if (!helper.waitForStarted()) {
         postFinished(QStringLiteral("无法启动抓包权限辅助程序。"), true);
         m_privilegedWorkerRunning.store(false);
