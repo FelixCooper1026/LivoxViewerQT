@@ -55,6 +55,20 @@ int validPositiveInt(int value, int fallback)
     return value > 0 ? value : fallback;
 }
 
+DynamicFilterBackend dynamicFilterBackendFromInt(int value)
+{
+    switch(value)
+    {
+    case int(DynamicFilterBackend::MDetector):
+        return DynamicFilterBackend::MDetector;
+    case int(DynamicFilterBackend::FreeDOM):
+        return DynamicFilterBackend::FreeDOM;
+    case int(DynamicFilterBackend::Disabled):
+    default:
+        return DynamicFilterBackend::Disabled;
+    }
+}
+
 bool isZeroTranslation(const double* values)
 {
     for (int i = 0; i < 3; ++i) {
@@ -138,6 +152,7 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.pointFilterNum = 1;
     config.filterSizeSurfM = 0.5;
     config.filterSizeMapM = 0.5;
+    config.freeDom = FreeDomRuntimeConfig{};
     config.dynamicObjectBufferDelaySec = 0.1;
     config.dynamicObjectMaxDepthMaps = 5;
     config.dynamicObjectMinHistoryMaps = 2;
@@ -168,6 +183,26 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         config.dynamicObjectClusterExtendVoxel = 5;
         config.dynamicObjectClusterMinVoxelCount = 2;
         config.dynamicObjectClusterTrustThreshold = 0.1;
+        config.freeDom.sensorMinRangeM = config.dynamicObjectMinRangeM;
+        config.freeDom.sensorMaxRangeM = config.dynamicObjectMaxRangeM;
+        config.freeDom.sensorMinZM = -100.0;
+        config.freeDom.sensorMaxZM = 100.0;
+        config.freeDom.localMapRangeM = config.dynamicObjectMaxRangeM;
+        config.freeDom.localMapMinZM = -100.0;
+        config.freeDom.localMapMaxZM = 100.0;
+        config.freeDom.raycastMaxRangeM = config.dynamicObjectMaxRangeM;
+        config.freeDom.raycastMinZM = -100.0;
+        config.freeDom.raycastMaxZM = 100.0;
+        config.freeDom.lidarHorizontalFovDeg =
+            config.dynamicObjectHorizontalFovLeftDeg -
+            config.dynamicObjectHorizontalFovRightDeg;
+        config.freeDom.lidarVerticalFovLowerDeg =
+            config.dynamicObjectVerticalFovDownDeg;
+        config.freeDom.lidarVerticalFovUpperDeg =
+            config.dynamicObjectVerticalFovUpDeg;
+        config.freeDom.depthImageMinRangeM = config.dynamicObjectMinRangeM;
+        config.freeDom.maxRaycastEnhancementRangeM =
+            config.dynamicObjectMaxRangeM;
         return;
     }
 
@@ -193,6 +228,17 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.dynamicObjectClusterExtendVoxel = 3;
     config.dynamicObjectClusterMinVoxelCount = 1;
     config.dynamicObjectClusterTrustThreshold = 0.1;
+    config.freeDom.sensorMinRangeM = config.dynamicObjectMinRangeM;
+    config.freeDom.sensorMaxRangeM = config.dynamicObjectMaxRangeM;
+    config.freeDom.raycastMaxRangeM = config.dynamicObjectMaxRangeM;
+    config.freeDom.lidarHorizontalFovDeg = 360.0;
+    config.freeDom.lidarVerticalFovLowerDeg =
+        config.dynamicObjectVerticalFovDownDeg;
+    config.freeDom.lidarVerticalFovUpperDeg =
+        config.dynamicObjectVerticalFovUpDeg;
+    config.freeDom.depthImageMinRangeM = config.dynamicObjectMinRangeM;
+    config.freeDom.maxRaycastEnhancementRangeM =
+        config.dynamicObjectMaxRangeM;
 }
 
 namespace {
@@ -361,6 +407,43 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
                                                           config.dynamicObjectDetectionEnabled).toBool();
     config.dynamicObjectRemovalEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectRemovalEnabled")),
                                                         config.dynamicObjectRemovalEnabled).toBool();
+    const bool hasDynamicFilterBackend =
+        settings.contains(key(prefix, QStringLiteral("dynamicFilterBackend")));
+    if(hasDynamicFilterBackend)
+    {
+        config.dynamicFilterBackend = dynamicFilterBackendFromInt(
+            settings.value(key(prefix, QStringLiteral("dynamicFilterBackend")),
+                           int(config.dynamicFilterBackend)).toInt());
+        config.dynamicFilterEnabled =
+            settings.value(key(prefix, QStringLiteral("dynamicFilterEnabled")),
+                           config.dynamicFilterEnabled).toBool();
+        config.dynamicPointRemovalEnabled =
+            settings.value(key(prefix, QStringLiteral("dynamicPointRemovalEnabled")),
+                           config.dynamicPointRemovalEnabled).toBool();
+    }
+    else
+    {
+        config.dynamicFilterEnabled = config.dynamicObjectDetectionEnabled;
+        config.dynamicPointRemovalEnabled = config.dynamicObjectRemovalEnabled;
+        config.dynamicFilterBackend = config.dynamicFilterEnabled
+            ? DynamicFilterBackend::MDetector
+            : DynamicFilterBackend::Disabled;
+    }
+    config.dynamicDebugVisualizationEnabled =
+        settings.value(key(prefix, QStringLiteral("dynamicDebugVisualizationEnabled")),
+                       config.dynamicDebugVisualizationEnabled).toBool();
+    config.dynamicDebugSnapshotIntervalFrames = static_cast<unsigned int>(
+        validPositiveInt(
+            settings.value(key(prefix, QStringLiteral("dynamicDebugSnapshotIntervalFrames")),
+                           int(config.dynamicDebugSnapshotIntervalFrames)).toInt(),
+            int(config.dynamicDebugSnapshotIntervalFrames)));
+    config.freeDomMapSnapshotIntervalFrames = static_cast<unsigned int>(
+        validPositiveInt(
+            settings.value(key(prefix, QStringLiteral("freeDomMapSnapshotIntervalFrames")),
+                           int(config.freeDomMapSnapshotIntervalFrames)).toInt(),
+            int(config.freeDomMapSnapshotIntervalFrames)));
+    config.dynamicObjectDetectionEnabled = config.dynamicFilterEnabled;
+    config.dynamicObjectRemovalEnabled = config.dynamicPointRemovalEnabled;
     config.dynamicObjectClusterEnabled = settings.value(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")),
                                                         config.dynamicObjectClusterEnabled).toBool();
     config.dynamicObjectClusterVoxelSizeM = validPositiveDouble(
@@ -435,6 +518,109 @@ void loadSlamRuntimeConfigValues(const QSettings& settings, const QString& prefi
         settings.value(key(prefix, QStringLiteral("dynamicObjectCase3OcclusionChainLength")),
                        config.dynamicObjectCase3OcclusionChainLength).toInt(),
         config.dynamicObjectCase3OcclusionChainLength);
+    const QString freeDomPrefix = key(prefix, QStringLiteral("freeDom"));
+    config.freeDom.sensorMinRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("sensorMinRangeM")),
+        config.freeDom.sensorMinRangeM).toDouble();
+    config.freeDom.sensorMaxRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("sensorMaxRangeM")),
+        config.freeDom.sensorMaxRangeM).toDouble();
+    config.freeDom.sensorMinZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("sensorMinZM")),
+        config.freeDom.sensorMinZM).toDouble();
+    config.freeDom.sensorMaxZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("sensorMaxZM")),
+        config.freeDom.sensorMaxZM).toDouble();
+    config.freeDom.subVoxelSizeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("subVoxelSizeM")),
+        config.freeDom.subVoxelSizeM).toDouble();
+    config.freeDom.voxelDepth = settings.value(
+        key(freeDomPrefix, QStringLiteral("voxelDepth")),
+        config.freeDom.voxelDepth).toUInt();
+    config.freeDom.blockDepth = settings.value(
+        key(freeDomPrefix, QStringLiteral("blockDepth")),
+        config.freeDom.blockDepth).toUInt();
+    config.freeDom.localMapEnabled = settings.value(
+        key(freeDomPrefix, QStringLiteral("localMapEnabled")),
+        config.freeDom.localMapEnabled).toBool();
+    config.freeDom.localMapRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("localMapRangeM")),
+        config.freeDom.localMapRangeM).toDouble();
+    config.freeDom.localMapMinZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("localMapMinZM")),
+        config.freeDom.localMapMinZM).toDouble();
+    config.freeDom.localMapMaxZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("localMapMaxZM")),
+        config.freeDom.localMapMaxZM).toDouble();
+    config.freeDom.raycastMaxRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("raycastMaxRangeM")),
+        config.freeDom.raycastMaxRangeM).toDouble();
+    config.freeDom.raycastMinZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("raycastMinZM")),
+        config.freeDom.raycastMinZM).toDouble();
+    config.freeDom.raycastMaxZM = settings.value(
+        key(freeDomPrefix, QStringLiteral("raycastMaxZM")),
+        config.freeDom.raycastMaxZM).toDouble();
+    config.freeDom.countsToFree = settings.value(
+        key(freeDomPrefix, QStringLiteral("countsToFree")),
+        config.freeDom.countsToFree).toUInt();
+    config.freeDom.countsToRevert = settings.value(
+        key(freeDomPrefix, QStringLiteral("countsToRevert")),
+        config.freeDom.countsToRevert).toUInt();
+    config.freeDom.conservativeConnectivity = settings.value(
+        key(freeDomPrefix, QStringLiteral("conservativeConnectivity")),
+        config.freeDom.conservativeConnectivity).toUInt();
+    config.freeDom.aggressiveConnectivity = settings.value(
+        key(freeDomPrefix, QStringLiteral("aggressiveConnectivity")),
+        config.freeDom.aggressiveConnectivity).toUInt();
+    config.freeDom.raycastEnhancementEnabled = settings.value(
+        key(freeDomPrefix, QStringLiteral("raycastEnhancementEnabled")),
+        config.freeDom.raycastEnhancementEnabled).toBool();
+    config.freeDom.lidarHorizontalFovDeg = settings.value(
+        key(freeDomPrefix, QStringLiteral("lidarHorizontalFovDeg")),
+        config.freeDom.lidarHorizontalFovDeg).toDouble();
+    config.freeDom.lidarVerticalFovUpperDeg = settings.value(
+        key(freeDomPrefix, QStringLiteral("lidarVerticalFovUpperDeg")),
+        config.freeDom.lidarVerticalFovUpperDeg).toDouble();
+    config.freeDom.lidarVerticalFovLowerDeg = settings.value(
+        key(freeDomPrefix, QStringLiteral("lidarVerticalFovLowerDeg")),
+        config.freeDom.lidarVerticalFovLowerDeg).toDouble();
+    config.freeDom.depthImageVerticalLines = settings.value(
+        key(freeDomPrefix, QStringLiteral("depthImageVerticalLines")),
+        config.freeDom.depthImageVerticalLines).toUInt();
+    config.freeDom.depthImageMinRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("depthImageMinRangeM")),
+        config.freeDom.depthImageMinRangeM).toDouble();
+    config.freeDom.maxRaycastEnhancementRangeM = settings.value(
+        key(freeDomPrefix, QStringLiteral("maxRaycastEnhancementRangeM")),
+        config.freeDom.maxRaycastEnhancementRangeM).toDouble();
+    config.freeDom.raycastEnhancementDepthMarginM = settings.value(
+        key(freeDomPrefix, QStringLiteral("raycastEnhancementDepthMarginM")),
+        config.freeDom.raycastEnhancementDepthMarginM).toDouble();
+    config.freeDom.inpaintSize = settings.value(
+        key(freeDomPrefix, QStringLiteral("inpaintSize")),
+        config.freeDom.inpaintSize).toUInt();
+    config.freeDom.erosionSize = settings.value(
+        key(freeDomPrefix, QStringLiteral("erosionSize")),
+        config.freeDom.erosionSize).toUInt();
+    config.freeDom.minRaycastEnhancementArea = settings.value(
+        key(freeDomPrefix, QStringLiteral("minRaycastEnhancementArea")),
+        config.freeDom.minRaycastEnhancementArea).toDouble();
+    config.freeDom.depthImageTopMargin = settings.value(
+        key(freeDomPrefix, QStringLiteral("depthImageTopMargin")),
+        config.freeDom.depthImageTopMargin).toDouble();
+    config.freeDom.learnFov = settings.value(
+        key(freeDomPrefix, QStringLiteral("learnFov")),
+        config.freeDom.learnFov).toBool();
+    config.freeDom.fovMaskEnabled = settings.value(
+        key(freeDomPrefix, QStringLiteral("fovMaskEnabled")),
+        config.freeDom.fovMaskEnabled).toBool();
+    config.freeDom.fovMaskPath = settings.value(
+        key(freeDomPrefix, QStringLiteral("fovMaskPath")),
+        QString::fromStdString(config.freeDom.fovMaskPath)).toString().toStdString();
+    config.freeDom.numThreads = settings.value(
+        key(freeDomPrefix, QStringLiteral("numThreads")),
+        config.freeDom.numThreads).toUInt();
     config.mapVoxelSizeM = settings.value(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM).toDouble();
     config.maxMapPoints = settings.value(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints).toInt();
     config.maxTrajectoryPoints = settings.value(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints).toInt();
@@ -511,6 +697,14 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
     settings.setValue(key(prefix, QStringLiteral("publishWorldFrameCloud")), config.publishWorldFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishDenseFrameCloud")), config.publishDenseFrameCloud);
     settings.setValue(key(prefix, QStringLiteral("publishBodyFrameCloud")), config.publishBodyFrameCloud);
+    settings.setValue(key(prefix, QStringLiteral("dynamicFilterBackend")), int(config.dynamicFilterBackend));
+    settings.setValue(key(prefix, QStringLiteral("dynamicFilterEnabled")), config.dynamicFilterEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicPointRemovalEnabled")), config.dynamicPointRemovalEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicDebugVisualizationEnabled")), config.dynamicDebugVisualizationEnabled);
+    settings.setValue(key(prefix, QStringLiteral("dynamicDebugSnapshotIntervalFrames")),
+                      config.dynamicDebugSnapshotIntervalFrames);
+    settings.setValue(key(prefix, QStringLiteral("freeDomMapSnapshotIntervalFrames")),
+                      config.freeDomMapSnapshotIntervalFrames);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectDetectionEnabled")), config.dynamicObjectDetectionEnabled);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectRemovalEnabled")), config.dynamicObjectRemovalEnabled);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectClusterEnabled")), config.dynamicObjectClusterEnabled);
@@ -541,6 +735,41 @@ void saveSlamRuntimeConfigValues(QSettings& settings, const SlamRuntimeConfig& c
                       config.dynamicObjectCase2OcclusionChainLength);
     settings.setValue(key(prefix, QStringLiteral("dynamicObjectCase3OcclusionChainLength")),
                       config.dynamicObjectCase3OcclusionChainLength);
+    const QString freeDomPrefix = key(prefix, QStringLiteral("freeDom"));
+    settings.setValue(key(freeDomPrefix, QStringLiteral("sensorMinRangeM")), config.freeDom.sensorMinRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("sensorMaxRangeM")), config.freeDom.sensorMaxRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("sensorMinZM")), config.freeDom.sensorMinZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("sensorMaxZM")), config.freeDom.sensorMaxZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("subVoxelSizeM")), config.freeDom.subVoxelSizeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("voxelDepth")), config.freeDom.voxelDepth);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("blockDepth")), config.freeDom.blockDepth);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("localMapEnabled")), config.freeDom.localMapEnabled);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("localMapRangeM")), config.freeDom.localMapRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("localMapMinZM")), config.freeDom.localMapMinZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("localMapMaxZM")), config.freeDom.localMapMaxZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("raycastMaxRangeM")), config.freeDom.raycastMaxRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("raycastMinZM")), config.freeDom.raycastMinZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("raycastMaxZM")), config.freeDom.raycastMaxZM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("countsToFree")), config.freeDom.countsToFree);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("countsToRevert")), config.freeDom.countsToRevert);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("conservativeConnectivity")), config.freeDom.conservativeConnectivity);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("aggressiveConnectivity")), config.freeDom.aggressiveConnectivity);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("raycastEnhancementEnabled")), config.freeDom.raycastEnhancementEnabled);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("lidarHorizontalFovDeg")), config.freeDom.lidarHorizontalFovDeg);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("lidarVerticalFovUpperDeg")), config.freeDom.lidarVerticalFovUpperDeg);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("lidarVerticalFovLowerDeg")), config.freeDom.lidarVerticalFovLowerDeg);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("depthImageVerticalLines")), config.freeDom.depthImageVerticalLines);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("depthImageMinRangeM")), config.freeDom.depthImageMinRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("maxRaycastEnhancementRangeM")), config.freeDom.maxRaycastEnhancementRangeM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("raycastEnhancementDepthMarginM")), config.freeDom.raycastEnhancementDepthMarginM);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("inpaintSize")), config.freeDom.inpaintSize);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("erosionSize")), config.freeDom.erosionSize);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("minRaycastEnhancementArea")), config.freeDom.minRaycastEnhancementArea);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("depthImageTopMargin")), config.freeDom.depthImageTopMargin);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("learnFov")), config.freeDom.learnFov);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("fovMaskEnabled")), config.freeDom.fovMaskEnabled);
+    settings.setValue(key(freeDomPrefix, QStringLiteral("fovMaskPath")), QString::fromStdString(config.freeDom.fovMaskPath));
+    settings.setValue(key(freeDomPrefix, QStringLiteral("numThreads")), config.freeDom.numThreads);
     settings.setValue(key(prefix, QStringLiteral("mapVoxelSizeM")), config.mapVoxelSizeM);
     settings.setValue(key(prefix, QStringLiteral("maxMapPoints")), config.maxMapPoints);
     settings.setValue(key(prefix, QStringLiteral("maxTrajectoryPoints")), config.maxTrajectoryPoints);

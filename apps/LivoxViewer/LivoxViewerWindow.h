@@ -181,6 +181,8 @@ public:
     void clearSlamDisplay();
     void exportSlamTrajectoryFromDialog();
     void exportSlamGlobalMapFromDialog();
+    void exportFreeDomStaticPointMapFromDialog();
+    void exportFreeDomStaticVoxelMapFromDialog();
     void exportSlamTrajectoryCsv();
     void exportSlamTrajectoryTum();
     void exportSlamMapPcd();
@@ -188,6 +190,7 @@ public:
     void submitSlamOutputForUi(const SlamOutput& output);
 
 private:
+    void exportFreeDomMapFromDialog(bool voxelCenters);
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);
     QWidget* createPlaybackBar(QWidget* parent);
@@ -240,6 +243,12 @@ private:
     void setSlamWorldCurrentFrameVisible(bool visible);
     void setSlamBodyFrameVisible(bool visible);
     void setSlamDynamicObjectVisible(bool visible);
+    void setSlamFreeDomScanVoxelVisible(bool visible);
+    void setSlamFreeDomDynamicVoxelVisible(bool visible);
+    void setSlamFreeDomRaycastedVoxelVisible(bool visible);
+    void setSlamFreeDomFreeVoxelVisible(bool visible);
+    void setSlamFreeDomStaticVoxelVisible(bool visible);
+    void setSlamFreeDomEnhancedVisible(bool visible);
     void setSlamTrajectoryVisible(bool visible);
     void setSlamPoseAxisVisible(bool visible);
     void syncSlamRenderLayerVisibility();
@@ -473,10 +482,25 @@ private:
     QColor slamWorldCurrentFrameColor = QColor(255, 255, 255);
     QColor slamBodyFrameColor = QColor(255, 140, 26);
     QColor slamDynamicObjectColor = QColor(239, 41, 41);
+    QColor slamDynamicAggressiveColor = QColor(255, 48, 48);
+    QColor slamDynamicModerateColor = QColor(255, 150, 35);
+    QColor slamDynamicConservativeColor = QColor(202, 80, 255);
+    QColor slamFreeDomScanVoxelColor = QColor(0, 210, 255);
+    QColor slamFreeDomDynamicVoxelColor = QColor(255, 35, 210);
+    QColor slamFreeDomRaycastedVoxelColor = QColor(255, 220, 40);
+    QColor slamFreeDomFreeVoxelColor = QColor(60, 230, 100);
+    QColor slamFreeDomStaticVoxelColor = QColor(180, 180, 190);
+    QColor slamFreeDomEnhancedColor = QColor(70, 120, 255);
     QColor slamTrajectoryColor = QColor(26, 191, 255);
     float slamWorldCurrentFramePointSizePx = 2.0f;
     float slamBodyFramePointSizePx = 2.5f;
     float slamDynamicObjectPointSizePx = 4.0f;
+    float slamFreeDomScanVoxelPointSizePx = 4.0f;
+    float slamFreeDomDynamicVoxelPointSizePx = 4.0f;
+    float slamFreeDomRaycastedVoxelPointSizePx = 4.0f;
+    float slamFreeDomFreeVoxelPointSizePx = 4.0f;
+    float slamFreeDomStaticVoxelPointSizePx = 4.0f;
+    float slamFreeDomEnhancedPointSizePx = 4.0f;
     float slamTrajectoryLineWidthPx = 2.0f;
     float slamPoseAxisLengthM = 0.8f;
     float slamPoseAxisLineWidthPx = 3.0f;
@@ -484,6 +508,12 @@ private:
     bool slamWorldCurrentFrameVisible = true;
     bool slamBodyFrameVisible = true;
     bool slamDynamicObjectVisible = true;
+    bool slamFreeDomScanVoxelVisible = true;
+    bool slamFreeDomDynamicVoxelVisible = true;
+    bool slamFreeDomRaycastedVoxelVisible = true;
+    bool slamFreeDomFreeVoxelVisible = true;
+    bool slamFreeDomStaticVoxelVisible = true;
+    bool slamFreeDomEnhancedVisible = true;
     bool slamTrajectoryVisible = true;
     bool slamPoseAxisVisible = true;
     QWidget* slamControlBar = nullptr;

@@ -6,7 +6,7 @@
 #include "Backends/FastLioSam/FastLioSamTypes.h"
 #include "Core/SlamRuntimeConfig.h"
 #include "Core/SlamTypes.h"
-#include "DynamicObjectDetector.h"
+#include "DynamicFilterController.h"
 #include "IMU_Processing.hpp"
 #include "ikd-Tree/ikd_Tree.h"
 #include "use-ikfom.hpp"
@@ -137,7 +137,10 @@ struct FastLioAlgorithmState {
     std::vector<char> pointSelectedSurf;
     std::vector<float> resLast;
     std::unique_ptr<ImuProcess> imuProcessor;
-    std::unique_ptr<DynamicObjectDetector> dynamicObjectDetector;
+    std::unique_ptr<DynamicFilterController> dynamicFilterController;
+    std::int64_t lastDynamicFilterTimestampNs = 0;
+    std::uint64_t emittedFreeDomDebugSnapshotVersion = 0;
+    std::uint64_t emittedFreeDomMapSnapshotVersion = 0;
 
     QVector<SlamTrajectoryPoint> optimizedPath;
     QVector<SlamTrajectoryPoint> pendingOptimizedTrajectory;

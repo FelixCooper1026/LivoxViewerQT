@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstring>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <pcl/filters/voxel_grid.h>
@@ -116,7 +118,8 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
         assignError(error, QStringLiteral("SLAM 外参配置无效：LiDAR-IMU 平移或旋转矩阵缺失/非法。"));
         return false;
     }
-    if (config.dynamicObjectDetectionEnabled &&
+    if (config.dynamicFilterEnabled &&
+        config.dynamicFilterBackend == DynamicFilterBackend::MDetector &&
         (!std::isfinite(config.dynamicObjectBufferDelaySec) || config.dynamicObjectBufferDelaySec < 0.0 ||
          !std::isfinite(config.dynamicObjectDepthMapDurationSec) || config.dynamicObjectDepthMapDurationSec <= 0.0 ||
          config.dynamicObjectMaxDepthMaps <= 0 || config.dynamicObjectMinHistoryMaps <= 0 ||
@@ -142,6 +145,38 @@ bool validateRuntimeConfig(const SlamRuntimeConfig& config, QString* error)
            config.dynamicObjectClusterGroundMaxAngleDeg <= 0.0 ||
            config.dynamicObjectClusterGroundMaxAngleDeg >= 90.0)))) {
         assignError(error, QStringLiteral("SLAM 配置无效：动态检测时间窗口、球面深度图或 Case 阈值参数非法。"));
+        return false;
+    }
+    const auto supportedConnectivity = [](unsigned int value) {
+        return value == 6 || value == 18 || value == 26;
+    };
+    if(config.dynamicFilterEnabled &&
+       config.dynamicFilterBackend == DynamicFilterBackend::FreeDOM &&
+       (!std::isfinite(config.freeDom.subVoxelSizeM) ||
+        config.freeDom.subVoxelSizeM <= 0.0 ||
+        config.freeDom.blockDepth < config.freeDom.voxelDepth ||
+        config.freeDom.numThreads == 0 ||
+        config.freeDom.numThreads > 64 ||
+        !std::isfinite(config.freeDom.sensorMinRangeM) ||
+        !std::isfinite(config.freeDom.sensorMaxRangeM) ||
+        config.freeDom.sensorMinRangeM >= config.freeDom.sensorMaxRangeM ||
+        config.freeDom.sensorMinZM >= config.freeDom.sensorMaxZM ||
+        (config.freeDom.localMapEnabled &&
+         (config.freeDom.localMapRangeM <= 0.0 ||
+          config.freeDom.localMapMinZM >= config.freeDom.localMapMaxZM)) ||
+        config.freeDom.raycastMaxRangeM <= 0.0 ||
+        config.freeDom.raycastMinZM >= config.freeDom.raycastMaxZM ||
+        config.freeDom.countsToFree == 0 ||
+        config.freeDom.countsToRevert == 0 ||
+        !supportedConnectivity(config.freeDom.conservativeConnectivity) ||
+        (!supportedConnectivity(config.freeDom.aggressiveConnectivity) &&
+         config.freeDom.aggressiveConnectivity != 80 &&
+         config.freeDom.aggressiveConnectivity != 124) ||
+        config.freeDom.lidarVerticalFovUpperDeg <=
+            config.freeDom.lidarVerticalFovLowerDeg ||
+        config.freeDom.depthImageVerticalLines <= 1 ||
+        config.freeDom.maxRaycastEnhancementRangeM <= 0.0)) {
+        assignError(error, QStringLiteral("SLAM 配置无效：FreeDOM 范围、空间分辨率、连通性、FOV 或线程参数非法。"));
         return false;
     }
     assignError(error, QString());
@@ -201,6 +236,23 @@ DynamicObjectDetectorConfig dynamicObjectConfigFromRuntime(const SlamRuntimeConf
     return detectorConfig;
 }
 
+DynamicFilterRuntimeConfig dynamicFilterConfigFromRuntime(const SlamRuntimeConfig& config)
+{
+    DynamicFilterRuntimeConfig filterConfig;
+    filterConfig.backend = config.dynamicFilterEnabled
+        ? config.dynamicFilterBackend
+        : DynamicFilterBackend::Disabled;
+    filterConfig.mDetector = dynamicObjectConfigFromRuntime(config);
+    filterConfig.freeDom = config.freeDom;
+    filterConfig.debugVisualizationEnabled =
+        config.dynamicDebugVisualizationEnabled;
+    filterConfig.debugSnapshotIntervalFrames =
+        config.dynamicDebugSnapshotIntervalFrames;
+    filterConfig.mapSnapshotIntervalFrames =
+        config.freeDomMapSnapshotIntervalFrames;
+    return filterConfig;
+}
+
 } // namespace
 
 FastLioAlgorithmState::FastLioAlgorithmState(const SlamRuntimeConfig& runtimeConfig)
@@ -243,10 +295,11 @@ FastLioAlgorithmState::FastLioAlgorithmState(const SlamRuntimeConfig& runtimeCon
         imuProcessor->set_gyr_bias_cov(V3D(config.bGyrCov, config.bGyrCov, config.bGyrCov));
         imuProcessor->set_acc_bias_cov(V3D(config.bAccCov, config.bAccCov, config.bAccCov));
         imuProcessor->lidar_type = AVIA;
-        if (config.dynamicObjectDetectionEnabled) {
-            dynamicObjectDetector = std::make_unique<DynamicObjectDetector>(
-                dynamicObjectConfigFromRuntime(config));
-        }
+        dynamicFilterController = std::make_unique<DynamicFilterController>();
+        std::string dynamicFilterError;
+        if(!dynamicFilterController->configure(
+               dynamicFilterConfigFromRuntime(config), &dynamicFilterError))
+            throw std::invalid_argument(dynamicFilterError);
 
         double epsi[23] = {};
         std::fill(epsi, epsi + 23, 0.001);
@@ -472,18 +525,24 @@ SlamPoint toSlamPoint(const PointType& sourcePoint)
     return targetPoint;
 }
 
-SlamDynamicPointLabel toSlamDynamicPointLabel(DynamicObjectLabel label)
+SlamDynamicPointLabel toSlamDynamicPointLabel(DynamicFilterReason reason)
 {
-    switch (label) {
-    case DynamicObjectLabel::Case1:
+    switch (reason) {
+    case DynamicFilterReason::MDetectorCase1:
         return SlamDynamicPointLabel::Case1;
-    case DynamicObjectLabel::Case2:
+    case DynamicFilterReason::MDetectorCase2:
         return SlamDynamicPointLabel::Case2;
-    case DynamicObjectLabel::Case3:
+    case DynamicFilterReason::MDetectorCase3:
         return SlamDynamicPointLabel::Case3;
-    case DynamicObjectLabel::Invalid:
+    case DynamicFilterReason::FreeDomAggressive:
+        return SlamDynamicPointLabel::FreeDomAggressive;
+    case DynamicFilterReason::FreeDomModerate:
+        return SlamDynamicPointLabel::FreeDomModerate;
+    case DynamicFilterReason::FreeDomConservative:
+        return SlamDynamicPointLabel::FreeDomConservative;
+    case DynamicFilterReason::Invalid:
         return SlamDynamicPointLabel::Invalid;
-    case DynamicObjectLabel::Static:
+    case DynamicFilterReason::Static:
     default:
         return SlamDynamicPointLabel::Static;
     }
@@ -801,112 +860,247 @@ void appendGlobalMapOutput(FastLioAlgorithmState& state, SlamOutput* output)
     state.globalMapPointCount += output->newGlobalMapPoints.size();
 }
 
-QVector<DynamicObjectLabel> appendDynamicObjectOutput(FastLioAlgorithmState& state,
-                                                      SlamOutput* output,
-                                                      int64_t timestampNs)
+void assignSnapshotPoints(const std::vector<Eigen::Vector3f>& source,
+                          QVector<SlamPoint>* target)
 {
-    if (output == nullptr) {
-        return {};
+    target->clear();
+    target->reserve(static_cast<int>(source.size()));
+    for(const Eigen::Vector3f& point : source)
+    {
+        SlamPoint outputPoint;
+        outputPoint.x = point.x();
+        outputPoint.y = point.y();
+        outputPoint.z = point.z();
+        target->push_back(outputPoint);
     }
-
-    output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
-    output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
-    if (!state.config.dynamicObjectDetectionEnabled || !state.dynamicObjectDetector) {
-        return {};
-    }
-
-    DynamicObjectDetectionFrame detectorFrame;
-    detectorFrame.timestampNs = timestampNs;
-    detectorFrame.worldFromBodyRotation = Eigen::Quaterniond(state.statePoint.rot.toRotationMatrix());
-    detectorFrame.worldFromBodyTranslation =
-        Eigen::Vector3d(state.statePoint.pos(0), state.statePoint.pos(1), state.statePoint.pos(2));
-    detectorFrame.points.reserve(static_cast<int>(state.featsUndistort->points.size()));
-    output->dynamicDetectionFrameWorldPoints.reserve(static_cast<int>(state.featsUndistort->points.size()));
-
-    PointType bodyImuPoint;
-    PointType worldPoint;
-    for (const PointType& bodyLidarPoint : state.featsUndistort->points) {
-        pointBodyLidarToImu(&bodyLidarPoint, &bodyImuPoint, state.statePoint);
-        pointBodyToWorld(&bodyLidarPoint, &worldPoint, state.statePoint);
-        DynamicObjectPoint detectorPoint;
-        detectorPoint.x = bodyImuPoint.x;
-        detectorPoint.y = bodyImuPoint.y;
-        detectorPoint.z = bodyImuPoint.z;
-        detectorPoint.reflectivity = static_cast<uint8_t>(std::clamp(bodyImuPoint.intensity, 0.0f, 255.0f));
-        detectorFrame.points.push_back(detectorPoint);
-        output->dynamicDetectionFrameWorldPoints.push_back(toSlamPoint(worldPoint));
-    }
-
-    const DynamicObjectDetectionResult detection = state.dynamicObjectDetector->processFrame(detectorFrame);
-    output->dynamicObjectStats.staticPointCount = detection.stats.staticPointCount;
-    output->dynamicObjectStats.dynamicPointCount = detection.stats.dynamicPointCount;
-    output->dynamicObjectStats.originDynamicPointCount = detection.stats.originDynamicPointCount;
-    output->dynamicObjectStats.clusterCount = detection.stats.clusterCount;
-    output->dynamicObjectStats.rejectedClusterCount = detection.stats.rejectedClusterCount;
-    output->dynamicObjectStats.groundRemovedPointCount = detection.stats.groundRemovedPointCount;
-    output->dynamicObjectStats.case1PointCount = detection.stats.case1PointCount;
-    output->dynamicObjectStats.case2PointCount = detection.stats.case2PointCount;
-    output->dynamicObjectStats.case3PointCount = detection.stats.case3PointCount;
-    output->dynamicObjectStats.invalidPointCount = detection.stats.invalidPointCount;
-    output->dynamicObjectStats.historyDepthMapCount = detection.stats.historyDepthMapCount;
-    output->dynamicObjectStats.detectorMs = detection.stats.detectorMs;
-    output->dynamicObjectStats.clusterMs = detection.stats.clusterMs;
-    output->dynamicObjectStats.clusterEnabled = detection.stats.clusterEnabled;
-    output->dynamicWorldFramePoints.reserve(detection.dynamicPoints.size());
-
-    for (const DynamicObjectPoint& detectorPoint : detection.dynamicPoints) {
-        SlamDynamicPoint outputPoint;
-        outputPoint.x = detectorPoint.worldX;
-        outputPoint.y = detectorPoint.worldY;
-        outputPoint.z = detectorPoint.worldZ;
-        outputPoint.reflectivity = detectorPoint.reflectivity;
-        outputPoint.label = toSlamDynamicPointLabel(detectorPoint.label);
-        output->dynamicWorldFramePoints.push_back(outputPoint);
-    }
-    return detection.clusterLabels;
 }
 
-bool isDynamicObjectLabel(DynamicObjectLabel label)
+bool runDynamicFilter(FastLioAlgorithmState& state,
+                      SlamOutput* output,
+                      int64_t timestampNs,
+                      DynamicFilterResult* result,
+                      QString* error)
 {
-    return label == DynamicObjectLabel::Case1 ||
-        label == DynamicObjectLabel::Case2 ||
-        label == DynamicObjectLabel::Case3;
+    if(state.lastDynamicFilterTimestampNs != 0 &&
+       timestampNs < state.lastDynamicFilterTimestampNs)
+    {
+        state.dynamicFilterController->reset();
+        state.emittedFreeDomDebugSnapshotVersion = 0;
+        state.emittedFreeDomMapSnapshotVersion = 0;
+    }
+    state.lastDynamicFilterTimestampNs = timestampNs;
+
+    DynamicFilterFrame filterFrame;
+    filterFrame.timestampNs = timestampNs;
+    filterFrame.lidarFrameCloud = state.featsUndistort.get();
+    filterFrame.worldFromBody.linear() =
+        state.statePoint.rot.toRotationMatrix();
+    filterFrame.worldFromBody.translation() =
+        Eigen::Vector3d(state.statePoint.pos(0),
+                        state.statePoint.pos(1),
+                        state.statePoint.pos(2));
+    filterFrame.bodyFromLidar.linear() =
+        state.statePoint.offset_R_L_I.toRotationMatrix();
+    filterFrame.bodyFromLidar.translation() =
+        Eigen::Vector3d(state.statePoint.offset_T_L_I(0),
+                        state.statePoint.offset_T_L_I(1),
+                        state.statePoint.offset_T_L_I(2));
+    filterFrame.worldFromLidar =
+        filterFrame.worldFromBody * filterFrame.bodyFromLidar;
+
+    if(output != nullptr)
+    {
+        output->dynamicDetectionFrameWorldPoints.reserve(
+            static_cast<int>(state.featsUndistort->points.size()));
+        PointType worldPoint;
+        for(const PointType& lidarPoint : state.featsUndistort->points)
+        {
+            pointBodyToWorld(&lidarPoint, &worldPoint, state.statePoint);
+            output->dynamicDetectionFrameWorldPoints.push_back(
+                toSlamPoint(worldPoint));
+        }
+    }
+
+    std::string filterError;
+    if(!state.dynamicFilterController->processFrame(
+           filterFrame, result, &filterError))
+    {
+        assignError(error, QString::fromStdString(filterError));
+        return false;
+    }
+    if(result->labels.size() != state.featsUndistort->points.size())
+    {
+        assignError(error, QStringLiteral("动态滤除后端返回的逐点标签数量与输入点数不一致。"));
+        return false;
+    }
+
+    if(output == nullptr)
+    {
+        assignError(error, QString());
+        return true;
+    }
+
+    const DynamicFilterStats& stats = result->stats;
+    output->dynamicObjectStats.backend = stats.backend;
+    output->dynamicObjectStats.enabled = stats.enabled;
+    output->dynamicObjectStats.clusterEnabled = stats.clusterEnabled;
+    output->dynamicObjectStats.inputPointCount = stats.inputPointCount;
+    output->dynamicObjectStats.staticPointCount = stats.staticPointCount;
+    output->dynamicObjectStats.dynamicPointCount = stats.dynamicPointCount;
+    output->dynamicObjectStats.invalidPointCount = stats.invalidPointCount;
+    output->dynamicObjectStats.originDynamicPointCount =
+        stats.originDynamicPointCount;
+    output->dynamicObjectStats.clusterCount = stats.clusterCount;
+    output->dynamicObjectStats.rejectedClusterCount =
+        stats.rejectedClusterCount;
+    output->dynamicObjectStats.groundRemovedPointCount =
+        stats.groundRemovedPointCount;
+    output->dynamicObjectStats.case1PointCount = stats.case1PointCount;
+    output->dynamicObjectStats.case2PointCount = stats.case2PointCount;
+    output->dynamicObjectStats.case3PointCount = stats.case3PointCount;
+    output->dynamicObjectStats.historyDepthMapCount =
+        stats.historyDepthMapCount;
+    output->dynamicObjectStats.detectorMs = stats.detectorMs;
+    output->dynamicObjectStats.clusterMs = stats.clusterMs;
+    output->dynamicObjectStats.totalMs = stats.totalMs;
+    output->dynamicObjectStats.freeDomAggressivePointCount =
+        static_cast<int>(stats.freeDom.aggressive_point_count);
+    output->dynamicObjectStats.freeDomModeratePointCount =
+        static_cast<int>(stats.freeDom.moderate_point_count);
+    output->dynamicObjectStats.freeDomConservativePointCount =
+        static_cast<int>(stats.freeDom.conservative_point_count);
+    output->dynamicObjectStats.freeDomBuildScanMapMs =
+        stats.freeDom.timings.build_scan_map_ms;
+    output->dynamicObjectStats.freeDomScanRemovalMs =
+        stats.freeDom.timings.scan_removal_ms;
+    output->dynamicObjectStats.freeDomRaycastEnhancementMs =
+        stats.freeDom.timings.raycast_enhancement_ms;
+    output->dynamicObjectStats.freeDomFreeSpaceEstimationMs =
+        stats.freeDom.timings.free_space_estimation_ms;
+    output->dynamicObjectStats.freeDomMapRemovalMs =
+        stats.freeDom.timings.map_removal_ms;
+    output->dynamicObjectStats.freeDomStaticIntegrationMs =
+        stats.freeDom.timings.static_integration_ms;
+    output->dynamicObjectStats.freeDomFreeBlockCount =
+        static_cast<int>(stats.freeDom.free_block_count);
+    output->dynamicObjectStats.freeDomFreeVoxelCount =
+        static_cast<int>(stats.freeDom.free_voxel_count);
+    output->dynamicObjectStats.freeDomStaticBlockCount =
+        static_cast<int>(stats.freeDom.static_block_count);
+    output->dynamicObjectStats.freeDomStaticVoxelCount =
+        static_cast<int>(stats.freeDom.static_voxel_count);
+    output->dynamicObjectStats.freeDomStaticSubvoxelCount =
+        static_cast<int>(stats.freeDom.static_subvoxel_count);
+
+    output->dynamicWorldFramePoints.reserve(
+        static_cast<int>(result->dynamicWorldPoints.size()));
+    for(const DynamicFilterPoint& point : result->dynamicWorldPoints)
+    {
+        SlamDynamicPoint outputPoint;
+        outputPoint.x = point.x;
+        outputPoint.y = point.y;
+        outputPoint.z = point.z;
+        outputPoint.reflectivity = point.reflectivity;
+        outputPoint.label = toSlamDynamicPointLabel(point.reason);
+        output->dynamicWorldFramePoints.push_back(outputPoint);
+    }
+
+    if(result->freeDomDebugSnapshot &&
+       result->freeDomDebugSnapshot->version >
+           state.emittedFreeDomDebugSnapshotVersion)
+    {
+        const FreeDomDebugSnapshot& snapshot =
+            *result->freeDomDebugSnapshot;
+        assignSnapshotPoints(snapshot.scanVoxelCenters,
+                             &output->freeDomScanVoxelPoints);
+        assignSnapshotPoints(snapshot.dynamicVoxelCenters,
+                             &output->freeDomDynamicVoxelPoints);
+        assignSnapshotPoints(snapshot.raycastedVoxelCenters,
+                             &output->freeDomRaycastedVoxelPoints);
+        assignSnapshotPoints(snapshot.freeVoxelCenters,
+                             &output->freeDomFreeVoxelPoints);
+        assignSnapshotPoints(snapshot.staticVoxelCenters,
+                             &output->freeDomStaticVoxelPoints);
+        assignSnapshotPoints(snapshot.enhancedPoints,
+                             &output->freeDomEnhancedPoints);
+        output->freeDomDepthImage = QByteArray(
+            reinterpret_cast<const char*>(snapshot.depthImage.pixels.data()),
+            static_cast<qsizetype>(snapshot.depthImage.pixels.size()));
+        output->freeDomEnhancedDepthImage = QByteArray(
+            reinterpret_cast<const char*>(
+                snapshot.enhancedDepthImage.pixels.data()),
+            static_cast<qsizetype>(
+                snapshot.enhancedDepthImage.pixels.size()));
+        output->freeDomDepthImageRows = snapshot.depthImage.rows;
+        output->freeDomDepthImageColumns = snapshot.depthImage.columns;
+        output->freeDomSnapshotVersion = snapshot.version;
+        output->freeDomDebugSnapshotUpdated = true;
+        state.emittedFreeDomDebugSnapshotVersion = snapshot.version;
+    }
+
+    if(result->freeDomMapSnapshot &&
+       result->freeDomMapSnapshot->version >
+           state.emittedFreeDomMapSnapshotVersion)
+    {
+        const FreeDomMapSnapshot& snapshot = *result->freeDomMapSnapshot;
+        assignSnapshotPoints(snapshot.staticPoints,
+                             &output->freeDomStaticMapPoints);
+        assignSnapshotPoints(snapshot.staticVoxelCenters,
+                             &output->freeDomStaticVoxelPoints);
+        assignSnapshotPoints(snapshot.freeVoxelCenters,
+                             &output->freeDomFreeVoxelPoints);
+        if(output->freeDomRaycastedVoxelPoints.isEmpty())
+            assignSnapshotPoints(snapshot.raycastedVoxelCenters,
+                                 &output->freeDomRaycastedVoxelPoints);
+        output->freeDomMapSnapshotUpdated = true;
+        output->freeDomSnapshotVersion = snapshot.version;
+        state.emittedFreeDomMapSnapshotVersion = snapshot.version;
+    }
+
+    assignError(error, QString());
+    return true;
 }
 
 void removeDynamicPointsFromBackendFrame(FastLioAlgorithmState& state,
-                                         const QVector<DynamicObjectLabel>& labels)
+                                         const DynamicFilterResult& result)
 {
-    if (!state.config.dynamicObjectRemovalEnabled ||
-        labels.size() != static_cast<int>(state.featsUndistort->points.size())) {
+    if(!state.config.dynamicPointRemovalEnabled)
         return;
-    }
 
     PointCloudXYZI::Ptr staticCloud(new PointCloudXYZI());
     staticCloud->points.reserve(state.featsUndistort->points.size());
-    for (int index = 0; index < labels.size(); ++index) {
-        if (!isDynamicObjectLabel(labels.at(index))) {
-            staticCloud->points.push_back(state.featsUndistort->points[static_cast<std::size_t>(index)]);
-        }
+    for(std::size_t index = 0; index < result.labels.size(); ++index)
+    {
+        if(!result.labels[index].dynamic)
+            staticCloud->points.push_back(state.featsUndistort->points[index]);
     }
-    staticCloud->width = static_cast<std::uint32_t>(staticCloud->points.size());
+    staticCloud->width =
+        static_cast<std::uint32_t>(staticCloud->points.size());
     staticCloud->height = 1;
     state.featsUndistort = std::move(staticCloud);
 
     state.downSizeFilterSurf.setInputCloud(state.featsUndistort);
     state.downSizeFilterSurf.filter(*state.featsDownBody);
-    state.featsDownSize = static_cast<int>(state.featsDownBody->points.size());
-    state.featsDownWorld->resize(static_cast<std::size_t>(state.featsDownSize));
-    state.nearestPoints.assign(static_cast<std::size_t>(state.featsDownSize), PointVector());
-    for (int index = 0; index < state.featsDownSize; ++index) {
-        pointBodyToWorld(&state.featsDownBody->points[static_cast<std::size_t>(index)],
-                         &state.featsDownWorld->points[static_cast<std::size_t>(index)],
-                         state.statePoint);
-        if (state.ikdtree.Root_Node != nullptr) {
+    state.featsDownSize =
+        static_cast<int>(state.featsDownBody->points.size());
+    state.featsDownWorld->resize(
+        static_cast<std::size_t>(state.featsDownSize));
+    state.nearestPoints.assign(
+        static_cast<std::size_t>(state.featsDownSize), PointVector());
+    for(int index = 0; index < state.featsDownSize; ++index)
+    {
+        pointBodyToWorld(
+            &state.featsDownBody->points[static_cast<std::size_t>(index)],
+            &state.featsDownWorld->points[static_cast<std::size_t>(index)],
+            state.statePoint);
+        if(state.ikdtree.Root_Node != nullptr)
+        {
             std::vector<float> pointSearchSqDis(NUM_MATCH_POINTS);
-            state.ikdtree.Nearest_Search(state.featsDownWorld->points[static_cast<std::size_t>(index)],
-                                         NUM_MATCH_POINTS,
-                                         state.nearestPoints[static_cast<std::size_t>(index)],
-                                         pointSearchSqDis);
+            state.ikdtree.Nearest_Search(
+                state.featsDownWorld->points[static_cast<std::size_t>(index)],
+                NUM_MATCH_POINTS,
+                state.nearestPoints[static_cast<std::size_t>(index)],
+                pointSearchSqDis);
         }
     }
 }
@@ -928,8 +1122,11 @@ void fillRunningOutput(FastLioAlgorithmState& state, SlamOutput* output, int64_t
     output->poseCorrectionEpoch = state.poseCorrectionEpoch;
     output->currentPose = toSlamPose(state, timestampNs);
     output->currentPoseValid = true;
-    output->dynamicObjectStats.enabled = state.config.dynamicObjectDetectionEnabled;
-    output->dynamicObjectStats.clusterEnabled = state.config.dynamicObjectClusterEnabled;
+    output->dynamicObjectStats.enabled = state.config.dynamicFilterEnabled;
+    output->dynamicObjectStats.clusterEnabled =
+        state.config.dynamicFilterEnabled &&
+        state.config.dynamicFilterBackend == DynamicFilterBackend::MDetector &&
+        state.config.dynamicObjectClusterEnabled;
 }
 
 } // namespace
@@ -967,7 +1164,15 @@ bool FastLioSlamBackend::start(const SlamRuntimeConfig& config, QString* error)
         return false;
     }
 
-    state_ = std::make_unique<FastLioState>(config_);
+    try {
+        state_ = std::make_unique<FastLioState>(config_);
+    } catch (const std::exception& exception) {
+        message_ = QStringLiteral("动态滤除后端初始化失败：%1")
+            .arg(QString::fromUtf8(exception.what()));
+        status_ = SlamStatusCode::Failed;
+        assignError(error, message_);
+        return false;
+    }
     startLoopClosureThread(*state_);
     message_.clear();
     status_ = SlamStatusCode::Starting;
@@ -989,7 +1194,15 @@ bool FastLioSlamBackend::reset(QString* error)
     if (state_) {
         stopLoopClosureThread(*state_);
     }
-    state_ = std::make_unique<FastLioState>(config_);
+    try {
+        state_ = std::make_unique<FastLioState>(config_);
+    } catch (const std::exception& exception) {
+        message_ = QStringLiteral("动态滤除后端重置失败：%1")
+            .arg(QString::fromUtf8(exception.what()));
+        status_ = SlamStatusCode::Failed;
+        assignError(error, message_);
+        return false;
+    }
     startLoopClosureThread(*state_);
     message_.clear();
     status_ = SlamStatusCode::Idle;
@@ -1086,9 +1299,21 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         if (state.lidarOnly) {
             commitLidarOnlyPose(state, frame.frameEndNs);
         }
-        const QVector<DynamicObjectLabel> dynamicLabels =
-            appendDynamicObjectOutput(state, output, frame.frameEndNs);
-        removeDynamicPointsFromBackendFrame(state, dynamicLabels);
+        DynamicFilterResult dynamicResult;
+        QString dynamicFilterError;
+        if(!runDynamicFilter(state,
+                             output,
+                             frame.frameEndNs,
+                             &dynamicResult,
+                             &dynamicFilterError))
+        {
+            message_ = dynamicFilterError;
+            status_ = SlamStatusCode::Failed;
+            assignOutputStatus(output, status_, message_);
+            assignError(error, message_);
+            return false;
+        }
+        removeDynamicPointsFromBackendFrame(state, dynamicResult);
         if (state.featsDownSize > kMinMapInitPoints) {
             state.ikdtree.set_downsample_param(static_cast<float>(state.filterSizeMap));
             state.featsDownWorld->resize(static_cast<std::size_t>(state.featsDownSize));
@@ -1114,9 +1339,21 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
         if (state.lidarOnly) {
             commitLidarOnlyPose(state, frame.frameEndNs);
         }
-        const QVector<DynamicObjectLabel> dynamicLabels =
-            appendDynamicObjectOutput(state, output, frame.frameEndNs);
-        removeDynamicPointsFromBackendFrame(state, dynamicLabels);
+        DynamicFilterResult dynamicResult;
+        QString dynamicFilterError;
+        if(!runDynamicFilter(state,
+                             output,
+                             frame.frameEndNs,
+                             &dynamicResult,
+                             &dynamicFilterError))
+        {
+            message_ = dynamicFilterError;
+            status_ = SlamStatusCode::Failed;
+            assignOutputStatus(output, status_, message_);
+            assignError(error, message_);
+            return false;
+        }
+        removeDynamicPointsFromBackendFrame(state, dynamicResult);
         appendTrajectoryOutput(state, output, frame.frameEndNs);
         appendPublishedWorldFrameOutput(state, output);
         appendPublishedBodyFrameOutput(state, output);
@@ -1146,9 +1383,21 @@ bool FastLioSlamBackend::processFrame(const SlamInputFrame& frame, SlamOutput* o
     state.eulerCur = SO3ToEuler(state.statePoint.rot);
     state.posLid = state.statePoint.pos + state.statePoint.rot * state.statePoint.offset_T_L_I;
 
-    const QVector<DynamicObjectLabel> dynamicLabels =
-        appendDynamicObjectOutput(state, output, frame.frameEndNs);
-    removeDynamicPointsFromBackendFrame(state, dynamicLabels);
+    DynamicFilterResult dynamicResult;
+    QString dynamicFilterError;
+    if(!runDynamicFilter(state,
+                         output,
+                         frame.frameEndNs,
+                         &dynamicResult,
+                         &dynamicFilterError))
+    {
+        message_ = dynamicFilterError;
+        status_ = SlamStatusCode::Failed;
+        assignOutputStatus(output, status_, message_);
+        assignError(error, message_);
+        return false;
+    }
+    removeDynamicPointsFromBackendFrame(state, dynamicResult);
 
     getCurPose(state);
     saveKeyFramesAndFactor(state);

@@ -269,11 +269,45 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
                      slamBodyFrameVisible,
                      [this](bool visible) { setSlamBodyFrameVisible(visible); });
     }
-    if (slamRuntimeConfig.dynamicObjectDetectionEnabled) {
-        addLayerCard(QStringLiteral("动态目标点"),
-                     QStringLiteral("动态检测输出的目标点 overlay；关闭仅隐藏显示，不停止检测"),
-                     slamDynamicObjectVisible,
-                     [this](bool visible) { setSlamDynamicObjectVisible(visible); });
+    if (slamRuntimeConfig.dynamicFilterEnabled) {
+        if (slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM) {
+            addLayerCard(QStringLiteral("动态点"),
+                         QStringLiteral("默认红色 Aggressive、橙色 Moderate、紫色 Conservative 动态点；关闭仅隐藏显示，不停止检测"),
+                         slamDynamicObjectVisible,
+                         [this](bool visible) { setSlamDynamicObjectVisible(visible); });
+        } else {
+            addLayerCard(QStringLiteral("M-detector 动态点"),
+                         QStringLiteral("M-detector Case1/2/3 动态点；关闭仅隐藏显示，不停止检测"),
+                         slamDynamicObjectVisible,
+                         [this](bool visible) { setSlamDynamicObjectVisible(visible); });
+        }
+    }
+    if (slamRuntimeConfig.dynamicFilterEnabled &&
+        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM) {
+        addLayerCard(QStringLiteral("Scan Voxel"),
+                     QStringLiteral("当前帧扫描体素；颜色和点大小由显示样式控制"),
+                     slamFreeDomScanVoxelVisible,
+                     [this](bool visible) { setSlamFreeDomScanVoxelVisible(visible); });
+        addLayerCard(QStringLiteral("Dynamic Voxel"),
+                     QStringLiteral("当前帧动态体素；颜色和点大小由显示样式控制"),
+                     slamFreeDomDynamicVoxelVisible,
+                     [this](bool visible) { setSlamFreeDomDynamicVoxelVisible(visible); });
+        addLayerCard(QStringLiteral("Raycasted Voxel"),
+                     QStringLiteral("FreeDOM 射线遍历体素；颜色和点大小由显示样式控制"),
+                     slamFreeDomRaycastedVoxelVisible,
+                     [this](bool visible) { setSlamFreeDomRaycastedVoxelVisible(visible); });
+        addLayerCard(QStringLiteral("Free Voxel"),
+                     QStringLiteral("持久化自由空间体素；颜色和点大小由显示样式控制"),
+                     slamFreeDomFreeVoxelVisible,
+                     [this](bool visible) { setSlamFreeDomFreeVoxelVisible(visible); });
+        addLayerCard(QStringLiteral("Static Voxel"),
+                     QStringLiteral("FreeDOM 静态体素地图；颜色和点大小由显示样式控制"),
+                     slamFreeDomStaticVoxelVisible,
+                     [this](bool visible) { setSlamFreeDomStaticVoxelVisible(visible); });
+        addLayerCard(QStringLiteral("Enhanced Point"),
+                     QStringLiteral("Raycast Enhancement 生成的增强点；颜色和点大小由显示样式控制"),
+                     slamFreeDomEnhancedVisible,
+                     [this](bool visible) { setSlamFreeDomEnhancedVisible(visible); });
     }
     addLayerCard(QStringLiteral("轨迹"),
                  QStringLiteral("SLAM 输出的位姿轨迹，用于观察运动路径和定位连续性"),

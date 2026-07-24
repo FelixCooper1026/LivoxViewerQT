@@ -28,6 +28,12 @@ struct SlamRenderSnapshot {
     float worldFramePointSizePx = 2.0f;
     float bodyFramePointSizePx = 2.5f;
     float dynamicObjectPointSizePx = 4.0f;
+    float freeDomScanVoxelPointSizePx = 4.0f;
+    float freeDomDynamicVoxelPointSizePx = 4.0f;
+    float freeDomRaycastedVoxelPointSizePx = 4.0f;
+    float freeDomFreeVoxelPointSizePx = 4.0f;
+    float freeDomStaticVoxelPointSizePx = 4.0f;
+    float freeDomEnhancedPointSizePx = 4.0f;
     float trajectoryLineWidthPx = 2.0f;
     float poseAxisLengthM = 0.8f;
     float poseAxisLineWidthPx = 3.0f;
@@ -38,6 +44,15 @@ struct SlamRenderSnapshot {
     QVector<SlamRenderVertex> worldFrameVertices;
     QVector<SlamRenderVertex> bodyFrameVertices;
     QVector<SlamRenderVertex> dynamicObjectVertices;
+    QVector<SlamRenderVertex> dynamicAggressiveVertices;
+    QVector<SlamRenderVertex> dynamicModerateVertices;
+    QVector<SlamRenderVertex> dynamicConservativeVertices;
+    QVector<SlamRenderVertex> freeDomScanVoxelVertices;
+    QVector<SlamRenderVertex> freeDomDynamicVoxelVertices;
+    QVector<SlamRenderVertex> freeDomRaycastedVoxelVertices;
+    QVector<SlamRenderVertex> freeDomFreeVoxelVertices;
+    QVector<SlamRenderVertex> freeDomStaticVoxelVertices;
+    QVector<SlamRenderVertex> freeDomEnhancedVertices;
 };
 
 Q_DECLARE_METATYPE(SlamRenderSnapshot)

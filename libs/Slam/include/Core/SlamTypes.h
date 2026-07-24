@@ -1,6 +1,9 @@
 #ifndef SLAM_CORE_SLAMTYPES_H
 #define SLAM_CORE_SLAMTYPES_H
 
+#include "DynamicFilterBackend.h"
+
+#include <QByteArray>
 #include <QString>
 #include <QVector>
 
@@ -30,6 +33,9 @@ enum class SlamDynamicPointLabel : uint8_t {
     Case1 = 1,
     Case2 = 2,
     Case3 = 3,
+    FreeDomAggressive = 20,
+    FreeDomModerate = 21,
+    FreeDomConservative = 22,
     Invalid = 255
 };
 
@@ -42,6 +48,7 @@ struct SlamDynamicPoint {
 };
 
 struct SlamDynamicObjectStats {
+    DynamicFilterBackend backend = DynamicFilterBackend::Disabled;
     bool enabled = false;
     bool clusterEnabled = false;
     int staticPointCount = 0;
@@ -54,9 +61,25 @@ struct SlamDynamicObjectStats {
     int case2PointCount = 0;
     int case3PointCount = 0;
     int invalidPointCount = 0;
+    int inputPointCount = 0;
+    int freeDomAggressivePointCount = 0;
+    int freeDomModeratePointCount = 0;
+    int freeDomConservativePointCount = 0;
     int historyDepthMapCount = 0;
     double detectorMs = 0.0;
     double clusterMs = 0.0;
+    double totalMs = 0.0;
+    double freeDomBuildScanMapMs = 0.0;
+    double freeDomScanRemovalMs = 0.0;
+    double freeDomRaycastEnhancementMs = 0.0;
+    double freeDomFreeSpaceEstimationMs = 0.0;
+    double freeDomMapRemovalMs = 0.0;
+    double freeDomStaticIntegrationMs = 0.0;
+    int freeDomFreeBlockCount = 0;
+    int freeDomFreeVoxelCount = 0;
+    int freeDomStaticBlockCount = 0;
+    int freeDomStaticVoxelCount = 0;
+    int freeDomStaticSubvoxelCount = 0;
 };
 
 struct SlamImuSample {
@@ -137,6 +160,20 @@ struct SlamOutput {
     QVector<SlamPoint> publishedBodyFramePoints;
     QVector<SlamPoint> dynamicDetectionFrameWorldPoints;
     QVector<SlamDynamicPoint> dynamicWorldFramePoints;
+    QVector<SlamPoint> freeDomScanVoxelPoints;
+    QVector<SlamPoint> freeDomDynamicVoxelPoints;
+    QVector<SlamPoint> freeDomRaycastedVoxelPoints;
+    QVector<SlamPoint> freeDomFreeVoxelPoints;
+    QVector<SlamPoint> freeDomStaticVoxelPoints;
+    QVector<SlamPoint> freeDomStaticMapPoints;
+    QVector<SlamPoint> freeDomEnhancedPoints;
+    QByteArray freeDomDepthImage;
+    QByteArray freeDomEnhancedDepthImage;
+    int freeDomDepthImageRows = 0;
+    int freeDomDepthImageColumns = 0;
+    quint64 freeDomSnapshotVersion = 0;
+    bool freeDomDebugSnapshotUpdated = false;
+    bool freeDomMapSnapshotUpdated = false;
     QVector<SlamPoint> newGlobalMapPoints;
     bool optimizedGlobalMapReset = false;
     QVector<SlamPoint> optimizedGlobalMapPoints;

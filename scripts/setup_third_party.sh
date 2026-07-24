@@ -16,6 +16,11 @@ download_root="$third_party_root/.downloads"
 
 mkdir -p "$third_party_root" "$download_root"
 
+if ! pkg-config --exists opencv4; then
+    echo "OpenCV 4 development files are required (for example: libopencv-dev)." >&2
+    exit 1
+fi
+
 install_tar_dependency() {
     local name="$1"
     local url="$2"

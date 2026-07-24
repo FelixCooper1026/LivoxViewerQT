@@ -19,6 +19,7 @@
 #include <QDoubleSpinBox>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFont>
 #include <QFrame>
 #include <QGridLayout>
@@ -27,6 +28,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPalette>
 #include <QPair>
 #include <QPointer>
@@ -1015,6 +1017,43 @@ void LivoxViewerWindow::loadViewPreferences()
                        slamDynamicObjectPointSizePx).toFloat(),
         1.0f,
         10.0f);
+    auto loadSlamColor = [&settings](const QString& key, const QColor& defaultColor) {
+        const QColor color = settings.value(key, defaultColor).value<QColor>();
+        return color.isValid() ? color : defaultColor;
+    };
+    auto loadSlamPointSize = [&settings](const QString& key, float defaultSize) {
+        return std::clamp(settings.value(key, defaultSize).toFloat(), 1.0f, 10.0f);
+    };
+    slamDynamicAggressiveColor = loadSlamColor(
+        QStringLiteral("slam/dynamicAggressiveColor"), slamDynamicAggressiveColor);
+    slamDynamicModerateColor = loadSlamColor(
+        QStringLiteral("slam/dynamicModerateColor"), slamDynamicModerateColor);
+    slamDynamicConservativeColor = loadSlamColor(
+        QStringLiteral("slam/dynamicConservativeColor"), slamDynamicConservativeColor);
+    slamFreeDomScanVoxelColor = loadSlamColor(
+        QStringLiteral("slam/freeDomScanVoxelColor"), slamFreeDomScanVoxelColor);
+    slamFreeDomDynamicVoxelColor = loadSlamColor(
+        QStringLiteral("slam/freeDomDynamicVoxelColor"), slamFreeDomDynamicVoxelColor);
+    slamFreeDomRaycastedVoxelColor = loadSlamColor(
+        QStringLiteral("slam/freeDomRaycastedVoxelColor"), slamFreeDomRaycastedVoxelColor);
+    slamFreeDomFreeVoxelColor = loadSlamColor(
+        QStringLiteral("slam/freeDomFreeVoxelColor"), slamFreeDomFreeVoxelColor);
+    slamFreeDomStaticVoxelColor = loadSlamColor(
+        QStringLiteral("slam/freeDomStaticVoxelColor"), slamFreeDomStaticVoxelColor);
+    slamFreeDomEnhancedColor = loadSlamColor(
+        QStringLiteral("slam/freeDomEnhancedColor"), slamFreeDomEnhancedColor);
+    slamFreeDomScanVoxelPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomScanVoxelPointSizePx"), slamFreeDomScanVoxelPointSizePx);
+    slamFreeDomDynamicVoxelPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomDynamicVoxelPointSizePx"), slamFreeDomDynamicVoxelPointSizePx);
+    slamFreeDomRaycastedVoxelPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomRaycastedVoxelPointSizePx"), slamFreeDomRaycastedVoxelPointSizePx);
+    slamFreeDomFreeVoxelPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomFreeVoxelPointSizePx"), slamFreeDomFreeVoxelPointSizePx);
+    slamFreeDomStaticVoxelPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomStaticVoxelPointSizePx"), slamFreeDomStaticVoxelPointSizePx);
+    slamFreeDomEnhancedPointSizePx = loadSlamPointSize(
+        QStringLiteral("slam/freeDomEnhancedPointSizePx"), slamFreeDomEnhancedPointSizePx);
     slamTrajectoryColor = settings.value(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor).value<QColor>();
     if (!slamTrajectoryColor.isValid()) {
         slamTrajectoryColor = QColor(26, 191, 255);
@@ -1180,6 +1219,21 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue(QStringLiteral("slam/bodyFramePointSizePx"), slamBodyFramePointSizePx);
     settings.setValue(QStringLiteral("slam/dynamicObjectColor"), slamDynamicObjectColor);
     settings.setValue(QStringLiteral("slam/dynamicObjectPointSizePx"), slamDynamicObjectPointSizePx);
+    settings.setValue(QStringLiteral("slam/dynamicAggressiveColor"), slamDynamicAggressiveColor);
+    settings.setValue(QStringLiteral("slam/dynamicModerateColor"), slamDynamicModerateColor);
+    settings.setValue(QStringLiteral("slam/dynamicConservativeColor"), slamDynamicConservativeColor);
+    settings.setValue(QStringLiteral("slam/freeDomScanVoxelColor"), slamFreeDomScanVoxelColor);
+    settings.setValue(QStringLiteral("slam/freeDomDynamicVoxelColor"), slamFreeDomDynamicVoxelColor);
+    settings.setValue(QStringLiteral("slam/freeDomRaycastedVoxelColor"), slamFreeDomRaycastedVoxelColor);
+    settings.setValue(QStringLiteral("slam/freeDomFreeVoxelColor"), slamFreeDomFreeVoxelColor);
+    settings.setValue(QStringLiteral("slam/freeDomStaticVoxelColor"), slamFreeDomStaticVoxelColor);
+    settings.setValue(QStringLiteral("slam/freeDomEnhancedColor"), slamFreeDomEnhancedColor);
+    settings.setValue(QStringLiteral("slam/freeDomScanVoxelPointSizePx"), slamFreeDomScanVoxelPointSizePx);
+    settings.setValue(QStringLiteral("slam/freeDomDynamicVoxelPointSizePx"), slamFreeDomDynamicVoxelPointSizePx);
+    settings.setValue(QStringLiteral("slam/freeDomRaycastedVoxelPointSizePx"), slamFreeDomRaycastedVoxelPointSizePx);
+    settings.setValue(QStringLiteral("slam/freeDomFreeVoxelPointSizePx"), slamFreeDomFreeVoxelPointSizePx);
+    settings.setValue(QStringLiteral("slam/freeDomStaticVoxelPointSizePx"), slamFreeDomStaticVoxelPointSizePx);
+    settings.setValue(QStringLiteral("slam/freeDomEnhancedPointSizePx"), slamFreeDomEnhancedPointSizePx);
     settings.setValue(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor);
     settings.setValue(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx);
     settings.setValue(QStringLiteral("slam/poseAxisLengthM"), slamPoseAxisLengthM);
@@ -1204,6 +1258,15 @@ void LivoxViewerWindow::showPreferencesDialog()
     QColor selectedSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     QColor selectedSlamBodyFrameColor = slamBodyFrameColor;
     QColor selectedSlamDynamicObjectColor = slamDynamicObjectColor;
+    QColor selectedSlamDynamicAggressiveColor = slamDynamicAggressiveColor;
+    QColor selectedSlamDynamicModerateColor = slamDynamicModerateColor;
+    QColor selectedSlamDynamicConservativeColor = slamDynamicConservativeColor;
+    QColor selectedSlamFreeDomScanVoxelColor = slamFreeDomScanVoxelColor;
+    QColor selectedSlamFreeDomDynamicVoxelColor = slamFreeDomDynamicVoxelColor;
+    QColor selectedSlamFreeDomRaycastedVoxelColor = slamFreeDomRaycastedVoxelColor;
+    QColor selectedSlamFreeDomFreeVoxelColor = slamFreeDomFreeVoxelColor;
+    QColor selectedSlamFreeDomStaticVoxelColor = slamFreeDomStaticVoxelColor;
+    QColor selectedSlamFreeDomEnhancedColor = slamFreeDomEnhancedColor;
     QColor selectedSlamTrajectoryColor = slamTrajectoryColor;
 
     QVBoxLayout* layout = new QVBoxLayout(&dlg);
@@ -1643,8 +1706,23 @@ void LivoxViewerWindow::showPreferencesDialog()
     SwitchCheckBox* slamPublishDenseCheck = createSlamSwitch(slamRuntimeConfig.publishDenseFrameCloud);
     SwitchCheckBox* slamPublishBodyCheck = createSlamSwitch(slamRuntimeConfig.publishBodyFrameCloud);
     SwitchCheckBox* slamSaveMapCheck = createSlamSwitch(slamRuntimeConfig.saveMap);
-    SwitchCheckBox* slamDynamicDetectionCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectDetectionEnabled);
-    SwitchCheckBox* slamDynamicRemovalCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectRemovalEnabled);
+    SwitchCheckBox* slamDynamicDetectionCheck = createSlamSwitch(slamRuntimeConfig.dynamicFilterEnabled);
+    SwitchCheckBox* slamDynamicRemovalCheck = createSlamSwitch(slamRuntimeConfig.dynamicPointRemovalEnabled);
+    SwitchCheckBox* slamDynamicDebugCheck = createSlamSwitch(
+        slamRuntimeConfig.dynamicDebugVisualizationEnabled);
+    QComboBox* slamDynamicBackendCombo = new QComboBox(&dlg);
+    slamDynamicBackendCombo->addItem(
+        QStringLiteral("不处理"), int(DynamicFilterBackend::Disabled));
+    slamDynamicBackendCombo->addItem(
+        QStringLiteral("M-detector"), int(DynamicFilterBackend::MDetector));
+    slamDynamicBackendCombo->addItem(
+        QStringLiteral("FreeDOM"), int(DynamicFilterBackend::FreeDOM));
+    slamDynamicBackendCombo->setCurrentIndex(std::max(
+        0,
+        slamDynamicBackendCombo->findData(
+            int(slamRuntimeConfig.dynamicFilterBackend))));
+    slamDynamicBackendCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    usePreferenceControlColumn(slamDynamicBackendCombo);
     SwitchCheckBox* slamDynamicClusterCheck = createSlamSwitch(slamRuntimeConfig.dynamicObjectClusterEnabled);
     QDoubleSpinBox* slamDynamicBufferDelaySpin = createSlamDoubleSpin(
         slamRuntimeConfig.dynamicObjectBufferDelaySec, 0.0, 5.0, 3, 0.01, QStringLiteral(" s"));
@@ -1658,6 +1736,131 @@ void LivoxViewerWindow::showPreferencesDialog()
         usePreferenceControlColumn(spin);
         return spin;
     };
+    QDoubleSpinBox* freeDomSensorMinRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.sensorMinRangeM, 0.0, 1999.9, 2, 0.1, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomSensorMaxRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.sensorMaxRangeM, 0.1, 2000.0, 1, 5.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomSensorMinZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.sensorMinZM, -1000.0, 999.9, 1, 1.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomSensorMaxZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.sensorMaxZM, -999.9, 1000.0, 1, 1.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomSubVoxelSizeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.subVoxelSizeM, 0.01, 10.0, 3, 0.01, QStringLiteral(" m"));
+    QSpinBox* freeDomVoxelDepthSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.voxelDepth), 0, 12);
+    QSpinBox* freeDomBlockDepthSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.blockDepth), 0, 16);
+    SwitchCheckBox* freeDomLocalMapCheck = createSlamSwitch(
+        slamRuntimeConfig.freeDom.localMapEnabled);
+    QDoubleSpinBox* freeDomLocalMapRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.localMapRangeM, 0.1, 2000.0, 1, 5.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomLocalMapMinZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.localMapMinZM, -1000.0, 999.9, 1, 1.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomLocalMapMaxZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.localMapMaxZM, -999.9, 1000.0, 1, 1.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomRaycastMaxRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.raycastMaxRangeM, 0.1, 2000.0, 1, 5.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomRaycastMinZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.raycastMinZM, -1000.0, 999.9, 1, 1.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomRaycastMaxZSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.raycastMaxZM, -999.9, 1000.0, 1, 1.0, QStringLiteral(" m"));
+    QSpinBox* freeDomCountsToFreeSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.countsToFree), 1, 10000);
+    QSpinBox* freeDomCountsToRevertSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.countsToRevert), 1, 10000);
+    QComboBox* freeDomConservativeConnectivityCombo = new QComboBox(&dlg);
+    for(int value : {6, 18, 26})
+        freeDomConservativeConnectivityCombo->addItem(QString::number(value), value);
+    freeDomConservativeConnectivityCombo->setCurrentIndex(
+        freeDomConservativeConnectivityCombo->findData(
+            int(slamRuntimeConfig.freeDom.conservativeConnectivity)));
+    freeDomConservativeConnectivityCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    usePreferenceControlColumn(freeDomConservativeConnectivityCombo);
+    QComboBox* freeDomAggressiveConnectivityCombo = new QComboBox(&dlg);
+    for(int value : {6, 18, 26, 80, 124})
+        freeDomAggressiveConnectivityCombo->addItem(QString::number(value), value);
+    freeDomAggressiveConnectivityCombo->setCurrentIndex(
+        freeDomAggressiveConnectivityCombo->findData(
+            int(slamRuntimeConfig.freeDom.aggressiveConnectivity)));
+    freeDomAggressiveConnectivityCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    usePreferenceControlColumn(freeDomAggressiveConnectivityCombo);
+    SwitchCheckBox* freeDomRaycastEnhancementCheck = createSlamSwitch(
+        slamRuntimeConfig.freeDom.raycastEnhancementEnabled);
+    QDoubleSpinBox* freeDomHorizontalFovSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.lidarHorizontalFovDeg, 1.0, 360.0, 1, 1.0, QStringLiteral(" °"));
+    QDoubleSpinBox* freeDomVerticalFovUpperSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.lidarVerticalFovUpperDeg, -89.9, 90.0, 1, 1.0, QStringLiteral(" °"));
+    QDoubleSpinBox* freeDomVerticalFovLowerSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.lidarVerticalFovLowerDeg, -90.0, 89.9, 1, 1.0, QStringLiteral(" °"));
+    QSpinBox* freeDomDepthLinesSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.depthImageVerticalLines), 2, 4096);
+    QDoubleSpinBox* freeDomDepthMinRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.depthImageMinRangeM, 0.0, 2000.0, 2, 0.1, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomEnhancementMaxRangeSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.maxRaycastEnhancementRangeM, 0.1, 2000.0, 1, 5.0, QStringLiteral(" m"));
+    QDoubleSpinBox* freeDomDepthMarginSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.raycastEnhancementDepthMarginM, 0.0, 10.0, 2, 0.05, QStringLiteral(" m"));
+    QSpinBox* freeDomInpaintSizeSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.inpaintSize), 1, 99);
+    QSpinBox* freeDomErosionSizeSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.erosionSize), 0, 99);
+    QDoubleSpinBox* freeDomMinEnhancementAreaSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.minRaycastEnhancementArea, 0.0, 1.0, 5, 0.001, QString());
+    QDoubleSpinBox* freeDomTopMarginSpin = createSlamDoubleSpin(
+        slamRuntimeConfig.freeDom.depthImageTopMargin, 0.0, 1.0, 3, 0.01, QString());
+    SwitchCheckBox* freeDomLearnFovCheck = createSlamSwitch(
+        slamRuntimeConfig.freeDom.learnFov);
+    SwitchCheckBox* freeDomFovMaskCheck = createSlamSwitch(
+        slamRuntimeConfig.freeDom.fovMaskEnabled);
+    QLineEdit* freeDomFovMaskPathEdit = new QLineEdit(
+        QString::fromStdString(slamRuntimeConfig.freeDom.fovMaskPath), &dlg);
+    freeDomFovMaskPathEdit->setMinimumWidth(260);
+    QSpinBox* freeDomThreadsSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDom.numThreads), 1, 64);
+    QSpinBox* freeDomDebugIntervalSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.dynamicDebugSnapshotIntervalFrames), 1, 10000);
+    QSpinBox* freeDomMapIntervalSpin = createSlamIntSpin(
+        int(slamRuntimeConfig.freeDomMapSnapshotIntervalFrames), 1, 10000);
+    connect(freeDomVoxelDepthSpin, QOverload<int>::of(&QSpinBox::valueChanged), &dlg,
+            [freeDomBlockDepthSpin](int value) {
+                freeDomBlockDepthSpin->setMinimum(value);
+            });
+    freeDomBlockDepthSpin->setMinimum(freeDomVoxelDepthSpin->value());
+    connect(freeDomSensorMinRangeSpin,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            &dlg,
+            [freeDomSensorMaxRangeSpin](double value) {
+                freeDomSensorMaxRangeSpin->setMinimum(value + 0.1);
+            });
+    connect(freeDomSensorMinZSpin,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            &dlg,
+            [freeDomSensorMaxZSpin](double value) {
+                freeDomSensorMaxZSpin->setMinimum(value + 0.1);
+            });
+    connect(freeDomLocalMapMinZSpin,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            &dlg,
+            [freeDomLocalMapMaxZSpin](double value) {
+                freeDomLocalMapMaxZSpin->setMinimum(value + 0.1);
+            });
+    connect(freeDomRaycastMinZSpin,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            &dlg,
+            [freeDomRaycastMaxZSpin](double value) {
+                freeDomRaycastMaxZSpin->setMinimum(value + 0.1);
+            });
+    connect(freeDomVerticalFovLowerSpin,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            &dlg,
+            [freeDomVerticalFovUpperSpin](double value) {
+                freeDomVerticalFovUpperSpin->setMinimum(value + 0.1);
+            });
+    connect(freeDomFovMaskCheck, &QCheckBox::toggled, &dlg,
+            [freeDomFovMaskPathEdit](bool enabled) {
+                freeDomFovMaskPathEdit->setEnabled(enabled);
+            });
+    freeDomFovMaskPathEdit->setEnabled(freeDomFovMaskCheck->isChecked());
     SwitchCheckBox* slamLoopClosureCheck = createSlamSwitch(slamRuntimeConfig.loopClosureEnableFlag);
     QDoubleSpinBox* slamKeyframeDistanceSpin = createSlamDoubleSpin(
         slamRuntimeConfig.surroundingKeyframeAddingDistThreshold, 0.1, 1000.0, 1, 0.5, QStringLiteral(" m"));
@@ -1776,19 +1979,38 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicClusterGroundMaxAngleSpin
     };
     auto syncSlamDynamicControls = [slamDynamicDetectionCheck,
+                                    slamDynamicBackendCombo,
                                     slamDynamicRemovalCheck,
+                                    slamDynamicDebugCheck,
                                     slamDynamicClusterCheck,
                                     slamDynamicClusterControls]() {
-        const bool detectionEnabled = slamDynamicDetectionCheck->isChecked();
+        const bool detectionEnabled =
+            slamDynamicDetectionCheck->isChecked() &&
+            slamDynamicBackendCombo->currentData().toInt() !=
+                int(DynamicFilterBackend::Disabled);
+        const bool mDetectorSelected =
+            slamDynamicBackendCombo->currentData().toInt() ==
+                int(DynamicFilterBackend::MDetector);
+        const bool freeDomSelected =
+            slamDynamicBackendCombo->currentData().toInt() ==
+                int(DynamicFilterBackend::FreeDOM);
         slamDynamicRemovalCheck->setEnabled(detectionEnabled);
-        slamDynamicClusterCheck->setEnabled(detectionEnabled);
-        const bool clusterEnabled = detectionEnabled && slamDynamicClusterCheck->isChecked();
+        slamDynamicDebugCheck->setEnabled(detectionEnabled && freeDomSelected);
+        slamDynamicClusterCheck->setEnabled(
+            detectionEnabled && mDetectorSelected);
+        const bool clusterEnabled =
+            detectionEnabled && mDetectorSelected &&
+            slamDynamicClusterCheck->isChecked();
         for (QWidget* control : slamDynamicClusterControls) {
             control->setEnabled(clusterEnabled);
         }
     };
     connect(slamDynamicDetectionCheck, &QCheckBox::toggled, &dlg,
             [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
+    connect(slamDynamicBackendCombo,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            &dlg,
+            [syncSlamDynamicControls](int) { syncSlamDynamicControls(); });
     connect(slamDynamicClusterCheck, &QCheckBox::toggled, &dlg,
             [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
     syncSlamDynamicControls();
@@ -1864,6 +2086,61 @@ void LivoxViewerWindow::showPreferencesDialog()
                              1,
                              0.5,
                              QStringLiteral(" px"));
+    auto createSlamLayerColorRow = [&dlg](QColor* selectedColor,
+                                          const QString& dialogTitle) {
+        QWidget* row = new QWidget(&dlg);
+        usePreferenceControlColumn(row);
+        QHBoxLayout* rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setSpacing(8);
+        QPushButton* preview = createColorSwatchButton(row, *selectedColor);
+        rowLayout->addWidget(preview);
+        rowLayout->addStretch();
+        connect(preview,
+                &QPushButton::clicked,
+                &dlg,
+                [&dlg, selectedColor, preview, dialogTitle]() {
+                    const QColor color = QColorDialog::getColor(*selectedColor,
+                                                                 &dlg,
+                                                                 dialogTitle);
+                    if (!color.isValid()) {
+                        return;
+                    }
+                    *selectedColor = color;
+                    updateColorSwatchButton(preview, *selectedColor);
+                });
+        return row;
+    };
+    QWidget* slamDynamicAggressiveColorRow = createSlamLayerColorRow(
+        &selectedSlamDynamicAggressiveColor, QStringLiteral("选择 Aggressive 动态点颜色"));
+    QWidget* slamDynamicModerateColorRow = createSlamLayerColorRow(
+        &selectedSlamDynamicModerateColor, QStringLiteral("选择 Moderate 动态点颜色"));
+    QWidget* slamDynamicConservativeColorRow = createSlamLayerColorRow(
+        &selectedSlamDynamicConservativeColor, QStringLiteral("选择 Conservative 动态点颜色"));
+    QWidget* slamFreeDomScanVoxelColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomScanVoxelColor, QStringLiteral("选择 Scan Voxel 颜色"));
+    QWidget* slamFreeDomDynamicVoxelColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomDynamicVoxelColor, QStringLiteral("选择 Dynamic Voxel 颜色"));
+    QWidget* slamFreeDomRaycastedVoxelColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomRaycastedVoxelColor, QStringLiteral("选择 Raycasted Voxel 颜色"));
+    QWidget* slamFreeDomFreeVoxelColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomFreeVoxelColor, QStringLiteral("选择 Free Voxel 颜色"));
+    QWidget* slamFreeDomStaticVoxelColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomStaticVoxelColor, QStringLiteral("选择 Static Voxel 颜色"));
+    QWidget* slamFreeDomEnhancedColorRow = createSlamLayerColorRow(
+        &selectedSlamFreeDomEnhancedColor, QStringLiteral("选择 Enhanced Point 颜色"));
+    QDoubleSpinBox* slamFreeDomScanVoxelPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomScanVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamFreeDomDynamicVoxelPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomDynamicVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamFreeDomRaycastedVoxelPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomRaycastedVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamFreeDomFreeVoxelPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomFreeVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamFreeDomStaticVoxelPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomStaticVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
+    QDoubleSpinBox* slamFreeDomEnhancedPointSizeSpin =
+        createSlamDoubleSpin(slamFreeDomEnhancedPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     QWidget* slamTrajectoryColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamTrajectoryColorRow);
     QHBoxLayout* slamTrajectoryColorLayout = new QHBoxLayout(slamTrajectoryColorRow);
@@ -1900,6 +2177,64 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     auto currentSlamTemplate = [slamTemplateCombo]() {
         return slamLidarTemplateFromInt(slamTemplateCombo->currentData().toInt());
+    };
+    auto applyDynamicFilterControls = [&](SlamRuntimeConfig& config) {
+        config.dynamicFilterBackend = static_cast<DynamicFilterBackend>(
+            slamDynamicBackendCombo->currentData().toInt());
+        config.dynamicFilterEnabled =
+            slamDynamicDetectionCheck->isChecked() &&
+            config.dynamicFilterBackend != DynamicFilterBackend::Disabled;
+        config.dynamicPointRemovalEnabled =
+            config.dynamicFilterEnabled && slamDynamicRemovalCheck->isChecked();
+        config.dynamicDebugVisualizationEnabled = slamDynamicDebugCheck->isChecked();
+        config.dynamicDebugSnapshotIntervalFrames =
+            unsigned(freeDomDebugIntervalSpin->value());
+        config.freeDomMapSnapshotIntervalFrames =
+            unsigned(freeDomMapIntervalSpin->value());
+
+        config.dynamicObjectDetectionEnabled = config.dynamicFilterEnabled;
+        config.dynamicObjectRemovalEnabled = config.dynamicPointRemovalEnabled;
+        config.dynamicObjectClusterEnabled =
+            config.dynamicFilterBackend == DynamicFilterBackend::MDetector &&
+            config.dynamicFilterEnabled && slamDynamicClusterCheck->isChecked();
+
+        FreeDomRuntimeConfig& freeDom = config.freeDom;
+        freeDom.sensorMinRangeM = freeDomSensorMinRangeSpin->value();
+        freeDom.sensorMaxRangeM = freeDomSensorMaxRangeSpin->value();
+        freeDom.sensorMinZM = freeDomSensorMinZSpin->value();
+        freeDom.sensorMaxZM = freeDomSensorMaxZSpin->value();
+        freeDom.subVoxelSizeM = freeDomSubVoxelSizeSpin->value();
+        freeDom.voxelDepth = unsigned(freeDomVoxelDepthSpin->value());
+        freeDom.blockDepth = unsigned(freeDomBlockDepthSpin->value());
+        freeDom.localMapEnabled = freeDomLocalMapCheck->isChecked();
+        freeDom.localMapRangeM = freeDomLocalMapRangeSpin->value();
+        freeDom.localMapMinZM = freeDomLocalMapMinZSpin->value();
+        freeDom.localMapMaxZM = freeDomLocalMapMaxZSpin->value();
+        freeDom.raycastMaxRangeM = freeDomRaycastMaxRangeSpin->value();
+        freeDom.raycastMinZM = freeDomRaycastMinZSpin->value();
+        freeDom.raycastMaxZM = freeDomRaycastMaxZSpin->value();
+        freeDom.countsToFree = unsigned(freeDomCountsToFreeSpin->value());
+        freeDom.countsToRevert = unsigned(freeDomCountsToRevertSpin->value());
+        freeDom.conservativeConnectivity = unsigned(
+            freeDomConservativeConnectivityCombo->currentData().toInt());
+        freeDom.aggressiveConnectivity = unsigned(
+            freeDomAggressiveConnectivityCombo->currentData().toInt());
+        freeDom.raycastEnhancementEnabled = freeDomRaycastEnhancementCheck->isChecked();
+        freeDom.lidarHorizontalFovDeg = freeDomHorizontalFovSpin->value();
+        freeDom.lidarVerticalFovUpperDeg = freeDomVerticalFovUpperSpin->value();
+        freeDom.lidarVerticalFovLowerDeg = freeDomVerticalFovLowerSpin->value();
+        freeDom.depthImageVerticalLines = unsigned(freeDomDepthLinesSpin->value());
+        freeDom.depthImageMinRangeM = freeDomDepthMinRangeSpin->value();
+        freeDom.maxRaycastEnhancementRangeM = freeDomEnhancementMaxRangeSpin->value();
+        freeDom.raycastEnhancementDepthMarginM = freeDomDepthMarginSpin->value();
+        freeDom.inpaintSize = unsigned(freeDomInpaintSizeSpin->value());
+        freeDom.erosionSize = unsigned(freeDomErosionSizeSpin->value());
+        freeDom.minRaycastEnhancementArea = freeDomMinEnhancementAreaSpin->value();
+        freeDom.depthImageTopMargin = freeDomTopMarginSpin->value();
+        freeDom.learnFov = freeDomLearnFovCheck->isChecked();
+        freeDom.fovMaskEnabled = freeDomFovMaskCheck->isChecked();
+        freeDom.fovMaskPath = freeDomFovMaskPathEdit->text().toStdString();
+        freeDom.numThreads = unsigned(freeDomThreadsSpin->value());
     };
     auto setSlamRuntimeControls = [&](const SlamRuntimeConfig& runtimeDefaults) {
         syncingSlamFrameControls = true;
@@ -1940,8 +2275,55 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamHistoryKeyframeSearchNumSpin->setValue(runtimeDefaults.historyKeyframeSearchNum);
         slamHistoryKeyframeFitnessScoreSpin->setValue(runtimeDefaults.historyKeyframeFitnessScore);
         slamReconstructKdTreeCheck->setChecked(runtimeDefaults.reconstructKdTree);
-        slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicObjectDetectionEnabled);
-        slamDynamicRemovalCheck->setChecked(runtimeDefaults.dynamicObjectRemovalEnabled);
+        slamDynamicBackendCombo->setCurrentIndex(std::max(
+            0,
+            slamDynamicBackendCombo->findData(int(runtimeDefaults.dynamicFilterBackend))));
+        slamDynamicDetectionCheck->setChecked(runtimeDefaults.dynamicFilterEnabled);
+        slamDynamicRemovalCheck->setChecked(runtimeDefaults.dynamicPointRemovalEnabled);
+        slamDynamicDebugCheck->setChecked(runtimeDefaults.dynamicDebugVisualizationEnabled);
+        freeDomDebugIntervalSpin->setValue(
+            int(runtimeDefaults.dynamicDebugSnapshotIntervalFrames));
+        freeDomMapIntervalSpin->setValue(
+            int(runtimeDefaults.freeDomMapSnapshotIntervalFrames));
+        const FreeDomRuntimeConfig& freeDom = runtimeDefaults.freeDom;
+        freeDomSensorMinRangeSpin->setValue(freeDom.sensorMinRangeM);
+        freeDomSensorMaxRangeSpin->setValue(freeDom.sensorMaxRangeM);
+        freeDomSensorMinZSpin->setValue(freeDom.sensorMinZM);
+        freeDomSensorMaxZSpin->setValue(freeDom.sensorMaxZM);
+        freeDomSubVoxelSizeSpin->setValue(freeDom.subVoxelSizeM);
+        freeDomVoxelDepthSpin->setValue(int(freeDom.voxelDepth));
+        freeDomBlockDepthSpin->setValue(int(freeDom.blockDepth));
+        freeDomLocalMapCheck->setChecked(freeDom.localMapEnabled);
+        freeDomLocalMapRangeSpin->setValue(freeDom.localMapRangeM);
+        freeDomLocalMapMinZSpin->setValue(freeDom.localMapMinZM);
+        freeDomLocalMapMaxZSpin->setValue(freeDom.localMapMaxZM);
+        freeDomRaycastMaxRangeSpin->setValue(freeDom.raycastMaxRangeM);
+        freeDomRaycastMinZSpin->setValue(freeDom.raycastMinZM);
+        freeDomRaycastMaxZSpin->setValue(freeDom.raycastMaxZM);
+        freeDomCountsToFreeSpin->setValue(int(freeDom.countsToFree));
+        freeDomCountsToRevertSpin->setValue(int(freeDom.countsToRevert));
+        freeDomConservativeConnectivityCombo->setCurrentIndex(
+            freeDomConservativeConnectivityCombo->findData(
+                int(freeDom.conservativeConnectivity)));
+        freeDomAggressiveConnectivityCombo->setCurrentIndex(
+            freeDomAggressiveConnectivityCombo->findData(
+                int(freeDom.aggressiveConnectivity)));
+        freeDomRaycastEnhancementCheck->setChecked(freeDom.raycastEnhancementEnabled);
+        freeDomHorizontalFovSpin->setValue(freeDom.lidarHorizontalFovDeg);
+        freeDomVerticalFovLowerSpin->setValue(freeDom.lidarVerticalFovLowerDeg);
+        freeDomVerticalFovUpperSpin->setValue(freeDom.lidarVerticalFovUpperDeg);
+        freeDomDepthLinesSpin->setValue(int(freeDom.depthImageVerticalLines));
+        freeDomDepthMinRangeSpin->setValue(freeDom.depthImageMinRangeM);
+        freeDomEnhancementMaxRangeSpin->setValue(freeDom.maxRaycastEnhancementRangeM);
+        freeDomDepthMarginSpin->setValue(freeDom.raycastEnhancementDepthMarginM);
+        freeDomInpaintSizeSpin->setValue(int(freeDom.inpaintSize));
+        freeDomErosionSizeSpin->setValue(int(freeDom.erosionSize));
+        freeDomMinEnhancementAreaSpin->setValue(freeDom.minRaycastEnhancementArea);
+        freeDomTopMarginSpin->setValue(freeDom.depthImageTopMargin);
+        freeDomLearnFovCheck->setChecked(freeDom.learnFov);
+        freeDomFovMaskCheck->setChecked(freeDom.fovMaskEnabled);
+        freeDomFovMaskPathEdit->setText(QString::fromStdString(freeDom.fovMaskPath));
+        freeDomThreadsSpin->setValue(int(freeDom.numThreads));
         slamDynamicClusterCheck->setChecked(runtimeDefaults.dynamicObjectClusterEnabled);
         slamDynamicClusterVoxelSizeSpin->setValue(runtimeDefaults.dynamicObjectClusterVoxelSizeM);
         slamDynamicClusterExtendVoxelSpin->setValue(runtimeDefaults.dynamicObjectClusterExtendVoxel);
@@ -2018,11 +2400,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.historyKeyframeSearchNum = slamHistoryKeyframeSearchNumSpin->value();
         config.historyKeyframeFitnessScore = slamHistoryKeyframeFitnessScoreSpin->value();
         config.reconstructKdTree = slamReconstructKdTreeCheck->isChecked();
-        config.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
-        config.dynamicObjectRemovalEnabled =
-            config.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
-        config.dynamicObjectClusterEnabled =
-            config.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
+        applyDynamicFilterControls(config);
         config.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
         config.dynamicObjectClusterExtendVoxel = slamDynamicClusterExtendVoxelSpin->value();
         config.dynamicObjectClusterMinVoxelCount = slamDynamicClusterMinVoxelCountSpin->value();
@@ -2466,21 +2844,43 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QFrame* slamDynamicSection = createPreferenceSection(slamDynamicTab);
     addDynamicPreferenceRow(slamDynamicSection,
+                     "算法",
+                     "dynamicFilterBackend，同一 SLAM 会话只运行一个动态滤除后端",
+                     slamDynamicBackendCombo,
+                     "不处理不会创建算法历史；M-detector 与 FreeDOM 的历史状态相互隔离。切换后需重启或重置 SLAM 会话。");
+    addDynamicPreferenceRow(slamDynamicSection,
                      "启用动态检测",
-                     "dynamicObjectDetectionEnabled，启用 M-detector 点级检测，对去畸变当前帧生成动态事件和统计信息",
+                     "dynamicFilterEnabled，启用所选后端并对去畸变 LiDAR 当前帧生成逐点标签",
                      slamDynamicDetectionCheck,
                      "建议先关闭聚类增强，仅观察 Case1/2/3 原始点并校准投影、历史窗口和深度阈值。启用后会自动显示不累计的世界系当前帧背景，不需要开启世界系或机体系点云输出。");
     addDynamicPreferenceRow(slamDynamicSection,
                      "去除动态点云",
-                     "dynamicObjectRemovalEnabled，根据动态检测标签从当前帧输出和 SLAM 增量地图中剔除动态点",
+                     "dynamicPointRemovalEnabled，根据统一 dynamic 标签从当前帧输出和 SLAM 增量地图中剔除动态点",
                      slamDynamicRemovalCheck,
                      "启用动态检测并确认动态目标识别稳定后再开启。误检会删除真实静态结构，因此应先校准深度阈值和历史窗口；开启聚类增强可让被剔除的目标轮廓更完整。");
+    addDynamicPreferenceRow(slamDynamicSection,
+                     "显示算法调试图层",
+                     "dynamicDebugVisualizationEnabled，按节流频率复制 FreeDOM Scan/Free/Static/Raycast 快照",
+                     slamDynamicDebugCheck,
+                     "调试快照会复制体素和深度图数据。只在调参时开启，并用下方快照间隔控制开销。");
     addDynamicPreferenceRow(slamDynamicSection,
                      "启用聚类增强",
                      "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
                      slamDynamicClusterCheck,
                      "先确保无聚类模式的事件点稳定，再开启聚类。开启后目标轮廓更完整，但会增加聚类耗时；若相邻目标被合并，优先减小体素尺寸或连接半径。");
     slamDynamicTabLayout->addWidget(slamDynamicSection);
+
+    QStackedWidget* slamDynamicParameterStack = new QStackedWidget(slamDynamicTab);
+    QWidget* slamMDetectorPage = new QWidget(slamDynamicParameterStack);
+    QVBoxLayout* slamMDetectorLayout = new QVBoxLayout(slamMDetectorPage);
+    slamMDetectorLayout->setContentsMargins(0, 0, 0, 0);
+    slamMDetectorLayout->setSpacing(10);
+    QWidget* slamFreeDomPage = new QWidget(slamDynamicParameterStack);
+    QVBoxLayout* slamFreeDomLayout = new QVBoxLayout(slamFreeDomPage);
+    slamFreeDomLayout->setContentsMargins(0, 0, 0, 0);
+    slamFreeDomLayout->setSpacing(10);
+    slamDynamicParameterStack->addWidget(slamMDetectorPage);
+    slamDynamicParameterStack->addWidget(slamFreeDomPage);
 
     QFrame* slamDynamicClusterSection = createPreferenceSection(slamDynamicTab);
     addDynamicPreferenceRow(slamDynamicClusterSection,
@@ -2513,7 +2913,7 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "dynamicObjectClusterGroundMaxAngleDeg，候选地面法向相对 IMU 世界竖直轴允许的最大夹角",
                      slamDynamicClusterGroundMaxAngleSpin,
                      "坡道地面无法剔除时增大；墙面或目标表面被误当作地面时减小。平整场景可用较小角度，坡地场景再逐步放宽。");
-    slamDynamicTabLayout->addWidget(slamDynamicClusterSection);
+    slamMDetectorLayout->addWidget(slamDynamicClusterSection);
 
     QFrame* slamDynamicHistorySection = createPreferenceSection(slamDynamicTab);
     addDynamicPreferenceRow(slamDynamicHistorySection,
@@ -2536,7 +2936,7 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "dynamicObjectMinHistoryMaps，达到该历史深度图数量后才开始输出动态判定",
                      slamDynamicMinHistoryMapsSpin,
                      "增大可让背景建立更充分、降低启动阶段误检，但首次输出更晚；减小可更快开始检测。该值不能超过最大历史图数，通常取 2~3。");
-    slamDynamicTabLayout->addWidget(slamDynamicHistorySection);
+    slamMDetectorLayout->addWidget(slamDynamicHistorySection);
 
     QFrame* slamDynamicProjectionSection = createPreferenceSection(slamDynamicTab);
     addDynamicPreferenceRow(slamDynamicProjectionSection,
@@ -2584,7 +2984,7 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "dynamicObjectNeighborPixelRadius，深度比较时在投影像素周围搜索的像素半径",
                      slamDynamicNeighborPixelRadiusSpin,
                      "增大可容忍姿态误差、扫描线错位和投影抖动，减少历史空洞，但会跨物体边界比较并增加耗时；减小边界更锐利但更易漏匹配。通常从 1 开始。");
-    slamDynamicTabLayout->addWidget(slamDynamicProjectionSection);
+    slamMDetectorLayout->addWidget(slamDynamicProjectionSection);
 
     QFrame* slamDynamicCaseSection = createPreferenceSection(slamDynamicTab);
     addDynamicPreferenceRow(slamDynamicCaseSection,
@@ -2617,7 +3017,83 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "dynamicObjectCase3OcclusionChainLength，Case3 需连续通过一致性、速度和加速度检查的遮挡段数",
                      slamDynamicCase3OcclusionChainLengthSpin,
                      "增大可减少单帧遮挡变化造成的误检，但会增加确认延迟；减小可更早发现进入视线的目标。建议先用 3，再根据误检和响应时间成对权衡。");
-    slamDynamicTabLayout->addWidget(slamDynamicCaseSection);
+    slamMDetectorLayout->addWidget(slamDynamicCaseSection);
+    slamMDetectorLayout->addStretch();
+
+    QFrame* freeDomGeometrySection = createPreferenceSection(slamFreeDomPage);
+    addDynamicPreferenceRow(freeDomGeometrySection, "传感器最近距离", "freeDom/sensorMinRangeM", freeDomSensorMinRangeSpin, "小于该距离的输入点标记为 Invalid，不进入 FreeDOM ScanMap。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "传感器最远距离", "freeDom/sensorMaxRangeM", freeDomSensorMaxRangeSpin, "应覆盖业务有效范围，并与设备模板和 Raycast 范围一致。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "传感器 Z 下界", "freeDom/sensorMinZM，相对传感器高度", freeDomSensorMinZSpin, "限制参与 ScanMap 的垂直范围。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "传感器 Z 上界", "freeDom/sensorMaxZM，相对传感器高度", freeDomSensorMaxZSpin, "必须大于 Z 下界。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "Sub-voxel 尺寸", "freeDom/subVoxelSizeM", freeDomSubVoxelSizeSpin, "决定静态地图最小保存分辨率；修改后必须重置 SLAM 会话。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "Voxel 深度", "freeDom/voxelDepth", freeDomVoxelDepthSpin, "voxelSize = subVoxelSize × 2^voxelDepth。");
+    addDynamicPreferenceRow(freeDomGeometrySection, "Block 深度", "freeDom/blockDepth", freeDomBlockDepthSpin, "必须不小于 Voxel 深度；修改后必须重置会话。");
+    slamFreeDomLayout->addWidget(freeDomGeometrySection);
+
+    QFrame* freeDomMapSection = createPreferenceSection(slamFreeDomPage);
+    addDynamicPreferenceRow(freeDomMapSection, "启用局部地图", "freeDom/localMapEnabled", freeDomLocalMapCheck, "使用 FreeDOM 原生 remove_map_out_of_bound 控制内存，不会随机丢弃地图。");
+    addDynamicPreferenceRow(freeDomMapSection, "局部地图范围", "freeDom/localMapRangeM", freeDomLocalMapRangeSpin, "关闭局部地图时 FreeDOM 的持久地图会随路程增长。");
+    addDynamicPreferenceRow(freeDomMapSection, "局部地图 Z 下界", "freeDom/localMapMinZM", freeDomLocalMapMinZSpin, "相对移动中心的局部地图垂直下界。");
+    addDynamicPreferenceRow(freeDomMapSection, "局部地图 Z 上界", "freeDom/localMapMaxZM", freeDomLocalMapMaxZSpin, "必须大于局部地图 Z 下界。");
+    addDynamicPreferenceRow(freeDomMapSection, "Raycast 最远距离", "freeDom/raycastMaxRangeM", freeDomRaycastMaxRangeSpin, "限制自由空间射线长度。");
+    addDynamicPreferenceRow(freeDomMapSection, "Raycast Z 下界", "freeDom/raycastMinZM", freeDomRaycastMinZSpin, "相对传感器高度的射线下界。");
+    addDynamicPreferenceRow(freeDomMapSection, "Raycast Z 上界", "freeDom/raycastMaxZM", freeDomRaycastMaxZSpin, "必须大于 Raycast Z 下界。");
+    addDynamicPreferenceRow(freeDomMapSection, "确认自由次数", "freeDom/countsToFree", freeDomCountsToFreeSpin, "连续自由观测达到该次数并满足邻域条件后确认自由空间。");
+    addDynamicPreferenceRow(freeDomMapSection, "撤销自由次数", "freeDom/countsToRevert", freeDomCountsToRevertSpin, "持续重新占据达到该次数后撤销自由状态。");
+    addDynamicPreferenceRow(freeDomMapSection, "保守连通性", "freeDom/conservativeConnectivity", freeDomConservativeConnectivityCombo, "支持 6、18、26 邻域。");
+    addDynamicPreferenceRow(freeDomMapSection, "激进连通性", "freeDom/aggressiveConnectivity", freeDomAggressiveConnectivityCombo, "支持 6、18、26、80、124；124 对应上游两次 26 邻域传播。");
+    slamFreeDomLayout->addWidget(freeDomMapSection);
+
+    QFrame* freeDomEnhancementSection = createPreferenceSection(slamFreeDomPage);
+    addDynamicPreferenceRow(freeDomEnhancementSection, "Raycast Enhancement", "freeDom/raycastEnhancementEnabled", freeDomRaycastEnhancementCheck, "完整运行球面深度图、腐蚀、Telea Inpaint、区域过滤和增强射线。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "水平 FOV", "freeDom/lidarHorizontalFovDeg", freeDomHorizontalFovSpin, "Mid-360 模板为 360°，Avia 模板使用设备有效水平视场。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "垂直 FOV 下界", "freeDom/lidarVerticalFovLowerDeg", freeDomVerticalFovLowerSpin, "Mid-360 模板为 -7°。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "垂直 FOV 上界", "freeDom/lidarVerticalFovUpperDeg", freeDomVerticalFovUpperSpin, "Mid-360 模板为 52°。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "深度图行数", "freeDom/depthImageVerticalLines", freeDomDepthLinesSpin, "这是球面深度图离散行数，不是 Mid-360 物理扫描线数。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "深度图最近距离", "freeDom/depthImageMinRangeM", freeDomDepthMinRangeSpin, "过滤近距离鬼影。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "增强最远距离", "freeDom/maxRaycastEnhancementRangeM", freeDomEnhancementMaxRangeSpin, "决定 8 位深度量化范围和增强射线最大长度。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "深度安全边距", "freeDom/raycastEnhancementDepthMarginM", freeDomDepthMarginSpin, "对应论文 safety margin。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "Inpaint 尺寸", "freeDom/inpaintSize", freeDomInpaintSizeSpin, "OpenCV Telea 补全半径。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "腐蚀尺寸", "freeDom/erosionSize", freeDomErosionSizeSpin, "用于深度安全腐蚀和增强区域腐蚀。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "最小增强区域", "freeDom/minRaycastEnhancementArea", freeDomMinEnhancementAreaSpin, "以深度图总面积比例过滤小连通域。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "顶部边距", "freeDom/depthImageTopMargin", freeDomTopMarginSpin, "限制用于增强的顶部区域比例。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "学习 FOV", "freeDom/learnFov", freeDomLearnFovCheck, "学习模式不输出增强点，并在引擎销毁时写入 FOV Mask。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "启用 FOV Mask", "freeDom/fovMaskEnabled", freeDomFovMaskCheck, "处理非矩形 FOV 或固定遮挡。");
+    QWidget* freeDomFovMaskPathRow = new QWidget(slamFreeDomPage);
+    QHBoxLayout* freeDomFovMaskPathLayout = new QHBoxLayout(freeDomFovMaskPathRow);
+    freeDomFovMaskPathLayout->setContentsMargins(0, 0, 0, 0);
+    QPushButton* freeDomFovMaskBrowseButton = new QPushButton(QStringLiteral("浏览..."), freeDomFovMaskPathRow);
+    freeDomFovMaskPathLayout->addWidget(freeDomFovMaskPathEdit, 1);
+    freeDomFovMaskPathLayout->addWidget(freeDomFovMaskBrowseButton);
+    connect(freeDomFovMaskBrowseButton, &QPushButton::clicked, &dlg, [&dlg, freeDomFovMaskPathEdit]() {
+        const QString path = QFileDialog::getOpenFileName(
+            &dlg, QStringLiteral("选择 FreeDOM FOV Mask"), freeDomFovMaskPathEdit->text(), QStringLiteral("PNG 图像 (*.png)"));
+        if(!path.isEmpty())
+            freeDomFovMaskPathEdit->setText(path);
+    });
+    addDynamicPreferenceRow(freeDomEnhancementSection, "FOV Mask 路径", "freeDom/fovMaskPath", freeDomFovMaskPathRow, "Mask 尺寸必须与不含全景 margin 的深度图一致。");
+    slamFreeDomLayout->addWidget(freeDomEnhancementSection);
+
+    QFrame* freeDomRuntimeSection = createPreferenceSection(slamFreeDomPage);
+    addDynamicPreferenceRow(freeDomRuntimeSection, "算法线程数", "freeDom/numThreads", freeDomThreadsSpin, "独立于 FAST_LIO/OpenMP 线程数，避免 CPU 过度订阅。");
+    addDynamicPreferenceRow(freeDomRuntimeSection, "调试快照间隔", "dynamicDebugSnapshotIntervalFrames", freeDomDebugIntervalSpin, "按帧节流 Scan/Free/Static/Raycast 和深度图快照。");
+    addDynamicPreferenceRow(freeDomRuntimeSection, "地图快照间隔", "freeDomMapSnapshotIntervalFrames", freeDomMapIntervalSpin, "按帧节流完整静态点/体素地图快照，用于显示和导出。");
+    slamFreeDomLayout->addWidget(freeDomRuntimeSection);
+    slamFreeDomLayout->addStretch();
+
+    auto syncDynamicParameterPage = [slamDynamicBackendCombo,
+                                     slamDynamicParameterStack]() {
+        const bool freeDom =
+            slamDynamicBackendCombo->currentData().toInt() ==
+            int(DynamicFilterBackend::FreeDOM);
+        slamDynamicParameterStack->setCurrentIndex(freeDom ? 1 : 0);
+    };
+    connect(slamDynamicBackendCombo,
+            QOverload<int>::of(&QComboBox::currentIndexChanged),
+            &dlg,
+            [syncDynamicParameterPage](int) { syncDynamicParameterPage(); });
+    syncDynamicParameterPage();
+    slamDynamicTabLayout->addWidget(slamDynamicParameterStack);
     slamDynamicTabLayout->addStretch();
 
     QFrame* slamVisualSection = createPreferenceSection(slamVisualTab);
@@ -2638,13 +3114,73 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "slamBodyFramePointSizePx，IMU 机体系当前帧点大小，影响机体系当前帧点云显示醒目程度",
                      slamBodyFramePointSizeSpin);
     addPreferenceRow(slamVisualSection,
-                     "动态物体颜色",
-                     "slamDynamicObjectColor，所有 Case 检出的动态物体统一使用该颜色显示",
+                     "M-detector 动态点颜色",
+                     "slamDynamicObjectColor，M-detector Case1/2/3 检出的动态点颜色",
                      slamDynamicObjectColorRow);
     addPreferenceRow(slamVisualSection,
-                     "动态物体点大小",
-                     "slamDynamicObjectPointSizePx，动态物体点云的显示点大小",
+                     "动态点大小",
+                     "slamDynamicObjectPointSizePx，M-detector 动态点和 FreeDOM 三级动态点共用的显示点大小",
                      slamDynamicObjectPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Aggressive 动态点颜色",
+                     "FreeDOM Aggressive 等级动态点，默认红色",
+                     slamDynamicAggressiveColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Moderate 动态点颜色",
+                     "FreeDOM Moderate 等级动态点，默认橙色",
+                     slamDynamicModerateColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Conservative 动态点颜色",
+                     "FreeDOM Conservative 等级动态点，默认紫色",
+                     slamDynamicConservativeColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Scan Voxel 颜色",
+                     "当前帧扫描体素颜色",
+                     slamFreeDomScanVoxelColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Scan Voxel 点大小",
+                     "当前帧扫描体素点大小",
+                     slamFreeDomScanVoxelPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Dynamic Voxel 颜色",
+                     "当前帧动态体素颜色",
+                     slamFreeDomDynamicVoxelColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Dynamic Voxel 点大小",
+                     "当前帧动态体素点大小",
+                     slamFreeDomDynamicVoxelPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Raycasted Voxel 颜色",
+                     "射线遍历体素颜色",
+                     slamFreeDomRaycastedVoxelColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Raycasted Voxel 点大小",
+                     "射线遍历体素点大小",
+                     slamFreeDomRaycastedVoxelPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Free Voxel 颜色",
+                     "持久化自由空间体素颜色",
+                     slamFreeDomFreeVoxelColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Free Voxel 点大小",
+                     "持久化自由空间体素点大小",
+                     slamFreeDomFreeVoxelPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Static Voxel 颜色",
+                     "FreeDOM 静态体素地图颜色",
+                     slamFreeDomStaticVoxelColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Static Voxel 点大小",
+                     "FreeDOM 静态体素地图点大小",
+                     slamFreeDomStaticVoxelPointSizeSpin);
+    addPreferenceRow(slamVisualSection,
+                     "Enhanced Point 颜色",
+                     "Raycast Enhancement 生成点颜色",
+                     slamFreeDomEnhancedColorRow);
+    addPreferenceRow(slamVisualSection,
+                     "Enhanced Point 点大小",
+                     "Raycast Enhancement 生成点大小",
+                     slamFreeDomEnhancedPointSizeSpin);
     addPreferenceRow(slamVisualSection,
                      "轨迹颜色",
                      "slamTrajectoryColor，位姿轨迹线颜色，用于区分轨迹和点云",
@@ -2766,7 +3302,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool previousSlamPublishDense = slamRuntimeConfig.publishDenseFrameCloud;
     const bool previousSlamPublishBody = slamRuntimeConfig.publishBodyFrameCloud;
     const bool previousSlamSaveMap = slamRuntimeConfig.saveMap;
-    const bool previousSlamDynamicDetection = slamRuntimeConfig.dynamicObjectDetectionEnabled;
+    const bool previousSlamDynamicDetection = slamRuntimeConfig.dynamicFilterEnabled;
     const bool previousSlamExtrinsicEstimationEnabled = slamRuntimeConfig.extrinsicEstimationEnabled;
     const std::array<double, 3> previousSlamExtrinsicT = {
         slamRuntimeConfig.extrinsicT_L_I[0],
@@ -2787,10 +3323,25 @@ void LivoxViewerWindow::showPreferencesDialog()
     const QColor previousSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     const QColor previousSlamBodyFrameColor = slamBodyFrameColor;
     const QColor previousSlamDynamicObjectColor = slamDynamicObjectColor;
+    const QColor previousSlamDynamicAggressiveColor = slamDynamicAggressiveColor;
+    const QColor previousSlamDynamicModerateColor = slamDynamicModerateColor;
+    const QColor previousSlamDynamicConservativeColor = slamDynamicConservativeColor;
+    const QColor previousSlamFreeDomScanVoxelColor = slamFreeDomScanVoxelColor;
+    const QColor previousSlamFreeDomDynamicVoxelColor = slamFreeDomDynamicVoxelColor;
+    const QColor previousSlamFreeDomRaycastedVoxelColor = slamFreeDomRaycastedVoxelColor;
+    const QColor previousSlamFreeDomFreeVoxelColor = slamFreeDomFreeVoxelColor;
+    const QColor previousSlamFreeDomStaticVoxelColor = slamFreeDomStaticVoxelColor;
+    const QColor previousSlamFreeDomEnhancedColor = slamFreeDomEnhancedColor;
     const QColor previousSlamTrajectoryColor = slamTrajectoryColor;
     const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
     const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
     const float previousSlamDynamicObjectPointSizePx = slamDynamicObjectPointSizePx;
+    const float previousSlamFreeDomScanVoxelPointSizePx = slamFreeDomScanVoxelPointSizePx;
+    const float previousSlamFreeDomDynamicVoxelPointSizePx = slamFreeDomDynamicVoxelPointSizePx;
+    const float previousSlamFreeDomRaycastedVoxelPointSizePx = slamFreeDomRaycastedVoxelPointSizePx;
+    const float previousSlamFreeDomFreeVoxelPointSizePx = slamFreeDomFreeVoxelPointSizePx;
+    const float previousSlamFreeDomStaticVoxelPointSizePx = slamFreeDomStaticVoxelPointSizePx;
+    const float previousSlamFreeDomEnhancedPointSizePx = slamFreeDomEnhancedPointSizePx;
     const float previousSlamTrajectoryLineWidthPx = slamTrajectoryLineWidthPx;
     const float previousSlamPoseAxisLengthM = slamPoseAxisLengthM;
     const float previousSlamPoseAxisLineWidthPx = slamPoseAxisLineWidthPx;
@@ -2838,11 +3389,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamRuntimeConfig.historyKeyframeSearchNum = slamHistoryKeyframeSearchNumSpin->value();
     slamRuntimeConfig.historyKeyframeFitnessScore = slamHistoryKeyframeFitnessScoreSpin->value();
     slamRuntimeConfig.reconstructKdTree = slamReconstructKdTreeCheck->isChecked();
-    slamRuntimeConfig.dynamicObjectDetectionEnabled = slamDynamicDetectionCheck->isChecked();
-    slamRuntimeConfig.dynamicObjectRemovalEnabled =
-        slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicRemovalCheck->isChecked();
-    slamRuntimeConfig.dynamicObjectClusterEnabled =
-        slamRuntimeConfig.dynamicObjectDetectionEnabled && slamDynamicClusterCheck->isChecked();
+    applyDynamicFilterControls(slamRuntimeConfig);
     slamRuntimeConfig.dynamicObjectClusterVoxelSizeM = slamDynamicClusterVoxelSizeSpin->value();
     slamRuntimeConfig.dynamicObjectClusterExtendVoxel = slamDynamicClusterExtendVoxelSpin->value();
     slamRuntimeConfig.dynamicObjectClusterMinVoxelCount = slamDynamicClusterMinVoxelCountSpin->value();
@@ -2873,11 +3420,32 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamWorldCurrentFrameColor = selectedSlamWorldCurrentFrameColor;
     slamBodyFrameColor = selectedSlamBodyFrameColor;
     slamDynamicObjectColor = selectedSlamDynamicObjectColor;
+    slamDynamicAggressiveColor = selectedSlamDynamicAggressiveColor;
+    slamDynamicModerateColor = selectedSlamDynamicModerateColor;
+    slamDynamicConservativeColor = selectedSlamDynamicConservativeColor;
+    slamFreeDomScanVoxelColor = selectedSlamFreeDomScanVoxelColor;
+    slamFreeDomDynamicVoxelColor = selectedSlamFreeDomDynamicVoxelColor;
+    slamFreeDomRaycastedVoxelColor = selectedSlamFreeDomRaycastedVoxelColor;
+    slamFreeDomFreeVoxelColor = selectedSlamFreeDomFreeVoxelColor;
+    slamFreeDomStaticVoxelColor = selectedSlamFreeDomStaticVoxelColor;
+    slamFreeDomEnhancedColor = selectedSlamFreeDomEnhancedColor;
     slamTrajectoryColor = selectedSlamTrajectoryColor;
     slamWorldCurrentFramePointSizePx = static_cast<float>(slamWorldCurrentFramePointSizeSpin->value());
     slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
     slamDynamicObjectPointSizePx =
         static_cast<float>(slamDynamicObjectPointSizeSpin->value());
+    slamFreeDomScanVoxelPointSizePx =
+        static_cast<float>(slamFreeDomScanVoxelPointSizeSpin->value());
+    slamFreeDomDynamicVoxelPointSizePx =
+        static_cast<float>(slamFreeDomDynamicVoxelPointSizeSpin->value());
+    slamFreeDomRaycastedVoxelPointSizePx =
+        static_cast<float>(slamFreeDomRaycastedVoxelPointSizeSpin->value());
+    slamFreeDomFreeVoxelPointSizePx =
+        static_cast<float>(slamFreeDomFreeVoxelPointSizeSpin->value());
+    slamFreeDomStaticVoxelPointSizePx =
+        static_cast<float>(slamFreeDomStaticVoxelPointSizeSpin->value());
+    slamFreeDomEnhancedPointSizePx =
+        static_cast<float>(slamFreeDomEnhancedPointSizeSpin->value());
     slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
     slamPoseAxisLengthM = static_cast<float>(slamPoseAxisLengthSpin->value());
     slamPoseAxisLineWidthPx = static_cast<float>(slamPoseAxisLineWidthSpin->value());
@@ -2898,7 +3466,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     const bool slamLayerAvailabilityChanged =
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
-        slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection;
+        slamRuntimeConfig.dynamicFilterEnabled != previousSlamDynamicDetection ||
+        slamRuntimeConfig.dynamicFilterBackend != previousSlamRuntimeConfig.dynamicFilterBackend;
     editedSlamTemplateConfigs.insert(int(slamRuntimeConfig.lidarTemplate), slamRuntimeConfig);
     {
         QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
@@ -2910,10 +3479,25 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
         slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
         slamUiBridge->setDynamicObjectColor(slamDynamicObjectColor);
+        slamUiBridge->setDynamicAggressiveColor(slamDynamicAggressiveColor);
+        slamUiBridge->setDynamicModerateColor(slamDynamicModerateColor);
+        slamUiBridge->setDynamicConservativeColor(slamDynamicConservativeColor);
+        slamUiBridge->setFreeDomScanVoxelColor(slamFreeDomScanVoxelColor);
+        slamUiBridge->setFreeDomDynamicVoxelColor(slamFreeDomDynamicVoxelColor);
+        slamUiBridge->setFreeDomRaycastedVoxelColor(slamFreeDomRaycastedVoxelColor);
+        slamUiBridge->setFreeDomFreeVoxelColor(slamFreeDomFreeVoxelColor);
+        slamUiBridge->setFreeDomStaticVoxelColor(slamFreeDomStaticVoxelColor);
+        slamUiBridge->setFreeDomEnhancedColor(slamFreeDomEnhancedColor);
         slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
         slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
+        slamUiBridge->setFreeDomScanVoxelPointSize(slamFreeDomScanVoxelPointSizePx);
+        slamUiBridge->setFreeDomDynamicVoxelPointSize(slamFreeDomDynamicVoxelPointSizePx);
+        slamUiBridge->setFreeDomRaycastedVoxelPointSize(slamFreeDomRaycastedVoxelPointSizePx);
+        slamUiBridge->setFreeDomFreeVoxelPointSize(slamFreeDomFreeVoxelPointSizePx);
+        slamUiBridge->setFreeDomStaticVoxelPointSize(slamFreeDomStaticVoxelPointSizePx);
+        slamUiBridge->setFreeDomEnhancedPointSize(slamFreeDomEnhancedPointSizePx);
         slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
         slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
         slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
@@ -2966,7 +3550,55 @@ void LivoxViewerWindow::showPreferencesDialog()
         }
         return false;
     }();
+    const bool freeDomConfigChanged = [&]() {
+        const FreeDomRuntimeConfig& current = slamRuntimeConfig.freeDom;
+        const FreeDomRuntimeConfig& previous = previousSlamRuntimeConfig.freeDom;
+        return current.sensorMinRangeM != previous.sensorMinRangeM ||
+            current.sensorMaxRangeM != previous.sensorMaxRangeM ||
+            current.sensorMinZM != previous.sensorMinZM ||
+            current.sensorMaxZM != previous.sensorMaxZM ||
+            current.subVoxelSizeM != previous.subVoxelSizeM ||
+            current.voxelDepth != previous.voxelDepth ||
+            current.blockDepth != previous.blockDepth ||
+            current.localMapEnabled != previous.localMapEnabled ||
+            current.localMapRangeM != previous.localMapRangeM ||
+            current.localMapMinZM != previous.localMapMinZM ||
+            current.localMapMaxZM != previous.localMapMaxZM ||
+            current.raycastMaxRangeM != previous.raycastMaxRangeM ||
+            current.raycastMinZM != previous.raycastMinZM ||
+            current.raycastMaxZM != previous.raycastMaxZM ||
+            current.countsToFree != previous.countsToFree ||
+            current.countsToRevert != previous.countsToRevert ||
+            current.conservativeConnectivity != previous.conservativeConnectivity ||
+            current.aggressiveConnectivity != previous.aggressiveConnectivity ||
+            current.raycastEnhancementEnabled != previous.raycastEnhancementEnabled ||
+            current.lidarHorizontalFovDeg != previous.lidarHorizontalFovDeg ||
+            current.lidarVerticalFovUpperDeg != previous.lidarVerticalFovUpperDeg ||
+            current.lidarVerticalFovLowerDeg != previous.lidarVerticalFovLowerDeg ||
+            current.depthImageVerticalLines != previous.depthImageVerticalLines ||
+            current.depthImageMinRangeM != previous.depthImageMinRangeM ||
+            current.maxRaycastEnhancementRangeM != previous.maxRaycastEnhancementRangeM ||
+            current.raycastEnhancementDepthMarginM != previous.raycastEnhancementDepthMarginM ||
+            current.inpaintSize != previous.inpaintSize ||
+            current.erosionSize != previous.erosionSize ||
+            current.minRaycastEnhancementArea != previous.minRaycastEnhancementArea ||
+            current.depthImageTopMargin != previous.depthImageTopMargin ||
+            current.learnFov != previous.learnFov ||
+            current.fovMaskEnabled != previous.fovMaskEnabled ||
+            current.fovMaskPath != previous.fovMaskPath ||
+            current.numThreads != previous.numThreads;
+    }();
     const bool slamDynamicConfigChanged =
+        slamRuntimeConfig.dynamicFilterBackend != previousSlamRuntimeConfig.dynamicFilterBackend ||
+        slamRuntimeConfig.dynamicFilterEnabled != previousSlamRuntimeConfig.dynamicFilterEnabled ||
+        slamRuntimeConfig.dynamicPointRemovalEnabled != previousSlamRuntimeConfig.dynamicPointRemovalEnabled ||
+        slamRuntimeConfig.dynamicDebugVisualizationEnabled !=
+            previousSlamRuntimeConfig.dynamicDebugVisualizationEnabled ||
+        slamRuntimeConfig.dynamicDebugSnapshotIntervalFrames !=
+            previousSlamRuntimeConfig.dynamicDebugSnapshotIntervalFrames ||
+        slamRuntimeConfig.freeDomMapSnapshotIntervalFrames !=
+            previousSlamRuntimeConfig.freeDomMapSnapshotIntervalFrames ||
+        freeDomConfigChanged ||
         slamRuntimeConfig.dynamicObjectRemovalEnabled != previousSlamRuntimeConfig.dynamicObjectRemovalEnabled ||
         slamRuntimeConfig.dynamicObjectClusterEnabled != previousSlamRuntimeConfig.dynamicObjectClusterEnabled ||
         slamRuntimeConfig.dynamicObjectClusterVoxelSizeM != previousSlamRuntimeConfig.dynamicObjectClusterVoxelSizeM ||
@@ -3030,19 +3662,43 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.historyKeyframeSearchNum != previousSlamRuntimeConfig.historyKeyframeSearchNum ||
         slamRuntimeConfig.historyKeyframeFitnessScore != previousSlamRuntimeConfig.historyKeyframeFitnessScore ||
         slamRuntimeConfig.reconstructKdTree != previousSlamRuntimeConfig.reconstructKdTree ||
-        slamRuntimeConfig.dynamicObjectDetectionEnabled != previousSlamDynamicDetection ||
+        slamRuntimeConfig.dynamicFilterEnabled != previousSlamDynamicDetection ||
         slamDynamicConfigChanged ||
         slamWorldCurrentFrameColor != previousSlamWorldCurrentFrameColor ||
         slamBodyFrameColor != previousSlamBodyFrameColor ||
         slamDynamicObjectColor != previousSlamDynamicObjectColor ||
+        slamDynamicAggressiveColor != previousSlamDynamicAggressiveColor ||
+        slamDynamicModerateColor != previousSlamDynamicModerateColor ||
+        slamDynamicConservativeColor != previousSlamDynamicConservativeColor ||
+        slamFreeDomScanVoxelColor != previousSlamFreeDomScanVoxelColor ||
+        slamFreeDomDynamicVoxelColor != previousSlamFreeDomDynamicVoxelColor ||
+        slamFreeDomRaycastedVoxelColor != previousSlamFreeDomRaycastedVoxelColor ||
+        slamFreeDomFreeVoxelColor != previousSlamFreeDomFreeVoxelColor ||
+        slamFreeDomStaticVoxelColor != previousSlamFreeDomStaticVoxelColor ||
+        slamFreeDomEnhancedColor != previousSlamFreeDomEnhancedColor ||
         slamTrajectoryColor != previousSlamTrajectoryColor ||
         slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
         slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx ||
         slamDynamicObjectPointSizePx != previousSlamDynamicObjectPointSizePx ||
+        slamFreeDomScanVoxelPointSizePx != previousSlamFreeDomScanVoxelPointSizePx ||
+        slamFreeDomDynamicVoxelPointSizePx != previousSlamFreeDomDynamicVoxelPointSizePx ||
+        slamFreeDomRaycastedVoxelPointSizePx != previousSlamFreeDomRaycastedVoxelPointSizePx ||
+        slamFreeDomFreeVoxelPointSizePx != previousSlamFreeDomFreeVoxelPointSizePx ||
+        slamFreeDomStaticVoxelPointSizePx != previousSlamFreeDomStaticVoxelPointSizePx ||
+        slamFreeDomEnhancedPointSizePx != previousSlamFreeDomEnhancedPointSizePx ||
         slamTrajectoryLineWidthPx != previousSlamTrajectoryLineWidthPx ||
         slamPoseAxisLengthM != previousSlamPoseAxisLengthM ||
         slamPoseAxisLineWidthPx != previousSlamPoseAxisLineWidthPx) {
         liveSlamSource.setFrameDurationMs(slamRuntimeConfig.inputFrameDurationMs);
-        logMessage(QStringLiteral("[SLAM] 设置已更新"));
+        if (slamDynamicConfigChanged && slamWorkerActive.load()) {
+            const QString restartMessage = QStringLiteral(
+                "[SLAM] 动态滤除设置已保存；当前会话继续使用原后端，请重置或重启 SLAM 后生效。");
+            logMessage(restartMessage);
+            if (statusBar()) {
+                statusBar()->showMessage(restartMessage, 6000);
+            }
+        } else {
+            logMessage(QStringLiteral("[SLAM] 设置已更新"));
+        }
     }
 }

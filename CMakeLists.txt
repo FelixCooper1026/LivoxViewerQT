@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT
-    VERSION 2.3.5
+    VERSION 2.3.6
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -158,6 +158,10 @@ endif()
 
 set(SLAM_GTSAM_INSTALL_DIR "${THIRD_PARTY_ROOT}/gtsam-4.2.0-install")
 list(PREPEND CMAKE_PREFIX_PATH "${SLAM_GTSAM_INSTALL_DIR}")
+set(SLAM_OPENCV_ROOT "${THIRD_PARTY_ROOT}/opencv-4.13.0")
+if(WIN32 AND EXISTS "${SLAM_OPENCV_ROOT}/build/OpenCVConfig.cmake")
+    set(OpenCV_DIR "${SLAM_OPENCV_ROOT}/build")
+endif()
 if(WIN32)
     set(GTSAM_DIR "${SLAM_GTSAM_INSTALL_DIR}/CMake")
 else()
@@ -182,11 +186,100 @@ endif()
 
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 find_package(GTSAM REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS
+    core
+    imgproc
+    photo
+    imgcodecs
+)
+
+include(CTest)
 
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
 message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
 message(STATUS "FAST_LIO_SAM GTSAM: ${GTSAM_VERSION}")
+message(STATUS "FreeDOM OpenCV: ${OpenCV_VERSION}")
+
+add_library(freedom_core STATIC
+    libs/FreeDOM/upstream/src/map.cpp
+    libs/FreeDOM/upstream/src/scanmap.cpp
+    libs/FreeDOM/upstream/src/mrmap.cpp
+    libs/FreeDOM/upstream/src/raycast.cpp
+    libs/FreeDOM/upstream/src/depth_image.cpp
+    libs/FreeDOM/upstream/src/freedom.cpp
+    libs/FreeDOM/src/FreeDomSnapshotBuilder.cpp
+)
+target_include_directories(freedom_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/FreeDOM/upstream/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/FreeDOM/include
+    ${SLAM_FAST_LIO_COMPAT_ROOT}/include
+    ${SLAM_EIGEN_INCLUDE_DIR}
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(freedom_core PUBLIC ${OpenCV_LIBS})
+target_compile_features(freedom_core PUBLIC cxx_std_17)
+
+if(BUILD_TESTING)
+    add_executable(FreeDomCoreTests tests/FreeDomCoreTests.cpp)
+    target_link_libraries(FreeDomCoreTests PRIVATE dynamic_filter)
+    target_compile_features(FreeDomCoreTests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(FreeDomCoreTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME FreeDomCoreTests COMMAND FreeDomCoreTests)
+
+    add_executable(FreeDomEquivalenceTool tests/FreeDomEquivalenceTool.cpp)
+    target_link_libraries(FreeDomEquivalenceTool PRIVATE freedom_core)
+    target_compile_features(FreeDomEquivalenceTool PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(FreeDomEquivalenceTool PRIVATE /utf-8)
+    endif()
+    set(FREEDOM_SYNTHETIC_METRICS
+        ${CMAKE_CURRENT_BINARY_DIR}/freedom_synthetic_actual.csv)
+    add_test(
+        NAME FreeDomSyntheticReplay
+        COMMAND FreeDomEquivalenceTool
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/freedom_synthetic_replay.csv
+            ${FREEDOM_SYNTHETIC_METRICS})
+    add_test(
+        NAME FreeDomSyntheticEquivalence
+        COMMAND ${CMAKE_COMMAND} -E compare_files
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/freedom_synthetic_expected.csv
+            ${FREEDOM_SYNTHETIC_METRICS})
+    set_tests_properties(
+        FreeDomSyntheticEquivalence
+        PROPERTIES DEPENDS FreeDomSyntheticReplay)
+endif()
+
+add_library(dynamic_filter STATIC
+    libs/DynamicFilter/src/DynamicFilterController.cpp
+    libs/DynamicFilter/src/MDetectorDynamicPointFilter.cpp
+    libs/DynamicFilter/src/FreeDomDynamicPointFilter.cpp
+    libs/DynamicObject/src/DynamicObjectDetector.cpp
+    libs/DynamicObject/src/DynamicObjectCluster.cpp
+)
+target_include_directories(dynamic_filter PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/DynamicFilter/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/DynamicObject/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/FreeDOM/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/FreeDOM/upstream/include
+    ${SLAM_FAST_LIO_COMPAT_ROOT}/include
+    ${SLAM_EIGEN_INCLUDE_DIR}
+)
+if(QT_VERSION_MAJOR EQUAL 6)
+    target_link_libraries(dynamic_filter PUBLIC freedom_core Qt6::Core)
+else()
+    target_link_libraries(dynamic_filter PUBLIC freedom_core Qt5::Core)
+endif()
+target_compile_features(dynamic_filter PUBLIC cxx_std_17)
+
+if(MSVC)
+    target_compile_options(freedom_core PRIVATE /utf-8)
+    target_compile_options(dynamic_filter PRIVATE /utf-8)
+    target_compile_definitions(freedom_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_compile_definitions(dynamic_filter PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 set(SLAM_FAST_LIO_SAM_SOURCES
     libs/Slam/src/Backends/FastLioSam/FastLioSamPoseGraph.cpp
@@ -281,8 +374,6 @@ set(SOURCES
     libs/Slam/src/Core/SlamRuntimeConfig.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     ${SLAM_FAST_LIO_SAM_SOURCES}
-    libs/DynamicObject/src/DynamicObjectDetector.cpp
-    libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Export/SlamMapExport.cpp
     libs/Slam/src/Export/SlamTrajectoryExport.cpp
     libs/Slam/third_party/fast_lio/include/ikd-Tree/ikd_Tree.cpp
@@ -372,6 +463,15 @@ set(SOURCES
     libs/Slam/include/Backends/FastLioSam/FastLioSamMapBuilder.h
     libs/DynamicObject/include/DynamicObjectDetector.h
     libs/DynamicObject/include/DynamicObjectCluster.h
+    libs/DynamicFilter/include/DynamicFilterBackend.h
+    libs/DynamicFilter/include/DynamicFilterTypes.h
+    libs/DynamicFilter/include/IDynamicPointFilter.h
+    libs/DynamicFilter/include/DynamicFilterController.h
+    libs/DynamicFilter/include/MDetectorDynamicPointFilter.h
+    libs/DynamicFilter/include/FreeDomDynamicPointFilter.h
+    libs/FreeDOM/include/FreeDomRuntimeConfig.h
+    libs/FreeDOM/include/FreeDomFrameResult.h
+    libs/FreeDOM/include/FreeDomSnapshotBuilder.h
     libs/Slam/include/Export/SlamMapExport.h
     libs/Slam/include/Export/SlamTrajectoryExport.h
     libs/Slam/include/Io/LiveLidarSlamSource.h
@@ -594,7 +694,22 @@ else()
     message(WARNING "Livox SDK library not linked - application may not function properly")
 endif()
 
-target_link_libraries(LivoxViewerQT PRIVATE OpenMP::OpenMP_CXX third_party_lz4 gtsam)
+target_link_libraries(LivoxViewerQT PRIVATE
+    OpenMP::OpenMP_CXX
+    third_party_lz4
+    gtsam
+    dynamic_filter
+)
+if(WIN32 AND EXISTS "${SLAM_OPENCV_ROOT}/build/x64/vc16/bin")
+    file(GLOB SLAM_OPENCV_RUNTIME_DLLS
+        "${SLAM_OPENCV_ROOT}/build/x64/vc16/bin/opencv_world*.dll")
+    foreach(OPENCV_RUNTIME_DLL IN LISTS SLAM_OPENCV_RUNTIME_DLLS)
+        add_custom_command(TARGET LivoxViewerQT POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${OPENCV_RUNTIME_DLL}"
+                "$<TARGET_FILE_DIR:LivoxViewerQT>")
+    endforeach()
+endif()
 
 # 平台特定的系统库
 if(IS_LINUX)
@@ -662,8 +777,6 @@ set(SLAM_REPLAY_TOOL_SOURCES
     libs/Slam/src/Core/FastLioInputSynchronizer.cpp
     libs/Slam/src/Backends/FastLio/FastLioSlamBackend.cpp
     ${SLAM_FAST_LIO_SAM_SOURCES}
-    libs/DynamicObject/src/DynamicObjectDetector.cpp
-    libs/DynamicObject/src/DynamicObjectCluster.cpp
     libs/Slam/src/Io/PcapSlamSource.cpp
     libs/Slam/src/Io/RosbagSlamSource.cpp
     libs/Slam/src/Io/LvxSlamSource.cpp
@@ -699,7 +812,12 @@ else()
     target_link_libraries(SlamReplayTool PRIVATE Qt5::Core Qt5::Gui Qt5::Sql)
 endif()
 
-target_link_libraries(SlamReplayTool PRIVATE OpenMP::OpenMP_CXX third_party_lz4 gtsam)
+target_link_libraries(SlamReplayTool PRIVATE
+    OpenMP::OpenMP_CXX
+    third_party_lz4
+    gtsam
+    dynamic_filter
+)
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     target_compile_options(SlamReplayTool PRIVATE /MP /utf-8 /W4 $<$<CONFIG:Debug>:/Od /Zi /DDEBUG> $<$<CONFIG:Release>:/O2 /DNDEBUG>)
@@ -791,7 +909,13 @@ endif()
 
 if(IS_WINDOWS)
     # Windows特定安装
-    
+
+    if(SLAM_OPENCV_RUNTIME_DLLS)
+        install(FILES ${SLAM_OPENCV_RUNTIME_DLLS}
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+
     # 安装SDK文件
     if(LIVOX_SDK_AVAILABLE)
         install(DIRECTORY "${LIVOX_SDK_PATH}/"

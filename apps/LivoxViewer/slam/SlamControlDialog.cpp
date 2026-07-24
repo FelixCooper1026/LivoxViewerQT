@@ -8,6 +8,8 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
+#include <QPixmap>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -74,6 +76,8 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("完整全局地图点数"));
     addField(form, QStringLiteral("动态检测模式"));
     addField(form, QStringLiteral("动态目标点"));
+    addField(form, QStringLiteral("FreeDOM 地图"));
+    addField(form, QStringLiteral("FreeDOM 分阶段耗时"));
     addField(form, QStringLiteral("错误信息"));
     layout->addLayout(form, 1);
 
@@ -98,10 +102,19 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     exportButtonLayout->setSpacing(8);
     QPushButton* exportTrajectoryButton = new QPushButton(QStringLiteral("保存轨迹..."), this);
     QPushButton* exportMapButton = new QPushButton(QStringLiteral("保存完整全局地图..."), this);
+    QPushButton* exportFreeDomPointMapButton =
+        new QPushButton(QStringLiteral("保存 FreeDOM 静态点地图..."), this);
+    QPushButton* exportFreeDomVoxelMapButton =
+        new QPushButton(QStringLiteral("保存 FreeDOM 静态 Voxel 地图..."), this);
+    QPushButton* previewFreeDomDepthButton =
+        new QPushButton(QStringLiteral("预览 FreeDOM 深度图..."), this);
     exportTrajectoryButton->setObjectName(QStringLiteral("exportSlamTrajectoryButton"));
     exportMapButton->setObjectName(QStringLiteral("exportSlamMapButton"));
     exportButtonLayout->addWidget(exportTrajectoryButton);
     exportButtonLayout->addWidget(exportMapButton);
+    exportButtonLayout->addWidget(exportFreeDomPointMapButton);
+    exportButtonLayout->addWidget(exportFreeDomVoxelMapButton);
+    exportButtonLayout->addWidget(previewFreeDomDepthButton);
     exportButtonLayout->addStretch();
     layout->addLayout(exportButtonLayout);
 
@@ -129,6 +142,42 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     connect(clearButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::clearSlamDisplay);
     connect(exportTrajectoryButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamTrajectoryFromDialog);
     connect(exportMapButton, &QPushButton::clicked, m_window, &LivoxViewerWindow::exportSlamGlobalMapFromDialog);
+    connect(exportFreeDomPointMapButton,
+            &QPushButton::clicked,
+            m_window,
+            &LivoxViewerWindow::exportFreeDomStaticPointMapFromDialog);
+    connect(exportFreeDomVoxelMapButton,
+            &QPushButton::clicked,
+            m_window,
+            &LivoxViewerWindow::exportFreeDomStaticVoxelMapFromDialog);
+    connect(previewFreeDomDepthButton, &QPushButton::clicked, this, [this]() {
+        if (!m_bridge || m_bridge->freeDomDepthImage().isNull()) {
+            QMessageBox::information(this,
+                                     QStringLiteral("FreeDOM 深度图"),
+                                     QStringLiteral("当前没有 FreeDOM 深度图快照。请启用 FreeDOM 调试可视化并运行 SLAM。"));
+            return;
+        }
+        QDialog* preview = new QDialog(this);
+        preview->setAttribute(Qt::WA_DeleteOnClose);
+        preview->setWindowTitle(QStringLiteral("FreeDOM DepthImage / EnhancedDepthImage"));
+        QHBoxLayout* previewLayout = new QHBoxLayout(preview);
+        auto addImage = [preview, previewLayout](const QString& title, const QImage& image) {
+            QVBoxLayout* column = new QVBoxLayout();
+            QLabel* titleLabel = new QLabel(title, preview);
+            QLabel* imageLabel = new QLabel(preview);
+            imageLabel->setAlignment(Qt::AlignCenter);
+            imageLabel->setPixmap(QPixmap::fromImage(image).scaled(
+                560, 420, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            column->addWidget(titleLabel);
+            column->addWidget(imageLabel, 1);
+            previewLayout->addLayout(column);
+        };
+        addImage(QStringLiteral("DepthImage"), m_bridge->freeDomDepthImage());
+        addImage(QStringLiteral("EnhancedDepthImage"),
+                 m_bridge->freeDomEnhancedDepthImage());
+        preview->resize(1180, 520);
+        preview->show();
+    });
     if (m_bridge) {
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshFields);
         connect(m_bridge, &SlamUiBridge::displayStateChanged, this, &SlamControlDialog::refreshInputControls);
@@ -164,6 +213,8 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("完整全局地图点数"))->setText(state.globalMapPoints);
     m_fields.value(QStringLiteral("动态检测模式"))->setText(state.dynamicMode);
     m_fields.value(QStringLiteral("动态目标点"))->setText(state.dynamicPoints);
+    m_fields.value(QStringLiteral("FreeDOM 地图"))->setText(state.freeDomMap);
+    m_fields.value(QStringLiteral("FreeDOM 分阶段耗时"))->setText(state.freeDomStages);
     m_fields.value(QStringLiteral("错误信息"))->setText(state.error);
 }
 

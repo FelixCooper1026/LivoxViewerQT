@@ -87,12 +87,58 @@ function Install-ZipDependency {
     Write-Host "$Name installed: $installDir"
 }
 
+function Install-OpenCvPrebuilt {
+    $name = "OpenCV 4.13.0"
+    $installDir = Join-Path $thirdPartyRoot "opencv-4.13.0"
+    $requiredPath = Join-Path $installDir "build\OpenCVConfig.cmake"
+    if ((Test-Path -LiteralPath $requiredPath) -and -not $Force) {
+        Write-Host "$name already installed: $installDir"
+        return
+    }
+    if ((Test-Path -LiteralPath $installDir) -and $Force) {
+        Remove-Item -LiteralPath $installDir -Recurse -Force
+    }
+
+    $archivePath = Join-Path $downloadRoot "opencv-4.13.0-windows.exe"
+    $expectedSha256 = "f0e98c302464d6860777a7015065e11b9b271b5394e6ba92663f0cf1fc303f2c"
+    if (-not (Test-Path -LiteralPath $archivePath)) {
+        Write-Host "Downloading $name..."
+        Invoke-WebRequest -Uri "https://github.com/opencv/opencv/releases/download/4.13.0/opencv-4.13.0-windows.exe" -OutFile $archivePath
+    }
+    $actualSha256 = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        throw "$name checksum mismatch: $actualSha256"
+    }
+
+    $extractRoot = Join-Path $downloadRoot "opencv-4.13.0-windows"
+    if (Test-Path -LiteralPath $extractRoot) {
+        Remove-Item -LiteralPath $extractRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $extractRoot | Out-Null
+    Write-Host "Extracting $name..."
+    & $archivePath "-o$extractRoot" -y | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "$name extraction failed with exit code $LASTEXITCODE"
+    }
+    $sourceRoot = Join-Path $extractRoot "opencv"
+    if (-not (Test-Path -LiteralPath $sourceRoot)) {
+        throw "$name archive did not contain the expected opencv directory"
+    }
+    Move-Item -LiteralPath $sourceRoot -Destination $installDir
+    if (-not (Test-Path -LiteralPath $requiredPath)) {
+        throw "$name installation failed; missing $requiredPath"
+    }
+    Write-Host "$name installed: $installDir"
+}
+
 Install-ZipDependency `
     -Name "Eigen 3.4.0" `
     -Url "https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip" `
     -ArchiveName "eigen-3.4.0.zip" `
     -InstallDirName "eigen-3.4.0" `
     -RequiredFile "Eigen/Core"
+
+Install-OpenCvPrebuilt
 
 $eigenRoot = Join-Path $thirdPartyRoot "eigen-3.4.0"
 $eigenConfig = Join-Path $eigenRoot "share\eigen3\cmake"

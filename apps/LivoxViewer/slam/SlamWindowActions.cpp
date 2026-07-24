@@ -454,10 +454,25 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge->setWorldFrameColor(slamWorldCurrentFrameColor);
     slamUiBridge->setBodyFrameColor(slamBodyFrameColor);
     slamUiBridge->setDynamicObjectColor(slamDynamicObjectColor);
+    slamUiBridge->setDynamicAggressiveColor(slamDynamicAggressiveColor);
+    slamUiBridge->setDynamicModerateColor(slamDynamicModerateColor);
+    slamUiBridge->setDynamicConservativeColor(slamDynamicConservativeColor);
+    slamUiBridge->setFreeDomScanVoxelColor(slamFreeDomScanVoxelColor);
+    slamUiBridge->setFreeDomDynamicVoxelColor(slamFreeDomDynamicVoxelColor);
+    slamUiBridge->setFreeDomRaycastedVoxelColor(slamFreeDomRaycastedVoxelColor);
+    slamUiBridge->setFreeDomFreeVoxelColor(slamFreeDomFreeVoxelColor);
+    slamUiBridge->setFreeDomStaticVoxelColor(slamFreeDomStaticVoxelColor);
+    slamUiBridge->setFreeDomEnhancedColor(slamFreeDomEnhancedColor);
     slamUiBridge->setTrajectoryColor(slamTrajectoryColor);
     slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
     slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
+    slamUiBridge->setFreeDomScanVoxelPointSize(slamFreeDomScanVoxelPointSizePx);
+    slamUiBridge->setFreeDomDynamicVoxelPointSize(slamFreeDomDynamicVoxelPointSizePx);
+    slamUiBridge->setFreeDomRaycastedVoxelPointSize(slamFreeDomRaycastedVoxelPointSizePx);
+    slamUiBridge->setFreeDomFreeVoxelPointSize(slamFreeDomFreeVoxelPointSizePx);
+    slamUiBridge->setFreeDomStaticVoxelPointSize(slamFreeDomStaticVoxelPointSizePx);
+    slamUiBridge->setFreeDomEnhancedPointSize(slamFreeDomEnhancedPointSizePx);
     slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
     slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
     slamUiBridge->setPoseAxisLineWidth(slamPoseAxisLineWidthPx);
@@ -1935,6 +1950,60 @@ void LivoxViewerWindow::setSlamDynamicObjectVisible(bool visible)
     syncSlamRenderLayerVisibility();
 }
 
+void LivoxViewerWindow::setSlamFreeDomScanVoxelVisible(bool visible)
+{
+    if (slamFreeDomScanVoxelVisible == visible) {
+        return;
+    }
+    slamFreeDomScanVoxelVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamFreeDomDynamicVoxelVisible(bool visible)
+{
+    if (slamFreeDomDynamicVoxelVisible == visible) {
+        return;
+    }
+    slamFreeDomDynamicVoxelVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamFreeDomRaycastedVoxelVisible(bool visible)
+{
+    if (slamFreeDomRaycastedVoxelVisible == visible) {
+        return;
+    }
+    slamFreeDomRaycastedVoxelVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamFreeDomFreeVoxelVisible(bool visible)
+{
+    if (slamFreeDomFreeVoxelVisible == visible) {
+        return;
+    }
+    slamFreeDomFreeVoxelVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamFreeDomStaticVoxelVisible(bool visible)
+{
+    if (slamFreeDomStaticVoxelVisible == visible) {
+        return;
+    }
+    slamFreeDomStaticVoxelVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
+void LivoxViewerWindow::setSlamFreeDomEnhancedVisible(bool visible)
+{
+    if (slamFreeDomEnhancedVisible == visible) {
+        return;
+    }
+    slamFreeDomEnhancedVisible = visible;
+    syncSlamRenderLayerVisibility();
+}
+
 void LivoxViewerWindow::setSlamTrajectoryVisible(bool visible)
 {
     if (slamTrajectoryVisible == visible) {
@@ -1958,14 +2027,23 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
     if (!slamUiBridge) {
         return;
     }
+    const bool freeDomLayersAvailable =
+        slamRuntimeConfig.dynamicFilterEnabled &&
+        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM;
     slamUiBridge->setRenderLayerVisibility(slamTrajectoryVisible,
                                            slamPoseAxisVisible,
                                            slamRuntimeConfig.publishWorldFrameCloud && slamWorldCurrentFrameVisible,
                                            slamRuntimeConfig.publishWorldFrameCloud &&
                                                slamRuntimeConfig.publishBodyFrameCloud &&
                                                slamBodyFrameVisible,
-                                           slamRuntimeConfig.dynamicObjectDetectionEnabled &&
-                                               slamDynamicObjectVisible);
+                                           slamRuntimeConfig.dynamicFilterEnabled &&
+                                               slamDynamicObjectVisible,
+                                           freeDomLayersAvailable && slamFreeDomScanVoxelVisible,
+                                           freeDomLayersAvailable && slamFreeDomDynamicVoxelVisible,
+                                           freeDomLayersAvailable && slamFreeDomRaycastedVoxelVisible,
+                                           freeDomLayersAvailable && slamFreeDomFreeVoxelVisible,
+                                           freeDomLayersAvailable && slamFreeDomStaticVoxelVisible,
+                                           freeDomLayersAvailable && slamFreeDomEnhancedVisible);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryFromDialog()
@@ -2116,6 +2194,125 @@ void LivoxViewerWindow::exportSlamGlobalMapFromDialog()
             }
         }, Qt::QueuedConnection);
     });
+}
+
+void LivoxViewerWindow::exportFreeDomStaticPointMapFromDialog()
+{
+    exportFreeDomMapFromDialog(false);
+}
+
+void LivoxViewerWindow::exportFreeDomStaticVoxelMapFromDialog()
+{
+    exportFreeDomMapFromDialog(true);
+}
+
+void LivoxViewerWindow::exportFreeDomMapFromDialog(bool voxelCenters)
+{
+    SlamUiBridge* bridge = ensureSlamUiBridge();
+    if (slamMapExportWorker.joinable() && !slamMapExportActive.load()) {
+        slamMapExportWorker.join();
+    }
+    if (slamMapExportWorker.joinable()) {
+        const QString message = QStringLiteral("地图正在导出，请等待当前导出完成。");
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[FreeDOM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QVector<SlamPoint> points = voxelCenters
+        ? bridge->freeDomStaticVoxelSnapshot()
+        : bridge->freeDomStaticMapSnapshot();
+    const QString mapName = voxelCenters
+        ? QStringLiteral("静态 Voxel 地图")
+        : QStringLiteral("静态点地图");
+    if (points.isEmpty()) {
+        const QString message = QStringLiteral("当前没有可导出的 FreeDOM %1。请启用 FreeDOM 并运行到地图快照生成。")
+                                    .arg(mapName);
+        bridge->setErrorMessage(message);
+        logMessage(QStringLiteral("[FreeDOM] %1").arg(message));
+        if (statusBar()) {
+            statusBar()->showMessage(message, 3000);
+        }
+        return;
+    }
+
+    QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
+    QString lastDir = settings.value(
+        QStringLiteral("slam/lastMapExportDir"),
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    if (lastDir.isEmpty()) {
+        lastDir = QDir::homePath();
+    }
+    const QString baseName = voxelCenters
+        ? QStringLiteral("freedom_static_voxel_map")
+        : QStringLiteral("freedom_static_point_map");
+    QFileDialog dialog(this);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setWindowTitle(QStringLiteral("保存 FreeDOM %1").arg(mapName));
+    dialog.setDirectory(lastDir);
+    dialog.selectFile(QStringLiteral("%1_%2.pcd")
+                          .arg(baseName,
+                               QDateTime::currentDateTime().toString(
+                                   QStringLiteral("yyyyMMdd_HHmmss"))));
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    dialog.setDefaultSuffix(QStringLiteral("pcd"));
+    dialog.setNameFilters(mapExportFilters());
+    dialog.selectNameFilter(mapExportFilter(false));
+    if (dialog.exec() != QDialog::Accepted || dialog.selectedFiles().isEmpty()) {
+        return;
+    }
+
+    const bool lasFormat = mapExportLasFormatFromSelection(
+        dialog.selectedNameFilter(), dialog.selectedFiles().first());
+    const QString filePath = normalizedMapExportPath(
+        dialog.selectedFiles().first(), lasFormat);
+    settings.setValue(QStringLiteral("slam/lastMapExportDir"),
+                      QFileInfo(filePath).absolutePath());
+    const int pointCount = points.size();
+    const SlamMapExport::Format format = lasFormat
+        ? SlamMapExport::Format::Las
+        : SlamMapExport::Format::Pcd;
+    slamMapExportActive.store(true);
+    updateSlamControlBarUi();
+    bridge->clearErrorMessage();
+    logMessage(QStringLiteral("[FreeDOM] 开始保存%1: points=%2, file=%3")
+                   .arg(mapName,
+                        QString::number(pointCount),
+                        QDir::toNativeSeparators(filePath)));
+
+    slamMapExportWorker = std::thread(
+        [this, filePath, points = std::move(points), format, pointCount, mapName]() {
+            QString error;
+            const bool ok = SlamMapExport::save(filePath, points, format, &error);
+            QMetaObject::invokeMethod(
+                this,
+                [this, ok, error, filePath, pointCount, mapName]() {
+                    slamMapExportActive.store(false);
+                    updateSlamControlBarUi();
+                    SlamUiBridge* bridge = ensureSlamUiBridge();
+                    if (!ok) {
+                        bridge->setErrorMessage(error);
+                        logMessage(QStringLiteral("[FreeDOM] %1保存失败: %2")
+                                       .arg(mapName, error));
+                        return;
+                    }
+                    bridge->clearErrorMessage();
+                    logMessage(QStringLiteral("[FreeDOM] %1保存完成: points=%2, file=%3")
+                                   .arg(mapName,
+                                        QString::number(pointCount),
+                                        QDir::toNativeSeparators(filePath)));
+                    if (statusBar()) {
+                        statusBar()->showMessage(
+                            QStringLiteral("FreeDOM %1已保存").arg(mapName),
+                            3000);
+                    }
+                },
+                Qt::QueuedConnection);
+        });
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryCsv()

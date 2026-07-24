@@ -1029,10 +1029,17 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
         m_crossSectionState.enabled && m_crossSectionState.initialized;
     QVector<SlamRenderVertex> clippedWorldFrameVertices;
     QVector<SlamRenderVertex> clippedDynamicObjectVertices;
+    QVector<SlamRenderVertex> clippedFreeDomDynamicPointsVertices;
+    QVector<SlamRenderVertex> combinedFreeDomDynamicPointsVertices =
+        m_slamRenderSnapshot.dynamicAggressiveVertices;
+    combinedFreeDomDynamicPointsVertices += m_slamRenderSnapshot.dynamicModerateVertices;
+    combinedFreeDomDynamicPointsVertices += m_slamRenderSnapshot.dynamicConservativeVertices;
     const QVector<SlamRenderVertex>* worldFrameVertices =
         &m_slamRenderSnapshot.worldFrameVertices;
     const QVector<SlamRenderVertex>* dynamicObjectVertices =
         &m_slamRenderSnapshot.dynamicObjectVertices;
+    const QVector<SlamRenderVertex>* freeDomDynamicPointsVertices =
+        &combinedFreeDomDynamicPointsVertices;
     if (crossSectionEnabled) {
         clippedWorldFrameVertices = clipSlamRenderVertices(
             m_slamRenderSnapshot.worldFrameVertices,
@@ -1040,8 +1047,12 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
         clippedDynamicObjectVertices = clipSlamRenderVertices(
             m_slamRenderSnapshot.dynamicObjectVertices,
             m_crossSectionState);
+        clippedFreeDomDynamicPointsVertices = clipSlamRenderVertices(
+            combinedFreeDomDynamicPointsVertices,
+            m_crossSectionState);
         worldFrameVertices = &clippedWorldFrameVertices;
         dynamicObjectVertices = &clippedDynamicObjectVertices;
+        freeDomDynamicPointsVertices = &clippedFreeDomDynamicPointsVertices;
     }
 
     uploadSlamRenderBuffer(this,
@@ -1086,6 +1097,69 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamDynamicObjectVao,
                            m_slamDynamicObjectBufferCapacityBytes,
                            m_slamDynamicObjectVertexCount);
+    uploadSlamRenderBuffer(this,
+                           m_program,
+                           *freeDomDynamicPointsVertices,
+                           m_slamFreeDomDynamicPointsVbo,
+                           m_slamFreeDomDynamicPointsVao,
+                           m_slamFreeDomDynamicPointsBufferCapacityBytes,
+                           m_slamFreeDomDynamicPointsVertexCount);
+    auto uploadFreeDomPointLayer = [this, crossSectionEnabled](
+                                       const QVector<SlamRenderVertex>& vertices,
+                                       QOpenGLBuffer& vbo,
+                                       QOpenGLVertexArrayObject& vao,
+                                       qsizetype& capacityBytes,
+                                       int& vertexCount) {
+        if (crossSectionEnabled) {
+            const QVector<SlamRenderVertex> clippedVertices =
+                clipSlamRenderVertices(vertices, m_crossSectionState);
+            uploadSlamRenderBuffer(this,
+                                   m_program,
+                                   clippedVertices,
+                                   vbo,
+                                   vao,
+                                   capacityBytes,
+                                   vertexCount);
+            return;
+        }
+        uploadSlamRenderBuffer(this,
+                               m_program,
+                               vertices,
+                               vbo,
+                               vao,
+                               capacityBytes,
+                               vertexCount);
+    };
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomScanVoxelVertices,
+                            m_slamFreeDomScanVoxelVbo,
+                            m_slamFreeDomScanVoxelVao,
+                            m_slamFreeDomScanVoxelBufferCapacityBytes,
+                            m_slamFreeDomScanVoxelVertexCount);
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomDynamicVoxelVertices,
+                            m_slamFreeDomDynamicVoxelVbo,
+                            m_slamFreeDomDynamicVoxelVao,
+                            m_slamFreeDomDynamicVoxelBufferCapacityBytes,
+                            m_slamFreeDomDynamicVoxelVertexCount);
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomRaycastedVoxelVertices,
+                            m_slamFreeDomRaycastedVoxelVbo,
+                            m_slamFreeDomRaycastedVoxelVao,
+                            m_slamFreeDomRaycastedVoxelBufferCapacityBytes,
+                            m_slamFreeDomRaycastedVoxelVertexCount);
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomFreeVoxelVertices,
+                            m_slamFreeDomFreeVoxelVbo,
+                            m_slamFreeDomFreeVoxelVao,
+                            m_slamFreeDomFreeVoxelBufferCapacityBytes,
+                            m_slamFreeDomFreeVoxelVertexCount);
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomStaticVoxelVertices,
+                            m_slamFreeDomStaticVoxelVbo,
+                            m_slamFreeDomStaticVoxelVao,
+                            m_slamFreeDomStaticVoxelBufferCapacityBytes,
+                            m_slamFreeDomStaticVoxelVertexCount);
+    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomEnhancedVertices,
+                            m_slamFreeDomEnhancedVbo,
+                            m_slamFreeDomEnhancedVao,
+                            m_slamFreeDomEnhancedBufferCapacityBytes,
+                            m_slamFreeDomEnhancedVertexCount);
     m_slamRenderUploadPending = false;
     m_slamPoseAxisUploadPending = false;
 }
@@ -1098,6 +1172,20 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamBodyFrameVao.destroy();
     m_slamDynamicObjectVbo.destroy();
     m_slamDynamicObjectVao.destroy();
+    m_slamFreeDomDynamicPointsVbo.destroy();
+    m_slamFreeDomDynamicPointsVao.destroy();
+    m_slamFreeDomScanVoxelVbo.destroy();
+    m_slamFreeDomScanVoxelVao.destroy();
+    m_slamFreeDomDynamicVoxelVbo.destroy();
+    m_slamFreeDomDynamicVoxelVao.destroy();
+    m_slamFreeDomRaycastedVoxelVbo.destroy();
+    m_slamFreeDomRaycastedVoxelVao.destroy();
+    m_slamFreeDomFreeVoxelVbo.destroy();
+    m_slamFreeDomFreeVoxelVao.destroy();
+    m_slamFreeDomStaticVoxelVbo.destroy();
+    m_slamFreeDomStaticVoxelVao.destroy();
+    m_slamFreeDomEnhancedVbo.destroy();
+    m_slamFreeDomEnhancedVao.destroy();
     m_slamPoseAxisVbo.destroy();
     m_slamPoseAxisVao.destroy();
     m_slamTrajectoryVbo.destroy();
@@ -1110,12 +1198,26 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamWorldFrameBufferCapacityBytes = 0;
     m_slamBodyFrameBufferCapacityBytes = 0;
     m_slamDynamicObjectBufferCapacityBytes = 0;
+    m_slamFreeDomDynamicPointsBufferCapacityBytes = 0;
+    m_slamFreeDomScanVoxelBufferCapacityBytes = 0;
+    m_slamFreeDomDynamicVoxelBufferCapacityBytes = 0;
+    m_slamFreeDomRaycastedVoxelBufferCapacityBytes = 0;
+    m_slamFreeDomFreeVoxelBufferCapacityBytes = 0;
+    m_slamFreeDomStaticVoxelBufferCapacityBytes = 0;
+    m_slamFreeDomEnhancedBufferCapacityBytes = 0;
     m_slamTrajectoryVertexCount = 0;
     m_slamLoopClosureVertexCount = 0;
     m_slamPoseAxisVertexCount = 0;
     m_slamWorldFrameVertexCount = 0;
     m_slamBodyFrameVertexCount = 0;
     m_slamDynamicObjectVertexCount = 0;
+    m_slamFreeDomDynamicPointsVertexCount = 0;
+    m_slamFreeDomScanVoxelVertexCount = 0;
+    m_slamFreeDomDynamicVoxelVertexCount = 0;
+    m_slamFreeDomRaycastedVoxelVertexCount = 0;
+    m_slamFreeDomFreeVoxelVertexCount = 0;
+    m_slamFreeDomStaticVoxelVertexCount = 0;
+    m_slamFreeDomEnhancedVertexCount = 0;
 }
 
 void PointCloudView::setupStlModelBuffers()
@@ -1597,6 +1699,47 @@ void PointCloudView::paintGL()
         m_slamDynamicObjectVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
+    if (m_slamFreeDomDynamicPointsVertexCount > 0 &&
+        m_slamFreeDomDynamicPointsVao.isCreated()) {
+        setPrimitiveState(true, false);
+        m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.dynamicObjectPointSizePx);
+        m_slamFreeDomDynamicPointsVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamFreeDomDynamicPointsVertexCount);
+        m_slamFreeDomDynamicPointsVao.release();
+        m_program->setUniformValue("uPointSize", m_pointSize);
+    }
+    auto drawFreeDomPointLayer = [this, &setPrimitiveState](
+                                     int vertexCount,
+                                     QOpenGLVertexArrayObject& vao,
+                                     float pointSizePx) {
+        if (vertexCount <= 0 || !vao.isCreated()) {
+            return;
+        }
+        setPrimitiveState(true, false);
+        m_program->setUniformValue("uPointSize", pointSizePx);
+        vao.bind();
+        glDrawArrays(GL_POINTS, 0, vertexCount);
+        vao.release();
+    };
+    drawFreeDomPointLayer(m_slamFreeDomScanVoxelVertexCount,
+                          m_slamFreeDomScanVoxelVao,
+                          m_slamRenderSnapshot.freeDomScanVoxelPointSizePx);
+    drawFreeDomPointLayer(m_slamFreeDomDynamicVoxelVertexCount,
+                          m_slamFreeDomDynamicVoxelVao,
+                          m_slamRenderSnapshot.freeDomDynamicVoxelPointSizePx);
+    drawFreeDomPointLayer(m_slamFreeDomRaycastedVoxelVertexCount,
+                          m_slamFreeDomRaycastedVoxelVao,
+                          m_slamRenderSnapshot.freeDomRaycastedVoxelPointSizePx);
+    drawFreeDomPointLayer(m_slamFreeDomFreeVoxelVertexCount,
+                          m_slamFreeDomFreeVoxelVao,
+                          m_slamRenderSnapshot.freeDomFreeVoxelPointSizePx);
+    drawFreeDomPointLayer(m_slamFreeDomStaticVoxelVertexCount,
+                          m_slamFreeDomStaticVoxelVao,
+                          m_slamRenderSnapshot.freeDomStaticVoxelPointSizePx);
+    drawFreeDomPointLayer(m_slamFreeDomEnhancedVertexCount,
+                          m_slamFreeDomEnhancedVao,
+                          m_slamRenderSnapshot.freeDomEnhancedPointSizePx);
+    m_program->setUniformValue("uPointSize", m_pointSize);
 
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
         setPrimitiveState(false, false);

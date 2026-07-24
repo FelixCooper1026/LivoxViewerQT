@@ -32,6 +32,16 @@ QString statusName(SlamStatusCode status)
     return QStringLiteral("Unknown");
 }
 
+QString dynamicBackendName(DynamicFilterBackend backend)
+{
+    switch (backend) {
+    case DynamicFilterBackend::Disabled: return QStringLiteral("关闭");
+    case DynamicFilterBackend::MDetector: return QStringLiteral("M-detector");
+    case DynamicFilterBackend::FreeDOM: return QStringLiteral("FreeDOM");
+    }
+    return QStringLiteral("关闭");
+}
+
 SlamRenderVertex renderVertex(const QVector3D& point, float r, float g, float b)
 {
     return {point.x(), point.y(), point.z(), r, g, b};
@@ -274,6 +284,36 @@ void SlamUiBridge::receiveSlamOutput(const SlamOutput& output)
     const SlamPose retainedPose = m_latestOutput.currentPose;
     const bool retainedPoseValid = m_hasCurrentPose;
     m_latestOutput = output;
+    if (output.freeDomDebugSnapshotUpdated) {
+        m_freeDomScanVoxelPoints = output.freeDomScanVoxelPoints;
+        m_freeDomDynamicVoxelPoints = output.freeDomDynamicVoxelPoints;
+        m_freeDomRaycastedVoxelPoints = output.freeDomRaycastedVoxelPoints;
+        m_freeDomEnhancedPoints = output.freeDomEnhancedPoints;
+        const int rows = output.freeDomDepthImageRows;
+        const int columns = output.freeDomDepthImageColumns;
+        if (rows > 0 && columns > 0) {
+            m_freeDomDepthImage = QImage(
+                reinterpret_cast<const uchar*>(output.freeDomDepthImage.constData()),
+                columns,
+                rows,
+                columns,
+                QImage::Format_Grayscale8).copy();
+            m_freeDomEnhancedDepthImage = QImage(
+                reinterpret_cast<const uchar*>(output.freeDomEnhancedDepthImage.constData()),
+                columns,
+                rows,
+                columns,
+                QImage::Format_Grayscale8).copy();
+        }
+    }
+    if (output.freeDomMapSnapshotUpdated) {
+        m_freeDomFreeVoxelPoints = output.freeDomFreeVoxelPoints;
+        m_freeDomStaticVoxelPoints = output.freeDomStaticVoxelPoints;
+        m_freeDomStaticMapPoints = output.freeDomStaticMapPoints;
+        if (!output.freeDomRaycastedVoxelPoints.isEmpty()) {
+            m_freeDomRaycastedVoxelPoints = output.freeDomRaycastedVoxelPoints;
+        }
+    }
     if (output.currentPoseValid) {
         m_hasCurrentPose = true;
         if (!m_hasInitialPose) {
@@ -335,6 +375,87 @@ void SlamUiBridge::setDynamicObjectColor(const QColor& color)
     refreshStatus();
 }
 
+void SlamUiBridge::setDynamicAggressiveColor(const QColor& color)
+{
+    if (!color.isValid() || m_dynamicAggressiveColor == color) {
+        return;
+    }
+    m_dynamicAggressiveColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setDynamicModerateColor(const QColor& color)
+{
+    if (!color.isValid() || m_dynamicModerateColor == color) {
+        return;
+    }
+    m_dynamicModerateColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setDynamicConservativeColor(const QColor& color)
+{
+    if (!color.isValid() || m_dynamicConservativeColor == color) {
+        return;
+    }
+    m_dynamicConservativeColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomScanVoxelColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomScanVoxelColor == color) {
+        return;
+    }
+    m_freeDomScanVoxelColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomDynamicVoxelColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomDynamicVoxelColor == color) {
+        return;
+    }
+    m_freeDomDynamicVoxelColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomRaycastedVoxelColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomRaycastedVoxelColor == color) {
+        return;
+    }
+    m_freeDomRaycastedVoxelColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomFreeVoxelColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomFreeVoxelColor == color) {
+        return;
+    }
+    m_freeDomFreeVoxelColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomStaticVoxelColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomStaticVoxelColor == color) {
+        return;
+    }
+    m_freeDomStaticVoxelColor = color;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomEnhancedColor(const QColor& color)
+{
+    if (!color.isValid() || m_freeDomEnhancedColor == color) {
+        return;
+    }
+    m_freeDomEnhancedColor = color;
+    refreshStatus();
+}
+
 void SlamUiBridge::setTrajectoryColor(const QColor& color)
 {
     if (!color.isValid() || m_trajectoryColor == color) {
@@ -374,6 +495,66 @@ void SlamUiBridge::setDynamicObjectPointSize(float sizePx)
     refreshStatus();
 }
 
+void SlamUiBridge::setFreeDomScanVoxelPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomScanVoxelPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomScanVoxelPointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomDynamicVoxelPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomDynamicVoxelPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomDynamicVoxelPointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomRaycastedVoxelPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomRaycastedVoxelPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomRaycastedVoxelPointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomFreeVoxelPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomFreeVoxelPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomFreeVoxelPointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomStaticVoxelPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomStaticVoxelPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomStaticVoxelPointSizePx = clampedSize;
+    refreshStatus();
+}
+
+void SlamUiBridge::setFreeDomEnhancedPointSize(float sizePx)
+{
+    const float clampedSize = clampOverlayPointSize(sizePx);
+    if (m_freeDomEnhancedPointSizePx == clampedSize) {
+        return;
+    }
+    m_freeDomEnhancedPointSizePx = clampedSize;
+    refreshStatus();
+}
+
 void SlamUiBridge::setTrajectoryLineWidth(float widthPx)
 {
     const float clampedWidth = clampOverlayLineWidth(widthPx);
@@ -408,13 +589,25 @@ void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible,
                                             bool poseAxisVisible,
                                             bool worldFrameVisible,
                                             bool bodyFrameVisible,
-                                            bool dynamicObjectVisible)
+                                            bool dynamicObjectVisible,
+                                            bool freeDomScanVoxelVisible,
+                                            bool freeDomDynamicVoxelVisible,
+                                            bool freeDomRaycastedVoxelVisible,
+                                            bool freeDomFreeVoxelVisible,
+                                            bool freeDomStaticVoxelVisible,
+                                            bool freeDomEnhancedVisible)
 {
     if (m_trajectoryVisible == trajectoryVisible &&
         m_poseAxisVisible == poseAxisVisible &&
         m_worldFrameVisible == worldFrameVisible &&
         m_bodyFrameVisible == bodyFrameVisible &&
-        m_dynamicObjectVisible == dynamicObjectVisible) {
+        m_dynamicObjectVisible == dynamicObjectVisible &&
+        m_freeDomScanVoxelVisible == freeDomScanVoxelVisible &&
+        m_freeDomDynamicVoxelVisible == freeDomDynamicVoxelVisible &&
+        m_freeDomRaycastedVoxelVisible == freeDomRaycastedVoxelVisible &&
+        m_freeDomFreeVoxelVisible == freeDomFreeVoxelVisible &&
+        m_freeDomStaticVoxelVisible == freeDomStaticVoxelVisible &&
+        m_freeDomEnhancedVisible == freeDomEnhancedVisible) {
         return;
     }
     m_trajectoryVisible = trajectoryVisible;
@@ -422,6 +615,12 @@ void SlamUiBridge::setRenderLayerVisibility(bool trajectoryVisible,
     m_worldFrameVisible = worldFrameVisible;
     m_bodyFrameVisible = bodyFrameVisible;
     m_dynamicObjectVisible = dynamicObjectVisible;
+    m_freeDomScanVoxelVisible = freeDomScanVoxelVisible;
+    m_freeDomDynamicVoxelVisible = freeDomDynamicVoxelVisible;
+    m_freeDomRaycastedVoxelVisible = freeDomRaycastedVoxelVisible;
+    m_freeDomFreeVoxelVisible = freeDomFreeVoxelVisible;
+    m_freeDomStaticVoxelVisible = freeDomStaticVoxelVisible;
+    m_freeDomEnhancedVisible = freeDomEnhancedVisible;
     refreshStatus();
 }
 
@@ -462,6 +661,15 @@ void SlamUiBridge::clearDisplay()
     m_trajectory.clear();
     m_unoptimizedTrajectory.clear();
     m_globalMapPoints.clear();
+    m_freeDomScanVoxelPoints.clear();
+    m_freeDomDynamicVoxelPoints.clear();
+    m_freeDomRaycastedVoxelPoints.clear();
+    m_freeDomFreeVoxelPoints.clear();
+    m_freeDomStaticVoxelPoints.clear();
+    m_freeDomStaticMapPoints.clear();
+    m_freeDomEnhancedPoints.clear();
+    m_freeDomDepthImage = QImage();
+    m_freeDomEnhancedDepthImage = QImage();
     m_denseGlobalMapSegments.clear();
     m_loopClosureEdges.clear();
     m_hasOptimizedTrajectory = false;
@@ -507,11 +715,21 @@ void SlamUiBridge::refreshStatus()
         vectorBytes(snapshot.poseAxisVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.worldFrameVertices.size(), sizeof(SlamRenderVertex)) +
         vectorBytes(snapshot.bodyFrameVertices.size(), sizeof(SlamRenderVertex)) +
-        vectorBytes(snapshot.dynamicObjectVertices.size(), sizeof(SlamRenderVertex));
+        vectorBytes(snapshot.dynamicObjectVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.dynamicAggressiveVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.dynamicModerateVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.dynamicConservativeVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomScanVoxelVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomDynamicVoxelVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomRaycastedVoxelVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomFreeVoxelVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomStaticVoxelVertices.size(), sizeof(SlamRenderVertex)) +
+        vectorBytes(snapshot.freeDomEnhancedVertices.size(), sizeof(SlamRenderVertex));
     const quint64 uiBytes =
         vectorBytes(m_trajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_unoptimizedTrajectory.size(), sizeof(SlamTrajectoryPoint)) +
         vectorBytes(m_globalMapPoints.size(), sizeof(SlamPoint)) +
+        vectorBytes(m_freeDomStaticMapPoints.size(), sizeof(SlamPoint)) +
         vectorBytes(denseGlobalMapPointCount(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedWorldFramePoints.size(), sizeof(SlamPoint)) +
         vectorBytes(m_latestOutput.publishedBodyFramePoints.size(), sizeof(SlamPoint)) +
@@ -524,11 +742,19 @@ void SlamUiBridge::refreshStatus()
     m_displayState.bodyFramePoints = QString::number(m_latestOutput.publishedBodyFramePoints.size());
     m_displayState.globalMapPoints = QString::number(m_globalMapPoints.size());
     m_displayState.dynamicMode = m_latestOutput.dynamicObjectStats.enabled
-        ? (m_latestOutput.dynamicObjectStats.clusterEnabled ? QStringLiteral("有聚类") : QStringLiteral("无聚类"))
+        ? dynamicBackendName(m_latestOutput.dynamicObjectStats.backend)
         : QStringLiteral("关闭");
     if (m_latestOutput.dynamicObjectStats.enabled) {
         const SlamDynamicObjectStats& stats = m_latestOutput.dynamicObjectStats;
-        m_displayState.dynamicPoints = stats.clusterEnabled
+        m_displayState.dynamicPoints = stats.backend == DynamicFilterBackend::FreeDOM
+            ? QStringLiteral("动态 %1 / 静态 %2 / 无效 %3 / A %4 M %5 C %6")
+                  .arg(stats.dynamicPointCount)
+                  .arg(stats.staticPointCount)
+                  .arg(stats.invalidPointCount)
+                  .arg(stats.freeDomAggressivePointCount)
+                  .arg(stats.freeDomModeratePointCount)
+                  .arg(stats.freeDomConservativePointCount)
+            : stats.clusterEnabled
             ? QStringLiteral("聚类 %1 / 原始 %2 / 对象 %3 拒绝 %4 / 地面剔除 %5 / C1 %6 C2 %7 C3 %8")
                   .arg(stats.dynamicPointCount)
                   .arg(stats.originDynamicPointCount)
@@ -553,6 +779,24 @@ void SlamUiBridge::refreshStatus()
     m_displayState.dynamicClusterMs = m_latestOutput.dynamicObjectStats.clusterEnabled
         ? QString::number(m_latestOutput.dynamicObjectStats.clusterMs, 'f', 2)
         : QStringLiteral("0.00");
+    const SlamDynamicObjectStats& dynamicStats = m_latestOutput.dynamicObjectStats;
+    m_displayState.freeDomMap = dynamicStats.backend == DynamicFilterBackend::FreeDOM
+        ? QStringLiteral("Free %1 块/%2 体素；Static %3 块/%4 体素/%5 子体素")
+              .arg(dynamicStats.freeDomFreeBlockCount)
+              .arg(dynamicStats.freeDomFreeVoxelCount)
+              .arg(dynamicStats.freeDomStaticBlockCount)
+              .arg(dynamicStats.freeDomStaticVoxelCount)
+              .arg(dynamicStats.freeDomStaticSubvoxelCount)
+        : QStringLiteral("-");
+    m_displayState.freeDomStages = dynamicStats.backend == DynamicFilterBackend::FreeDOM
+        ? QStringLiteral("Scan %1 / ScanRm %2 / Enhance %3 / Free %4 / MapRm %5 / Integrate %6 ms")
+              .arg(dynamicStats.freeDomBuildScanMapMs, 0, 'f', 2)
+              .arg(dynamicStats.freeDomScanRemovalMs, 0, 'f', 2)
+              .arg(dynamicStats.freeDomRaycastEnhancementMs, 0, 'f', 2)
+              .arg(dynamicStats.freeDomFreeSpaceEstimationMs, 0, 'f', 2)
+              .arg(dynamicStats.freeDomMapRemovalMs, 0, 'f', 2)
+              .arg(dynamicStats.freeDomStaticIntegrationMs, 0, 'f', 2)
+        : QStringLiteral("-");
     m_displayState.error = m_errorMessage.isEmpty() ? QStringLiteral("无") : m_errorMessage;
 
     const QString statusText = QStringLiteral("SLAM: %1 | %2 | %3 fps | %4 ms")
@@ -571,6 +815,12 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     snapshot.worldFramePointSizePx = m_worldFramePointSizePx;
     snapshot.bodyFramePointSizePx = m_bodyFramePointSizePx;
     snapshot.dynamicObjectPointSizePx = m_dynamicObjectPointSizePx;
+    snapshot.freeDomScanVoxelPointSizePx = m_freeDomScanVoxelPointSizePx;
+    snapshot.freeDomDynamicVoxelPointSizePx = m_freeDomDynamicVoxelPointSizePx;
+    snapshot.freeDomRaycastedVoxelPointSizePx = m_freeDomRaycastedVoxelPointSizePx;
+    snapshot.freeDomFreeVoxelPointSizePx = m_freeDomFreeVoxelPointSizePx;
+    snapshot.freeDomStaticVoxelPointSizePx = m_freeDomStaticVoxelPointSizePx;
+    snapshot.freeDomEnhancedPointSizePx = m_freeDomEnhancedPointSizePx;
     snapshot.trajectoryLineWidthPx = m_trajectoryLineWidthPx;
     snapshot.poseAxisLengthM = m_poseAxisLengthM;
     snapshot.poseAxisLineWidthPx = m_poseAxisLineWidthPx;
@@ -625,7 +875,66 @@ SlamRenderSnapshot SlamUiBridge::buildRenderSnapshot()
     if (m_dynamicObjectVisible && m_latestOutput.dynamicObjectStats.enabled) {
         snapshot.dynamicObjectVertices.reserve(m_latestOutput.dynamicWorldFramePoints.size());
         for (const SlamDynamicPoint& point : m_latestOutput.dynamicWorldFramePoints) {
-            snapshot.dynamicObjectVertices.push_back(renderDynamicPoint(point, m_dynamicObjectColor));
+            switch (point.label) {
+            case SlamDynamicPointLabel::FreeDomAggressive:
+                snapshot.dynamicAggressiveVertices.push_back(
+                    renderDynamicPoint(point, m_dynamicAggressiveColor));
+                break;
+            case SlamDynamicPointLabel::FreeDomModerate:
+                snapshot.dynamicModerateVertices.push_back(
+                    renderDynamicPoint(point, m_dynamicModerateColor));
+                break;
+            case SlamDynamicPointLabel::FreeDomConservative:
+                snapshot.dynamicConservativeVertices.push_back(
+                    renderDynamicPoint(point, m_dynamicConservativeColor));
+                break;
+            default:
+                snapshot.dynamicObjectVertices.push_back(
+                    renderDynamicPoint(point, m_dynamicObjectColor));
+                break;
+            }
+        }
+    }
+    if (m_freeDomScanVoxelVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomScanVoxelVertices.reserve(m_freeDomScanVoxelPoints.size());
+        for (const SlamPoint& point : m_freeDomScanVoxelPoints) {
+            snapshot.freeDomScanVoxelVertices.push_back(
+                renderSlamPoint(point, m_freeDomScanVoxelColor));
+        }
+    }
+    if (m_freeDomDynamicVoxelVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomDynamicVoxelVertices.reserve(m_freeDomDynamicVoxelPoints.size());
+        for (const SlamPoint& point : m_freeDomDynamicVoxelPoints) {
+            snapshot.freeDomDynamicVoxelVertices.push_back(
+                renderSlamPoint(point, m_freeDomDynamicVoxelColor));
+        }
+    }
+    if (m_freeDomRaycastedVoxelVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomRaycastedVoxelVertices.reserve(m_freeDomRaycastedVoxelPoints.size());
+        for (const SlamPoint& point : m_freeDomRaycastedVoxelPoints) {
+            snapshot.freeDomRaycastedVoxelVertices.push_back(
+                renderSlamPoint(point, m_freeDomRaycastedVoxelColor));
+        }
+    }
+    if (m_freeDomFreeVoxelVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomFreeVoxelVertices.reserve(m_freeDomFreeVoxelPoints.size());
+        for (const SlamPoint& point : m_freeDomFreeVoxelPoints) {
+            snapshot.freeDomFreeVoxelVertices.push_back(
+                renderSlamPoint(point, m_freeDomFreeVoxelColor));
+        }
+    }
+    if (m_freeDomStaticVoxelVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomStaticVoxelVertices.reserve(m_freeDomStaticVoxelPoints.size());
+        for (const SlamPoint& point : m_freeDomStaticVoxelPoints) {
+            snapshot.freeDomStaticVoxelVertices.push_back(
+                renderSlamPoint(point, m_freeDomStaticVoxelColor));
+        }
+    }
+    if (m_freeDomEnhancedVisible && m_latestOutput.dynamicObjectStats.enabled) {
+        snapshot.freeDomEnhancedVertices.reserve(m_freeDomEnhancedPoints.size());
+        for (const SlamPoint& point : m_freeDomEnhancedPoints) {
+            snapshot.freeDomEnhancedVertices.push_back(
+                renderSlamPoint(point, m_freeDomEnhancedColor));
         }
     }
     return snapshot;

@@ -1,6 +1,9 @@
 #ifndef SLAM_CORE_SLAMRUNTIMECONFIG_H
 #define SLAM_CORE_SLAMRUNTIMECONFIG_H
 
+#include "DynamicFilterBackend.h"
+#include "FreeDomRuntimeConfig.h"
+
 #include <QString>
 #include <QSettings>
 
@@ -69,6 +72,13 @@ struct SlamRuntimeConfig {
     bool publishWorldFrameCloud = true;
     bool publishDenseFrameCloud = true;
     bool publishBodyFrameCloud = true;
+    DynamicFilterBackend dynamicFilterBackend = DynamicFilterBackend::Disabled;
+    bool dynamicFilterEnabled = false;
+    bool dynamicPointRemovalEnabled = false;
+    bool dynamicDebugVisualizationEnabled = false;
+    unsigned int dynamicDebugSnapshotIntervalFrames = 5;
+    unsigned int freeDomMapSnapshotIntervalFrames = 10;
+    FreeDomRuntimeConfig freeDom;
     bool dynamicObjectDetectionEnabled = false;
     bool dynamicObjectRemovalEnabled = false;
     bool dynamicObjectClusterEnabled = false;
