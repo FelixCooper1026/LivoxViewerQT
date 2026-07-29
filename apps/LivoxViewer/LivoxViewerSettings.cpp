@@ -29,6 +29,7 @@
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPalette>
 #include <QPair>
 #include <QPointer>
@@ -1856,11 +1857,17 @@ void LivoxViewerWindow::showPreferencesDialog()
             [freeDomVerticalFovUpperSpin](double value) {
                 freeDomVerticalFovUpperSpin->setMinimum(value + 0.1);
             });
+    auto syncFreeDomFovMaskPath = [freeDomLearnFovCheck,
+                                   freeDomFovMaskCheck,
+                                   freeDomFovMaskPathEdit]() {
+        freeDomFovMaskPathEdit->setEnabled(
+            freeDomLearnFovCheck->isChecked() || freeDomFovMaskCheck->isChecked());
+    };
+    connect(freeDomLearnFovCheck, &QCheckBox::toggled, &dlg,
+            [syncFreeDomFovMaskPath](bool) { syncFreeDomFovMaskPath(); });
     connect(freeDomFovMaskCheck, &QCheckBox::toggled, &dlg,
-            [freeDomFovMaskPathEdit](bool enabled) {
-                freeDomFovMaskPathEdit->setEnabled(enabled);
-            });
-    freeDomFovMaskPathEdit->setEnabled(freeDomFovMaskCheck->isChecked());
+            [syncFreeDomFovMaskPath](bool) { syncFreeDomFovMaskPath(); });
+    syncFreeDomFovMaskPath();
     SwitchCheckBox* slamLoopClosureCheck = createSlamSwitch(slamRuntimeConfig.loopClosureEnableFlag);
     QDoubleSpinBox* slamKeyframeDistanceSpin = createSlamDoubleSpin(
         slamRuntimeConfig.surroundingKeyframeAddingDistThreshold, 0.1, 1000.0, 1, 0.5, QStringLiteral(" m"));
@@ -2534,7 +2541,20 @@ void LivoxViewerWindow::showPreferencesDialog()
     buttonRowLayout->addStretch();
     buttonRowLayout->addWidget(okButton);
     buttonRowLayout->addWidget(cancelButton);
-    connect(okButton, &QPushButton::clicked, &dlg, &QDialog::accept);
+    connect(okButton, &QPushButton::clicked, &dlg,
+            [&dlg, freeDomLearnFovCheck, freeDomFovMaskCheck, freeDomFovMaskPathEdit]() {
+                if ((freeDomLearnFovCheck->isChecked() || freeDomFovMaskCheck->isChecked()) &&
+                    freeDomFovMaskPathEdit->text().trimmed().isEmpty()) {
+                    QMessageBox::warning(
+                        &dlg,
+                        QStringLiteral("FreeDOM 配置无效"),
+                        freeDomLearnFovCheck->isChecked()
+                            ? QStringLiteral("学习 FOV 需要指定 FOV Mask 输出路径。")
+                            : QStringLiteral("启用 FOV Mask 需要指定已有的 Mask 文件。"));
+                    return;
+                }
+                dlg.accept();
+            });
     connect(cancelButton, &QPushButton::clicked, &dlg, &QDialog::reject);
 
     addPreferenceSectionTitle(themeLayout, "外观");
@@ -3057,7 +3077,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     addDynamicPreferenceRow(freeDomEnhancementSection, "腐蚀尺寸", "freeDom/erosionSize", freeDomErosionSizeSpin, "用于深度安全腐蚀和增强区域腐蚀。");
     addDynamicPreferenceRow(freeDomEnhancementSection, "最小增强区域", "freeDom/minRaycastEnhancementArea", freeDomMinEnhancementAreaSpin, "以深度图总面积比例过滤小连通域。");
     addDynamicPreferenceRow(freeDomEnhancementSection, "顶部边距", "freeDom/depthImageTopMargin", freeDomTopMarginSpin, "限制用于增强的顶部区域比例。");
-    addDynamicPreferenceRow(freeDomEnhancementSection, "学习 FOV", "freeDom/learnFov", freeDomLearnFovCheck, "学习模式不输出增强点，并在引擎销毁时写入 FOV Mask。");
+    addDynamicPreferenceRow(freeDomEnhancementSection, "学习 FOV", "freeDom/learnFov", freeDomLearnFovCheck, "学习模式不输出增强点；停止或重置 SLAM 时写入 FOV Mask。");
     addDynamicPreferenceRow(freeDomEnhancementSection, "启用 FOV Mask", "freeDom/fovMaskEnabled", freeDomFovMaskCheck, "处理非矩形 FOV 或固定遮挡。");
     QWidget* freeDomFovMaskPathRow = new QWidget(slamFreeDomPage);
     QHBoxLayout* freeDomFovMaskPathLayout = new QHBoxLayout(freeDomFovMaskPathRow);
@@ -3065,9 +3085,34 @@ void LivoxViewerWindow::showPreferencesDialog()
     QPushButton* freeDomFovMaskBrowseButton = new QPushButton(QStringLiteral("浏览..."), freeDomFovMaskPathRow);
     freeDomFovMaskPathLayout->addWidget(freeDomFovMaskPathEdit, 1);
     freeDomFovMaskPathLayout->addWidget(freeDomFovMaskBrowseButton);
-    connect(freeDomFovMaskBrowseButton, &QPushButton::clicked, &dlg, [&dlg, freeDomFovMaskPathEdit]() {
-        const QString path = QFileDialog::getOpenFileName(
-            &dlg, QStringLiteral("选择 FreeDOM FOV Mask"), freeDomFovMaskPathEdit->text(), QStringLiteral("PNG 图像 (*.png)"));
+    auto syncFreeDomFovBrowseButtonText = [freeDomLearnFovCheck,
+                                           freeDomFovMaskBrowseButton]() {
+        freeDomFovMaskBrowseButton->setText(
+            freeDomLearnFovCheck->isChecked()
+                ? QStringLiteral("选择输出位置...")
+                : QStringLiteral("浏览..."));
+    };
+    connect(freeDomLearnFovCheck, &QCheckBox::toggled, &dlg,
+            [syncFreeDomFovBrowseButtonText](bool) {
+                syncFreeDomFovBrowseButtonText();
+            });
+    syncFreeDomFovBrowseButtonText();
+    connect(freeDomFovMaskBrowseButton, &QPushButton::clicked, &dlg,
+            [&dlg, freeDomLearnFovCheck, freeDomFovMaskPathEdit]() {
+        const QString currentPath = freeDomFovMaskPathEdit->text().trimmed();
+        const QString path = freeDomLearnFovCheck->isChecked()
+            ? QFileDialog::getSaveFileName(
+                  &dlg,
+                  QStringLiteral("保存 FreeDOM FOV Mask"),
+                  currentPath.isEmpty()
+                      ? QDir(QDir::homePath()).filePath(QStringLiteral("freedom_fov_mask.png"))
+                      : currentPath,
+                  QStringLiteral("PNG 图像 (*.png)"))
+            : QFileDialog::getOpenFileName(
+                  &dlg,
+                  QStringLiteral("选择 FreeDOM FOV Mask"),
+                  currentPath,
+                  QStringLiteral("PNG 图像 (*.png)"));
         if(!path.isEmpty())
             freeDomFovMaskPathEdit->setText(path);
     });

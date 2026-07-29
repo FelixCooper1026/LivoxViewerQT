@@ -42,7 +42,7 @@ void FreeDOM::set_params(const Config& config)
     };
     map.set_params(map_config);
 
-    enable_raycast_enhancement = config.enable_raycast_enhancement;
+    enable_raycast_enhancement = config.enable_raycast_enhancement || config.learn_fov;
     if(enable_raycast_enhancement)
     {
         DepthImage::DepthImageConfig depth_image_config{

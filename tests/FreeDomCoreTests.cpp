@@ -9,6 +9,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -285,6 +286,47 @@ void testFreeDomAdapter()
     expect(!filter.configure(invalid, &error), "FreeDOM rejects missing FOV mask");
 }
 
+void testFovLearningWithoutRaycastEnhancement()
+{
+    const std::filesystem::path outputPath = "freedom_fov_learning_test.png";
+    std::filesystem::remove(outputPath);
+
+    pcl::PointCloud<pcl::PointXYZINormal> cloud;
+    pcl::PointXYZINormal point;
+    point.x = 4.0f;
+    cloud.points.push_back(point);
+    cloud.width = 1;
+    cloud.height = 1;
+
+    DynamicFilterFrame frame;
+    frame.timestampNs = 100000000;
+    frame.lidarFrameCloud = &cloud;
+    frame.worldFromLidar = Eigen::Isometry3d::Identity();
+    frame.worldFromBody = Eigen::Isometry3d::Identity();
+    frame.bodyFromLidar = Eigen::Isometry3d::Identity();
+
+    {
+        DynamicFilterRuntimeConfig config;
+        config.backend = DynamicFilterBackend::FreeDOM;
+        config.freeDom.raycastEnhancementEnabled = false;
+        config.freeDom.learnFov = true;
+        config.freeDom.fovMaskPath = outputPath.string();
+        config.freeDom.numThreads = 1;
+
+        FreeDomDynamicPointFilter filter;
+        DynamicFilterResult result;
+        std::string error;
+        expect(filter.configure(config, &error),
+               "FreeDOM configures FOV learning without raycast enhancement");
+        expect(filter.processFrame(frame, &result, &error),
+               "FreeDOM learns FOV without raycast enhancement");
+    }
+
+    expect(std::filesystem::exists(outputPath),
+           "FreeDOM writes the learned FOV mask when the backend is destroyed");
+    std::filesystem::remove(outputPath);
+}
+
 } // namespace
 
 int main()
@@ -294,6 +336,7 @@ int main()
     testScanMap();
     testDepthImage();
     testFreeDomAdapter();
+    testFovLearningWithoutRaycastEnhancement();
     if (failures != 0) {
         std::cerr << failures << " FreeDOM test(s) failed\n";
         return 1;
