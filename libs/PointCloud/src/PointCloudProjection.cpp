@@ -23,16 +23,18 @@ PointCloudPoint projectSpherical(uint32_t depthRaw,
     point.theta = thetaRaw / 100.0f;
     point.phi = phiRaw / 100.0f;
     point.depth = depth;
+    point.reflectivity = reflectivity;
+    point.tag = tag;
+
+    if (depthRaw == 0) {
+        return point;
+    }
 
     const float theta = thetaRaw / 100.0f * kPi / 180.0f;
     const float phi = phiRaw / 100.0f * kPi / 180.0f;
 
     if (config.depthProjectionEnabled && config.depthMeters > 0.0f) {
         depth = config.depthMeters;
-    }
-
-    if (config.planarProjectionEnabled && config.depthMeters <= 0.0f) {
-        depth = config.planarRadius;
     }
 
     if (config.planarProjectionEnabled) {
@@ -52,8 +54,6 @@ PointCloudPoint projectSpherical(uint32_t depthRaw,
         point.z = depth * std::cos(theta);
     }
 
-    point.reflectivity = reflectivity;
-    point.tag = tag;
     return point;
 }
 

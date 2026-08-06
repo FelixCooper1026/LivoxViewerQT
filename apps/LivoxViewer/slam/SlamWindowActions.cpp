@@ -2029,7 +2029,8 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
     }
     const bool freeDomLayersAvailable =
         slamRuntimeConfig.dynamicFilterEnabled &&
-        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM;
+        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM &&
+        slamRuntimeConfig.dynamicDebugVisualizationEnabled;
     slamUiBridge->setRenderLayerVisibility(slamTrajectoryVisible,
                                            slamPoseAxisVisible,
                                            slamRuntimeConfig.publishWorldFrameCloud && slamWorldCurrentFrameVisible,
@@ -2043,7 +2044,9 @@ void LivoxViewerWindow::syncSlamRenderLayerVisibility()
                                            freeDomLayersAvailable && slamFreeDomRaycastedVoxelVisible,
                                            freeDomLayersAvailable && slamFreeDomFreeVoxelVisible,
                                            freeDomLayersAvailable && slamFreeDomStaticVoxelVisible,
-                                           freeDomLayersAvailable && slamFreeDomEnhancedVisible);
+                                           freeDomLayersAvailable &&
+                                               slamRuntimeConfig.freeDom.raycastEnhancementEnabled &&
+                                               slamFreeDomEnhancedVisible);
 }
 
 void LivoxViewerWindow::exportSlamTrajectoryFromDialog()

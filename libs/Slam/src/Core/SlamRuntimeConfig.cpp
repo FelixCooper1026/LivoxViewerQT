@@ -10,7 +10,10 @@ namespace {
 constexpr double kMid360ExtrinsicT_L_I[3] = {-0.011, -0.02329, 0.04412};
 constexpr double kMid360LExtrinsicT_L_I[3] = {-0.023680, 0.0220500, 0.0438600};
 constexpr double kAviaExtrinsicT_L_I[3] = {0.04165, 0.02326, -0.0284};
-constexpr double kAvia2ExtrinsicT_L_I[3] = {-0.0563149, 0.0367201, -0.0297031};
+// Avia2 specifies the IMU origin in the LiDAR frame as
+// (-0.0563149, 0.0367201, -0.0297031) m. FAST-LIO uses
+// p_I = R_L_I * p_L + T_L_I, so identity R_L_I requires the inverse translation.
+constexpr double kAvia2ExtrinsicT_L_I[3] = {0.0563149, -0.0367201, 0.0297031};
 constexpr double kIdentityExtrinsicR_L_I[9] = {1.0, 0.0, 0.0,
                                                0.0, 1.0, 0.0,
                                                0.0, 0.0, 1.0};
@@ -105,6 +108,62 @@ void assignTemplateDefaultExtrinsic(SlamRuntimeConfig& config, SlamLidarTemplate
     for (int i = 0; i < 9; ++i) {
         config.extrinsicR_L_I[i] = kIdentityExtrinsicR_L_I[i];
     }
+}
+
+void applyMid360FreeDomDefaults(SlamRuntimeConfig& config)
+{
+    config.dynamicFilterBackend = DynamicFilterBackend::FreeDOM;
+    config.dynamicDebugSnapshotIntervalFrames = 1;
+    config.freeDomMapSnapshotIntervalFrames = 1;
+
+    FreeDomRuntimeConfig& freeDom = config.freeDom;
+    freeDom.sensorMinRangeM = 0.2;
+    freeDom.sensorMaxRangeM = 40.0;
+    freeDom.sensorMinZM = -5.0;
+    freeDom.sensorMaxZM = 10.0;
+    freeDom.subVoxelSizeM = 0.05;
+    freeDom.voxelDepth = 2;
+    freeDom.blockDepth = 4;
+    freeDom.localMapEnabled = true;
+    freeDom.localMapRangeM = 100.0;
+    freeDom.localMapMinZM = -20.0;
+    freeDom.localMapMaxZM = 20.0;
+    freeDom.raycastMaxRangeM = 8.0;
+    freeDom.raycastMinZM = -5.0;
+    freeDom.raycastMaxZM = 5.0;
+    freeDom.countsToFree = 3;
+    freeDom.countsToRevert = 20;
+    freeDom.conservativeConnectivity = 26;
+    freeDom.aggressiveConnectivity = 124;
+    freeDom.raycastEnhancementEnabled = true;
+    freeDom.lidarHorizontalFovDeg = 360.0;
+    freeDom.lidarVerticalFovLowerDeg = -7.0;
+    freeDom.lidarVerticalFovUpperDeg = 52.0;
+    freeDom.depthImageVerticalLines = 64;
+    freeDom.depthImageMinRangeM = 0.5;
+    freeDom.maxRaycastEnhancementRangeM = 100.0;
+    freeDom.raycastEnhancementDepthMarginM = 0.2;
+    freeDom.inpaintSize = 4;
+    freeDom.erosionSize = 0;
+    freeDom.minRaycastEnhancementArea = 0.0;
+    freeDom.depthImageTopMargin = 0.0;
+    freeDom.learnFov = false;
+    freeDom.fovMaskEnabled = false;
+    freeDom.fovMaskPath.clear();
+    freeDom.numThreads = 4;
+}
+
+void applyMid360LFreeDomDefaults(SlamRuntimeConfig& config)
+{
+    applyMid360FreeDomDefaults(config);
+
+    FreeDomRuntimeConfig& freeDom = config.freeDom;
+    freeDom.subVoxelSizeM = 0.08;
+    freeDom.raycastEnhancementEnabled = false;
+    freeDom.lidarVerticalFovLowerDeg = -10.0;
+    freeDom.lidarVerticalFovUpperDeg = 35.0;
+    freeDom.depthImageVerticalLines = 32;
+    freeDom.maxRaycastEnhancementRangeM = 40.0;
 }
 
 } // namespace
@@ -206,14 +265,15 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
         return;
     }
 
+    const bool mid360L = lidarTemplate == SlamLidarTemplate::Mid360L;
     config.dynamicObjectHorizontalResolutionRad = 0.025;
     config.dynamicObjectVerticalResolutionRad = 0.04;
     config.detRangeM = 100.0;
     config.fovDegree = 360.0;
     config.blindMinRangeM = 0.5;
     config.dynamicObjectDepthMapDurationSec = 0.4;
-    config.dynamicObjectVerticalFovDownDeg = -7.0;
-    config.dynamicObjectVerticalFovUpDeg = 52.0;
+    config.dynamicObjectVerticalFovDownDeg = mid360L ? -10.0 : -7.0;
+    config.dynamicObjectVerticalFovUpDeg = mid360L ? 35.0 : 52.0;
     config.dynamicObjectHorizontalFovRightDeg = -180.0;
     config.dynamicObjectHorizontalFovLeftDeg = 180.0;
     config.dynamicObjectMinRangeM = 0.3;
@@ -228,17 +288,11 @@ void applySlamLidarTemplateDefaults(SlamRuntimeConfig& config, SlamLidarTemplate
     config.dynamicObjectClusterExtendVoxel = 3;
     config.dynamicObjectClusterMinVoxelCount = 1;
     config.dynamicObjectClusterTrustThreshold = 0.1;
-    config.freeDom.sensorMinRangeM = config.dynamicObjectMinRangeM;
-    config.freeDom.sensorMaxRangeM = config.dynamicObjectMaxRangeM;
-    config.freeDom.raycastMaxRangeM = config.dynamicObjectMaxRangeM;
-    config.freeDom.lidarHorizontalFovDeg = 360.0;
-    config.freeDom.lidarVerticalFovLowerDeg =
-        config.dynamicObjectVerticalFovDownDeg;
-    config.freeDom.lidarVerticalFovUpperDeg =
-        config.dynamicObjectVerticalFovUpDeg;
-    config.freeDom.depthImageMinRangeM = config.dynamicObjectMinRangeM;
-    config.freeDom.maxRaycastEnhancementRangeM =
-        config.dynamicObjectMaxRangeM;
+    if (mid360L) {
+        applyMid360LFreeDomDefaults(config);
+    } else if (lidarTemplate == SlamLidarTemplate::Mid360Mid360S) {
+        applyMid360FreeDomDefaults(config);
+    }
 }
 
 namespace {

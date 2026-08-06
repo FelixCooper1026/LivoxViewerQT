@@ -1,6 +1,7 @@
 #include "dialogs/PacketCaptureDialog.h"
 
 #include "ThemeIconUtils.h"
+#include "PushMsgParser.h"
 #include "dialogs/DialogWindowUtils.h"
 #ifdef Q_OS_LINUX
 #include "helpers/PacketCaptureProtocol.h"
@@ -248,6 +249,9 @@ public:
         if (role != Qt::DisplayRole && role != Qt::ToolTipRole) {
             return {};
         }
+        if (role == Qt::ToolTipRole && index.column() == 7 && !packet.decodedDetails.isEmpty()) {
+            return packet.decodedDetails;
+        }
 
         switch (index.column()) {
         case 0: return QString::number(packet.number);
@@ -257,7 +261,7 @@ public:
         case 4: return packet.protocol;
         case 5: return QString::number(packet.length);
         case 6: return packet.ports;
-        case 7: return packet.payloadHex;
+        case 7: return packet.decodedSummary.isEmpty() ? packet.payloadHex : packet.decodedSummary;
         default: return {};
         }
     }
@@ -464,7 +468,7 @@ PacketCaptureDialog::PacketCaptureDialog(QWidget* parent)
     packetHeader->setDefaultAlignment(Qt::AlignCenter);
     packetHeader->setSectionResizeMode(QHeaderView::Interactive);
     packetHeader->setSectionResizeMode(7, QHeaderView::Stretch);
-    const int columnWidths[] = {72, 110, 170, 170, 84, 76, 130};
+    const int columnWidths[] = {72, 110, 170, 170, 150, 76, 130};
     for (int column = 0; column < 7; ++column) {
         m_packetTable->setColumnWidth(column, columnWidths[column]);
     }
@@ -1297,6 +1301,16 @@ PacketCaptureDialog::PacketRow PacketCaptureDialog::decodePacket(const unsigned 
                 packet.protocol = QStringLiteral("PTP");
             }
             dataOffset = transportOffset + 8;
+            const PushMsgParser::ProtocolDecodeResult decoded =
+                PushMsgParser::decodeProtocolPacket(sourcePort,
+                                                    destinationPort,
+                                                    data + dataOffset,
+                                                    size_t(capturedLength - dataOffset));
+            if (decoded.valid) {
+                packet.protocol = decoded.protocol;
+                packet.decodedSummary = decoded.summary;
+                packet.decodedDetails = decoded.details;
+            }
         } else if (protocol == 6 && capturedLength >= transportOffset + 20) {
             const quint16 sourcePort = readBigEndian16(data + transportOffset);
             const quint16 destinationPort = readBigEndian16(data + transportOffset + 2);
@@ -1446,31 +1460,91 @@ void PacketCaptureDialog::updateEmptyState()
 
 void PacketCaptureDialog::showPacketDetails(int tableRow)
 {
-    const PacketRow* selectedPacket = &m_packetModel->packetAt(tableRow);
-
     QDialog detailsDialog(this);
-    detailsDialog.setWindowTitle(QStringLiteral("数据包详情 #%1").arg(selectedPacket->number));
-    detailsDialog.resize(760, 520);
+    detailsDialog.resize(820, 680);
     QVBoxLayout* detailsLayout = new QVBoxLayout(&detailsDialog);
-    QLabel* summaryLabel = new QLabel(
-        QStringLiteral("时间：%1 s    源地址：%2    目标地址：%3\n协议：%4    长度：%5    端口：%6")
-            .arg(QString::number(selectedPacket->relativeTimeSec, 'f', 6),
-                 selectedPacket->source,
-                 selectedPacket->destination,
-                 selectedPacket->protocol,
-                 QString::number(selectedPacket->length),
-                 selectedPacket->ports),
-        &detailsDialog);
+    QLabel* summaryLabel = new QLabel(&detailsDialog);
     summaryLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    QPlainTextEdit* payloadEdit = new QPlainTextEdit(selectedPacket->payloadHex, &detailsDialog);
+    QToolButton* previousButton = new QToolButton(&detailsDialog);
+    QToolButton* nextButton = new QToolButton(&detailsDialog);
+    previousButton->setFixedSize(36, 32);
+    nextButton->setFixedSize(36, 32);
+    previousButton->setIconSize(QSize(18, 18));
+    nextButton->setIconSize(QSize(18, 18));
+    previousButton->setToolTip(QStringLiteral("上一包"));
+    nextButton->setToolTip(QStringLiteral("下一包"));
+    previousButton->setCursor(Qt::PointingHandCursor);
+    nextButton->setCursor(Qt::PointingHandCursor);
+    ThemeIconUtils::setThemedSvgIcon(previousButton, QStringLiteral(":/icons/playback_previous.svg"));
+    ThemeIconUtils::setThemedSvgIcon(nextButton, QStringLiteral(":/icons/playback_next.svg"));
+    QLabel* positionLabel = new QLabel(&detailsDialog);
+    positionLabel->setAlignment(Qt::AlignCenter);
+
+    QHBoxLayout* navigationLayout = new QHBoxLayout();
+    navigationLayout->addStretch();
+    navigationLayout->addWidget(previousButton);
+    navigationLayout->addWidget(positionLabel);
+    navigationLayout->addWidget(nextButton);
+    navigationLayout->addStretch();
+
+    QLabel* decodedLabel = new QLabel(QStringLiteral("Livox 协议解析"), &detailsDialog);
+    QPlainTextEdit* decodedEdit = new QPlainTextEdit(&detailsDialog);
+    decodedEdit->setReadOnly(true);
+    decodedEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    QPlainTextEdit* payloadEdit = new QPlainTextEdit(&detailsDialog);
     payloadEdit->setReadOnly(true);
     payloadEdit->setLineWrapMode(QPlainTextEdit::WidgetWidth);
     QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &detailsDialog);
     connect(buttons, &QDialogButtonBox::rejected, &detailsDialog, &QDialog::reject);
     detailsLayout->addWidget(summaryLabel);
+    detailsLayout->addLayout(navigationLayout);
+    detailsLayout->addWidget(decodedLabel);
+    detailsLayout->addWidget(decodedEdit, 2);
     detailsLayout->addWidget(new QLabel(QStringLiteral("内容（Payload Hex）"), &detailsDialog));
     detailsLayout->addWidget(payloadEdit, 1);
     detailsLayout->addWidget(buttons);
+
+    int currentTableRow = tableRow;
+    auto updateDetails = [&]() {
+        const PacketRow& packet = m_packetModel->packetAt(currentTableRow);
+        detailsDialog.setWindowTitle(QStringLiteral("数据包详情 #%1").arg(packet.number));
+        summaryLabel->setText(
+            QStringLiteral("时间：%1 s    源地址：%2    目标地址：%3\n协议：%4    长度：%5    端口：%6")
+                .arg(QString::number(packet.relativeTimeSec, 'f', 6),
+                     packet.source,
+                     packet.destination,
+                     packet.protocol,
+                     QString::number(packet.length),
+                     packet.ports));
+        const bool hasDecodedDetails = !packet.decodedDetails.isEmpty();
+        decodedLabel->setVisible(hasDecodedDetails);
+        decodedEdit->setVisible(hasDecodedDetails);
+        decodedEdit->setPlainText(packet.decodedDetails);
+        payloadEdit->setPlainText(packet.payloadHex);
+        previousButton->setEnabled(currentTableRow > 0);
+        nextButton->setEnabled(currentTableRow + 1 < m_packetModel->rowCount());
+        positionLabel->setText(QStringLiteral("%1 / %2")
+                                   .arg(currentTableRow + 1)
+                                   .arg(m_packetModel->rowCount()));
+        m_packetTable->selectRow(currentTableRow);
+        m_packetTable->scrollTo(m_packetModel->index(currentTableRow, 0),
+                                QAbstractItemView::PositionAtCenter);
+    };
+    connect(previousButton, &QToolButton::clicked, &detailsDialog, [&]() {
+        --currentTableRow;
+        updateDetails();
+    });
+    connect(nextButton, &QToolButton::clicked, &detailsDialog, [&]() {
+        ++currentTableRow;
+        updateDetails();
+    });
+    connect(m_packetModel, &QAbstractItemModel::rowsInserted, &detailsDialog, [&]() {
+        nextButton->setEnabled(currentTableRow + 1 < m_packetModel->rowCount());
+        positionLabel->setText(QStringLiteral("%1 / %2")
+                                   .arg(currentTableRow + 1)
+                                   .arg(m_packetModel->rowCount()));
+    });
+    updateDetails();
     detailsDialog.exec();
 }
 

@@ -58,6 +58,8 @@ private:
         int length = 0;
         QString ports;
         QString payloadHex;
+        QString decodedSummary;
+        QString decodedDetails;
         bool broadcast = false;
         bool control = false;
         bool pointCloud = false;

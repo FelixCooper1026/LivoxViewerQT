@@ -283,13 +283,14 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
         }
     }
     if (slamRuntimeConfig.dynamicFilterEnabled &&
-        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM) {
+        slamRuntimeConfig.dynamicFilterBackend == DynamicFilterBackend::FreeDOM &&
+        slamRuntimeConfig.dynamicDebugVisualizationEnabled) {
         addLayerCard(QStringLiteral("Scan Voxel"),
-                     QStringLiteral("当前帧扫描体素；颜色和点大小由显示样式控制"),
+                     QStringLiteral("FreeDOM 当前帧扫描体素中心（调试）；颜色和点大小由显示样式控制"),
                      slamFreeDomScanVoxelVisible,
                      [this](bool visible) { setSlamFreeDomScanVoxelVisible(visible); });
-        addLayerCard(QStringLiteral("Dynamic Voxel"),
-                     QStringLiteral("当前帧动态体素；颜色和点大小由显示样式控制"),
+        addLayerCard(QStringLiteral("动态体素（调试）"),
+                     QStringLiteral("被判为动态的 Voxel 中心，用于观察体素分辨率和连通传播；“动态点”才是实际逐点检测结果"),
                      slamFreeDomDynamicVoxelVisible,
                      [this](bool visible) { setSlamFreeDomDynamicVoxelVisible(visible); });
         addLayerCard(QStringLiteral("Raycasted Voxel"),
@@ -304,10 +305,12 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
                      QStringLiteral("FreeDOM 静态体素地图；颜色和点大小由显示样式控制"),
                      slamFreeDomStaticVoxelVisible,
                      [this](bool visible) { setSlamFreeDomStaticVoxelVisible(visible); });
-        addLayerCard(QStringLiteral("Enhanced Point"),
-                     QStringLiteral("Raycast Enhancement 生成的增强点；颜色和点大小由显示样式控制"),
-                     slamFreeDomEnhancedVisible,
-                     [this](bool visible) { setSlamFreeDomEnhancedVisible(visible); });
+        if (slamRuntimeConfig.freeDom.raycastEnhancementEnabled) {
+            addLayerCard(QStringLiteral("Enhanced Point"),
+                         QStringLiteral("Raycast Enhancement 生成的增强点；颜色和点大小由显示样式控制"),
+                         slamFreeDomEnhancedVisible,
+                         [this](bool visible) { setSlamFreeDomEnhancedVisible(visible); });
+        }
     }
     addLayerCard(QStringLiteral("轨迹"),
                  QStringLiteral("SLAM 输出的位姿轨迹，用于观察运动路径和定位连续性"),

@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QString>
 #include <QVector>
+#include <cstddef>
 #include <cstdint>
 
 namespace PushMsgParser {
@@ -21,6 +22,18 @@ struct PushDeviceRecord {
     float offsetY = 0.0f;
     float offsetZ = 0.0f;
 };
+
+struct ProtocolDecodeResult {
+    bool valid = false;
+    QString protocol;
+    QString summary;
+    QString details;
+};
+
+ProtocolDecodeResult decodeProtocolPacket(uint16_t sourcePort,
+                                          uint16_t destinationPort,
+                                          const uint8_t* payload,
+                                          size_t payloadLen);
 
 void parsePushPayload(const uint8_t* payload, size_t payloadLen, PushDeviceRecord& device);
 

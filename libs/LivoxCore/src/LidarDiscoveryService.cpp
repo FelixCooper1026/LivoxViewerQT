@@ -1,5 +1,7 @@
 #include "LidarDiscoveryService.h"
 
+#include "LidarTextUtils.h"
+
 namespace {
 
 LidarDiscoveryService::DiscoveryResponse invalidResponse(const QString& message)
@@ -81,7 +83,7 @@ DiscoveryResponse parseDiscoveryResponse(const QByteArray& data)
     DiscoveryResponse response;
     response.valid = true;
     response.deviceType = byteAt(data, dataOffset + 1);
-    response.serialNumber = QString::fromLatin1(data.mid(dataOffset + 2, 16)).trimmed();
+    response.serialNumber = LivoxCore::fixedLatin1String(data.constData() + dataOffset + 2, 16);
     response.deviceIp = QString("%1.%2.%3.%4")
                             .arg(byteAt(data, ipOffset))
                             .arg(byteAt(data, ipOffset + 1))

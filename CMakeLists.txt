@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT
-    VERSION 2.3.6
+    VERSION 2.3.7
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -221,6 +221,40 @@ target_link_libraries(freedom_core PUBLIC ${OpenCV_LIBS})
 target_compile_features(freedom_core PUBLIC cxx_std_17)
 
 if(BUILD_TESTING)
+    add_executable(LivoxProtocolParserTests
+        tests/LivoxProtocolParserTests.cpp
+        libs/Pcap/src/PushMsgParser.cpp
+    )
+    target_include_directories(LivoxProtocolParserTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    )
+    if(QT_VERSION_MAJOR EQUAL 6)
+        target_link_libraries(LivoxProtocolParserTests PRIVATE Qt6::Core)
+    else()
+        target_link_libraries(LivoxProtocolParserTests PRIVATE Qt5::Core)
+    endif()
+    if(WIN32)
+        target_link_libraries(LivoxProtocolParserTests PRIVATE ws2_32)
+    endif()
+    target_compile_features(LivoxProtocolParserTests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(LivoxProtocolParserTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME LivoxProtocolParserTests COMMAND LivoxProtocolParserTests)
+
+    add_executable(PointCloudProjectionTests
+        tests/PointCloudProjectionTests.cpp
+        libs/PointCloud/src/PointCloudProjection.cpp
+    )
+    target_include_directories(PointCloudProjectionTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
+    )
+    target_compile_features(PointCloudProjectionTests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(PointCloudProjectionTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME PointCloudProjectionTests COMMAND PointCloudProjectionTests)
+
     add_executable(FreeDomCoreTests tests/FreeDomCoreTests.cpp)
     target_link_libraries(FreeDomCoreTests PRIVATE dynamic_filter)
     target_compile_features(FreeDomCoreTests PRIVATE cxx_std_17)
@@ -244,7 +278,7 @@ if(BUILD_TESTING)
             ${FREEDOM_SYNTHETIC_METRICS})
     add_test(
         NAME FreeDomSyntheticEquivalence
-        COMMAND ${CMAKE_COMMAND} -E compare_files
+        COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/freedom_synthetic_expected.csv
             ${FREEDOM_SYNTHETIC_METRICS})
     set_tests_properties(
@@ -415,6 +449,7 @@ set(SOURCES
     libs/LivoxCore/include/LidarParameterService.h
     libs/LivoxCore/include/LidarSdkService.h
     libs/LivoxCore/include/LidarSdkTypes.h
+    libs/LivoxCore/include/LidarTextUtils.h
     libs/PointCloud/include/PointCloudTypes.h
     libs/PointCloud/include/PointCloudFrame.h
     libs/PointCloud/include/PointCloudView.h

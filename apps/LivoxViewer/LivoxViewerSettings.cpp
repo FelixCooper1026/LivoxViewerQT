@@ -1713,8 +1713,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.dynamicDebugVisualizationEnabled);
     QComboBox* slamDynamicBackendCombo = new QComboBox(&dlg);
     slamDynamicBackendCombo->addItem(
-        QStringLiteral("不处理"), int(DynamicFilterBackend::Disabled));
-    slamDynamicBackendCombo->addItem(
         QStringLiteral("M-detector"), int(DynamicFilterBackend::MDetector));
     slamDynamicBackendCombo->addItem(
         QStringLiteral("FreeDOM"), int(DynamicFilterBackend::FreeDOM));
@@ -1985,42 +1983,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamDynamicClusterGroundDistanceSpin,
         slamDynamicClusterGroundMaxAngleSpin
     };
-    auto syncSlamDynamicControls = [slamDynamicDetectionCheck,
-                                    slamDynamicBackendCombo,
-                                    slamDynamicRemovalCheck,
-                                    slamDynamicDebugCheck,
-                                    slamDynamicClusterCheck,
-                                    slamDynamicClusterControls]() {
-        const bool detectionEnabled =
-            slamDynamicDetectionCheck->isChecked() &&
-            slamDynamicBackendCombo->currentData().toInt() !=
-                int(DynamicFilterBackend::Disabled);
-        const bool mDetectorSelected =
-            slamDynamicBackendCombo->currentData().toInt() ==
-                int(DynamicFilterBackend::MDetector);
-        const bool freeDomSelected =
-            slamDynamicBackendCombo->currentData().toInt() ==
-                int(DynamicFilterBackend::FreeDOM);
-        slamDynamicRemovalCheck->setEnabled(detectionEnabled);
-        slamDynamicDebugCheck->setEnabled(detectionEnabled && freeDomSelected);
-        slamDynamicClusterCheck->setEnabled(
-            detectionEnabled && mDetectorSelected);
-        const bool clusterEnabled =
-            detectionEnabled && mDetectorSelected &&
-            slamDynamicClusterCheck->isChecked();
-        for (QWidget* control : slamDynamicClusterControls) {
-            control->setEnabled(clusterEnabled);
-        }
-    };
-    connect(slamDynamicDetectionCheck, &QCheckBox::toggled, &dlg,
-            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
-    connect(slamDynamicBackendCombo,
-            QOverload<int>::of(&QComboBox::currentIndexChanged),
-            &dlg,
-            [syncSlamDynamicControls](int) { syncSlamDynamicControls(); });
-    connect(slamDynamicClusterCheck, &QCheckBox::toggled, &dlg,
-            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
-    syncSlamDynamicControls();
     QWidget* slamWorldCurrentFrameColorRow = new QWidget(&dlg);
     usePreferenceControlColumn(slamWorldCurrentFrameColorRow);
     QHBoxLayout* slamWorldCurrentFrameColorLayout = new QHBoxLayout(slamWorldCurrentFrameColorRow);
@@ -2188,9 +2150,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     auto applyDynamicFilterControls = [&](SlamRuntimeConfig& config) {
         config.dynamicFilterBackend = static_cast<DynamicFilterBackend>(
             slamDynamicBackendCombo->currentData().toInt());
-        config.dynamicFilterEnabled =
-            slamDynamicDetectionCheck->isChecked() &&
-            config.dynamicFilterBackend != DynamicFilterBackend::Disabled;
+        config.dynamicFilterEnabled = slamDynamicDetectionCheck->isChecked();
         config.dynamicPointRemovalEnabled =
             config.dynamicFilterEnabled && slamDynamicRemovalCheck->isChecked();
         config.dynamicDebugVisualizationEnabled = slamDynamicDebugCheck->isChecked();
@@ -2362,7 +2322,6 @@ void LivoxViewerWindow::showPreferencesDialog()
             runtimeDefaults.dynamicObjectCase3OcclusionChainLength);
         syncSlamPublishControls();
         syncSlamLoopClosureControls();
-        syncSlamDynamicControls();
     };
     auto slamRuntimeConfigFromControls = [&](SlamLidarTemplate lidarTemplate) {
         SlamRuntimeConfig config;
@@ -2862,33 +2821,26 @@ void LivoxViewerWindow::showPreferencesDialog()
                                   tuningGuide.toHtmlEscaped()));
     };
 
-    QFrame* slamDynamicSection = createPreferenceSection(slamDynamicTab);
-    addDynamicPreferenceRow(slamDynamicSection,
-                     "算法",
-                     "dynamicFilterBackend，同一 SLAM 会话只运行一个动态滤除后端",
-                     slamDynamicBackendCombo,
-                     "不处理不会创建算法历史；M-detector 与 FreeDOM 的历史状态相互隔离。切换后需重启或重置 SLAM 会话。");
-    addDynamicPreferenceRow(slamDynamicSection,
+    QFrame* slamDynamicEnableSection = createPreferenceSection(slamDynamicTab);
+    addDynamicPreferenceRow(slamDynamicEnableSection,
                      "启用动态检测",
                      "dynamicFilterEnabled，启用所选后端并对去畸变 LiDAR 当前帧生成逐点标签",
                      slamDynamicDetectionCheck,
                      "建议先关闭聚类增强，仅观察 Case1/2/3 原始点并校准投影、历史窗口和深度阈值。启用后会自动显示不累计的世界系当前帧背景，不需要开启世界系或机体系点云输出。");
-    addDynamicPreferenceRow(slamDynamicSection,
+    slamDynamicTabLayout->addWidget(slamDynamicEnableSection);
+
+    QFrame* slamDynamicSettingsSection = createPreferenceSection(slamDynamicTab);
+    addDynamicPreferenceRow(slamDynamicSettingsSection,
+                     "算法",
+                     "dynamicFilterBackend，同一 SLAM 会话只运行一个动态滤除后端",
+                     slamDynamicBackendCombo,
+                     "M-detector 与 FreeDOM 的历史状态相互隔离。切换后需重启或重置 SLAM 会话。");
+    addDynamicPreferenceRow(slamDynamicSettingsSection,
                      "去除动态点云",
                      "dynamicPointRemovalEnabled，根据统一 dynamic 标签从当前帧输出和 SLAM 增量地图中剔除动态点",
                      slamDynamicRemovalCheck,
                      "启用动态检测并确认动态目标识别稳定后再开启。误检会删除真实静态结构，因此应先校准深度阈值和历史窗口；开启聚类增强可让被剔除的目标轮廓更完整。");
-    addDynamicPreferenceRow(slamDynamicSection,
-                     "显示算法调试图层",
-                     "dynamicDebugVisualizationEnabled，按节流频率复制 FreeDOM Scan/Free/Static/Raycast 快照",
-                     slamDynamicDebugCheck,
-                     "调试快照会复制体素和深度图数据。只在调参时开启，并用下方快照间隔控制开销。");
-    addDynamicPreferenceRow(slamDynamicSection,
-                     "启用聚类增强",
-                     "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
-                     slamDynamicClusterCheck,
-                     "先确保无聚类模式的事件点稳定，再开启聚类。开启后目标轮廓更完整，但会增加聚类耗时；若相邻目标被合并，优先减小体素尺寸或连接半径。");
-    slamDynamicTabLayout->addWidget(slamDynamicSection);
+    slamDynamicTabLayout->addWidget(slamDynamicSettingsSection);
 
     QStackedWidget* slamDynamicParameterStack = new QStackedWidget(slamDynamicTab);
     QWidget* slamMDetectorPage = new QWidget(slamDynamicParameterStack);
@@ -2902,7 +2854,12 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamDynamicParameterStack->addWidget(slamMDetectorPage);
     slamDynamicParameterStack->addWidget(slamFreeDomPage);
 
-    QFrame* slamDynamicClusterSection = createPreferenceSection(slamDynamicTab);
+    QFrame* slamDynamicClusterSection = createPreferenceSection(slamMDetectorPage);
+    addDynamicPreferenceRow(slamDynamicClusterSection,
+                     "启用聚类增强",
+                     "dynamicObjectClusterEnabled，以 Case1/2/3 事件点为种子回填对象区域，并执行地面和孤立点过滤",
+                     slamDynamicClusterCheck,
+                     "先确保无聚类模式的事件点稳定，再开启聚类。开启后目标轮廓更完整，但会增加聚类耗时；若相邻目标被合并，优先减小体素尺寸或连接半径。");
     addDynamicPreferenceRow(slamDynamicClusterSection,
                      "聚类体素尺寸",
                      "dynamicObjectClusterVoxelSizeM，事件点和原始点的稀疏体素边长",
@@ -3120,24 +3077,42 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamFreeDomLayout->addWidget(freeDomEnhancementSection);
 
     QFrame* freeDomRuntimeSection = createPreferenceSection(slamFreeDomPage);
+    addDynamicPreferenceRow(freeDomRuntimeSection, "显示算法调试图层", "dynamicDebugVisualizationEnabled，按节流频率复制 FreeDOM Scan/Free/Static/Raycast 快照", slamDynamicDebugCheck, "调试快照会复制体素和深度图数据。只在调参时开启，并用下方快照间隔控制开销；关闭后 SLAM Dock 不显示相关调试卡片。");
     addDynamicPreferenceRow(freeDomRuntimeSection, "算法线程数", "freeDom/numThreads", freeDomThreadsSpin, "独立于 FAST_LIO/OpenMP 线程数，避免 CPU 过度订阅。");
     addDynamicPreferenceRow(freeDomRuntimeSection, "调试快照间隔", "dynamicDebugSnapshotIntervalFrames", freeDomDebugIntervalSpin, "按帧节流 Scan/Free/Static/Raycast 和深度图快照。");
     addDynamicPreferenceRow(freeDomRuntimeSection, "地图快照间隔", "freeDomMapSnapshotIntervalFrames", freeDomMapIntervalSpin, "按帧节流完整静态点/体素地图快照，用于显示和导出。");
     slamFreeDomLayout->addWidget(freeDomRuntimeSection);
     slamFreeDomLayout->addStretch();
 
-    auto syncDynamicParameterPage = [slamDynamicBackendCombo,
-                                     slamDynamicParameterStack]() {
-        const bool freeDom =
+    auto syncSlamDynamicControls = [slamDynamicDetectionCheck,
+                                    slamDynamicBackendCombo,
+                                    slamDynamicSettingsSection,
+                                    slamDynamicParameterStack,
+                                    slamDynamicClusterCheck,
+                                    slamDynamicClusterControls]() {
+        const bool detectionEnabled = slamDynamicDetectionCheck->isChecked();
+        const bool freeDomSelected =
             slamDynamicBackendCombo->currentData().toInt() ==
             int(DynamicFilterBackend::FreeDOM);
-        slamDynamicParameterStack->setCurrentIndex(freeDom ? 1 : 0);
+        slamDynamicSettingsSection->setVisible(detectionEnabled);
+        slamDynamicParameterStack->setVisible(detectionEnabled);
+        slamDynamicParameterStack->setCurrentIndex(freeDomSelected ? 1 : 0);
+        const bool clusterEnabled =
+            detectionEnabled && !freeDomSelected &&
+            slamDynamicClusterCheck->isChecked();
+        for (QWidget* control : slamDynamicClusterControls) {
+            control->setEnabled(clusterEnabled);
+        }
     };
+    connect(slamDynamicDetectionCheck, &QCheckBox::toggled, &dlg,
+            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
     connect(slamDynamicBackendCombo,
             QOverload<int>::of(&QComboBox::currentIndexChanged),
             &dlg,
-            [syncDynamicParameterPage](int) { syncDynamicParameterPage(); });
-    syncDynamicParameterPage();
+            [syncSlamDynamicControls](int) { syncSlamDynamicControls(); });
+    connect(slamDynamicClusterCheck, &QCheckBox::toggled, &dlg,
+            [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });
+    syncSlamDynamicControls();
     slamDynamicTabLayout->addWidget(slamDynamicParameterStack);
     slamDynamicTabLayout->addStretch();
 
@@ -3512,7 +3487,11 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamRuntimeConfig.publishWorldFrameCloud != previousSlamPublishWorld ||
         slamRuntimeConfig.publishBodyFrameCloud != previousSlamPublishBody ||
         slamRuntimeConfig.dynamicFilterEnabled != previousSlamDynamicDetection ||
-        slamRuntimeConfig.dynamicFilterBackend != previousSlamRuntimeConfig.dynamicFilterBackend;
+        slamRuntimeConfig.dynamicFilterBackend != previousSlamRuntimeConfig.dynamicFilterBackend ||
+        slamRuntimeConfig.dynamicDebugVisualizationEnabled !=
+            previousSlamRuntimeConfig.dynamicDebugVisualizationEnabled ||
+        slamRuntimeConfig.freeDom.raycastEnhancementEnabled !=
+            previousSlamRuntimeConfig.freeDom.raycastEnhancementEnabled;
     editedSlamTemplateConfigs.insert(int(slamRuntimeConfig.lidarTemplate), slamRuntimeConfig);
     {
         QSettings settings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));

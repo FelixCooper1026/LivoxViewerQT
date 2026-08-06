@@ -1,6 +1,7 @@
 #include "LidarParameterService.h"
 
 #include "LidarSdkTypes.h"
+#include "LidarTextUtils.h"
 
 #include <QByteArray>
 #include <QChar>
@@ -205,13 +206,13 @@ QString formatValue(uint16_t key, uint8_t* value, uint16_t length)
         }
         case kKeySn: { // 序列号
             if (length >= 16) {
-                return QString::fromLatin1(reinterpret_cast<char*>(value), 16).trimmed();
+                return LivoxCore::fixedLatin1String(reinterpret_cast<const char*>(value), 16);
             }
             break;
         }
         case kKeyProductInfo: { // 产品信息
             if (length >= 64) {
-                return QString::fromLatin1(reinterpret_cast<char*>(value), 64).trimmed();
+                return LivoxCore::fixedLatin1String(reinterpret_cast<const char*>(value), 64);
             }
             break;
         }
