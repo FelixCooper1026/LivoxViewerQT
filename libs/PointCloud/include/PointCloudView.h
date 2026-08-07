@@ -95,6 +95,7 @@ public:
     ~PointCloudView();
 
     void setGridVisible(bool visible);
+    bool isGridVisible() const { return m_gridVisible; }
     void setGridConfig(const GridConfig& config);
     GridConfig gridConfig() const { return m_gridConfig; }
     void updatePointCloud(const PointCloudFrame& frame);

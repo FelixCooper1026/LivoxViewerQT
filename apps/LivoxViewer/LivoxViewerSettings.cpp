@@ -2708,21 +2708,21 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     QFrame* slamImuNoiseSection = createPreferenceSection(slamImuNoiseTab);
     addPreferenceRow(slamImuNoiseSection,
-                     "陀螺仪测量噪声",
-                     "gyrCov，陀螺仪测量噪声协方差，值越大表示越不信任角速度测量",
-                     slamGyrCovSpin);
-    addPreferenceRow(slamImuNoiseSection,
-                     "加速度计测量噪声",
-                     "accCov，加速度计测量噪声协方差，值越大表示越不信任线加速度测量",
+                     "加速度计白噪声协方差",
+                     "accCov，IMU 加速度测量值本身的噪声大小；值越大，表示加速度计读数越不可信，滤波器会更依赖激光雷达匹配结果修正状态",
                      slamAccCovSpin);
     addPreferenceRow(slamImuNoiseSection,
-                     "陀螺仪零偏噪声",
-                     "bGyrCov，陀螺仪零偏随机游走噪声，值越大表示零偏变化越快",
-                     slamBGyrCovSpin);
+                     "陀螺仪白噪声协方差",
+                     "gyrCov，IMU 角速度测量值本身的噪声大小；值越大，表示陀螺仪读数越不可信，滤波器会更依赖激光雷达匹配结果修正状态",
+                     slamGyrCovSpin);
     addPreferenceRow(slamImuNoiseSection,
-                     "加速度计零偏噪声",
-                     "bAccCov，加速度计零偏随机游走噪声，值越大表示零偏变化越快",
+                     "加速度计零偏随机游走协方差",
+                     "bAccCov，加速度计零偏随时间变化的快慢程度；值越大，表示零偏变化越快，滤波器会更频繁地估计和更新零偏",
                      slamBAccCovSpin);
+    addPreferenceRow(slamImuNoiseSection,
+                     "陀螺仪零偏随机游走协方差",
+                     "bGyrCov，陀螺仪零偏随时间变化的快慢程度；值越大，表示零偏变化越快，滤波器会更频繁地估计和更新零偏",
+                     slamBGyrCovSpin);
     slamImuNoiseTabLayout->addWidget(slamImuNoiseSection);
     slamImuNoiseTabLayout->addStretch();
 

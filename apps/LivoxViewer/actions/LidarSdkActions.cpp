@@ -54,6 +54,12 @@ QString prefixLengthFromNetmask(const QString& netmask)
     return QString::number(prefix);
 }
 
+bool isHostIpBindable(const QString& hostIp)
+{
+    QUdpSocket socket;
+    return socket.bind(QHostAddress(hostIp), 0, QUdpSocket::DontShareAddress);
+}
+
 constexpr int kSdkReadyDelayMs = 3000;
 constexpr int kSdkInitRetryDelayMs = 1000;
 constexpr int kMaxSdkInitRetries = 3;
@@ -269,6 +275,12 @@ bool LivoxViewerWindow::createAndBindDiscoverySocket(const NetworkInterfaceServi
 void LivoxViewerWindow::startLidarDiscovery()
 {
     if (realtimeState == RealtimeConnectionState::Discovering || lidarDiscoveryActive) {
+        return;
+    }
+    if (realtimeState == RealtimeConnectionState::ReconfiguringNetwork ||
+        realtimeState == RealtimeConnectionState::WaitingSdkReady ||
+        realtimeState == RealtimeConnectionState::InitializingSdk ||
+        realtimeState == RealtimeConnectionState::Stopping) {
         return;
     }
     if (sdk_started || sdk_initialized) {
@@ -519,6 +531,8 @@ void LivoxViewerWindow::updateHostIPForDeviceAsync(const NetworkInterfaceService
                                                    const QString& targetHostIp,
                                                    const QString& netmask)
 {
+    stopAndDeleteTimer(networkWaitTimer);
+    stopAndDeleteTimer(discoveryRetryTimer);
     setRealtimeState(RealtimeConnectionState::ReconfiguringNetwork);
     logMessage(QString("[Network] Start async IP reconfiguration: iface=%1, newIp=%2")
                    .arg(iface.displayName, targetHostIp));
@@ -573,7 +587,7 @@ void LivoxViewerWindow::waitForHostIpThenInitializeSdk(const QString& interfaceN
                                                        int remainingAttempts)
 {
     const auto iface = NetworkInterfaceService::findInterfaceByName(interfaceName);
-    if (iface.has_value() && iface->ipv4 == targetHostIp) {
+    if (iface.has_value() && iface->ipv4 == targetHostIp && isHostIpBindable(targetHostIp)) {
         selectLidarInterface(*iface);
         refreshNetworkInterfaces();
         sdkInitRetryCount = 0;
@@ -585,7 +599,7 @@ void LivoxViewerWindow::waitForHostIpThenInitializeSdk(const QString& interfaceN
     }
 
     if (remainingAttempts <= 0) {
-        logMessage(QString("[Network] Host IP %1 is not active yet. Restart discovery.").arg(targetHostIp));
+        logMessage(QString("[Network] Host IP %1 is not ready for UDP binding. Restart discovery.").arg(targetHostIp));
         setRealtimeState(RealtimeConnectionState::Idle);
         scheduleDiscoveryRetry(5000);
         return;
