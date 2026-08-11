@@ -1126,12 +1126,17 @@ void LivoxViewerWindow::loadViewPreferences()
     if (elevationLegendMax <= elevationLegendMin) {
         elevationLegendMax = elevationLegendMin + 1.0f;
     }
-    PointCloudView::GridConfig config = pointCloudView->gridConfig();
+    PointCloudView::GridConfig config = pointCloudGridConfig;
     config.range = settings.value("grid/range", config.range).toFloat();
     config.step = settings.value("grid/step", config.step).toFloat();
     config.color = settings.value("grid/color", config.color).value<QColor>();
     config.type = static_cast<PointCloudView::GridConfig::Type>(
         settings.value("grid/type", int(config.type)).toInt());
+    config.range = std::max(1.0f, config.range);
+    config.step = std::max(0.1f, config.step);
+    if (!config.color.isValid()) {
+        config.color = QColor(77, 77, 77);
+    }
 
     if (config.type != PointCloudView::GridConfig::Square &&
         config.type != PointCloudView::GridConfig::ConcentricCircles &&
@@ -1139,9 +1144,10 @@ void LivoxViewerWindow::loadViewPreferences()
         config.type = PointCloudView::GridConfig::Square;
     }
 
-    pointCloudView->setGridConfig(config);
+    pointCloudGridConfig = config;
     forEachPointCloudView([this](PointCloudView* view) {
         if (view) {
+            view->setGridConfig(pointCloudGridConfig);
             view->setEdlConfig(pointCloudEdlConfig);
         }
     });
@@ -1190,7 +1196,7 @@ void LivoxViewerWindow::saveViewPreferences()
         return;
     }
 
-    const PointCloudView::GridConfig config = pointCloudView->gridConfig();
+    const PointCloudView::GridConfig config = pointCloudGridConfig;
     QSettings settings("Livox", "LivoxViewerQT");
     settings.setValue("grid/range", config.range);
     settings.setValue("grid/step", config.step);
@@ -1256,7 +1262,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     increasePreferenceBaseFont(&dlg);
     const int originalThemeMode = themeMode;
 
-    PointCloudView::GridConfig config = pointCloudView->gridConfig();
+    PointCloudView::GridConfig config = pointCloudGridConfig;
     QColor selectedColor = config.color;
     QColor selectedSlamWorldCurrentFrameColor = slamWorldCurrentFrameColor;
     QColor selectedSlamBodyFrameColor = slamBodyFrameColor;
@@ -3269,7 +3275,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     }
 
     const bool previousAutoConfigHostIpEnabled = autoConfigHostIpEnabled;
-    const PointCloudView::GridConfig previousGridConfig = pointCloudView->gridConfig();
+    const PointCloudView::GridConfig previousGridConfig = pointCloudGridConfig;
     const float previousDistanceLegendMin = distanceLegendMin;
     const float previousDistanceLegendMax = distanceLegendMax;
     const float previousElevationLegendMin = elevationLegendMin;
@@ -3480,6 +3486,7 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.step != previousGridConfig.step ||
         config.color != previousGridConfig.color ||
         config.type != previousGridConfig.type;
+    pointCloudGridConfig = config;
     const bool pointCloudColorChanged =
         distanceLegendMin != previousDistanceLegendMin ||
         distanceLegendMax != previousDistanceLegendMax ||
@@ -3549,7 +3556,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         recolorPointCloudViews();
     }
     if (gridChanged) {
-        pointCloudView->setGridConfig(config);
+        forEachPointCloudView([this](PointCloudView* view) {
+            view->setGridConfig(pointCloudGridConfig);
+        });
     }
     if (backgroundChanged) {
         applyPointCloudBackground();

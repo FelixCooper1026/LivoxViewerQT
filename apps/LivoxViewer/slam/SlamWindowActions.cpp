@@ -779,7 +779,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     slamPointCloudView->setMinimumSize(200, 200);
     slamPointCloudView->setPointSize(pointSizePx);
     slamPointCloudView->setEdlConfig(pointCloudEdlConfig);
-    slamPointCloudView->setGridConfig(realtimePointCloudView->gridConfig());
+    slamPointCloudView->setGridConfig(pointCloudGridConfig);
     slamPointCloudView->setGridVisible(realtimePointCloudView->isGridVisible());
     slamPointCloudView->setMeasurementModeEnabled(measurementModeActive);
     slamPointCloudView->setSelectionModeEnabled(selectionRealtimeEnabled);

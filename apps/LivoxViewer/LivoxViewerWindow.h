@@ -609,6 +609,7 @@ private:
         QColor(156, 39, 176)
     };
     float pointSizePx = 2.0f;
+    PointCloudView::GridConfig pointCloudGridConfig;
     PointCloudView::EdlConfig pointCloudEdlConfig;
     float distanceLegendMin = 0.0f;
     float distanceLegendMax = 100.0f;
