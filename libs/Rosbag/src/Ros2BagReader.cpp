@@ -211,12 +211,18 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
                                    const QSet<int>& connectionIds,
                                    const std::atomic_bool* cancellationRequested,
                                    const std::function<bool(const SerializedMessage&)>& consumer,
+                                   const std::function<void(int64_t, int64_t)>& progress,
                                    QString* error)
 {
     const QVector<QString> db3Files = resolveDb3Files(filePath, error);
     if (db3Files.isEmpty()) {
         return false;
     }
+    int64_t totalFileSize = 0;
+    for (const QString& db3Path : db3Files) {
+        totalFileSize += QFileInfo(db3Path).size();
+    }
+    int64_t completedFileSize = 0;
 
     summary_.messageCount = 0;
     summary_.startTimestampNs = 0;
@@ -225,7 +231,7 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
         connection.messageCount = 0;
     }
 
-    QString queryText = QStringLiteral("SELECT topic_id, timestamp, data FROM messages");
+    QString queryText = QStringLiteral("SELECT id, topic_id, timestamp, data FROM messages");
     if (!connectionIds.isEmpty()) {
         QStringList ids;
         ids.reserve(connectionIds.size());
@@ -240,6 +246,7 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
         if (cancellationRequested && cancellationRequested->load()) {
             return false;
         }
+        const int64_t db3FileSize = QFileInfo(db3Path).size();
         const QString connectionName = QStringLiteral("livoxviewer_ros2bag_stream_%1")
                                            .arg(QUuid::createUuid().toString(QUuid::Id128));
         bool ok = true;
@@ -254,24 +261,35 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
                 }
                 ok = false;
             } else {
-                QSqlQuery messageQuery(db);
-                messageQuery.setForwardOnly(true);
-                if (!messageQuery.exec(queryText)) {
+                QSqlQuery maxIdQuery(db);
+                if (!maxIdQuery.exec(QStringLiteral("SELECT MAX(id) FROM messages")) || !maxIdQuery.next()) {
                     if (error != nullptr) {
-                        *error = QStringLiteral("ROS2 db3 加载失败：读取 messages 表失败：%1")
-                                     .arg(sqlErrorText(messageQuery));
+                        *error = QStringLiteral("ROS2 db3 加载失败：读取消息范围失败：%1")
+                                     .arg(sqlErrorText(maxIdQuery));
                     }
                     ok = false;
-                } else {
-                    while (messageQuery.next()) {
+                }
+                const int64_t maxMessageId = ok ? maxIdQuery.value(0).toLongLong() : 0;
+                QSqlQuery messageQuery(db);
+                messageQuery.setForwardOnly(true);
+                if (ok) {
+                    if (!messageQuery.exec(queryText)) {
+                        if (error != nullptr) {
+                            *error = QStringLiteral("ROS2 db3 加载失败：读取 messages 表失败：%1")
+                                         .arg(sqlErrorText(messageQuery));
+                        }
+                        ok = false;
+                    }
+                    while (ok && messageQuery.next()) {
                         if (cancellationRequested && cancellationRequested->load()) {
                             ok = false;
                             break;
                         }
                         SerializedMessage message;
-                        message.connectionId = messageQuery.value(0).toInt();
-                        message.timestampNs = messageQuery.value(1).toLongLong();
-                        message.data = messageQuery.value(2).toByteArray();
+                        const int64_t messageId = messageQuery.value(0).toLongLong();
+                        message.connectionId = messageQuery.value(1).toInt();
+                        message.timestampNs = messageQuery.value(2).toLongLong();
+                        message.data = messageQuery.value(3).toByteArray();
                         const int index = connectionIndexById(connections_, message.connectionId);
                         if (index >= 0) {
                             connections_[index].messageCount++;
@@ -285,6 +303,9 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
                         if (summary_.messageCount == 1 || message.timestampNs > summary_.endTimestampNs) {
                             summary_.endTimestampNs = message.timestampNs;
                         }
+                        const int64_t currentFileSize = static_cast<int64_t>(
+                            double(db3FileSize) * double(messageId) / double(maxMessageId));
+                        progress(completedFileSize + currentFileSize, totalFileSize);
                         if (!consumer(message)) {
                             consumerStopped = true;
                             ok = false;
@@ -302,6 +323,8 @@ bool Ros2BagReader::streamMessages(const QString& filePath,
         if (consumerStopped) {
             return false;
         }
+        completedFileSize += db3FileSize;
+        progress(completedFileSize, totalFileSize);
     }
     if (error != nullptr) {
         error->clear();

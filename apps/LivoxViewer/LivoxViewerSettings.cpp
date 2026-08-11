@@ -199,15 +199,17 @@ public:
     {
         connect(this, &QTabWidget::currentChanged, this, [this]() {
             QTimer::singleShot(0, this, [this]() {
-                setMaximumHeight(sizeHint().height());
-                updateGeometry();
+                syncCurrentPageHeight();
             });
         });
     }
 
     void syncCurrentPageHeight()
     {
+        setMaximumHeight(QWIDGETSIZE_MAX);
+        updateGeometry();
         setMaximumHeight(sizeHint().height());
+        updateGeometry();
     }
 
     QSize sizeHint() const override
@@ -3089,7 +3091,8 @@ void LivoxViewerWindow::showPreferencesDialog()
                                     slamDynamicSettingsSection,
                                     slamDynamicParameterStack,
                                     slamDynamicClusterCheck,
-                                    slamDynamicClusterControls]() {
+                                    slamDynamicClusterControls,
+                                    slamSettingsTabs]() {
         const bool detectionEnabled = slamDynamicDetectionCheck->isChecked();
         const bool freeDomSelected =
             slamDynamicBackendCombo->currentData().toInt() ==
@@ -3103,6 +3106,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         for (QWidget* control : slamDynamicClusterControls) {
             control->setEnabled(clusterEnabled);
         }
+        QTimer::singleShot(0, slamSettingsTabs, [slamSettingsTabs]() {
+            slamSettingsTabs->syncCurrentPageHeight();
+        });
     };
     connect(slamDynamicDetectionCheck, &QCheckBox::toggled, &dlg,
             [syncSlamDynamicControls](bool) { syncSlamDynamicControls(); });

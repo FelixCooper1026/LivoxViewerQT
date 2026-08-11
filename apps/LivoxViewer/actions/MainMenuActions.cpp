@@ -955,7 +955,7 @@ void LivoxViewerWindow::createMenusAndActions()
             logDock->setVisible(!visible);
         }
         if (slamStatusDock) {
-            slamStatusDock->setVisible(!visible && slamUiBridge);
+            slamStatusDock->setVisible(!visible && slamVisualizationTabId >= 0);
             if (!visible && slamStatusDock->isVisible()) {
                 slamStatusDock->raise();
             }

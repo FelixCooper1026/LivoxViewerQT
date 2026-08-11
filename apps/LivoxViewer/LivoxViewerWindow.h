@@ -226,6 +226,7 @@ private:
     void createStatusBarAndTimers();
     SlamUiBridge* ensureSlamUiBridge();
     void postSlamStatus(SlamStatusCode status, const QString& message);
+    void showOfflineSlamFailureDialog(SlamStatusCode status, const QString& message);
     int ensureSlamVisualizationTab(const QString& sourcePath = QString());
     bool isSlamPointCloudTab(int tabId) const;
     void submitSlamOutputsForUi(const QVector<SlamOutput>& outputs);
@@ -534,6 +535,7 @@ private:
     int slamProgressMaximum = 0;
     bool slamProgressIndeterminate = false;
     bool slamFinalLoopClosureActive = false;
+    bool slamFailureDialogShown = false;
     QString slamProgressSourceText;
     QString slamProgressTimeText;
     QString slamProgressFrameText;

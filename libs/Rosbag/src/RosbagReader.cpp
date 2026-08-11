@@ -346,7 +346,6 @@ bool Reader::readConnections(const QString& filePath, QString* error)
         }
         return false;
     }
-
     RawRecord fileHeader;
     bool eof = false;
     if (!readRecord(file, &fileHeader, &eof, error) || opCode(fileHeader.header) != kOpFileHeader) {
@@ -406,6 +405,7 @@ bool Reader::streamMessages(const QString& filePath,
                             const QSet<int>& connectionIds,
                             const std::atomic_bool* cancellationRequested,
                             const std::function<bool(const SerializedMessage&)>& consumer,
+                            const std::function<void(int64_t, int64_t)>& progress,
                             QString* error)
 {
     QFile file(filePath);
@@ -421,6 +421,7 @@ bool Reader::streamMessages(const QString& filePath,
         }
         return false;
     }
+    const int64_t fileSize = file.size();
 
     summary_.messageCount = 0;
     summary_.startTimestampNs = 0;
@@ -547,6 +548,7 @@ bool Reader::streamMessages(const QString& filePath,
             }
             return false;
         }
+        progress(file.pos(), fileSize);
         if (!processRecord(record, processRecord)) {
             return false;
         }

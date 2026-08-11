@@ -88,7 +88,7 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     QPushButton* pauseButton = new QPushButton(QStringLiteral("暂停"), this);
     QPushButton* stopButton = new QPushButton(QStringLiteral("停止"), this);
     QPushButton* resetButton = new QPushButton(QStringLiteral("重置"), this);
-    QPushButton* clearButton = new QPushButton(QStringLiteral("清空显示"), this);
+    QPushButton* clearButton = new QPushButton(QStringLiteral("清空"), this);
     controlButtonLayout->addWidget(startButton);
     controlButtonLayout->addWidget(pauseButton);
     controlButtonLayout->addWidget(stopButton);

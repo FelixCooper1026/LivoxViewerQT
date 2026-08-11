@@ -1077,6 +1077,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
 bool RosbagSlamSource::streamFrames(const QString& filePath,
                                     const std::atomic_bool* cancellationRequested,
                                     const std::function<bool(SlamInputFrame&&)>& consumer,
+                                    const std::function<void(int64_t, int64_t)>& progress,
                                     QString* error)
 {
     clear();
@@ -1433,11 +1434,13 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
                                     selectedConnectionIds,
                                     cancellationRequested,
                                     consumeMessage,
+                                    progress,
                                     &errorMessage_)
         : ros1Reader.streamMessages(filePath,
                                     selectedConnectionIds,
                                     cancellationRequested,
                                     consumeMessage,
+                                    progress,
                                     &errorMessage_);
     if (!streamOk) {
         if (error != nullptr && !errorMessage_.isEmpty()) {

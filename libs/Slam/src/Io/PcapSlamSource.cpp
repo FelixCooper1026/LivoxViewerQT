@@ -11,6 +11,7 @@
 
 #include <pcap.h>
 
+#include <QFileInfo>
 #include <QMap>
 #include <QSet>
 
@@ -678,6 +679,7 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
                                   bool requireImu,
                                   const std::atomic_bool* cancellationRequested,
                                   const std::function<bool(SlamInputFrame&&)>& consumer,
+                                  const std::function<void(int64_t, int64_t)>& progress,
                                   QString* error)
 {
     clear();
@@ -693,6 +695,7 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
         }
         return false;
     }
+    const int64_t fileSize = QFileInfo(filePath).size();
 
     QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
     QMap<QString, uint32_t> dataSourceIps;
@@ -707,6 +710,8 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
     uint64_t avia2PointPacketCount = 0;
     uint64_t avia2MissingPointTimingPacketCount = 0;
     int64_t avia2PointRate = 0;
+    int progressPacketCount = 0;
+    int64_t consumedFileBytes = 24;
     QVector<SlamInputFrame> pendingAvia2Frames;
     bool consumerStopped = false;
 
@@ -806,6 +811,11 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
         }
         if (res == 0 || packetHeader == nullptr) {
             continue;
+        }
+        consumedFileBytes += int64_t(packetHeader->caplen) + 16;
+        if (++progressPacketCount == 32) {
+            progressPacketCount = 0;
+            progress(std::min(consumedFileBytes, fileSize), fileSize);
         }
 
         PcapUdp::PacketInfo udpInfo;

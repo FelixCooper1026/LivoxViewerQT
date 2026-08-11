@@ -366,10 +366,12 @@ void LivoxViewerWindow::tabifySlamStatusPanel()
 
 void LivoxViewerWindow::showSlamStatusPanel()
 {
-    if (!slamStatusDock) {
+    if (!logDock || !slamStatusDock || slamVisualizationTabId < 0 ||
+        (!logDock->isVisible() && !slamStatusDock->isVisible())) {
         return;
     }
     tabifySlamStatusPanel();
+    logDock->show();
     slamStatusDock->show();
     slamStatusDock->raise();
 }

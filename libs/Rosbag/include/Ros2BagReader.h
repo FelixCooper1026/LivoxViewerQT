@@ -19,6 +19,7 @@ public:
                         const QSet<int>& connectionIds,
                         const std::atomic_bool* cancellationRequested,
                         const std::function<bool(const SerializedMessage&)>& consumer,
+                        const std::function<void(int64_t, int64_t)>& progress,
                         QString* error);
     void clear();
 

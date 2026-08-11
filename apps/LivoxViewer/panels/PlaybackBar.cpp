@@ -96,6 +96,28 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
         "QWidget#SlamOverlayBar QLabel {"
         "  color: palette(window-text);"
         "  background: transparent;"
+        "}"
+        "QWidget#SlamOverlayBar QPushButton[slamControlButton=\"true\"] {"
+        "  padding: 4px 10px;"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 4px;"
+        "  background: palette(button);"
+        "  color: palette(button-text);"
+        "}"
+        "QWidget#SlamOverlayBar QPushButton[slamControlButton=\"true\"]:enabled:hover {"
+        "  border-color: #2f8cff;"
+        "  background: #2f8cff;"
+        "  color: white;"
+        "}"
+        "QWidget#SlamOverlayBar QPushButton[slamControlButton=\"true\"]:enabled:pressed {"
+        "  border-color: #176fd1;"
+        "  background: #176fd1;"
+        "  color: white;"
+        "}"
+        "QWidget#SlamOverlayBar QPushButton[slamControlButton=\"true\"]:disabled {"
+        "  border-color: palette(mid);"
+        "  background: palette(window);"
+        "  color: palette(mid);"
         "}"));
 
     QVBoxLayout* rootLayout = new QVBoxLayout(slamControlBar);
@@ -108,9 +130,17 @@ QWidget* LivoxViewerWindow::createSlamControlBar(QWidget* parent)
 
     slamStartButton = new QPushButton(QStringLiteral("开始"), slamControlBar);
     slamStopButton = new QPushButton(QStringLiteral("停止"), slamControlBar);
-    slamClearButton = new QPushButton(QStringLiteral("清空显示"), slamControlBar);
+    slamClearButton = new QPushButton(QStringLiteral("清空"), slamControlBar);
     slamExportTrajectoryButton = new QPushButton(QStringLiteral("保存轨迹..."), slamControlBar);
     slamExportMapButton = new QPushButton(QStringLiteral("保存全局点云地图..."), slamControlBar);
+    for (QPushButton* button : {slamStartButton,
+                                slamStopButton,
+                                slamClearButton,
+                                slamExportTrajectoryButton,
+                                slamExportMapButton}) {
+        button->setProperty("slamControlButton", true);
+        button->setCursor(Qt::PointingHandCursor);
+    }
     slamReplayModeCombo = new QComboBox(slamControlBar);
     slamReplayModeCombo->addItem(QStringLiteral("默认速度"), static_cast<int>(SlamReplayMode::Timed));
     slamReplayModeCombo->addItem(QStringLiteral("快速建图"), static_cast<int>(SlamReplayMode::Fast));
