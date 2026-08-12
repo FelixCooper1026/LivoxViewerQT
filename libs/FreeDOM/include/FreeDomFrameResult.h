@@ -17,6 +17,7 @@ struct FreeDomImageSnapshot {
 
 struct FreeDomDebugSnapshot {
     std::uint64_t version = 0;
+    float voxelSizeM = 0.0f;
     std::vector<Eigen::Vector3f> scanVoxelCenters;
     std::vector<Eigen::Vector3f> dynamicVoxelCenters;
     std::vector<Eigen::Vector3f> raycastedVoxelCenters;
@@ -30,6 +31,7 @@ struct FreeDomDebugSnapshot {
 
 struct FreeDomMapSnapshot {
     std::uint64_t version = 0;
+    float voxelSizeM = 0.0f;
     std::vector<Eigen::Vector3f> staticPoints;
     std::vector<Eigen::Vector3f> staticVoxelCenters;
     std::vector<Eigen::Vector3f> freeVoxelCenters;

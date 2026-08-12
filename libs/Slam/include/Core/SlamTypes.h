@@ -167,6 +167,7 @@ struct SlamOutput {
     QVector<SlamPoint> freeDomStaticVoxelPoints;
     QVector<SlamPoint> freeDomStaticMapPoints;
     QVector<SlamPoint> freeDomEnhancedPoints;
+    float freeDomVoxelSizeM = 0.0f;
     QByteArray freeDomDepthImage;
     QByteArray freeDomEnhancedDepthImage;
     int freeDomDepthImageRows = 0;

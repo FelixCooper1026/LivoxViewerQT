@@ -23,6 +23,9 @@ public:
         QString backendMs;
         QString droppedFrames;
         QString currentPose;
+        QString travelDistance;
+        QString displacement;
+        QString trajectoryDuration;
         QString trajectoryPoints;
         QString keyframeCount;
         QString loopClosureCount;
@@ -70,11 +73,6 @@ public slots:
     void setWorldFramePointSize(float sizePx);
     void setBodyFramePointSize(float sizePx);
     void setDynamicObjectPointSize(float sizePx);
-    void setFreeDomScanVoxelPointSize(float sizePx);
-    void setFreeDomDynamicVoxelPointSize(float sizePx);
-    void setFreeDomRaycastedVoxelPointSize(float sizePx);
-    void setFreeDomFreeVoxelPointSize(float sizePx);
-    void setFreeDomStaticVoxelPointSize(float sizePx);
     void setFreeDomEnhancedPointSize(float sizePx);
     void setTrajectoryLineWidth(float widthPx);
     void setPoseAxisLength(float lengthM);
@@ -112,6 +110,12 @@ private:
 
     void refreshStatus();
     SlamRenderSnapshot buildRenderSnapshot();
+    void rebuildFreeDomVoxelVertices(const QVector<SlamPoint>& points,
+                                     const QColor& color,
+                                     bool visible,
+                                     QVector<SlamRenderVertex>& vertices,
+                                     quint64& revision);
+    void rebuildAllFreeDomVoxelVertices();
     QVector<SlamRenderVertex> buildPoseAxisVertices() const;
     void appendTrajectory(const SlamOutput& output);
     void appendGlobalMap(const SlamOutput& output);
@@ -123,6 +127,10 @@ private:
     DisplayState m_displayState;
     QVector<SlamTrajectoryPoint> m_trajectory;
     QVector<SlamTrajectoryPoint> m_unoptimizedTrajectory;
+    SlamPose m_firstTrajectoryPose;
+    SlamPose m_lastTrajectoryPose;
+    double m_travelDistanceM = 0.0;
+    bool m_hasTrajectoryPose = false;
     QVector<SlamPoint> m_globalMapPoints;
     QVector<SlamPoint> m_freeDomScanVoxelPoints;
     QVector<SlamPoint> m_freeDomDynamicVoxelPoints;
@@ -131,6 +139,16 @@ private:
     QVector<SlamPoint> m_freeDomStaticVoxelPoints;
     QVector<SlamPoint> m_freeDomStaticMapPoints;
     QVector<SlamPoint> m_freeDomEnhancedPoints;
+    QVector<SlamRenderVertex> m_freeDomScanVoxelVertices;
+    QVector<SlamRenderVertex> m_freeDomDynamicVoxelVertices;
+    QVector<SlamRenderVertex> m_freeDomRaycastedVoxelVertices;
+    QVector<SlamRenderVertex> m_freeDomFreeVoxelVertices;
+    QVector<SlamRenderVertex> m_freeDomStaticVoxelVertices;
+    quint64 m_freeDomScanVoxelRevision = 0;
+    quint64 m_freeDomDynamicVoxelRevision = 0;
+    quint64 m_freeDomRaycastedVoxelRevision = 0;
+    quint64 m_freeDomFreeVoxelRevision = 0;
+    quint64 m_freeDomStaticVoxelRevision = 0;
     QImage m_freeDomDepthImage;
     QImage m_freeDomEnhancedDepthImage;
     QVector<DenseGlobalMapSegment> m_denseGlobalMapSegments;
@@ -156,11 +174,6 @@ private:
     float m_worldFramePointSizePx = 2.0f;
     float m_bodyFramePointSizePx = 2.5f;
     float m_dynamicObjectPointSizePx = 4.0f;
-    float m_freeDomScanVoxelPointSizePx = 4.0f;
-    float m_freeDomDynamicVoxelPointSizePx = 4.0f;
-    float m_freeDomRaycastedVoxelPointSizePx = 4.0f;
-    float m_freeDomFreeVoxelPointSizePx = 4.0f;
-    float m_freeDomStaticVoxelPointSizePx = 4.0f;
     float m_freeDomEnhancedPointSizePx = 4.0f;
     float m_trajectoryLineWidthPx = 2.0f;
     float m_poseAxisLengthM = 0.8f;
@@ -181,6 +194,8 @@ private:
     bool m_hasCurrentPose = false;
     bool m_hasOptimizedTrajectory = false;
     bool m_hasOptimizedGlobalMap = false;
+    bool m_renderSnapshotDirty = true;
+    quint64 m_renderSnapshotBytes = 0;
 };
 
 #endif // LIVOXVIEWER_SLAMUIBRIDGE_H

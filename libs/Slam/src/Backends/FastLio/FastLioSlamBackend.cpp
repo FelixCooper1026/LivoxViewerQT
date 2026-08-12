@@ -881,6 +881,10 @@ bool runDynamicFilter(FastLioAlgorithmState& state,
                       DynamicFilterResult* result,
                       QString* error)
 {
+    if(state.config.dynamicFilterBackend == DynamicFilterBackend::FreeDOM)
+        output->freeDomVoxelSizeM = static_cast<float>(
+            std::ldexp(state.config.freeDom.subVoxelSizeM,
+                       static_cast<int>(state.config.freeDom.voxelDepth)));
     if(state.lastDynamicFilterTimestampNs != 0 &&
        timestampNs < state.lastDynamicFilterTimestampNs)
     {
@@ -1011,6 +1015,7 @@ bool runDynamicFilter(FastLioAlgorithmState& state,
     {
         const FreeDomDebugSnapshot& snapshot =
             *result->freeDomDebugSnapshot;
+        output->freeDomVoxelSizeM = snapshot.voxelSizeM;
         assignSnapshotPoints(snapshot.scanVoxelCenters,
                              &output->freeDomScanVoxelPoints);
         assignSnapshotPoints(snapshot.dynamicVoxelCenters,
@@ -1043,6 +1048,7 @@ bool runDynamicFilter(FastLioAlgorithmState& state,
            state.emittedFreeDomMapSnapshotVersion)
     {
         const FreeDomMapSnapshot& snapshot = *result->freeDomMapSnapshot;
+        output->freeDomVoxelSizeM = snapshot.voxelSizeM;
         assignSnapshotPoints(snapshot.staticPoints,
                              &output->freeDomStaticMapPoints);
         assignSnapshotPoints(snapshot.staticVoxelCenters,

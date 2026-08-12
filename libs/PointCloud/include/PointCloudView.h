@@ -31,6 +31,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <limits>
 
 struct StlRenderVertex {
     float x = 0.0f;
@@ -192,6 +193,12 @@ private:
     void setupBuffers();
     void setupAxesBuffers();
     void setupCrossSectionBuffers();
+    void setupFreeDomVoxelBuffers();
+    void uploadFreeDomVoxelInstances(const QVector<SlamRenderVertex>& instances,
+                                     QOpenGLBuffer& instanceVbo,
+                                     QOpenGLVertexArrayObject& vao,
+                                     qsizetype& capacityBytes,
+                                     int& instanceCount);
     void uploadSlamRenderOverlayIfNeeded();
     void destroySlamRenderOverlay();
     QVector3D mapToArcball(const QPoint& p) const;
@@ -232,6 +239,7 @@ private:
     QSize widgetPhysicalSize() const;
 
     QOpenGLShaderProgram *m_program;
+    QOpenGLShaderProgram* m_voxelProgram = nullptr;
     QOpenGLShaderProgram* m_backgroundProgram = nullptr;
     std::unique_ptr<PointCloudEdlRenderer> m_edlRenderer;
     EdlConfig m_edlConfig;
@@ -274,6 +282,8 @@ private:
     QOpenGLVertexArrayObject m_slamFreeDomDynamicPointsVao;
     qsizetype m_slamFreeDomDynamicPointsBufferCapacityBytes = 0;
     int m_slamFreeDomDynamicPointsVertexCount = 0;
+    QOpenGLBuffer m_freeDomVoxelCubeVbo;
+    int m_freeDomVoxelCubeVertexCount = 0;
     QOpenGLBuffer m_slamFreeDomScanVoxelVbo;
     QOpenGLVertexArrayObject m_slamFreeDomScanVoxelVao;
     qsizetype m_slamFreeDomScanVoxelBufferCapacityBytes = 0;
@@ -301,6 +311,12 @@ private:
     SlamRenderSnapshot m_slamRenderSnapshot;
     bool m_slamRenderUploadPending = false;
     bool m_slamPoseAxisUploadPending = false;
+    bool m_slamVoxelClipUploadPending = false;
+    quint64 m_uploadedFreeDomScanVoxelRevision = std::numeric_limits<quint64>::max();
+    quint64 m_uploadedFreeDomDynamicVoxelRevision = std::numeric_limits<quint64>::max();
+    quint64 m_uploadedFreeDomRaycastedVoxelRevision = std::numeric_limits<quint64>::max();
+    quint64 m_uploadedFreeDomFreeVoxelRevision = std::numeric_limits<quint64>::max();
+    quint64 m_uploadedFreeDomStaticVoxelRevision = std::numeric_limits<quint64>::max();
 
     QOpenGLBuffer m_crossSectionVbo;
     QOpenGLVertexArrayObject m_crossSectionVao;

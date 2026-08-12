@@ -496,11 +496,6 @@ private:
     float slamWorldCurrentFramePointSizePx = 2.0f;
     float slamBodyFramePointSizePx = 2.5f;
     float slamDynamicObjectPointSizePx = 4.0f;
-    float slamFreeDomScanVoxelPointSizePx = 4.0f;
-    float slamFreeDomDynamicVoxelPointSizePx = 4.0f;
-    float slamFreeDomRaycastedVoxelPointSizePx = 4.0f;
-    float slamFreeDomFreeVoxelPointSizePx = 4.0f;
-    float slamFreeDomStaticVoxelPointSizePx = 4.0f;
     float slamFreeDomEnhancedPointSizePx = 4.0f;
     float slamTrajectoryLineWidthPx = 2.0f;
     float slamPoseAxisLengthM = 0.8f;

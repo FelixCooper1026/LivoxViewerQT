@@ -1045,16 +1045,6 @@ void LivoxViewerWindow::loadViewPreferences()
         QStringLiteral("slam/freeDomStaticVoxelColor"), slamFreeDomStaticVoxelColor);
     slamFreeDomEnhancedColor = loadSlamColor(
         QStringLiteral("slam/freeDomEnhancedColor"), slamFreeDomEnhancedColor);
-    slamFreeDomScanVoxelPointSizePx = loadSlamPointSize(
-        QStringLiteral("slam/freeDomScanVoxelPointSizePx"), slamFreeDomScanVoxelPointSizePx);
-    slamFreeDomDynamicVoxelPointSizePx = loadSlamPointSize(
-        QStringLiteral("slam/freeDomDynamicVoxelPointSizePx"), slamFreeDomDynamicVoxelPointSizePx);
-    slamFreeDomRaycastedVoxelPointSizePx = loadSlamPointSize(
-        QStringLiteral("slam/freeDomRaycastedVoxelPointSizePx"), slamFreeDomRaycastedVoxelPointSizePx);
-    slamFreeDomFreeVoxelPointSizePx = loadSlamPointSize(
-        QStringLiteral("slam/freeDomFreeVoxelPointSizePx"), slamFreeDomFreeVoxelPointSizePx);
-    slamFreeDomStaticVoxelPointSizePx = loadSlamPointSize(
-        QStringLiteral("slam/freeDomStaticVoxelPointSizePx"), slamFreeDomStaticVoxelPointSizePx);
     slamFreeDomEnhancedPointSizePx = loadSlamPointSize(
         QStringLiteral("slam/freeDomEnhancedPointSizePx"), slamFreeDomEnhancedPointSizePx);
     slamTrajectoryColor = settings.value(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor).value<QColor>();
@@ -1237,11 +1227,6 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue(QStringLiteral("slam/freeDomFreeVoxelColor"), slamFreeDomFreeVoxelColor);
     settings.setValue(QStringLiteral("slam/freeDomStaticVoxelColor"), slamFreeDomStaticVoxelColor);
     settings.setValue(QStringLiteral("slam/freeDomEnhancedColor"), slamFreeDomEnhancedColor);
-    settings.setValue(QStringLiteral("slam/freeDomScanVoxelPointSizePx"), slamFreeDomScanVoxelPointSizePx);
-    settings.setValue(QStringLiteral("slam/freeDomDynamicVoxelPointSizePx"), slamFreeDomDynamicVoxelPointSizePx);
-    settings.setValue(QStringLiteral("slam/freeDomRaycastedVoxelPointSizePx"), slamFreeDomRaycastedVoxelPointSizePx);
-    settings.setValue(QStringLiteral("slam/freeDomFreeVoxelPointSizePx"), slamFreeDomFreeVoxelPointSizePx);
-    settings.setValue(QStringLiteral("slam/freeDomStaticVoxelPointSizePx"), slamFreeDomStaticVoxelPointSizePx);
     settings.setValue(QStringLiteral("slam/freeDomEnhancedPointSizePx"), slamFreeDomEnhancedPointSizePx);
     settings.setValue(QStringLiteral("slam/trajectoryColor"), slamTrajectoryColor);
     settings.setValue(QStringLiteral("slam/trajectoryLineWidthPx"), slamTrajectoryLineWidthPx);
@@ -2106,16 +2091,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         &selectedSlamFreeDomStaticVoxelColor, QStringLiteral("选择 Static Voxel 颜色"));
     QWidget* slamFreeDomEnhancedColorRow = createSlamLayerColorRow(
         &selectedSlamFreeDomEnhancedColor, QStringLiteral("选择 Enhanced Point 颜色"));
-    QDoubleSpinBox* slamFreeDomScanVoxelPointSizeSpin =
-        createSlamDoubleSpin(slamFreeDomScanVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
-    QDoubleSpinBox* slamFreeDomDynamicVoxelPointSizeSpin =
-        createSlamDoubleSpin(slamFreeDomDynamicVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
-    QDoubleSpinBox* slamFreeDomRaycastedVoxelPointSizeSpin =
-        createSlamDoubleSpin(slamFreeDomRaycastedVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
-    QDoubleSpinBox* slamFreeDomFreeVoxelPointSizeSpin =
-        createSlamDoubleSpin(slamFreeDomFreeVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
-    QDoubleSpinBox* slamFreeDomStaticVoxelPointSizeSpin =
-        createSlamDoubleSpin(slamFreeDomStaticVoxelPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     QDoubleSpinBox* slamFreeDomEnhancedPointSizeSpin =
         createSlamDoubleSpin(slamFreeDomEnhancedPointSizePx, 1.0, 10.0, 1, 0.5, QStringLiteral(" px"));
     QWidget* slamTrajectoryColorRow = new QWidget(&dlg);
@@ -3170,41 +3145,21 @@ void LivoxViewerWindow::showPreferencesDialog()
                      "当前帧扫描体素颜色",
                      slamFreeDomScanVoxelColorRow);
     addPreferenceRow(slamVisualSection,
-                     "Scan Voxel 点大小",
-                     "当前帧扫描体素点大小",
-                     slamFreeDomScanVoxelPointSizeSpin);
-    addPreferenceRow(slamVisualSection,
                      "Dynamic Voxel 颜色",
                      "当前帧动态体素颜色",
                      slamFreeDomDynamicVoxelColorRow);
-    addPreferenceRow(slamVisualSection,
-                     "Dynamic Voxel 点大小",
-                     "当前帧动态体素点大小",
-                     slamFreeDomDynamicVoxelPointSizeSpin);
     addPreferenceRow(slamVisualSection,
                      "Raycasted Voxel 颜色",
                      "射线遍历体素颜色",
                      slamFreeDomRaycastedVoxelColorRow);
     addPreferenceRow(slamVisualSection,
-                     "Raycasted Voxel 点大小",
-                     "射线遍历体素点大小",
-                     slamFreeDomRaycastedVoxelPointSizeSpin);
-    addPreferenceRow(slamVisualSection,
                      "Free Voxel 颜色",
                      "持久化自由空间体素颜色",
                      slamFreeDomFreeVoxelColorRow);
     addPreferenceRow(slamVisualSection,
-                     "Free Voxel 点大小",
-                     "持久化自由空间体素点大小",
-                     slamFreeDomFreeVoxelPointSizeSpin);
-    addPreferenceRow(slamVisualSection,
                      "Static Voxel 颜色",
                      "FreeDOM 静态体素地图颜色",
                      slamFreeDomStaticVoxelColorRow);
-    addPreferenceRow(slamVisualSection,
-                     "Static Voxel 点大小",
-                     "FreeDOM 静态体素地图点大小",
-                     slamFreeDomStaticVoxelPointSizeSpin);
     addPreferenceRow(slamVisualSection,
                      "Enhanced Point 颜色",
                      "Raycast Enhancement 生成点颜色",
@@ -3368,11 +3323,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     const float previousSlamWorldCurrentFramePointSizePx = slamWorldCurrentFramePointSizePx;
     const float previousSlamBodyFramePointSizePx = slamBodyFramePointSizePx;
     const float previousSlamDynamicObjectPointSizePx = slamDynamicObjectPointSizePx;
-    const float previousSlamFreeDomScanVoxelPointSizePx = slamFreeDomScanVoxelPointSizePx;
-    const float previousSlamFreeDomDynamicVoxelPointSizePx = slamFreeDomDynamicVoxelPointSizePx;
-    const float previousSlamFreeDomRaycastedVoxelPointSizePx = slamFreeDomRaycastedVoxelPointSizePx;
-    const float previousSlamFreeDomFreeVoxelPointSizePx = slamFreeDomFreeVoxelPointSizePx;
-    const float previousSlamFreeDomStaticVoxelPointSizePx = slamFreeDomStaticVoxelPointSizePx;
     const float previousSlamFreeDomEnhancedPointSizePx = slamFreeDomEnhancedPointSizePx;
     const float previousSlamTrajectoryLineWidthPx = slamTrajectoryLineWidthPx;
     const float previousSlamPoseAxisLengthM = slamPoseAxisLengthM;
@@ -3466,16 +3416,6 @@ void LivoxViewerWindow::showPreferencesDialog()
     slamBodyFramePointSizePx = static_cast<float>(slamBodyFramePointSizeSpin->value());
     slamDynamicObjectPointSizePx =
         static_cast<float>(slamDynamicObjectPointSizeSpin->value());
-    slamFreeDomScanVoxelPointSizePx =
-        static_cast<float>(slamFreeDomScanVoxelPointSizeSpin->value());
-    slamFreeDomDynamicVoxelPointSizePx =
-        static_cast<float>(slamFreeDomDynamicVoxelPointSizeSpin->value());
-    slamFreeDomRaycastedVoxelPointSizePx =
-        static_cast<float>(slamFreeDomRaycastedVoxelPointSizeSpin->value());
-    slamFreeDomFreeVoxelPointSizePx =
-        static_cast<float>(slamFreeDomFreeVoxelPointSizeSpin->value());
-    slamFreeDomStaticVoxelPointSizePx =
-        static_cast<float>(slamFreeDomStaticVoxelPointSizeSpin->value());
     slamFreeDomEnhancedPointSizePx =
         static_cast<float>(slamFreeDomEnhancedPointSizeSpin->value());
     slamTrajectoryLineWidthPx = static_cast<float>(slamTrajectoryLineWidthSpin->value());
@@ -3529,11 +3469,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
         slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
         slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
-        slamUiBridge->setFreeDomScanVoxelPointSize(slamFreeDomScanVoxelPointSizePx);
-        slamUiBridge->setFreeDomDynamicVoxelPointSize(slamFreeDomDynamicVoxelPointSizePx);
-        slamUiBridge->setFreeDomRaycastedVoxelPointSize(slamFreeDomRaycastedVoxelPointSizePx);
-        slamUiBridge->setFreeDomFreeVoxelPointSize(slamFreeDomFreeVoxelPointSizePx);
-        slamUiBridge->setFreeDomStaticVoxelPointSize(slamFreeDomStaticVoxelPointSizePx);
         slamUiBridge->setFreeDomEnhancedPointSize(slamFreeDomEnhancedPointSizePx);
         slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
         slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
@@ -3719,11 +3654,6 @@ void LivoxViewerWindow::showPreferencesDialog()
         slamWorldCurrentFramePointSizePx != previousSlamWorldCurrentFramePointSizePx ||
         slamBodyFramePointSizePx != previousSlamBodyFramePointSizePx ||
         slamDynamicObjectPointSizePx != previousSlamDynamicObjectPointSizePx ||
-        slamFreeDomScanVoxelPointSizePx != previousSlamFreeDomScanVoxelPointSizePx ||
-        slamFreeDomDynamicVoxelPointSizePx != previousSlamFreeDomDynamicVoxelPointSizePx ||
-        slamFreeDomRaycastedVoxelPointSizePx != previousSlamFreeDomRaycastedVoxelPointSizePx ||
-        slamFreeDomFreeVoxelPointSizePx != previousSlamFreeDomFreeVoxelPointSizePx ||
-        slamFreeDomStaticVoxelPointSizePx != previousSlamFreeDomStaticVoxelPointSizePx ||
         slamFreeDomEnhancedPointSizePx != previousSlamFreeDomEnhancedPointSizePx ||
         slamTrajectoryLineWidthPx != previousSlamTrajectoryLineWidthPx ||
         slamPoseAxisLengthM != previousSlamPoseAxisLengthM ||

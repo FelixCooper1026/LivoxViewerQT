@@ -475,11 +475,6 @@ SlamUiBridge* LivoxViewerWindow::ensureSlamUiBridge()
     slamUiBridge->setWorldFramePointSize(slamWorldCurrentFramePointSizePx);
     slamUiBridge->setBodyFramePointSize(slamBodyFramePointSizePx);
     slamUiBridge->setDynamicObjectPointSize(slamDynamicObjectPointSizePx);
-    slamUiBridge->setFreeDomScanVoxelPointSize(slamFreeDomScanVoxelPointSizePx);
-    slamUiBridge->setFreeDomDynamicVoxelPointSize(slamFreeDomDynamicVoxelPointSizePx);
-    slamUiBridge->setFreeDomRaycastedVoxelPointSize(slamFreeDomRaycastedVoxelPointSizePx);
-    slamUiBridge->setFreeDomFreeVoxelPointSize(slamFreeDomFreeVoxelPointSizePx);
-    slamUiBridge->setFreeDomStaticVoxelPointSize(slamFreeDomStaticVoxelPointSizePx);
     slamUiBridge->setFreeDomEnhancedPointSize(slamFreeDomEnhancedPointSizePx);
     slamUiBridge->setTrajectoryLineWidth(slamTrajectoryLineWidthPx);
     slamUiBridge->setPoseAxisLength(slamPoseAxisLengthM);
@@ -2096,6 +2091,7 @@ void LivoxViewerWindow::exportSlamTrajectoryFromDialog()
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("保存 SLAM 轨迹失败"), message);
         return;
     }
 
@@ -2132,6 +2128,7 @@ void LivoxViewerWindow::exportSlamTrajectoryFromDialog()
         if (statusBar()) {
             statusBar()->showMessage(error, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("保存 SLAM 轨迹失败"), error);
         return;
     }
 
@@ -2156,6 +2153,7 @@ void LivoxViewerWindow::exportSlamGlobalMapFromDialog()
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("保存 SLAM 全局地图失败"), message);
         return;
     }
 
@@ -2167,6 +2165,7 @@ void LivoxViewerWindow::exportSlamGlobalMapFromDialog()
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("保存 SLAM 全局地图失败"), message);
         return;
     }
 
@@ -2221,6 +2220,7 @@ void LivoxViewerWindow::exportSlamGlobalMapFromDialog()
                 if (statusBar()) {
                     statusBar()->showMessage(error, 3000);
                 }
+                QMessageBox::warning(this, QStringLiteral("保存 SLAM 全局地图失败"), error);
                 return;
             }
             if (SlamUiBridge* bridge = ensureSlamUiBridge()) {
@@ -2385,6 +2385,7 @@ void LivoxViewerWindow::exportSlamTrajectory(SlamTrajectoryExport::Format format
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("导出 SLAM 轨迹失败"), message);
         return;
     }
 
@@ -2420,6 +2421,7 @@ void LivoxViewerWindow::exportSlamTrajectory(SlamTrajectoryExport::Format format
         if (statusBar()) {
             statusBar()->showMessage(error, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("导出 SLAM 轨迹失败"), error);
         return;
     }
 
@@ -2444,6 +2446,7 @@ void LivoxViewerWindow::exportSlamGlobalMap(bool lasFormat)
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("导出 SLAM 全局地图失败"), message);
         return;
     }
 
@@ -2455,6 +2458,7 @@ void LivoxViewerWindow::exportSlamGlobalMap(bool lasFormat)
         if (statusBar()) {
             statusBar()->showMessage(message, 3000);
         }
+        QMessageBox::warning(this, QStringLiteral("导出 SLAM 全局地图失败"), message);
         return;
     }
 
@@ -2507,6 +2511,7 @@ void LivoxViewerWindow::exportSlamGlobalMap(bool lasFormat)
                 if (statusBar()) {
                     statusBar()->showMessage(error, 3000);
                 }
+                QMessageBox::warning(this, QStringLiteral("导出 SLAM 全局地图失败"), error);
                 return;
             }
             if (SlamUiBridge* bridge = ensureSlamUiBridge()) {

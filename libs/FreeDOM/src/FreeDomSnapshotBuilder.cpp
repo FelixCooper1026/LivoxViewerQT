@@ -134,15 +134,17 @@ void appendRaycastedVoxels(const freedom::MRMap& map,
 void FreeDomSnapshotBuilder::appendScan(const freedom::ScanMap& scan,
                                         FreeDomDebugSnapshot& output)
 {
+    output.voxelSizeM = static_cast<float>(scan.getVoxelSize());
     output.scanVoxelCenters.clear();
     output.dynamicVoxelCenters.clear();
     for(const freedom::ScanMap::ScanBlock& block : scan.get_scan_blocks())
     {
         for(const freedom::ScanMap::ScanVoxel& voxel : block.scan_voxels)
         {
-            output.scanVoxelCenters.emplace_back(voxel.center.cast<float>());
+            const Eigen::Vector3f center = voxelCenter(voxel.voxel_idx, scan.getVoxelSize());
+            output.scanVoxelCenters.emplace_back(center);
             if(voxel.dynamic_level != freedom::DynamicLevel::STATIC)
-                output.dynamicVoxelCenters.emplace_back(voxel.center.cast<float>());
+                output.dynamicVoxelCenters.emplace_back(center);
         }
     }
 }
@@ -175,14 +177,13 @@ void FreeDomSnapshotBuilder::buildMap(const freedom::FreeDOM& engine,
 {
     output = FreeDomMapSnapshot{};
     output.version = version;
+    output.voxelSizeM = static_cast<float>(engine.map_state().getVoxelSize());
     freedom::FreeDOM::StaticMapSnapshot coreSnapshot;
     engine.build_static_map_snapshot(coreSnapshot);
     output.staticPoints.reserve(coreSnapshot.point_map.size());
     for(const freedom::Point& point : coreSnapshot.point_map)
         output.staticPoints.emplace_back(point.cast<float>());
-    output.staticVoxelCenters.reserve(coreSnapshot.voxel_map.size());
-    for(const freedom::Point& point : coreSnapshot.voxel_map)
-        output.staticVoxelCenters.emplace_back(point.cast<float>());
+    appendStaticVoxels(engine.map_state(), output.staticVoxelCenters);
     appendFreeVoxels(engine.map_state(), output.freeVoxelCenters);
     appendRaycastedVoxels(engine.map_state(), output.raycastedVoxelCenters);
 }

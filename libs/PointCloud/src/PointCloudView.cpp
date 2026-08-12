@@ -30,6 +30,15 @@
 
 namespace {
 
+struct VoxelCubeVertex {
+    float x;
+    float y;
+    float z;
+    float nx;
+    float ny;
+    float nz;
+};
+
 class ScopedOpenGLContext
 {
 public:
@@ -537,6 +546,7 @@ PointCloudView::~PointCloudView()
     m_selectionVao.destroy();
     m_vbo.destroy();
     m_vao.destroy();
+    m_freeDomVoxelCubeVbo.destroy();
     if (m_program) {
         delete m_program;
         m_program = nullptr;
@@ -544,6 +554,10 @@ PointCloudView::~PointCloudView()
     if (m_backgroundProgram) {
         delete m_backgroundProgram;
         m_backgroundProgram = nullptr;
+    }
+    if (m_voxelProgram) {
+        delete m_voxelProgram;
+        m_voxelProgram = nullptr;
     }
     if (hasContext) {
         doneCurrent();
@@ -677,6 +691,7 @@ void PointCloudView::initializeGL()
     setupGridBuffers();
     setupCrossSectionBuffers();
     setupStlModelBuffers();
+    setupFreeDomVoxelBuffers();
 }
 
 void PointCloudView::setupShaders()
@@ -791,6 +806,58 @@ void PointCloudView::setupShaders()
     m_program->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
     m_program->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
     m_program->link();
+
+    const char* voxelVertexShaderSource = R"(
+        #version 330 core
+        layout(location = 0) in vec3 aCubePosition;
+        layout(location = 1) in vec3 aCubeNormal;
+        layout(location = 3) in vec3 aInstancePosition;
+        layout(location = 4) in vec3 aInstanceColor;
+
+        uniform mat4 modelView;
+        uniform mat4 projection;
+        uniform mat3 normalMatrix;
+        uniform float uVoxelSizeM;
+
+        out vec3 vColor;
+        out vec3 vNormal;
+        out vec3 vViewPosition;
+
+        void main() {
+            vec3 worldPosition = aInstancePosition + aCubePosition * uVoxelSizeM;
+            vec4 viewPosition = modelView * vec4(worldPosition, 1.0);
+            gl_Position = projection * viewPosition;
+            vColor = aInstanceColor;
+            vNormal = normalize(normalMatrix * aCubeNormal);
+            vViewPosition = viewPosition.xyz;
+        }
+    )";
+
+    const char* voxelFragmentShaderSource = R"(
+        #version 330 core
+        in vec3 vColor;
+        in vec3 vNormal;
+        in vec3 vViewPosition;
+        layout(location = 0) out vec4 SceneColor;
+
+        void main() {
+            vec3 normal = normalize(vNormal);
+            vec3 viewDir = normalize(-vViewPosition);
+            vec3 keyLight = normalize(vec3(-0.45, 0.35, 0.82));
+            vec3 fillLight = normalize(vec3(0.68, -0.32, 0.52));
+            float diffuse = 0.46 * max(dot(normal, keyLight), 0.0)
+                          + 0.22 * max(dot(normal, fillLight), 0.0);
+            vec3 halfDir = normalize(keyLight + viewDir);
+            float specular = 0.10 * pow(max(dot(normal, halfDir), 0.0), 32.0);
+            vec3 color = clamp(vColor * (0.36 + diffuse) + vec3(specular), 0.0, 1.0);
+            SceneColor = vec4(color, 1.0);
+        }
+    )";
+
+    m_voxelProgram = new QOpenGLShaderProgram();
+    m_voxelProgram->addShaderFromSourceCode(QOpenGLShader::Vertex, voxelVertexShaderSource);
+    m_voxelProgram->addShaderFromSourceCode(QOpenGLShader::Fragment, voxelFragmentShaderSource);
+    m_voxelProgram->link();
 }
 
 void PointCloudView::setupBackgroundBuffers()
@@ -1006,6 +1073,71 @@ void PointCloudView::setupCrossSectionBuffers()
     m_crossSectionTriangleVbo.release();
 }
 
+void PointCloudView::setupFreeDomVoxelBuffers()
+{
+    const VoxelCubeVertex vertices[] = {
+        {-0.5f,-0.5f,-0.5f, 0.0f, 0.0f,-1.0f}, { 0.5f, 0.5f,-0.5f, 0.0f, 0.0f,-1.0f}, { 0.5f,-0.5f,-0.5f, 0.0f, 0.0f,-1.0f},
+        {-0.5f,-0.5f,-0.5f, 0.0f, 0.0f,-1.0f}, {-0.5f, 0.5f,-0.5f, 0.0f, 0.0f,-1.0f}, { 0.5f, 0.5f,-0.5f, 0.0f, 0.0f,-1.0f},
+        {-0.5f,-0.5f, 0.5f, 0.0f, 0.0f, 1.0f}, { 0.5f,-0.5f, 0.5f, 0.0f, 0.0f, 1.0f}, { 0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f},
+        {-0.5f,-0.5f, 0.5f, 0.0f, 0.0f, 1.0f}, { 0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f}, {-0.5f, 0.5f, 0.5f, 0.0f, 0.0f, 1.0f},
+        {-0.5f,-0.5f,-0.5f,-1.0f, 0.0f, 0.0f}, {-0.5f,-0.5f, 0.5f,-1.0f, 0.0f, 0.0f}, {-0.5f, 0.5f, 0.5f,-1.0f, 0.0f, 0.0f},
+        {-0.5f,-0.5f,-0.5f,-1.0f, 0.0f, 0.0f}, {-0.5f, 0.5f, 0.5f,-1.0f, 0.0f, 0.0f}, {-0.5f, 0.5f,-0.5f,-1.0f, 0.0f, 0.0f},
+        { 0.5f,-0.5f,-0.5f, 1.0f, 0.0f, 0.0f}, { 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f}, { 0.5f,-0.5f, 0.5f, 1.0f, 0.0f, 0.0f},
+        { 0.5f,-0.5f,-0.5f, 1.0f, 0.0f, 0.0f}, { 0.5f, 0.5f,-0.5f, 1.0f, 0.0f, 0.0f}, { 0.5f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f},
+        {-0.5f,-0.5f,-0.5f, 0.0f,-1.0f, 0.0f}, { 0.5f,-0.5f,-0.5f, 0.0f,-1.0f, 0.0f}, { 0.5f,-0.5f, 0.5f, 0.0f,-1.0f, 0.0f},
+        {-0.5f,-0.5f,-0.5f, 0.0f,-1.0f, 0.0f}, { 0.5f,-0.5f, 0.5f, 0.0f,-1.0f, 0.0f}, {-0.5f,-0.5f, 0.5f, 0.0f,-1.0f, 0.0f},
+        {-0.5f, 0.5f,-0.5f, 0.0f, 1.0f, 0.0f}, {-0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f}, { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f},
+        {-0.5f, 0.5f,-0.5f, 0.0f, 1.0f, 0.0f}, { 0.5f, 0.5f, 0.5f, 0.0f, 1.0f, 0.0f}, { 0.5f, 0.5f,-0.5f, 0.0f, 1.0f, 0.0f}
+    };
+    m_freeDomVoxelCubeVbo.create();
+    m_freeDomVoxelCubeVbo.bind();
+    m_freeDomVoxelCubeVbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
+    m_freeDomVoxelCubeVbo.allocate(vertices, int(sizeof(vertices)));
+    m_freeDomVoxelCubeVbo.release();
+    m_freeDomVoxelCubeVertexCount = int(sizeof(vertices) / sizeof(vertices[0]));
+}
+
+void PointCloudView::uploadFreeDomVoxelInstances(
+    const QVector<SlamRenderVertex>& instances,
+    QOpenGLBuffer& instanceVbo,
+    QOpenGLVertexArrayObject& vao,
+    qsizetype& capacityBytes,
+    int& instanceCount)
+{
+    instanceCount = instances.size();
+    if (!vao.isCreated()) {
+        vao.create();
+    }
+    vao.bind();
+    m_freeDomVoxelCubeVbo.bind();
+    m_voxelProgram->enableAttributeArray(0);
+    m_voxelProgram->setAttributeBuffer(0, GL_FLOAT, offsetof(VoxelCubeVertex, x), 3, sizeof(VoxelCubeVertex));
+    m_voxelProgram->enableAttributeArray(1);
+    m_voxelProgram->setAttributeBuffer(1, GL_FLOAT, offsetof(VoxelCubeVertex, nx), 3, sizeof(VoxelCubeVertex));
+
+    if (!instanceVbo.isCreated()) {
+        instanceVbo.create();
+        instanceVbo.setUsagePattern(QOpenGLBuffer::DynamicDraw);
+    }
+    instanceVbo.bind();
+    const qsizetype byteCount = instances.size() * qsizetype(sizeof(SlamRenderVertex));
+    if (byteCount > capacityBytes) {
+        instanceVbo.allocate(instances.constData(), static_cast<int>(byteCount));
+        capacityBytes = byteCount;
+    } else if (byteCount > 0) {
+        instanceVbo.write(0, instances.constData(), static_cast<int>(byteCount));
+    }
+    m_voxelProgram->enableAttributeArray(3);
+    m_voxelProgram->setAttributeBuffer(3, GL_FLOAT, offsetof(SlamRenderVertex, x), 3, sizeof(SlamRenderVertex));
+    glVertexAttribDivisor(3, 1);
+    m_voxelProgram->enableAttributeArray(4);
+    m_voxelProgram->setAttributeBuffer(4, GL_FLOAT, offsetof(SlamRenderVertex, r), 3, sizeof(SlamRenderVertex));
+    glVertexAttribDivisor(4, 1);
+    instanceVbo.release();
+    m_freeDomVoxelCubeVbo.release();
+    vao.release();
+}
+
 void PointCloudView::uploadSlamRenderOverlayIfNeeded()
 {
     if ((!m_slamRenderUploadPending && !m_slamPoseAxisUploadPending) ||
@@ -1104,64 +1236,75 @@ void PointCloudView::uploadSlamRenderOverlayIfNeeded()
                            m_slamFreeDomDynamicPointsVao,
                            m_slamFreeDomDynamicPointsBufferCapacityBytes,
                            m_slamFreeDomDynamicPointsVertexCount);
-    auto uploadFreeDomPointLayer = [this, crossSectionEnabled](
+    auto freeDomLayerVertices = [this, crossSectionEnabled](
                                        const QVector<SlamRenderVertex>& vertices,
-                                       QOpenGLBuffer& vbo,
-                                       QOpenGLVertexArrayObject& vao,
-                                       qsizetype& capacityBytes,
-                                       int& vertexCount) {
+                                       QVector<SlamRenderVertex>& clippedVertices)
+        -> const QVector<SlamRenderVertex>& {
         if (crossSectionEnabled) {
-            const QVector<SlamRenderVertex> clippedVertices =
-                clipSlamRenderVertices(vertices, m_crossSectionState);
-            uploadSlamRenderBuffer(this,
-                                   m_program,
-                                   clippedVertices,
-                                   vbo,
-                                   vao,
-                                   capacityBytes,
-                                   vertexCount);
-            return;
+            clippedVertices = clipSlamRenderVertices(vertices, m_crossSectionState);
+            return clippedVertices;
         }
-        uploadSlamRenderBuffer(this,
-                               m_program,
-                               vertices,
-                               vbo,
-                               vao,
-                               capacityBytes,
-                               vertexCount);
+        return vertices;
     };
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomScanVoxelVertices,
-                            m_slamFreeDomScanVoxelVbo,
-                            m_slamFreeDomScanVoxelVao,
-                            m_slamFreeDomScanVoxelBufferCapacityBytes,
-                            m_slamFreeDomScanVoxelVertexCount);
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomDynamicVoxelVertices,
-                            m_slamFreeDomDynamicVoxelVbo,
-                            m_slamFreeDomDynamicVoxelVao,
-                            m_slamFreeDomDynamicVoxelBufferCapacityBytes,
-                            m_slamFreeDomDynamicVoxelVertexCount);
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomRaycastedVoxelVertices,
-                            m_slamFreeDomRaycastedVoxelVbo,
-                            m_slamFreeDomRaycastedVoxelVao,
-                            m_slamFreeDomRaycastedVoxelBufferCapacityBytes,
-                            m_slamFreeDomRaycastedVoxelVertexCount);
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomFreeVoxelVertices,
-                            m_slamFreeDomFreeVoxelVbo,
-                            m_slamFreeDomFreeVoxelVao,
-                            m_slamFreeDomFreeVoxelBufferCapacityBytes,
-                            m_slamFreeDomFreeVoxelVertexCount);
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomStaticVoxelVertices,
-                            m_slamFreeDomStaticVoxelVbo,
-                            m_slamFreeDomStaticVoxelVao,
-                            m_slamFreeDomStaticVoxelBufferCapacityBytes,
-                            m_slamFreeDomStaticVoxelVertexCount);
-    uploadFreeDomPointLayer(m_slamRenderSnapshot.freeDomEnhancedVertices,
-                            m_slamFreeDomEnhancedVbo,
-                            m_slamFreeDomEnhancedVao,
-                            m_slamFreeDomEnhancedBufferCapacityBytes,
-                            m_slamFreeDomEnhancedVertexCount);
+    QVector<SlamRenderVertex> clippedEnhancedPoints;
+    auto uploadVoxelLayerIfNeeded = [this, crossSectionEnabled](
+        const QVector<SlamRenderVertex>& vertices,
+        quint64 revision,
+        quint64& uploadedRevision,
+        QOpenGLBuffer& vbo,
+        QOpenGLVertexArrayObject& vao,
+        qsizetype& capacityBytes,
+        int& instanceCount) {
+        if (!m_slamVoxelClipUploadPending && uploadedRevision == revision)
+            return;
+        QVector<SlamRenderVertex> clippedVertices;
+        const QVector<SlamRenderVertex>* uploadVertices = &vertices;
+        if (crossSectionEnabled) {
+            clippedVertices = clipSlamRenderVertices(vertices, m_crossSectionState);
+            uploadVertices = &clippedVertices;
+        }
+        uploadFreeDomVoxelInstances(*uploadVertices, vbo, vao, capacityBytes, instanceCount);
+        uploadedRevision = revision;
+    };
+    uploadVoxelLayerIfNeeded(
+        m_slamRenderSnapshot.freeDomScanVoxelVertices,
+        m_slamRenderSnapshot.freeDomScanVoxelRevision,
+        m_uploadedFreeDomScanVoxelRevision,
+        m_slamFreeDomScanVoxelVbo, m_slamFreeDomScanVoxelVao,
+        m_slamFreeDomScanVoxelBufferCapacityBytes, m_slamFreeDomScanVoxelVertexCount);
+    uploadVoxelLayerIfNeeded(
+        m_slamRenderSnapshot.freeDomDynamicVoxelVertices,
+        m_slamRenderSnapshot.freeDomDynamicVoxelRevision,
+        m_uploadedFreeDomDynamicVoxelRevision,
+        m_slamFreeDomDynamicVoxelVbo, m_slamFreeDomDynamicVoxelVao,
+        m_slamFreeDomDynamicVoxelBufferCapacityBytes, m_slamFreeDomDynamicVoxelVertexCount);
+    uploadVoxelLayerIfNeeded(
+        m_slamRenderSnapshot.freeDomRaycastedVoxelVertices,
+        m_slamRenderSnapshot.freeDomRaycastedVoxelRevision,
+        m_uploadedFreeDomRaycastedVoxelRevision,
+        m_slamFreeDomRaycastedVoxelVbo, m_slamFreeDomRaycastedVoxelVao,
+        m_slamFreeDomRaycastedVoxelBufferCapacityBytes, m_slamFreeDomRaycastedVoxelVertexCount);
+    uploadVoxelLayerIfNeeded(
+        m_slamRenderSnapshot.freeDomFreeVoxelVertices,
+        m_slamRenderSnapshot.freeDomFreeVoxelRevision,
+        m_uploadedFreeDomFreeVoxelRevision,
+        m_slamFreeDomFreeVoxelVbo, m_slamFreeDomFreeVoxelVao,
+        m_slamFreeDomFreeVoxelBufferCapacityBytes, m_slamFreeDomFreeVoxelVertexCount);
+    uploadVoxelLayerIfNeeded(
+        m_slamRenderSnapshot.freeDomStaticVoxelVertices,
+        m_slamRenderSnapshot.freeDomStaticVoxelRevision,
+        m_uploadedFreeDomStaticVoxelRevision,
+        m_slamFreeDomStaticVoxelVbo, m_slamFreeDomStaticVoxelVao,
+        m_slamFreeDomStaticVoxelBufferCapacityBytes, m_slamFreeDomStaticVoxelVertexCount);
+    const QVector<SlamRenderVertex>& enhancedPoints = freeDomLayerVertices(
+        m_slamRenderSnapshot.freeDomEnhancedVertices, clippedEnhancedPoints);
+    uploadSlamRenderBuffer(this, m_program, enhancedPoints,
+                           m_slamFreeDomEnhancedVbo, m_slamFreeDomEnhancedVao,
+                           m_slamFreeDomEnhancedBufferCapacityBytes,
+                           m_slamFreeDomEnhancedVertexCount);
     m_slamRenderUploadPending = false;
     m_slamPoseAxisUploadPending = false;
+    m_slamVoxelClipUploadPending = false;
 }
 
 void PointCloudView::destroySlamRenderOverlay()
@@ -1218,6 +1361,11 @@ void PointCloudView::destroySlamRenderOverlay()
     m_slamFreeDomFreeVoxelVertexCount = 0;
     m_slamFreeDomStaticVoxelVertexCount = 0;
     m_slamFreeDomEnhancedVertexCount = 0;
+    m_uploadedFreeDomScanVoxelRevision = std::numeric_limits<quint64>::max();
+    m_uploadedFreeDomDynamicVoxelRevision = std::numeric_limits<quint64>::max();
+    m_uploadedFreeDomRaycastedVoxelRevision = std::numeric_limits<quint64>::max();
+    m_uploadedFreeDomFreeVoxelRevision = std::numeric_limits<quint64>::max();
+    m_uploadedFreeDomStaticVoxelRevision = std::numeric_limits<quint64>::max();
 }
 
 void PointCloudView::setupStlModelBuffers()
@@ -1708,37 +1856,40 @@ void PointCloudView::paintGL()
         m_slamFreeDomDynamicPointsVao.release();
         m_program->setUniformValue("uPointSize", m_pointSize);
     }
-    auto drawFreeDomPointLayer = [this, &setPrimitiveState](
-                                     int vertexCount,
-                                     QOpenGLVertexArrayObject& vao,
-                                     float pointSizePx) {
-        if (vertexCount <= 0 || !vao.isCreated()) {
+    m_program->release();
+    m_voxelProgram->bind();
+    m_voxelProgram->setUniformValue("modelView", m_modelView);
+    m_voxelProgram->setUniformValue("projection", m_projection);
+    m_voxelProgram->setUniformValue("normalMatrix", m_modelView.normalMatrix());
+    m_voxelProgram->setUniformValue("uVoxelSizeM", m_slamRenderSnapshot.freeDomVoxelSizeM);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    auto drawFreeDomVoxelLayer = [this](int instanceCount,
+                                        QOpenGLVertexArrayObject& vao) {
+        if (instanceCount <= 0 || !vao.isCreated()) {
             return;
         }
-        setPrimitiveState(true, false);
-        m_program->setUniformValue("uPointSize", pointSizePx);
         vao.bind();
-        glDrawArrays(GL_POINTS, 0, vertexCount);
+        glDrawArraysInstanced(GL_TRIANGLES, 0, m_freeDomVoxelCubeVertexCount, instanceCount);
         vao.release();
     };
-    drawFreeDomPointLayer(m_slamFreeDomScanVoxelVertexCount,
-                          m_slamFreeDomScanVoxelVao,
-                          m_slamRenderSnapshot.freeDomScanVoxelPointSizePx);
-    drawFreeDomPointLayer(m_slamFreeDomDynamicVoxelVertexCount,
-                          m_slamFreeDomDynamicVoxelVao,
-                          m_slamRenderSnapshot.freeDomDynamicVoxelPointSizePx);
-    drawFreeDomPointLayer(m_slamFreeDomRaycastedVoxelVertexCount,
-                          m_slamFreeDomRaycastedVoxelVao,
-                          m_slamRenderSnapshot.freeDomRaycastedVoxelPointSizePx);
-    drawFreeDomPointLayer(m_slamFreeDomFreeVoxelVertexCount,
-                          m_slamFreeDomFreeVoxelVao,
-                          m_slamRenderSnapshot.freeDomFreeVoxelPointSizePx);
-    drawFreeDomPointLayer(m_slamFreeDomStaticVoxelVertexCount,
-                          m_slamFreeDomStaticVoxelVao,
-                          m_slamRenderSnapshot.freeDomStaticVoxelPointSizePx);
-    drawFreeDomPointLayer(m_slamFreeDomEnhancedVertexCount,
-                          m_slamFreeDomEnhancedVao,
-                          m_slamRenderSnapshot.freeDomEnhancedPointSizePx);
+    drawFreeDomVoxelLayer(m_slamFreeDomScanVoxelVertexCount, m_slamFreeDomScanVoxelVao);
+    drawFreeDomVoxelLayer(m_slamFreeDomDynamicVoxelVertexCount, m_slamFreeDomDynamicVoxelVao);
+    drawFreeDomVoxelLayer(m_slamFreeDomRaycastedVoxelVertexCount, m_slamFreeDomRaycastedVoxelVao);
+    drawFreeDomVoxelLayer(m_slamFreeDomFreeVoxelVertexCount, m_slamFreeDomFreeVoxelVao);
+    drawFreeDomVoxelLayer(m_slamFreeDomStaticVoxelVertexCount, m_slamFreeDomStaticVoxelVao);
+    glDisable(GL_CULL_FACE);
+    m_voxelProgram->release();
+    m_program->bind();
+    m_program->setUniformValue("modelView", m_modelView);
+    m_program->setUniformValue("projection", m_projection);
+    setPrimitiveState(true, false);
+    m_program->setUniformValue("uPointSize", m_slamRenderSnapshot.freeDomEnhancedPointSizePx);
+    if (m_slamFreeDomEnhancedVertexCount > 0 && m_slamFreeDomEnhancedVao.isCreated()) {
+        m_slamFreeDomEnhancedVao.bind();
+        glDrawArrays(GL_POINTS, 0, m_slamFreeDomEnhancedVertexCount);
+        m_slamFreeDomEnhancedVao.release();
+    }
     m_program->setUniformValue("uPointSize", m_pointSize);
 
     if (m_stlModelVisible && !m_stlModelVertices.isEmpty()) {
@@ -2977,6 +3128,7 @@ void PointCloudView::startCrossSectionClipJob()
         if (state.sourcePoints.isEmpty() &&
             !m_slamRenderSnapshot.worldFrameVertices.isEmpty()) {
             m_slamRenderUploadPending = true;
+            m_slamVoxelClipUploadPending = true;
             emit crossSectionChanged(
                 clippedSlamWorldFramePointCount(m_slamRenderSnapshot, state),
                 m_slamRenderSnapshot.worldFrameVertices.size());
@@ -3690,6 +3842,7 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
             }
             PointCloudCrossSection::initializeBoxFromBounds(m_crossSectionState, minPoint, maxPoint);
             m_slamRenderUploadPending = true;
+            m_slamVoxelClipUploadPending = true;
             emit crossSectionChanged(m_slamRenderSnapshot.worldFrameVertices.size(),
                                      m_slamRenderSnapshot.worldFrameVertices.size());
             update();
@@ -3741,6 +3894,7 @@ void PointCloudView::setCrossSectionModeEnabled(bool enabled)
         const int pointCount = m_slamRenderSnapshot.worldFrameVertices.size();
         m_crossSectionState = PointCloudCrossSection::State();
         m_slamRenderUploadPending = true;
+        m_slamVoxelClipUploadPending = true;
         emit crossSectionChanged(pointCount, pointCount);
         update();
         return;
@@ -3781,6 +3935,7 @@ void PointCloudView::resetCrossSectionBoxToCurrentCloud()
         }
         PointCloudCrossSection::initializeBoxFromBounds(m_crossSectionState, minPoint, maxPoint);
         m_slamRenderUploadPending = true;
+        m_slamVoxelClipUploadPending = true;
         emit crossSectionChanged(m_slamRenderSnapshot.worldFrameVertices.size(),
                                  m_slamRenderSnapshot.worldFrameVertices.size());
         update();

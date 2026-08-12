@@ -67,17 +67,6 @@ QWidget* createSlamStatusField(const QString& title, QLabel** valueOut, QWidget*
     return field;
 }
 
-QLabel* createSlamStatusTextValue(QWidget* parent)
-{
-    QLabel* valueLabel = new QLabel(QStringLiteral("-"), parent);
-    valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    valueLabel->setWordWrap(true);
-    valueLabel->setMinimumWidth(0);
-    valueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    valueLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    return valueLabel;
-}
-
 QString formatStatusMemoryBytes(quint64 bytes)
 {
     constexpr double kKb = 1024.0;
@@ -251,6 +240,7 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(statusBody, statusGroup, QStringLiteral("后端"));
     addField(statusBody, statusGroup, QStringLiteral("IMU 状态"));
     addField(statusBody, statusGroup, QStringLiteral("动态检测模式"));
+    addField(statusBody, statusGroup, QStringLiteral("错误信息"));
     statusBody->addStretch(1);
 
     QVBoxLayout* performanceBody = nullptr;
@@ -259,12 +249,22 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(performanceBody, performanceGroup, QStringLiteral("后端耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("动态检测耗时"));
     addField(performanceBody, performanceGroup, QStringLiteral("动态聚类耗时"));
+    addField(performanceBody, performanceGroup, QStringLiteral("丢帧数"));
     addField(performanceBody, performanceGroup, QStringLiteral("内存占用"));
     performanceBody->addStretch(1);
 
+    QVBoxLayout* trajectoryBody = nullptr;
+    QFrame* trajectoryGroup = createSlamStatusGroup(QStringLiteral("轨迹与定位"), fieldFrame, &trajectoryBody);
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("当前位姿"));
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("移动距离"));
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("起点位移"));
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("轨迹时长"));
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("轨迹点数"));
+    addField(trajectoryBody, trajectoryGroup, QStringLiteral("关键帧数"));
+    trajectoryBody->addStretch(1);
+
     QVBoxLayout* mapBody = nullptr;
     QFrame* mapGroup = createSlamStatusGroup(QStringLiteral("地图与点云信息"), fieldFrame, &mapBody);
-    addField(mapBody, mapGroup, QStringLiteral("关键帧数"));
     addField(mapBody, mapGroup, QStringLiteral("回环约束数"));
     addField(mapBody, mapGroup, QStringLiteral("局部 ikd-tree 有效点数"));
     addField(mapBody, mapGroup, QStringLiteral("世界系点云总数"));
@@ -273,35 +273,10 @@ void LivoxViewerWindow::createSlamStatusPanel()
     addField(mapBody, mapGroup, QStringLiteral("动态目标点"));
     mapBody->addStretch(1);
 
-    QVBoxLayout* poseBody = nullptr;
-    QFrame* poseGroup = createSlamStatusGroup(QStringLiteral("当前位姿"), fieldFrame, &poseBody);
-    QLabel* poseValue = createSlamStatusTextValue(poseGroup);
-    slamStatusFields.insert(QStringLiteral("当前位姿"), poseValue);
-    poseBody->addWidget(poseValue);
-    poseBody->addStretch(1);
-
-    QVBoxLayout* errorBody = nullptr;
-    QFrame* errorGroup = createSlamStatusGroup(QStringLiteral("错误信息"), fieldFrame, &errorBody);
-    QLabel* errorValue = createSlamStatusTextValue(errorGroup);
-    slamStatusFields.insert(QStringLiteral("错误信息"), errorValue);
-    errorBody->addWidget(errorValue);
-    addField(errorBody, errorGroup, QStringLiteral("丢帧数"));
-    errorBody->addStretch(1);
-
-    QWidget* poseColumn = new QWidget(fieldFrame);
-    poseColumn->setMinimumWidth(0);
-    poseColumn->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    QVBoxLayout* poseColumnLayout = new QVBoxLayout(poseColumn);
-    poseColumnLayout->setContentsMargins(0, 0, 0, 0);
-    poseColumnLayout->setSpacing(8);
-    poseColumnLayout->addWidget(poseGroup);
-    poseColumnLayout->addWidget(errorGroup);
-    poseColumnLayout->addStretch(1);
-
     fieldLayout->addWidget(statusGroup, 0, 0);
     fieldLayout->addWidget(performanceGroup, 0, 1);
-    fieldLayout->addWidget(mapGroup, 0, 2);
-    fieldLayout->addWidget(poseColumn, 0, 3);
+    fieldLayout->addWidget(trajectoryGroup, 0, 2);
+    fieldLayout->addWidget(mapGroup, 0, 3);
     for (int column = 0; column < 4; ++column) {
         fieldLayout->setColumnStretch(column, 1);
     }
@@ -405,6 +380,10 @@ void LivoxViewerWindow::updateSlamStatusPanel()
     setField(QStringLiteral("动态聚类耗时"), QStringLiteral("%1 ms").arg(state.dynamicClusterMs));
     setField(QStringLiteral("丢帧数"), state.droppedFrames);
     setField(QStringLiteral("当前位姿"), state.currentPose);
+    setField(QStringLiteral("移动距离"), QStringLiteral("%1 m").arg(state.travelDistance));
+    setField(QStringLiteral("起点位移"), QStringLiteral("%1 m").arg(state.displacement));
+    setField(QStringLiteral("轨迹时长"), QStringLiteral("%1 s").arg(state.trajectoryDuration));
+    setField(QStringLiteral("轨迹点数"), state.trajectoryPoints);
     quint64 displayCacheBytes = 0;
     for (const SlamWorldPointSegment& segment : slamWorldPointSegments) {
         displayCacheBytes += quint64(segment.points.size()) * quint64(sizeof(PointCloudPoint));

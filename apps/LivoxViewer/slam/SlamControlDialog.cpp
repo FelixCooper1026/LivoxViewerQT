@@ -67,6 +67,9 @@ SlamControlDialog::SlamControlDialog(LivoxViewerWindow* window, SlamUiBridge* br
     addField(form, QStringLiteral("动态聚类耗时"));
     addField(form, QStringLiteral("丢帧数"));
     addField(form, QStringLiteral("当前位姿"));
+    addField(form, QStringLiteral("移动距离"));
+    addField(form, QStringLiteral("起点位移"));
+    addField(form, QStringLiteral("轨迹时长"));
     addField(form, QStringLiteral("轨迹点数"));
     addField(form, QStringLiteral("关键帧数"));
     addField(form, QStringLiteral("回环约束数"));
@@ -204,6 +207,9 @@ void SlamControlDialog::refreshFields()
     m_fields.value(QStringLiteral("动态聚类耗时"))->setText(QStringLiteral("%1 ms").arg(state.dynamicClusterMs));
     m_fields.value(QStringLiteral("丢帧数"))->setText(state.droppedFrames);
     m_fields.value(QStringLiteral("当前位姿"))->setText(state.currentPose);
+    m_fields.value(QStringLiteral("移动距离"))->setText(QStringLiteral("%1 m").arg(state.travelDistance));
+    m_fields.value(QStringLiteral("起点位移"))->setText(QStringLiteral("%1 m").arg(state.displacement));
+    m_fields.value(QStringLiteral("轨迹时长"))->setText(QStringLiteral("%1 s").arg(state.trajectoryDuration));
     m_fields.value(QStringLiteral("轨迹点数"))->setText(state.trajectoryPoints);
     m_fields.value(QStringLiteral("关键帧数"))->setText(state.keyframeCount);
     m_fields.value(QStringLiteral("回环约束数"))->setText(state.loopClosureCount);

@@ -106,19 +106,44 @@ QToolButton* createSmallIconButton(const QString& iconPath, const QString& toolt
 
 QToolButton* createBrowseButton(QLineEdit* pathEdit)
 {
-    pathEdit->setMinimumHeight(32);
+    pathEdit->setObjectName(QStringLiteral("capturePathEdit"));
+    pathEdit->setFixedHeight(32);
     pathEdit->setTextMargins(0, 0, 32, 0);
     QToolButton* button = createSmallIconButton(
         QStringLiteral(":/icons/convert_browse_folder.svg"), QStringLiteral("浏览"), pathEdit);
+    button->setObjectName(QStringLiteral("captureInlineBrowseButton"));
     button->setAutoRaise(false);
     button->setIconSize(QSize(18, 18));
     button->setFixedSize(28, 28);
-    button->setStyleSheet(QStringLiteral(
-        "QToolButton { border: none; border-radius: 3px; background: transparent; }"
-        "QToolButton:hover { background: palette(button); }"
-        "QToolButton:pressed { background: palette(midlight); }"));
+    pathEdit->setStyleSheet(QStringLiteral(
+        "QLineEdit#capturePathEdit {"
+        "  min-height: 32px;"
+        "  max-height: 32px;"
+        "  border: 1px solid palette(mid);"
+        "  border-radius: 4px;"
+        "  background: palette(base);"
+        "  color: palette(text);"
+        "  padding: 0 10px;"
+        "}"
+        "QLineEdit#capturePathEdit:hover { border-color: palette(button-text); }"
+        "QLineEdit#capturePathEdit:focus { border-color: palette(highlight); }"
+        "QLineEdit#capturePathEdit:disabled {"
+        "  background: palette(alternate-base);"
+        "  color: palette(mid);"
+        "}"
+        "QToolButton#captureInlineBrowseButton {"
+        "  border: none;"
+        "  border-radius: 3px;"
+        "  background: transparent;"
+        "  padding: 0;"
+        "  margin: 0;"
+        "}"
+        "QToolButton#captureInlineBrowseButton:hover { background: palette(button); }"
+        "QToolButton#captureInlineBrowseButton:pressed { background: palette(midlight); }"
+        "QToolButton#captureInlineBrowseButton:disabled { background: transparent; }"));
     QHBoxLayout* layout = new QHBoxLayout(pathEdit);
     layout->setContentsMargins(0, 2, 2, 2);
+    layout->setSpacing(0);
     layout->addStretch();
     layout->addWidget(button);
     return button;
