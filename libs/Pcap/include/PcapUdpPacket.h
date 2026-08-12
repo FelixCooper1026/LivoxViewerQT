@@ -25,6 +25,7 @@ struct PacketInfo {
 };
 
 bool tryExtractUdp(const u_char* packetData, size_t caplen, PacketInfo& out);
+bool tryExtractUdp(const u_char* packetData, size_t caplen, int datalinkType, PacketInfo& out);
 
 } // namespace PcapUdp
 

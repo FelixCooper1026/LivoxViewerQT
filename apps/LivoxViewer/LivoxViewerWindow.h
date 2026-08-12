@@ -40,6 +40,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QLineEdit>
+#include <QStringList>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -312,11 +313,13 @@ private:
                          const QString& outputPathNoExt,
                          Lvx2ConvertMode mode,
                          Lvx2ConvertFormat format,
-                         const std::function<void(int, int)>& progress);
+                         const std::function<void(int, int)>& progress,
+                         QStringList* outputFiles);
     bool convertRosbagToPcdFile(const QString& sourcePath,
                                 const QString& outputPathNoExt,
                                 Lvx2ConvertMode mode,
-                                const std::function<void(int, int)>& progress);
+                                const std::function<void(int, int)>& progress,
+                                QStringList* outputFiles);
     bool savePointCloudAsCSV(const QString& filePath, const QVector<PointCloudPoint>& points);
     bool savePointCloudAsTXT(const QString& filePath, const QVector<PointCloudPoint>& points);
     void handlePointCloudRecording(const PointCloudFrame& merged, uint64_t timestampNs);

@@ -14,6 +14,7 @@ class QWidget;
 struct ParameterUiState
 {
     QMap<uint16_t, QString> values;
+    QMap<uint16_t, QString> csvValues;
     QMap<uint16_t, QLabel*> labels;
     QMap<uint16_t, QWidget*> controls;
 

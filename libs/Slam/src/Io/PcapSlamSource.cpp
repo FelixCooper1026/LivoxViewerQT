@@ -34,6 +34,7 @@ struct PcapMetadata {
     QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
     QMap<QString, uint32_t> dataSourceIps;
     QVector<PushMsgParser::PushDeviceRecord> devices;
+    int datalinkType = 0;
 };
 
 struct LivoxPayloadHeader {
@@ -338,6 +339,7 @@ void reconstructAvia2PointTiming(QVector<SlamInputFrame>& frames, int64_t pointR
 
 void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
 {
+    metadata.datalinkType = pcap_datalink(handle);
     struct pcap_pkthdr* header = nullptr;
     const u_char* packetData = nullptr;
     int res = 0;
@@ -348,7 +350,7 @@ void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
         }
 
         PcapUdp::PacketInfo udpInfo;
-        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, udpInfo)) {
+        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, metadata.datalinkType, udpInfo)) {
             continue;
         }
 
@@ -563,7 +565,7 @@ bool PcapSlamSource::load(const QString& filePath, QString* error)
         }
 
         PcapUdp::PacketInfo udpInfo;
-        if (!PcapUdp::tryExtractUdp(packetData, packetHeader->caplen, udpInfo)) {
+        if (!PcapUdp::tryExtractUdp(packetData, packetHeader->caplen, metadata.datalinkType, udpInfo)) {
             continue;
         }
 
@@ -696,6 +698,7 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
         return false;
     }
     const int64_t fileSize = QFileInfo(filePath).size();
+    const int datalinkType = pcap_datalink(handle.get());
 
     QMap<QString, PushMsgParser::PushDeviceRecord> pushDevicesByIp;
     QMap<QString, uint32_t> dataSourceIps;
@@ -819,7 +822,7 @@ bool PcapSlamSource::streamFrames(const QString& filePath,
         }
 
         PcapUdp::PacketInfo udpInfo;
-        if (!PcapUdp::tryExtractUdp(packetData, packetHeader->caplen, udpInfo) || udpInfo.payload == nullptr) {
+        if (!PcapUdp::tryExtractUdp(packetData, packetHeader->caplen, datalinkType, udpInfo) || udpInfo.payload == nullptr) {
             continue;
         }
         if (udpInfo.srcPort == PcapUdp::kLivoxPushDataPort) {

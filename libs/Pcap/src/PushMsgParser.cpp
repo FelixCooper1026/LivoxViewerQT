@@ -1026,10 +1026,6 @@ void mergePushPacket(const QString& srcIp,
     PushDeviceRecord parsed;
     parsed.deviceType = 0; // 默认未知
     parsePushPayload(payload, payloadLen, parsed);
-    if (!isValidPushSn(parsed.lidarSn)) {
-        return;
-    }
-
     if (parsed.lidarId == 0) {
         parsed.lidarId = ipToLidarId(srcIp);
     }
@@ -1096,7 +1092,7 @@ QVector<PushDeviceRecord> finalizeDevices(const QMap<QString, PushDeviceRecord>&
         PushDeviceRecord fallback;
         fallback.lidarId = lidarId;
         fallback.deviceType = 0; // 点云兜底数据无法感知型号，设为未知
-        fallback.lidarSn = QStringLiteral("未知");
+        fallback.lidarSn = QStringLiteral("null");
         fallback.modelDisplay = QStringLiteral("未知");
         devices.push_back(fallback);
     }

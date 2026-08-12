@@ -80,12 +80,16 @@ QString formatValue(uint16_t key, uint8_t* value, uint16_t length)
             break;
         }
         case kKeySetNTPServerIp: {
+            if (length == 4) {
+                return QString("%1.%2.%3.%4")
+                    .arg(value[0]).arg(value[1]).arg(value[2]).arg(value[3]);
+            }
             QByteArray hostIp(reinterpret_cast<const char*>(value), length);
             const int nullIndex = hostIp.indexOf('\0');
             if (nullIndex >= 0) {
                 hostIp.truncate(nullIndex);
             }
-            return QString("NTP:%1").arg(QString::fromLatin1(hostIp));
+            return QString::fromLatin1(hostIp);
         }
         case kKeyInstallAttitude: { // 安装姿态
             if (length >= 24) {

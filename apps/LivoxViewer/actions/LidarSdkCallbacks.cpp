@@ -614,6 +614,13 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                     }
 
                     window->parameterState.values[key] = valueStr;
+                    if (key == kKeyCoreTemp && length >= sizeof(int32_t)) {
+                        int32_t temperature = 0;
+                        memcpy(&temperature, value, sizeof(temperature));
+                        window->parameterState.csvValues[key] = QString::number(double(temperature) / 100.0, 'f', 2);
+                    } else {
+                        window->parameterState.csvValues[key] = valueStr;
+                    }
                     
                     // window->logMessage(QString("参数解析结果: key=0x%1, value='%2'").arg(key, 0, 16).arg(valueStr));
                     
@@ -784,12 +791,8 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                             }
                                         }
                                     } else if (key == kKeySetNTPServerIp) {
-                                        QRegularExpression ntpRegex(R"(NTP:(\d+\.\d+\.\d+\.\d+))");
-                                        QRegularExpressionMatch match = ntpRegex.match(valueStr);
-                                        if (match.hasMatch()) {
-                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("ntpServerIpEdit")) {
-                                                edit->setText(match.captured(1));
-                                            }
+                                        if (QLineEdit* edit = container->findChild<QLineEdit*>("ntpServerIpEdit")) {
+                                            edit->setText(valueStr);
                                         }
                                     } else if (key == kKeyFovCfg0 || key == kKeyFovCfg1) {
                                         // FOV配置更新
@@ -892,7 +895,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 
                 // 写入所有参数值
                 for (uint16_t key : window->parameterState.recordedOrder) {
-                    QString value = window->parameterState.values.value(key, "N/A");
+                    QString value = window->parameterState.csvValues.value(key, "N/A");
                     // 处理CSV中的特殊字符（引号和逗号）
                     if (value.contains(',') || value.contains('"') || value.contains('\n')) {
                         value = "\"" + value.replace("\"", "\"\"") + "\"";

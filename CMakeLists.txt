@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT
-    VERSION 2.3.9
+    VERSION 2.4.0
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -221,6 +221,64 @@ target_link_libraries(freedom_core PUBLIC ${OpenCV_LIBS})
 target_compile_features(freedom_core PUBLIC cxx_std_17)
 
 if(BUILD_TESTING)
+    add_executable(PcapUdpPacketTests
+        tests/PcapUdpPacketTests.cpp
+        libs/Pcap/src/PcapUdpPacket.cpp
+    )
+    target_include_directories(PcapUdpPacketTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+    )
+    if(QT_VERSION_MAJOR EQUAL 6)
+        target_link_libraries(PcapUdpPacketTests PRIVATE Qt6::Core)
+    else()
+        target_link_libraries(PcapUdpPacketTests PRIVATE Qt5::Core)
+    endif()
+    if(WIN32)
+        target_include_directories(PcapUdpPacketTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Include")
+    elseif(PCAP_LIBRARY)
+        target_link_libraries(PcapUdpPacketTests PRIVATE ${PCAP_LIBRARY})
+    endif()
+    target_compile_features(PcapUdpPacketTests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(PcapUdpPacketTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME PcapUdpPacketTests COMMAND PcapUdpPacketTests)
+
+    add_executable(PcapExtractorTests
+        tests/PcapExtractorTests.cpp
+        libs/Lvx2/src/Lvx2Writer.cpp
+        libs/Pcap/src/ImuParser.cpp
+        libs/Pcap/src/PcapExtractor.cpp
+        libs/Pcap/src/PcapUdpPacket.cpp
+        libs/Pcap/src/PushMsgParser.cpp
+        libs/LivoxCore/src/LidarParameterService.cpp
+    )
+    target_include_directories(PcapExtractorTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/livox_sdk_qt/include
+    )
+    if(QT_VERSION_MAJOR EQUAL 6)
+        target_link_libraries(PcapExtractorTests PRIVATE Qt6::Core)
+    else()
+        target_link_libraries(PcapExtractorTests PRIVATE Qt5::Core)
+    endif()
+    if(WIN32)
+        target_include_directories(PcapExtractorTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Include")
+        target_link_libraries(PcapExtractorTests PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Lib/x64/wpcap.lib"
+            "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Lib/x64/Packet.lib"
+            ws2_32)
+    elseif(PCAP_LIBRARY)
+        target_link_libraries(PcapExtractorTests PRIVATE ${PCAP_LIBRARY})
+    endif()
+    target_compile_features(PcapExtractorTests PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(PcapExtractorTests PRIVATE /utf-8)
+    endif()
+    add_test(NAME PcapExtractorTests COMMAND PcapExtractorTests)
+
     add_executable(LivoxProtocolParserTests
         tests/LivoxProtocolParserTests.cpp
         libs/Pcap/src/PushMsgParser.cpp
@@ -391,9 +449,11 @@ set(SOURCES
     libs/Lvx/src/LvxReader.cpp
     libs/Lvx/src/LvxPointParser.cpp
     libs/Lvx2/src/Lvx2Reader.cpp
+    libs/Lvx2/src/Lvx2Writer.cpp
     libs/Lvx2/src/Lvx2PointParser.cpp
     libs/Pcap/src/ImuParser.cpp
     libs/Pcap/src/PcapParser.cpp
+    libs/Pcap/src/PcapExtractor.cpp
     libs/Pcap/src/PcapReader.cpp
     libs/Pcap/src/PcapUdpPacket.cpp
     libs/Pcap/src/PointParser.cpp
@@ -469,11 +529,13 @@ set(SOURCES
     libs/Lvx/include/LvxPointParser.h
     libs/Lvx2/include/Lvx2Types.h
     libs/Lvx2/include/Lvx2Reader.h
+    libs/Lvx2/include/Lvx2Writer.h
     libs/Lvx2/include/Lvx2PlaybackController.h
     libs/Lvx2/include/Lvx2Converter.h
     libs/Lvx2/include/Lvx2PointParser.h
     libs/Pcap/include/ImuParser.h
     libs/Pcap/include/PcapParser.h
+    libs/Pcap/include/PcapExtractor.h
     libs/Pcap/include/PcapReader.h
     libs/Pcap/include/PcapUdpPacket.h
     libs/Pcap/include/PointParser.h

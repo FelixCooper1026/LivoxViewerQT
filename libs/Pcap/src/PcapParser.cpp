@@ -43,7 +43,7 @@ void scanMetadata(pcap_t* handle, PcapMetadata& metadata)
         metadata.totalPacketsScanned++;
 
         PcapUdp::PacketInfo udpInfo;
-        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, udpInfo)) {
+        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, metadata.datalinkType, udpInfo)) {
             continue;
         }
 
@@ -87,6 +87,7 @@ QMap<uint32_t, int> lineCountsByLidarId(const QVector<PushMsgParser::PushDeviceR
 }
 
 void parseDataFramesAndImuSamples(pcap_t* handle,
+                                  int datalinkType,
                                   const QMap<uint32_t, int>& lineCounts,
                                   QVector<PointCloudFrame>& frames,
                                   QVector<ImuParser::Sample>& imuSamples)
@@ -103,7 +104,7 @@ void parseDataFramesAndImuSamples(pcap_t* handle,
         }
 
         PcapUdp::PacketInfo udpInfo;
-        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, udpInfo)) {
+        if (!PcapUdp::tryExtractUdp(packetData, header->caplen, datalinkType, udpInfo)) {
             continue;
         }
 
@@ -173,7 +174,7 @@ ParseResult parseFileToFrames(const QString& filePath)
         return result;
     }
 
-    parseDataFramesAndImuSamples(frameHandle, lineCountsByLidarId(result.devices), result.frames, result.imuSamples);
+    parseDataFramesAndImuSamples(frameHandle, result.datalinkType, lineCountsByLidarId(result.devices), result.frames, result.imuSamples);
     pcap_close(frameHandle);
 
     if (result.frames.isEmpty()) {

@@ -38,7 +38,8 @@ bool LivoxViewerWindow::savePointCloudAsTXT(const QString& filePath, const QVect
 bool LivoxViewerWindow::convertRosbagToPcdFile(const QString& sourcePath,
                                                const QString& outputPathNoExt,
                                                Lvx2ConvertMode mode,
-                                               const std::function<void(int, int)>& progress)
+                                               const std::function<void(int, int)>& progress,
+                                               QStringList* outputFiles)
 {
     RosbagPlaybackSource source(static_cast<int>(frameIntervalMs));
     if (!source.load(sourcePath)) {
@@ -61,6 +62,7 @@ bool LivoxViewerWindow::convertRosbagToPcdFile(const QString& sourcePath,
             if (!PointCloudExport::saveAsPCD(filePath, frame.points)) {
                 return false;
             }
+            outputFiles->push_back(filePath);
             if (progress) {
                 progress(i + 1, total);
             }
@@ -131,6 +133,7 @@ bool LivoxViewerWindow::convertRosbagToPcdFile(const QString& sourcePath,
     }
     pcdTmpFile.close();
     pcdTmpFile.remove();
+    outputFiles->push_back(outPath);
     return true;
 }
 
@@ -138,7 +141,8 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
                                  const QString& outputPathNoExt,
                                  Lvx2ConvertMode mode,
                                  Lvx2ConvertFormat format,
-                                 const std::function<void(int, int)>& progress)
+                                 const std::function<void(int, int)>& progress,
+                                 QStringList* outputFiles)
 {
     QFile file(sourcePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -373,6 +377,7 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
             textOut.flush();
             outFile.close();
         }
+        outputFiles->push_back(outPath);
         return true;
     }
 
@@ -417,6 +422,7 @@ bool LivoxViewerWindow::convertLvx2File(const QString& sourcePath,
         if (!writePoints(filePath, points)) {
             return false;
         }
+        outputFiles->push_back(filePath);
         if (progress) {
             progress(g + 1, groupCount);
         }

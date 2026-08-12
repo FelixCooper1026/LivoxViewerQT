@@ -105,7 +105,9 @@ void LivoxViewerWindow::createFileActions()
     QAction* actionGenerateConfig = fileMenu->addAction("生成配置文件...");
     fileMenu->addAction(actionPlayPointCloud);
     QAction* actionFormatConvert = fileMenu->addAction("格式转换...");
+    ThemeIconUtils::setThemedSvgIcon(actionFormatConvert, QStringLiteral(":/icons/format_convert.svg"));
     QAction* actionPreferences = fileMenu->addAction("首选项...");
+    ThemeIconUtils::setThemedSvgIcon(actionPreferences, QStringLiteral(":/icons/settings.svg"));
     fileMenu->addSeparator();
     exitAction = fileMenu->addAction("退出");
 

@@ -578,7 +578,7 @@ bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durati
             case kKeyVersionHardware: parameterState.recordedKeys[key] = "硬件版本"; break;
             case kKeyMac: parameterState.recordedKeys[key] = "MAC地址"; break;
             case kKeyCurWorkState: parameterState.recordedKeys[key] = "当前工作状态"; break;
-            case kKeyCoreTemp: parameterState.recordedKeys[key] = "核心温度"; break;
+            case kKeyCoreTemp: parameterState.recordedKeys[key] = "核心温度 ℃"; break;
             case kKeyPowerUpCnt: parameterState.recordedKeys[key] = "上电次数"; break;
             case kKeyLocalTimeNow: parameterState.recordedKeys[key] = "本地时间"; break;
             case kKeyLastSyncTime: parameterState.recordedKeys[key] = "最后同步时间"; break;

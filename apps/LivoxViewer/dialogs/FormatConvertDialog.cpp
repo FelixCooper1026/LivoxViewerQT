@@ -1,9 +1,11 @@
 #include "LivoxViewerWindow.h"
 #include "dialogs/DialogWindowUtils.h"
 #include "ThemeIconUtils.h"
+#include "PcapExtractor.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
+#include <QAbstractButton>
 #include <QApplication>
 #include <QButtonGroup>
 #include <QColor>
@@ -13,17 +15,21 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QObject>
 #include <QProgressBar>
+#include <QPointer>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QSize>
 #include <QSizePolicy>
 #include <QTableWidget>
@@ -31,8 +37,11 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 
 #include <algorithm>
+#include <atomic>
+#include <memory>
 
 namespace {
 
@@ -43,11 +52,15 @@ constexpr int kColumnStatus = 3;
 constexpr int kColumnAction = 4;
 constexpr int kPathRole = Qt::UserRole;
 constexpr int kStateRole = Qt::UserRole + 1;
+constexpr int kOutputFilesRole = Qt::UserRole + 2;
 constexpr int kOptionRowHeight = 36;
 constexpr int kOptionLabelSpacing = 6;
 constexpr int kOptionRadioSpacing = 14;
 constexpr int kTableFramePadding = 1;
 constexpr int kRosbagToPcdFormatId = 100;
+constexpr int kPcapToLvx2FormatId = 200;
+constexpr int kPcapToImuFormatId = 201;
+constexpr int kPcapToInfoFormatId = 202;
 
 enum class JobState {
     Pending = 0,
@@ -68,7 +81,33 @@ struct ConvertDialogState : QObject {
     Lvx2Convert::Format currentFormat = Lvx2Convert::Format::PCD;
     Lvx2Convert::Mode currentMode = Lvx2Convert::Mode::MergeAllToOne;
     bool currentRosbagToPcd = false;
+    int currentToolId = int(Lvx2Convert::Format::PCD);
+    bool extractionRunning = false;
+    std::shared_ptr<std::atomic_bool> extractionCancellation;
+    QMap<int, QStringList> pathsBySourceType;
+    QMap<int, QMap<QString, JobState>> statesByTool;
+    QMap<int, QMap<QString, QStringList>> outputsByTool;
+    QMap<int, Lvx2Convert::Mode> modeByTool;
 };
+
+bool isPcapTool(int toolId)
+{
+    return toolId >= kPcapToLvx2FormatId && toolId <= kPcapToInfoFormatId;
+}
+
+int sourceTypeForTool(int toolId)
+{
+    if (isPcapTool(toolId)) return 2;
+    if (toolId == kRosbagToPcdFormatId) return 1;
+    return 0;
+}
+
+PcapExtractor::Kind extractionKind(int toolId)
+{
+    if (toolId == kPcapToLvx2FormatId) return PcapExtractor::Kind::Lvx2;
+    if (toolId == kPcapToImuFormatId) return PcapExtractor::Kind::ImuCsv;
+    return PcapExtractor::Kind::InfoCsv;
+}
 
 QString normalizedPathKey(const QString& path)
 {
@@ -129,6 +168,16 @@ QStringList selectRosbagFiles(QWidget* parent, const QString& startDir)
     return dialog.selectedFiles();
 }
 
+QStringList selectPcapFiles(QWidget* parent, const QString& startDir)
+{
+    QFileDialog dialog(parent, QStringLiteral("添加 PCAP 文件"), startDir);
+    dialog.setOption(QFileDialog::DontUseNativeDialog, true);
+    dialog.setFileMode(QFileDialog::ExistingFiles);
+    dialog.setNameFilter(QStringLiteral("抓包文件 (*.pcap *.pcapng *.cap)"));
+    if (dialog.exec() != QDialog::Accepted) return {};
+    return dialog.selectedFiles();
+}
+
 bool isRosbagConvertFile(const QFileInfo& info)
 {
     const QString suffix = info.suffix();
@@ -138,15 +187,25 @@ bool isRosbagConvertFile(const QFileInfo& info)
            suffix.compare(QStringLiteral("yml"), Qt::CaseInsensitive) == 0;
 }
 
-QStringList folderFilters(bool rosbagToPcd)
+bool isPcapFile(const QFileInfo& info)
 {
+    const QString suffix = info.suffix();
+    return suffix.compare(QStringLiteral("pcap"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("pcapng"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("cap"), Qt::CaseInsensitive) == 0;
+}
+
+QStringList folderFilters(bool rosbagToPcd, bool pcapTool)
+{
+    if (pcapTool) return {QStringLiteral("*.pcap"), QStringLiteral("*.pcapng"), QStringLiteral("*.cap")};
     return rosbagToPcd
         ? QStringList{QStringLiteral("*.bag"), QStringLiteral("*.db3"), QStringLiteral("*.yaml"), QStringLiteral("*.yml")}
         : QStringList{QStringLiteral("*.lvx2")};
 }
 
-QString addFilePrompt(bool rosbagToPcd)
+QString addFilePrompt(bool rosbagToPcd, bool pcapTool)
 {
+    if (pcapTool) return QStringLiteral("请添加 PCAP、PCAPNG 或 CAP 文件");
     return rosbagToPcd ? QStringLiteral("请添加 ROSbag 文件") : QStringLiteral("请添加 LVX2 文件");
 }
 
@@ -166,13 +225,14 @@ QString selectFolder(QWidget* parent, const QString& startDir, const QString& ti
 QPushButton* createNavButton(const QString& text, QWidget* parent)
 {
     QPushButton* button = new QPushButton(text, parent);
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     button->setCheckable(true);
-    button->setMinimumHeight(44);
+    button->setMinimumHeight(38);
     button->setCursor(Qt::PointingHandCursor);
     button->setStyleSheet(
         "QPushButton {"
         "  text-align: left;"
-        "  padding: 8px 14px;"
+        "  padding: 7px 12px 7px 30px;"
         "  border: none;"
         "  border-radius: 6px;"
         "}"
@@ -184,6 +244,23 @@ QPushButton* createNavButton(const QString& text, QWidget* parent)
         "  color: palette(highlighted-text);"
         "}"
     );
+    return button;
+}
+
+QToolButton* createNavGroupButton(const QString& text, QWidget* parent)
+{
+    QToolButton* button = new QToolButton(parent);
+    button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    button->setText(text);
+    button->setCheckable(true);
+    button->setChecked(true);
+    button->setArrowType(Qt::DownArrow);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setCursor(Qt::PointingHandCursor);
+    button->setMinimumHeight(38);
+    button->setStyleSheet(QStringLiteral(
+        "QToolButton { text-align: left; padding: 7px 8px; border: none; border-radius: 6px; font-weight: 600; }"
+        "QToolButton:hover { background: palette(base); }"));
     return button;
 }
 
@@ -227,7 +304,11 @@ QToolButton* createToolbarButton(const QString& iconPath, const QString& text, Q
     return button;
 }
 
-QWidget* createStatusCell(const QString& text, int value, const QString& iconPath = QString(), const QColor& color = QColor())
+QWidget* createStatusCell(const QString& text,
+                          int value,
+                          const QString& iconPath = QString(),
+                          const QColor& color = QColor(),
+                          bool showProgress = true)
 {
     QWidget* cell = new QWidget();
     QVBoxLayout* layout = new QVBoxLayout(cell);
@@ -235,6 +316,7 @@ QWidget* createStatusCell(const QString& text, int value, const QString& iconPat
     layout->setSpacing(4);
 
     QWidget* statusRow = new QWidget(cell);
+    statusRow->setFixedHeight(20);
     QHBoxLayout* statusLayout = new QHBoxLayout(statusRow);
     statusLayout->setContentsMargins(0, 0, 0, 0);
     statusLayout->setSpacing(6);
@@ -246,21 +328,23 @@ QWidget* createStatusCell(const QString& text, int value, const QString& iconPat
     }
     QLabel* label = new QLabel(text, statusRow);
     label->setObjectName("statusLabel");
+    label->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     if (color.isValid()) {
         label->setStyleSheet(QString("color: %1;").arg(color.name()));
     }
     statusLayout->addWidget(label);
     statusLayout->addStretch();
 
-    QProgressBar* progress = new QProgressBar(cell);
-    progress->setObjectName("statusProgress");
-    progress->setRange(0, 100);
-    progress->setValue(value);
-    progress->setTextVisible(false);
-    progress->setFixedHeight(8);
-
     layout->addWidget(statusRow);
-    layout->addWidget(progress);
+    if (showProgress) {
+        QProgressBar* progress = new QProgressBar(cell);
+        progress->setObjectName("statusProgress");
+        progress->setRange(0, 100);
+        progress->setValue(value);
+        progress->setTextVisible(false);
+        progress->setFixedHeight(8);
+        layout->addWidget(progress);
+    }
     return cell;
 }
 
@@ -284,6 +368,31 @@ void setJobState(QTableWidget* table, int row, JobState state)
     }
 }
 
+void replaceStatusCell(QTableWidget* table, int row, QWidget* replacement)
+{
+    if (QWidget* oldCell = table->cellWidget(row, kColumnStatus)) {
+        oldCell->hide();
+        table->removeCellWidget(row, kColumnStatus);
+        delete oldCell;
+    }
+    table->setCellWidget(row, kColumnStatus, replacement);
+}
+
+QStringList rowOutputFiles(QTableWidget* table, int row)
+{
+    if (QTableWidgetItem* item = fileNameItem(table, row)) {
+        return item->data(kOutputFilesRole).toStringList();
+    }
+    return {};
+}
+
+void setRowOutputFiles(QTableWidget* table, int row, const QStringList& files)
+{
+    if (QTableWidgetItem* item = fileNameItem(table, row)) {
+        item->setData(kOutputFilesRole, files);
+    }
+}
+
 QString rowPath(QTableWidget* table, int row)
 {
     if (QTableWidgetItem* item = fileNameItem(table, row)) {
@@ -295,38 +404,46 @@ QString rowPath(QTableWidget* table, int row)
 void setStatusPending(QTableWidget* table, int row)
 {
     setJobState(table, row, JobState::Pending);
-    table->setCellWidget(row, kColumnStatus, createStatusCell("待转换", 0));
+    replaceStatusCell(table, row, createStatusCell("待转换", 0));
     table->resizeRowToContents(row);
 }
 
 void setStatusProgress(QTableWidget* table, int row, int value)
 {
+    if (row < 0 || row >= table->rowCount()) {
+        return;
+    }
+    const JobState state = jobState(table, row);
+    if (state == JobState::Done || state == JobState::Failed) {
+        return;
+    }
     QWidget* cell = table->cellWidget(row, kColumnStatus);
     QProgressBar* progress = cell ? cell->findChild<QProgressBar*>("statusProgress") : nullptr;
     QLabel* label = cell ? cell->findChild<QLabel*>("statusLabel") : nullptr;
     if (!progress || !label) {
         cell = createStatusCell("0%", 0);
-        table->setCellWidget(row, kColumnStatus, cell);
+        replaceStatusCell(table, row, cell);
         progress = cell->findChild<QProgressBar*>("statusProgress");
         label = cell->findChild<QLabel*>("statusLabel");
     }
     setJobState(table, row, JobState::Running);
-    progress->setValue(value);
-    label->setText(QString("%1%").arg(value));
+    const int boundedValue = std::clamp(value, 0, 100);
+    progress->setValue(boundedValue);
+    label->setText(QString("%1%").arg(boundedValue));
     table->resizeRowToContents(row);
 }
 
 void setStatusDone(QTableWidget* table, int row)
 {
     setJobState(table, row, JobState::Done);
-    table->setCellWidget(row, kColumnStatus, createStatusCell("已完成", 100, ":/icons/status_done.svg", QColor(46, 204, 113)));
+    replaceStatusCell(table, row, createStatusCell("已完成", 100, ":/icons/status_done.svg", QColor(46, 204, 113), false));
     table->resizeRowToContents(row);
 }
 
 void setStatusFailed(QTableWidget* table, int row)
 {
     setJobState(table, row, JobState::Failed);
-    table->setCellWidget(row, kColumnStatus, createStatusCell("失败", 0, ":/icons/status_failed.svg", QColor(220, 80, 80)));
+    replaceStatusCell(table, row, createStatusCell("失败", 0, ":/icons/status_failed.svg", QColor(220, 80, 80), false));
     table->resizeRowToContents(row);
 }
 
@@ -349,6 +466,11 @@ QToolButton* actionButton(QTableWidget* table, int row, const char* name)
 
 void updateActionButtons(QTableWidget* table, int row, bool converting)
 {
+    if (QToolButton* openFileButton = actionButton(table, row, "openFileButton")) {
+        const bool available = jobState(table, row) == JobState::Done && !rowOutputFiles(table, row).isEmpty();
+        openFileButton->setVisible(available);
+        openFileButton->setEnabled(!converting && available);
+    }
     if (QToolButton* openButton = actionButton(table, row, "openFolderButton")) {
         openButton->setVisible(jobState(table, row) == JobState::Done);
         openButton->setEnabled(!converting && jobState(table, row) == JobState::Done);
@@ -377,19 +499,31 @@ QWidget* createActionCell(QTableWidget* table,
 {
     QWidget* cell = new QWidget();
     QHBoxLayout* layout = new QHBoxLayout(cell);
-    layout->setContentsMargins(0, 0, 30, 0);
+    layout->setContentsMargins(0, 0, 14, 0);
     layout->setSpacing(6);
 
+    QToolButton* openFileButton = createIconButton(":/icons/convert_open_file.svg", "打开输出文件", cell);
+    openFileButton->setObjectName("openFileButton");
+    openFileButton->setVisible(false);
     QToolButton* openButton = createIconButton(":/icons/convert_open_folder.svg", "打开输出目录", cell);
     openButton->setObjectName("openFolderButton");
     openButton->setVisible(false);
     QToolButton* deleteButton = createIconButton(":/icons/convert_delete.svg", "删除任务", cell);
     deleteButton->setObjectName("deleteJobButton");
 
+    layout->addWidget(openFileButton);
     layout->addWidget(openButton);
     layout->addWidget(deleteButton);
     layout->addStretch();
 
+    QObject::connect(openFileButton, &QToolButton::clicked, cell, [table, cell]() {
+        const int row = rowForWidget(table, cell);
+        if (row < 0) return;
+        const QStringList files = rowOutputFiles(table, row);
+        if (!files.isEmpty()) {
+            QDesktopServices::openUrl(QUrl::fromLocalFile(files.first()));
+        }
+    });
     QObject::connect(openButton, &QToolButton::clicked, cell, [table, cell, sameSourceRadio, outputDirEdit]() {
         const int row = rowForWidget(table, cell);
         if (row < 0) {
@@ -416,7 +550,7 @@ QWidget* createActionCell(QTableWidget* table,
 
 void addJobRow(QTableWidget* table,
                const QString& path,
-               Lvx2Convert::Mode mode,
+               const QString& mode,
                QRadioButton* sameSourceRadio,
                QLineEdit* outputDirEdit,
                QSet<QString>* addedPaths)
@@ -436,15 +570,14 @@ void addJobRow(QTableWidget* table,
     nameItem->setData(kStateRole, int(JobState::Pending));
     table->setItem(row, kColumnFileName, nameItem);
     table->setItem(row, kColumnFileSize, new QTableWidgetItem(formatFileSize(fileInfo.size())));
-    table->setItem(row, kColumnMode, new QTableWidgetItem(modeText(mode)));
+    table->setItem(row, kColumnMode, new QTableWidgetItem(mode));
     setStatusPending(table, row);
     table->setCellWidget(row, kColumnAction, createActionCell(table, sameSourceRadio, outputDirEdit, addedPaths));
     table->resizeRowToContents(row);
 }
 
-void updateModeText(QTableWidget* table, Lvx2Convert::Mode mode)
+void updateModeText(QTableWidget* table, const QString& text)
 {
-    const QString text = modeText(mode);
     for (int row = 0; row < table->rowCount(); ++row) {
         if (QTableWidgetItem* item = table->item(row, kColumnMode)) {
             item->setText(text);
@@ -503,7 +636,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     root->setSpacing(0);
 
     QWidget* navPanel = new QWidget(dlg);
-    navPanel->setFixedWidth(190);
+    navPanel->setFixedWidth(240);
     navPanel->setObjectName("ConvertNavPanel");
     QVBoxLayout* navLayout = new QVBoxLayout(navPanel);
     navLayout->setContentsMargins(14, 18, 14, 18);
@@ -517,23 +650,66 @@ void LivoxViewerWindow::showFormatConvertDialog()
 
     QButtonGroup* formatGroup = new QButtonGroup(navPanel);
     formatGroup->setExclusive(true);
+    QToolButton* pointGroupButton = createNavGroupButton(QStringLiteral("点云转换"), navPanel);
+    pointGroupButton->setChecked(state->settings.value(QStringLiteral("convert/pointGroupExpanded"), true).toBool());
+    pointGroupButton->setArrowType(pointGroupButton->isChecked() ? Qt::DownArrow : Qt::RightArrow);
+    QWidget* pointGroupContent = new QWidget(navPanel);
+    QVBoxLayout* pointGroupLayout = new QVBoxLayout(pointGroupContent);
+    pointGroupLayout->setContentsMargins(0, 0, 0, 0);
+    pointGroupLayout->setSpacing(4);
     QPushButton* pcdButton = createNavButton("LVX2 转 PCD", navPanel);
     QPushButton* lasButton = createNavButton("LVX2 转 LAS", navPanel);
     QPushButton* csvButton = createNavButton("LVX2 转 CSV", navPanel);
     QPushButton* txtButton = createNavButton("LVX2 转 TXT", navPanel);
     QPushButton* rosbagPcdButton = createNavButton(QStringLiteral("ROSbag 转 PCD"), navPanel);
+    QToolButton* extractGroupButton = createNavGroupButton(QStringLiteral("数据提取"), navPanel);
+    extractGroupButton->setChecked(state->settings.value(QStringLiteral("convert/extractGroupExpanded"), true).toBool());
+    extractGroupButton->setArrowType(extractGroupButton->isChecked() ? Qt::DownArrow : Qt::RightArrow);
+    QWidget* extractGroupContent = new QWidget(navPanel);
+    QVBoxLayout* extractGroupLayout = new QVBoxLayout(extractGroupContent);
+    extractGroupLayout->setContentsMargins(0, 0, 0, 0);
+    extractGroupLayout->setSpacing(4);
+    QPushButton* pcapLvx2Button = createNavButton(QStringLiteral("PCAP 提取 LVX2"), navPanel);
+    QPushButton* pcapImuButton = createNavButton(QStringLiteral("PCAP 提取 IMU"), navPanel);
+    QPushButton* pcapInfoButton = createNavButton(QStringLiteral("PCAP 提取 INFO"), navPanel);
     formatGroup->addButton(pcdButton, int(Lvx2Convert::Format::PCD));
     formatGroup->addButton(lasButton, int(Lvx2Convert::Format::LAS));
     formatGroup->addButton(csvButton, int(Lvx2Convert::Format::CSV));
     formatGroup->addButton(txtButton, int(Lvx2Convert::Format::TXT));
     formatGroup->addButton(rosbagPcdButton, kRosbagToPcdFormatId);
+    formatGroup->addButton(pcapLvx2Button, kPcapToLvx2FormatId);
+    formatGroup->addButton(pcapImuButton, kPcapToImuFormatId);
+    formatGroup->addButton(pcapInfoButton, kPcapToInfoFormatId);
     pcdButton->setChecked(true);
-    navLayout->addWidget(pcdButton);
-    navLayout->addWidget(lasButton);
-    navLayout->addWidget(csvButton);
-    navLayout->addWidget(txtButton);
-    navLayout->addWidget(rosbagPcdButton);
+    pointGroupLayout->addWidget(pcdButton);
+    pointGroupLayout->addWidget(lasButton);
+    pointGroupLayout->addWidget(csvButton);
+    pointGroupLayout->addWidget(txtButton);
+    pointGroupLayout->addWidget(rosbagPcdButton);
+    extractGroupLayout->addWidget(pcapLvx2Button);
+    extractGroupLayout->addWidget(pcapImuButton);
+    extractGroupLayout->addWidget(pcapInfoButton);
+    navLayout->addWidget(pointGroupButton);
+    navLayout->addWidget(pointGroupContent);
+    navLayout->addWidget(extractGroupButton);
+    navLayout->addWidget(extractGroupContent);
+    pointGroupContent->setVisible(pointGroupButton->isChecked());
+    extractGroupContent->setVisible(extractGroupButton->isChecked());
     navLayout->addStretch();
+    QObject::connect(pointGroupButton, &QToolButton::toggled, pointGroupContent, [pointGroupButton, pointGroupContent](bool expanded) {
+        pointGroupContent->setVisible(expanded);
+        pointGroupButton->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+    });
+    QObject::connect(pointGroupButton, &QToolButton::toggled, state, [state](bool expanded) {
+        state->settings.setValue(QStringLiteral("convert/pointGroupExpanded"), expanded);
+    });
+    QObject::connect(extractGroupButton, &QToolButton::toggled, extractGroupContent, [extractGroupButton, extractGroupContent](bool expanded) {
+        extractGroupContent->setVisible(expanded);
+        extractGroupButton->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+    });
+    QObject::connect(extractGroupButton, &QToolButton::toggled, state, [state](bool expanded) {
+        state->settings.setValue(QStringLiteral("convert/extractGroupExpanded"), expanded);
+    });
     navPanel->setStyleSheet(
         "#ConvertNavPanel {"
         "  background: palette(alternate-base);"
@@ -589,7 +765,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     table->setColumnWidth(kColumnFileSize, 132);
     table->setColumnWidth(kColumnMode, 176);
     table->setColumnWidth(kColumnStatus, 250);
-    table->setColumnWidth(kColumnAction, 140);
+    table->setColumnWidth(kColumnAction, 172);
     table->setMinimumHeight(310);
     table->setStyleSheet(
         "QTableWidget { border: none; gridline-color: transparent; background: palette(base); }"
@@ -745,24 +921,99 @@ void LivoxViewerWindow::showFormatConvertDialog()
             : Lvx2Convert::Mode::SplitBy100ms;
     };
 
+    auto selectedModeText = [state, mergeModeButton]() {
+        if (isPcapTool(state->currentToolId)) {
+            return mergeModeButton->isChecked()
+                ? QStringLiteral("合并为单个文件")
+                : QStringLiteral("按设备拆分");
+        }
+        return modeText(mergeModeButton->isChecked() ? Lvx2Convert::Mode::MergeAllToOne
+                                                      : Lvx2Convert::Mode::SplitBy100ms);
+    };
+
     auto updateStartEnabled = [table, startButton]() {
         startButton->setEnabled(table->rowCount() > 0);
     };
 
-    auto addPaths = [table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, selectedMode, updateStartEnabled](const QStringList& paths) {
+    auto saveVisiblePaths = [table, state]() {
+        QStringList paths;
+        QMap<QString, JobState> states;
+        QMap<QString, QStringList> outputs;
+        paths.reserve(table->rowCount());
+        for (int row = 0; row < table->rowCount(); ++row) {
+            const QString path = rowPath(table, row);
+            paths.push_back(path);
+            states.insert(normalizedPathKey(path), jobState(table, row));
+            outputs.insert(normalizedPathKey(path), rowOutputFiles(table, row));
+        }
+        state->pathsBySourceType.insert(sourceTypeForTool(state->currentToolId), paths);
+        state->statesByTool.insert(state->currentToolId, states);
+        state->outputsByTool.insert(state->currentToolId, outputs);
+        state->modeByTool.insert(state->currentToolId, state->currentMode);
+    };
+
+    auto restoreVisiblePaths = [table, sameSourceOutputRadio, outputDirEdit, state, selectedModeText, updateStartEnabled]() {
+        table->setRowCount(0);
+        state->addedPaths.clear();
+        const QStringList paths = state->pathsBySourceType.value(sourceTypeForTool(state->currentToolId));
+        for (const QString& path : paths) {
+            addJobRow(table,
+                      path,
+                      selectedModeText(),
+                      sameSourceOutputRadio,
+                      outputDirEdit,
+                      &state->addedPaths);
+            const int row = table->rowCount() - 1;
+            const JobState savedState = state->statesByTool.value(state->currentToolId)
+                                            .value(normalizedPathKey(path), JobState::Pending);
+            setRowOutputFiles(table,
+                              row,
+                              state->outputsByTool.value(state->currentToolId)
+                                  .value(normalizedPathKey(path)));
+            if (savedState == JobState::Done) {
+                setStatusDone(table, row);
+            } else if (savedState == JobState::Failed) {
+                setStatusFailed(table, row);
+            }
+        }
+        updateAllActionButtons(table, false);
+        updateStartEnabled();
+    };
+
+    auto restoreVisibleStates = [table, state]() {
+        const QMap<QString, JobState> states = state->statesByTool.value(state->currentToolId);
+        const QMap<QString, QStringList> outputs = state->outputsByTool.value(state->currentToolId);
+        for (int row = 0; row < table->rowCount(); ++row) {
+            const QString pathKey = normalizedPathKey(rowPath(table, row));
+            const JobState savedState = states.value(pathKey, JobState::Pending);
+            setRowOutputFiles(table, row, outputs.value(pathKey));
+            if (savedState == JobState::Done) {
+                setStatusDone(table, row);
+            } else if (savedState == JobState::Failed) {
+                setStatusFailed(table, row);
+            } else {
+                setStatusPending(table, row);
+            }
+        }
+        updateAllActionButtons(table, false);
+    };
+
+    auto addPaths = [table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, selectedModeText, updateStartEnabled](const QStringList& paths) {
         bool addedAny = false;
         const bool rosbagToPcd = state->currentRosbagToPcd;
+        const bool pcapTool = isPcapTool(state->currentToolId);
         for (const QString& path : paths) {
             const QFileInfo info(path);
             if (!info.exists() ||
-                (!rosbagToPcd && info.suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) != 0) ||
+                (!rosbagToPcd && !pcapTool && info.suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) != 0) ||
+                (pcapTool && !isPcapFile(info)) ||
                 (rosbagToPcd && !isRosbagConvertFile(info))) {
                 continue;
             }
             const int before = table->rowCount();
             addJobRow(table,
                       info.absoluteFilePath(),
-                      selectedMode(),
+                      selectedModeText(),
                       sameSourceOutputRadio,
                       outputDirEdit,
                       &state->addedPaths);
@@ -778,50 +1029,69 @@ void LivoxViewerWindow::showFormatConvertDialog()
         updateStartEnabled();
     };
 
-    QObject::connect(formatGroup, &QButtonGroup::idClicked, dlg, [table, dialogStatusLabel, state, updateStartEnabled](int id) {
+    QObject::connect(formatGroup, &QButtonGroup::idClicked, dlg, [table, dialogStatusLabel, state, mergeModeButton, splitModeButton, startButton, saveVisiblePaths, restoreVisiblePaths, restoreVisibleStates, updateStartEnabled](int id) {
+        state->settings.setValue(QStringLiteral("convert/lastToolId"), id);
         const bool nextRosbagToPcd = id == kRosbagToPcdFormatId;
-        const auto nextFormat = nextRosbagToPcd
+        const bool nextPcapTool = isPcapTool(id);
+        const auto nextFormat = (nextRosbagToPcd || nextPcapTool)
             ? Lvx2Convert::Format::PCD
             : static_cast<Lvx2Convert::Format>(id);
-        if (state->currentFormat != nextFormat || state->currentRosbagToPcd != nextRosbagToPcd) {
-            const bool inputTypeChanged = state->currentRosbagToPcd != nextRosbagToPcd;
+        if (state->currentToolId != id) {
+            const int previousSourceType = sourceTypeForTool(state->currentToolId);
+            saveVisiblePaths();
             state->currentFormat = nextFormat;
             state->currentRosbagToPcd = nextRosbagToPcd;
-            if (inputTypeChanged) {
-                table->setRowCount(0);
-                state->addedPaths.clear();
-            } else {
-                resetJobStatuses(table);
+            state->currentToolId = id;
+            state->currentMode = state->modeByTool.value(id, Lvx2Convert::Mode::MergeAllToOne);
+            {
+                const QSignalBlocker mergeBlocker(mergeModeButton);
+                const QSignalBlocker splitBlocker(splitModeButton);
+                mergeModeButton->setChecked(state->currentMode == Lvx2Convert::Mode::MergeAllToOne);
+                splitModeButton->setChecked(state->currentMode == Lvx2Convert::Mode::SplitBy100ms);
             }
-            updateStartEnabled();
-            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
+            mergeModeButton->setText(QStringLiteral("合并为单个文件"));
+            splitModeButton->setText(nextPcapTool ? QStringLiteral("按设备拆分") : QStringLiteral("按单帧拆分"));
+            startButton->setText(nextPcapTool ? QStringLiteral("开始提取") : QStringLiteral("开始转换"));
+            if (previousSourceType != sourceTypeForTool(id)) {
+                restoreVisiblePaths();
+            } else {
+                restoreVisibleStates();
+                updateModeText(table, mergeModeButton->isChecked()
+                    ? QStringLiteral("合并为单个文件")
+                    : (nextPcapTool ? QStringLiteral("按设备拆分") : QStringLiteral("按单帧拆分")));
+                updateStartEnabled();
+            }
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd, nextPcapTool));
         }
     });
-    QObject::connect(mergeModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state](bool checked) {
+    QObject::connect(mergeModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state, selectedModeText](bool checked) {
         if (checked) {
             state->currentMode = Lvx2Convert::Mode::MergeAllToOne;
-            updateModeText(table, state->currentMode);
+            updateModeText(table, selectedModeText());
+            for (int row = 0; row < table->rowCount(); ++row) setRowOutputFiles(table, row, {});
             resetJobStatuses(table);
-            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd, isPcapTool(state->currentToolId)));
         }
     });
-    QObject::connect(splitModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state](bool checked) {
+    QObject::connect(splitModeButton, &QRadioButton::toggled, dlg, [table, dialogStatusLabel, state, selectedModeText](bool checked) {
         if (checked) {
             state->currentMode = Lvx2Convert::Mode::SplitBy100ms;
-            updateModeText(table, state->currentMode);
+            updateModeText(table, selectedModeText());
+            for (int row = 0; row < table->rowCount(); ++row) setRowOutputFiles(table, row, {});
             resetJobStatuses(table);
-            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd));
+            dialogStatusLabel->setText(table->rowCount() > 0 ? QStringLiteral("已添加任务") : addFilePrompt(state->currentRosbagToPcd, isPcapTool(state->currentToolId)));
         }
     });
     QObject::connect(addFilesButton, &QToolButton::clicked, dlg, [dlg, state, addPaths]() {
         const QString startDir = state->settings.value("convert/lastSourceDir", QDir::homePath()).toString();
-        addPaths(state->currentRosbagToPcd ? selectRosbagFiles(dlg, startDir) : selectLvx2Files(dlg, startDir));
+        addPaths(state->currentRosbagToPcd ? selectRosbagFiles(dlg, startDir)
+                                          : (isPcapTool(state->currentToolId) ? selectPcapFiles(dlg, startDir) : selectLvx2Files(dlg, startDir)));
     });
     QObject::connect(addFolderButton, &QToolButton::clicked, dlg, [dlg, state, addPaths]() {
         const QString startDir = state->settings.value("convert/lastSourceDir", QDir::homePath()).toString();
         const QString folder = selectFolder(dlg,
                                             startDir,
-                                            state->currentRosbagToPcd
+                                            isPcapTool(state->currentToolId) ? QStringLiteral("添加 PCAP 文件夹") : state->currentRosbagToPcd
                                                 ? QStringLiteral("添加 ROSbag 文件夹")
                                                 : QStringLiteral("添加 LVX2 文件夹"));
         if (folder.isEmpty()) {
@@ -829,7 +1099,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
         }
         state->settings.setValue("convert/lastSourceDir", folder);
         QDir dir(folder);
-        const QFileInfoList files = dir.entryInfoList(folderFilters(state->currentRosbagToPcd), QDir::Files | QDir::Readable, QDir::Name);
+        const QFileInfoList files = dir.entryInfoList(folderFilters(state->currentRosbagToPcd, isPcapTool(state->currentToolId)), QDir::Files | QDir::Readable, QDir::Name);
         QStringList paths;
         paths.reserve(files.size());
         for (const QFileInfo& file : files) {
@@ -857,7 +1127,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     QObject::connect(table->model(), &QAbstractItemModel::rowsRemoved, dlg, [table, dialogStatusLabel, state, updateStartEnabled]() {
         updateStartEnabled();
         if (table->rowCount() == 0) {
-            dialogStatusLabel->setText(addFilePrompt(state->currentRosbagToPcd));
+            dialogStatusLabel->setText(addFilePrompt(state->currentRosbagToPcd, isPcapTool(state->currentToolId)));
         }
     });
 
@@ -870,18 +1140,30 @@ void LivoxViewerWindow::showFormatConvertDialog()
         csvButton,
         txtButton,
         rosbagPcdButton,
+        pcapLvx2Button,
+        pcapImuButton,
+        pcapInfoButton,
+        pointGroupButton,
+        extractGroupButton,
         mergeModeButton,
         splitModeButton,
         sameSourceOutputRadio,
         customOutputRadio,
         outputDirEdit,
-        outputFolderButton,
-        startButton
+        outputFolderButton
     };
 
-    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, lockedControls, updateStartEnabled]() {
+    QObject::connect(startButton, &QPushButton::clicked, dlg, [this, dlg, table, sameSourceOutputRadio, outputDirEdit, dialogStatusLabel, state, startButton, lockedControls, selectedModeText, updateStartEnabled]() {
+        if (state->extractionRunning) {
+            state->extractionCancellation->store(true);
+            startButton->setEnabled(false);
+            startButton->setText(QStringLiteral("正在取消..."));
+            dialogStatusLabel->setText(QStringLiteral("正在取消当前任务..."));
+            return;
+        }
         if (table->rowCount() == 0) {
-            dialogStatusLabel->setText(state->currentRosbagToPcd ? QStringLiteral("请先添加 ROSbag 文件") : QStringLiteral("请先添加 LVX2 文件"));
+            dialogStatusLabel->setText(state->currentRosbagToPcd ? QStringLiteral("请先添加 ROSbag 文件")
+                : (isPcapTool(state->currentToolId) ? QStringLiteral("请先添加 PCAP 文件") : QStringLiteral("请先添加 LVX2 文件")));
             return;
         }
         const bool useSourceDir = sameSourceOutputRadio->isChecked();
@@ -899,7 +1181,86 @@ void LivoxViewerWindow::showFormatConvertDialog()
             state->settings.setValue("convert/lastOutputDir", customOutputDir);
         }
 
+        if (isPcapTool(state->currentToolId)) {
+            QStringList sources;
+            QStringList outputDirectories;
+            for (int row = 0; row < table->rowCount(); ++row) {
+                const QString source = rowPath(table, row);
+                sources.push_back(source);
+                outputDirectories.push_back(outputDirForSource(source, useSourceDir, customOutputDir));
+                if (QTableWidgetItem* item = table->item(row, kColumnMode)) item->setText(selectedModeText());
+                setStatusProgress(table, row, 0);
+            }
+            setControlsEnabled(lockedControls, false);
+            state->extractionRunning = true;
+            state->extractionCancellation = std::make_shared<std::atomic_bool>(false);
+            startButton->setText(QStringLiteral("取消"));
+            startButton->setEnabled(true);
+            updateAllActionButtons(table, true);
+            dialogStatusLabel->setText(QStringLiteral("正在提取..."));
+            const PcapExtractor::Kind kind = extractionKind(state->currentToolId);
+            const PcapExtractor::Mode mode = state->currentMode == Lvx2Convert::Mode::MergeAllToOne
+                ? PcapExtractor::Mode::Merge : PcapExtractor::Mode::SplitByDevice;
+            QPointer<QTableWidget> safeTable(table);
+            auto* watcher = new QFutureWatcher<QVector<PcapExtractor::Result>>(dlg);
+            QObject::connect(watcher, &QFutureWatcher<QVector<PcapExtractor::Result>>::finished, dlg,
+                [dlg, watcher, table, dialogStatusLabel, state, startButton, lockedControls, updateStartEnabled]() {
+                    const QVector<PcapExtractor::Result> results = watcher->result();
+                    QStringList failures;
+                    QStringList warnings;
+                    for (int row = 0; row < results.size(); ++row) {
+                        if (results[row].ok) {
+                            setRowOutputFiles(table, row, results[row].outputFiles);
+                            setStatusDone(table, row);
+                            warnings.append(results[row].warnings);
+                        } else {
+                            setRowOutputFiles(table, row, {});
+                            setStatusFailed(table, row);
+                            failures.push_back(QStringLiteral("%1：%2").arg(QFileInfo(rowPath(table, row)).fileName(), results[row].errorMessage));
+                        }
+                        updateActionButtons(table, row, false);
+                    }
+                    setControlsEnabled(lockedControls, true);
+                    state->extractionRunning = false;
+                    state->extractionCancellation.reset();
+                    startButton->setText(QStringLiteral("开始提取"));
+                    updateAllActionButtons(table, false);
+                    updateStartEnabled();
+                    dialogStatusLabel->setText(failures.isEmpty() ? QStringLiteral("提取完成") : QStringLiteral("部分任务提取失败"));
+                    if (!failures.isEmpty()) {
+                        QMessageBox::warning(dlg, QStringLiteral("PCAP 数据提取"), failures.join(QLatin1Char('\n')));
+                    } else if (!warnings.isEmpty()) {
+                        QMessageBox::information(dlg, QStringLiteral("PCAP 数据提取"), warnings.join(QLatin1Char('\n')));
+                    }
+                    watcher->deleteLater();
+                });
+            const std::shared_ptr<std::atomic_bool> cancellation = state->extractionCancellation;
+            QObject::connect(dlg, &QObject::destroyed, [cancellation]() { cancellation->store(true); });
+            watcher->setFuture(QtConcurrent::run([sources, outputDirectories, kind, mode, safeTable, cancellation]() {
+                QVector<PcapExtractor::Result> results;
+                results.reserve(sources.size());
+                for (int row = 0; row < sources.size(); ++row) {
+                    if (cancellation->load()) {
+                        PcapExtractor::Result cancelled;
+                        cancelled.errorMessage = QStringLiteral("任务已取消");
+                        results.push_back(cancelled);
+                        continue;
+                    }
+                    results.push_back(PcapExtractor::extract(sources[row], outputDirectories[row], kind, mode,
+                        [safeTable, row](int value) {
+                            if (!safeTable) return;
+                            QMetaObject::invokeMethod(safeTable, [safeTable, row, value]() {
+                                if (safeTable) setStatusProgress(safeTable, row, value);
+                            }, Qt::QueuedConnection);
+                        }, cancellation.get()));
+                }
+                return results;
+            }));
+            return;
+        }
+
         setControlsEnabled(lockedControls, false);
+        startButton->setEnabled(false);
         updateAllActionButtons(table, true);
         dialogStatusLabel->setText("正在转换...");
         dlg->setCursor(Qt::BusyCursor);
@@ -909,25 +1270,29 @@ void LivoxViewerWindow::showFormatConvertDialog()
             const QString outputDir = outputDirForSource(srcPath, useSourceDir, customOutputDir);
             const QString outputNoExt = QDir(outputDir).filePath(QFileInfo(srcPath).completeBaseName());
             if (QTableWidgetItem* item = table->item(row, kColumnMode)) {
-                item->setText(modeText(state->currentMode));
+                item->setText(selectedModeText());
             }
 
             setStatusProgress(table, row, 0);
+            setRowOutputFiles(table, row, {});
             QApplication::processEvents();
+            QStringList outputFiles;
             const bool ok = state->currentRosbagToPcd
                 ? convertRosbagToPcdFile(srcPath, outputNoExt, state->currentMode, [table, row](int done, int total) {
                     const int value = total > 0 ? done * 100 / total : 0;
                     setStatusProgress(table, row, value);
                     QApplication::processEvents();
-                })
+                }, &outputFiles)
                 : convertLvx2File(srcPath, outputNoExt, state->currentMode, state->currentFormat, [table, row](int done, int total) {
                 const int value = total > 0 ? done * 100 / total : 0;
                 setStatusProgress(table, row, value);
                 QApplication::processEvents();
-            });
+            }, &outputFiles);
             if (ok) {
+                setRowOutputFiles(table, row, outputFiles);
                 setStatusDone(table, row);
             } else {
+                setRowOutputFiles(table, row, {});
                 setStatusFailed(table, row);
             }
             updateActionButtons(table, row, true);
@@ -941,6 +1306,10 @@ void LivoxViewerWindow::showFormatConvertDialog()
         dialogStatusLabel->setText("转换完成");
     });
 
+    const int savedToolId = state->settings.value(QStringLiteral("convert/lastToolId"), int(Lvx2Convert::Format::PCD)).toInt();
+    if (QAbstractButton* savedButton = formatGroup->button(savedToolId)) {
+        savedButton->click();
+    }
     dlg->show();
     dlg->raise();
     dlg->activateWindow();
