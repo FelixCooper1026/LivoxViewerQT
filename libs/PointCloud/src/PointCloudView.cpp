@@ -933,90 +933,77 @@ void PointCloudView::setupBuffers()
 void PointCloudView::setupAxesBuffers()
 {
     struct AxisVertex { float x, y, z, r, g, b; };
-    std::vector<AxisVertex> vertices;
+    std::vector<AxisVertex> lineVertices;
+    std::vector<AxisVertex> triangleVertices;
 
     const float axisLen = 1.0f;
-    const QColor colX(255, 0, 0), colY(0, 255, 0), colZ(0, 0, 255);
+    const QVector3D colX(1.0f, 0.0f, 0.0f);
+    const QVector3D colY(0.0f, 1.0f, 0.0f);
+    const QVector3D colZ(0.0f, 0.0f, 1.0f);
 
-    // 辅助 lambda：添加线段
-    auto addLine = [&](const QVector3D& p1, const QVector3D& p2, const QColor& c) {
-        vertices.push_back({p1.x(), p1.y(), p1.z(), c.redF(), c.greenF(), c.blueF()});
-        vertices.push_back({p2.x(), p2.y(), p2.z(), c.redF(), c.greenF(), c.blueF()});
+    const auto addVertex = [](std::vector<AxisVertex>& vertices,
+                              const QVector3D& point,
+                              const QVector3D& color) {
+        vertices.push_back({point.x(), point.y(), point.z(), color.x(), color.y(), color.z()});
+    };
+    const auto addLine = [&lineVertices, &addVertex](const QVector3D& p1,
+                                                     const QVector3D& p2,
+                                                     const QVector3D& color) {
+        addVertex(lineVertices, p1, color);
+        addVertex(lineVertices, p2, color);
     };
 
-    // 绘制轴线（从原点延伸到锥体底部）
     const float coneHeight = 0.2f;
     const float coneBasePos = axisLen - coneHeight;
     addLine(QVector3D(0,0,0), QVector3D(coneBasePos, 0, 0), colX);
     addLine(QVector3D(0,0,0), QVector3D(0, coneBasePos, 0), colY);
     addLine(QVector3D(0,0,0), QVector3D(0, 0, coneBasePos), colZ);
 
-    // 锥体参数
     const float coneRadius = 0.08f;
-    const int   coneSegments = 16;   // 十六边形底面
-    const float angleStep = 2.0f * M_PI / coneSegments;
+    constexpr int coneSegments = 24;
+    const auto addCone = [&triangleVertices, &addVertex, coneHeight, coneRadius](
+                             const QVector3D& tip,
+                             const QVector3D& axis,
+                             const QVector3D& color) {
+        QVector3D u = QVector3D::crossProduct(axis, QVector3D(0.0f, 0.0f, 1.0f));
+        if (u.lengthSquared() < 1e-5f) {
+            u = QVector3D::crossProduct(axis, QVector3D(0.0f, 1.0f, 0.0f));
+        }
+        u.normalize();
+        const QVector3D v = QVector3D::crossProduct(axis, u).normalized();
+        const QVector3D baseCenter = tip - axis * coneHeight;
+        std::vector<QVector3D> base;
+        base.reserve(coneSegments);
+        for (int i = 0; i < coneSegments; ++i) {
+            const float angle = 2.0f * float(M_PI) * float(i) / float(coneSegments);
+            base.push_back(baseCenter + (u * std::cos(angle) + v * std::sin(angle)) * coneRadius);
+        }
 
-    // 生成锥体线框（X轴）
-    {
-        QVector3D tip(axisLen, 0, 0);
-        QVector3D baseCenter(coneBasePos, 0, 0);
-        QVector3D u(0, 1, 0), v(0, 0, 1); // 底面的两个正交轴
-        std::vector<QVector3D> basePts;
         for (int i = 0; i < coneSegments; ++i) {
-            float angle = i * angleStep;
-            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
-            basePts.push_back(pt);
+            const QVector3D& a = base[i];
+            const QVector3D& b = base[(i + 1) % coneSegments];
+            const float shade = 0.72f + 0.28f * std::abs(std::cos(2.0f * float(M_PI) * float(i) / float(coneSegments)));
+            const QVector3D sideColor = color * shade;
+            addVertex(triangleVertices, tip, sideColor);
+            addVertex(triangleVertices, a, sideColor);
+            addVertex(triangleVertices, b, sideColor);
         }
-        // 底面圆环线段
-        for (int i = 0; i < coneSegments; ++i) {
-            int j = (i + 1) % coneSegments;
-            addLine(basePts[i], basePts[j], colX);
-        }
-        // 侧棱（锥尖到各顶点）
-        for (const auto& pt : basePts) {
-            addLine(tip, pt, colX);
-        }
-    }
 
-    // Y轴锥体
-    {
-        QVector3D tip(0, axisLen, 0);
-        QVector3D baseCenter(0, coneBasePos, 0);
-        QVector3D u(1, 0, 0), v(0, 0, 1);
-        std::vector<QVector3D> basePts;
+        const QVector3D baseColor = color * 0.65f;
         for (int i = 0; i < coneSegments; ++i) {
-            float angle = i * angleStep;
-            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
-            basePts.push_back(pt);
+            addVertex(triangleVertices, baseCenter, baseColor);
+            addVertex(triangleVertices, base[(i + 1) % coneSegments], baseColor);
+            addVertex(triangleVertices, base[i], baseColor);
         }
-        for (int i = 0; i < coneSegments; ++i) {
-            int j = (i + 1) % coneSegments;
-            addLine(basePts[i], basePts[j], colY);
-        }
-        for (const auto& pt : basePts) {
-            addLine(tip, pt, colY);
-        }
-    }
+    };
+    addCone(QVector3D(axisLen, 0.0f, 0.0f), QVector3D(1.0f, 0.0f, 0.0f), colX);
+    addCone(QVector3D(0.0f, axisLen, 0.0f), QVector3D(0.0f, 1.0f, 0.0f), colY);
+    addCone(QVector3D(0.0f, 0.0f, axisLen), QVector3D(0.0f, 0.0f, 1.0f), colZ);
 
-    // Z轴锥体
-    {
-        QVector3D tip(0, 0, axisLen);
-        QVector3D baseCenter(0, 0, coneBasePos);
-        QVector3D u(1, 0, 0), v(0, 1, 0);
-        std::vector<QVector3D> basePts;
-        for (int i = 0; i < coneSegments; ++i) {
-            float angle = i * angleStep;
-            QVector3D pt = baseCenter + u * (coneRadius * cos(angle)) + v * (coneRadius * sin(angle));
-            basePts.push_back(pt);
-        }
-        for (int i = 0; i < coneSegments; ++i) {
-            int j = (i + 1) % coneSegments;
-            addLine(basePts[i], basePts[j], colZ);
-        }
-        for (const auto& pt : basePts) {
-            addLine(tip, pt, colZ);
-        }
-    }
+    std::vector<AxisVertex> vertices;
+    vertices.reserve(lineVertices.size() + triangleVertices.size());
+    vertices.insert(vertices.end(), lineVertices.begin(), lineVertices.end());
+    vertices.insert(vertices.end(), triangleVertices.begin(), triangleVertices.end());
 
     // 创建 VBO/VAO
     m_axesVao.create();
@@ -1035,7 +1022,8 @@ void PointCloudView::setupAxesBuffers()
     m_axesVao.release();
     m_axesVbo.release();
 
-    m_axesVertexCount = int(vertices.size());
+    m_axesLineVertexCount = int(lineVertices.size());
+    m_axesTriangleVertexCount = int(triangleVertices.size());
 }
 
 void PointCloudView::setupCrossSectionBuffers()
@@ -2025,7 +2013,8 @@ void PointCloudView::paintGL()
 
     glLineWidth(3.0f); // 使得叠加轴更清晰
     m_axesVao.bind();
-    glDrawArrays(GL_LINES, 0, m_axesVertexCount);
+    glDrawArrays(GL_LINES, 0, m_axesLineVertexCount);
+    glDrawArrays(GL_TRIANGLES, m_axesLineVertexCount, m_axesTriangleVertexCount);
     m_axesVao.release();
     glLineWidth(1.0f);
 

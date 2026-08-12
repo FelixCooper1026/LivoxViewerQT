@@ -252,7 +252,8 @@ private:
 
     QOpenGLBuffer m_axesVbo;
     QOpenGLVertexArrayObject m_axesVao;
-    int m_axesVertexCount = 0;
+    int m_axesLineVertexCount = 0;
+    int m_axesTriangleVertexCount = 0;
 
     QOpenGLBuffer m_slamTrajectoryVbo;
     QOpenGLVertexArrayObject m_slamTrajectoryVao;

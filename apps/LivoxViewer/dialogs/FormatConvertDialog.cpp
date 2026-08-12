@@ -12,6 +12,9 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
@@ -22,6 +25,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QObject>
 #include <QProgressBar>
 #include <QPointer>
@@ -41,7 +45,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -195,6 +201,14 @@ bool isPcapFile(const QFileInfo& info)
            suffix.compare(QStringLiteral("cap"), Qt::CaseInsensitive) == 0;
 }
 
+bool isSupportedSourceFile(const QFileInfo& info, bool rosbagToPcd, bool pcapTool)
+{
+    if (!info.exists() || !info.isFile()) return false;
+    if (pcapTool) return isPcapFile(info);
+    if (rosbagToPcd) return isRosbagConvertFile(info);
+    return info.suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) == 0;
+}
+
 QStringList folderFilters(bool rosbagToPcd, bool pcapTool)
 {
     if (pcapTool) return {QStringLiteral("*.pcap"), QStringLiteral("*.pcapng"), QStringLiteral("*.cap")};
@@ -205,9 +219,69 @@ QStringList folderFilters(bool rosbagToPcd, bool pcapTool)
 
 QString addFilePrompt(bool rosbagToPcd, bool pcapTool)
 {
-    if (pcapTool) return QStringLiteral("请添加 PCAP、PCAPNG 或 CAP 文件");
-    return rosbagToPcd ? QStringLiteral("请添加 ROSbag 文件") : QStringLiteral("请添加 LVX2 文件");
+    if (pcapTool) return QStringLiteral("请添加 PCAP、PCAPNG 或 CAP 文件，或将文件拖放至下方窗口内");
+    return rosbagToPcd
+        ? QStringLiteral("请添加 ROSbag 文件，或将文件拖放至下方窗口内")
+        : QStringLiteral("请添加 LVX2 文件，或将文件拖放至下方窗口内");
 }
+
+class ConvertDropEventFilter : public QObject
+{
+public:
+    using FileValidator = std::function<bool(const QFileInfo&)>;
+    using DropHandler = std::function<void(const QStringList&)>;
+
+    ConvertDropEventFilter(FileValidator validator, DropHandler handler, QObject* parent)
+        : QObject(parent)
+        , validator_(std::move(validator))
+        , handler_(std::move(handler))
+    {
+    }
+
+    void installOn(QWidget* widget)
+    {
+        widget->setAcceptDrops(true);
+        widget->installEventFilter(this);
+    }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override
+    {
+        if (event->type() != QEvent::DragEnter &&
+            event->type() != QEvent::DragMove &&
+            event->type() != QEvent::Drop) {
+            return QObject::eventFilter(watched, event);
+        }
+
+        QDropEvent* dropEvent = static_cast<QDropEvent*>(event);
+        const QStringList paths = supportedPaths(dropEvent->mimeData());
+        if (paths.isEmpty()) {
+            dropEvent->ignore();
+            return true;
+        }
+
+        dropEvent->acceptProposedAction();
+        if (event->type() == QEvent::Drop) handler_(paths);
+        return true;
+    }
+
+private:
+    QStringList supportedPaths(const QMimeData* mimeData) const
+    {
+        QStringList paths;
+        if (!mimeData || !mimeData->hasUrls()) return paths;
+
+        for (const QUrl& url : mimeData->urls()) {
+            if (!url.isLocalFile()) continue;
+            const QFileInfo info(url.toLocalFile());
+            if (validator_(info)) paths.append(info.absoluteFilePath());
+        }
+        return paths;
+    }
+
+    FileValidator validator_;
+    DropHandler handler_;
+};
 
 QString selectFolder(QWidget* parent, const QString& startDir, const QString& title)
 {
@@ -735,7 +809,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     toolbarLayout->addWidget(clearButton);
     mainLayout->addWidget(toolbar);
 
-    QLabel* dialogStatusLabel = new QLabel("请添加 LVX2 文件", mainPanel);
+    QLabel* dialogStatusLabel = new QLabel(addFilePrompt(false, false), mainPanel);
     dialogStatusLabel->setStyleSheet("color: palette(mid);");
     mainLayout->addWidget(dialogStatusLabel);
 
@@ -1004,12 +1078,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
         const bool pcapTool = isPcapTool(state->currentToolId);
         for (const QString& path : paths) {
             const QFileInfo info(path);
-            if (!info.exists() ||
-                (!rosbagToPcd && !pcapTool && info.suffix().compare(QStringLiteral("lvx2"), Qt::CaseInsensitive) != 0) ||
-                (pcapTool && !isPcapFile(info)) ||
-                (rosbagToPcd && !isRosbagConvertFile(info))) {
-                continue;
-            }
+            if (!isSupportedSourceFile(info, rosbagToPcd, pcapTool)) continue;
             const int before = table->rowCount();
             addJobRow(table,
                       info.absoluteFilePath(),
@@ -1028,6 +1097,16 @@ void LivoxViewerWindow::showFormatConvertDialog()
         }
         updateStartEnabled();
     };
+
+    ConvertDropEventFilter* dropFilter = new ConvertDropEventFilter(
+        [state](const QFileInfo& info) {
+            return isSupportedSourceFile(info, state->currentRosbagToPcd, isPcapTool(state->currentToolId));
+        },
+        addPaths,
+        dlg);
+    dropFilter->installOn(dlg);
+    dropFilter->installOn(mainPanel);
+    dropFilter->installOn(table->viewport());
 
     QObject::connect(formatGroup, &QButtonGroup::idClicked, dlg, [table, dialogStatusLabel, state, mergeModeButton, splitModeButton, startButton, saveVisiblePaths, restoreVisiblePaths, restoreVisibleStates, updateStartEnabled](int id) {
         state->settings.setValue(QStringLiteral("convert/lastToolId"), id);
@@ -1110,7 +1189,7 @@ void LivoxViewerWindow::showFormatConvertDialog()
     QObject::connect(clearButton, &QToolButton::clicked, dlg, [table, dialogStatusLabel, state, updateStartEnabled]() {
         table->setRowCount(0);
         state->addedPaths.clear();
-        dialogStatusLabel->setText("任务已清空");
+        dialogStatusLabel->setText(addFilePrompt(state->currentRosbagToPcd, isPcapTool(state->currentToolId)));
         updateStartEnabled();
     });
     QObject::connect(outputFolderButton, &QToolButton::clicked, dlg, [dlg, customOutputRadio, outputDirEdit, state]() {

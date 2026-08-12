@@ -13,13 +13,12 @@ constexpr float kMinHalfExtent = 0.05f;
 constexpr float kHitThresholdPixels = 18.0f;
 constexpr float kPi = 3.14159265358979323846f;
 constexpr float kCenterHitRadiusPixels = 24.0f;
-constexpr float kTranslateGapFactor = 0.12f;
+constexpr float kTranslateGapFactor = 0.07f;
 constexpr float kTranslateLengthFactor = 0.20f;
 constexpr float kScaleHandleFactor = 0.32f;
 constexpr float kRotationRingRadiusFactor = 0.18f;
 constexpr float kArrowHeadFactor = 0.10f;
 constexpr float kScaleCrossFactor = 0.07f;
-constexpr float kCenterCrossFactor = 0.10f;
 constexpr float kCenterRingFactor = 0.12f;
 constexpr float kDragGuideFactor = 0.50f;
 constexpr float kRotationSensitivity = 0.35f;
@@ -106,7 +105,7 @@ QVector3D colorForHandle(HandleType handle, bool highlighted)
                handle == HandleType::RotateMinZ || handle == HandleType::RotateMaxZ) {
         color = QVector3D(0.15f, 0.45f, 1.0f);
     } else if (handle == HandleType::Center) {
-        color = QVector3D(0.1f, 0.15f, 1.0f);
+        color = QVector3D(1.0f, 0.58f, 0.06f);
     }
     if (highlighted) {
         color = color * 0.35f + QVector3D(1.0f, 1.0f, 1.0f) * 0.65f;
@@ -244,20 +243,20 @@ void appendLine(QVector<ColoredVertex>& vertices, const QVector3D& a, const QVec
     vertices.push_back({b.x(), b.y(), b.z(), color.x(), color.y(), color.z()});
 }
 
-void appendCross(QVector<ColoredVertex>& vertices,
-                 const Box& box,
-                 const QVector3D& center,
-                 float radius,
-                 const QVector3D& color)
-{
-    appendLine(vertices, center - localAxis(box, 0) * radius, center + localAxis(box, 0) * radius, color);
-    appendLine(vertices, center - localAxis(box, 1) * radius, center + localAxis(box, 1) * radius, color);
-    appendLine(vertices, center - localAxis(box, 2) * radius, center + localAxis(box, 2) * radius, color);
-}
-
 void appendVertex(QVector<ColoredVertex>& vertices, const QVector3D& point, const QVector3D& color)
 {
     vertices.push_back({point.x(), point.y(), point.z(), color.x(), color.y(), color.z()});
+}
+
+void appendTriangle(QVector<ColoredVertex>& vertices,
+                    const QVector3D& a,
+                    const QVector3D& b,
+                    const QVector3D& c,
+                    const QVector3D& color)
+{
+    appendVertex(vertices, a, color);
+    appendVertex(vertices, b, color);
+    appendVertex(vertices, c, color);
 }
 
 void appendCone(QVector<ColoredVertex>& vertices,
@@ -302,30 +301,172 @@ void appendCone(QVector<ColoredVertex>& vertices,
     }
 }
 
-void appendCircle(QVector<ColoredVertex>& vertices,
+void appendCylinder(QVector<ColoredVertex>& vertices,
+                    const Box& box,
+                    const QVector3D& start,
+                    const QVector3D& end,
+                    float radius,
+                    const QVector3D& color)
+{
+    const QVector3D delta = end - start;
+    if (delta.lengthSquared() < 1e-8f || radius <= 0.0f) return;
+
+    const QVector3D axis = delta.normalized();
+    QVector3D u = QVector3D::crossProduct(axis, localAxis(box, 2));
+    if (u.lengthSquared() < 1e-5f) {
+        u = QVector3D::crossProduct(axis, localAxis(box, 1));
+    }
+    u.normalize();
+    const QVector3D v = QVector3D::crossProduct(axis, u).normalized();
+
+    constexpr int kSegments = 12;
+    for (int i = 0; i < kSegments; ++i) {
+        const float angle0 = 2.0f * kPi * float(i) / float(kSegments);
+        const float angle1 = 2.0f * kPi * float(i + 1) / float(kSegments);
+        const QVector3D offset0 = (u * std::cos(angle0) + v * std::sin(angle0)) * radius;
+        const QVector3D offset1 = (u * std::cos(angle1) + v * std::sin(angle1)) * radius;
+        const QVector3D start0 = start + offset0;
+        const QVector3D start1 = start + offset1;
+        const QVector3D end0 = end + offset0;
+        const QVector3D end1 = end + offset1;
+        const float shade = 0.68f + 0.32f * std::abs(std::cos((angle0 + angle1) * 0.5f));
+        const QVector3D sideColor = color * shade;
+        appendTriangle(vertices, start0, end0, end1, sideColor);
+        appendTriangle(vertices, start0, end1, start1, sideColor);
+        appendTriangle(vertices, start, start1, start0, color * 0.58f);
+        appendTriangle(vertices, end, end0, end1, color * 0.82f);
+    }
+}
+
+void appendBox(QVector<ColoredVertex>& vertices,
+               const Box& box,
+               const QVector3D& center,
+               float halfSize,
+               const QVector3D& color)
+{
+    const QVector3D x = localAxis(box, 0) * halfSize;
+    const QVector3D y = localAxis(box, 1) * halfSize;
+    const QVector3D z = localAxis(box, 2) * halfSize;
+    const QVector3D corners[] = {
+        center - x - y - z, center + x - y - z, center + x + y - z, center - x + y - z,
+        center - x - y + z, center + x - y + z, center + x + y + z, center - x + y + z
+    };
+    const int faces[][4] = {
+        {0, 4, 7, 3}, {1, 2, 6, 5}, {0, 1, 5, 4},
+        {3, 7, 6, 2}, {0, 3, 2, 1}, {4, 5, 6, 7}
+    };
+    const float shades[] = {0.62f, 0.82f, 0.68f, 0.90f, 0.58f, 1.0f};
+    for (int i = 0; i < 6; ++i) {
+        const QVector3D faceColor = color * shades[i];
+        appendTriangle(vertices, corners[faces[i][0]], corners[faces[i][1]], corners[faces[i][2]], faceColor);
+        appendTriangle(vertices, corners[faces[i][0]], corners[faces[i][2]], corners[faces[i][3]], faceColor);
+    }
+}
+
+void appendSphere(QVector<ColoredVertex>& vertices,
                   const Box& box,
                   const QVector3D& center,
-                  const QVector3D& normal,
                   float radius,
                   const QVector3D& color)
 {
+    const QVector3D x = localAxis(box, 0);
+    const QVector3D y = localAxis(box, 1);
+    const QVector3D z = localAxis(box, 2);
+    const QVector3D light = QVector3D(0.35f, -0.45f, 0.82f).normalized();
+    constexpr int kLatitudeSegments = 8;
+    constexpr int kLongitudeSegments = 16;
+    const auto point = [&](float latitude, float longitude) {
+        const float planar = std::cos(latitude);
+        return center + (x * (planar * std::cos(longitude)) +
+                         y * (planar * std::sin(longitude)) +
+                         z * std::sin(latitude)) * radius;
+    };
+
+    for (int latitudeIndex = 0; latitudeIndex < kLatitudeSegments; ++latitudeIndex) {
+        const float latitude0 = -0.5f * kPi + kPi * float(latitudeIndex) / float(kLatitudeSegments);
+        const float latitude1 = -0.5f * kPi + kPi * float(latitudeIndex + 1) / float(kLatitudeSegments);
+        for (int longitudeIndex = 0; longitudeIndex < kLongitudeSegments; ++longitudeIndex) {
+            const float longitude0 = 2.0f * kPi * float(longitudeIndex) / float(kLongitudeSegments);
+            const float longitude1 = 2.0f * kPi * float(longitudeIndex + 1) / float(kLongitudeSegments);
+            const QVector3D a = point(latitude0, longitude0);
+            const QVector3D b = point(latitude0, longitude1);
+            const QVector3D c = point(latitude1, longitude1);
+            const QVector3D d = point(latitude1, longitude0);
+            const QVector3D normal = ((a + b + c + d) * 0.25f - center).normalized();
+            const float shade = 0.58f + 0.42f * std::max(0.0f, QVector3D::dotProduct(normal, light));
+            const QVector3D faceColor = color * shade;
+            appendTriangle(vertices, a, b, c, faceColor);
+            appendTriangle(vertices, a, c, d, faceColor);
+        }
+    }
+}
+
+void appendTorus(QVector<ColoredVertex>& vertices,
+                 const Box& box,
+                 const Camera& camera,
+                 const QVector3D& center,
+                 const QVector3D& normal,
+                 float ringRadius,
+                 float tubeRadius,
+                 const QVector3D& color)
+{
     QVector3D u;
-    QVector3D v;
     if (std::abs(QVector3D::dotProduct(normal, localAxis(box, 0))) < 0.9f) {
         u = QVector3D::crossProduct(normal, localAxis(box, 0)).normalized();
     } else {
         u = QVector3D::crossProduct(normal, localAxis(box, 1)).normalized();
     }
-    v = QVector3D::crossProduct(normal, u).normalized();
+    const QVector3D v = QVector3D::crossProduct(normal, u).normalized();
+    const QVector3D viewDirection = cameraAxis(camera, QVector3D(0.0f, 0.0f, -1.0f));
+    QVector3D viewInPlane = viewDirection - normal * QVector3D::dotProduct(viewDirection, normal);
+    const bool hasDepthSplit = viewInPlane.lengthSquared() > 1e-5f;
+    if (hasDepthSplit) viewInPlane.normalize();
 
-    constexpr int kSegments = 72;
-    QVector3D previous = center + u * radius;
-    for (int i = 1; i <= kSegments; ++i) {
-        const float angle = (2.0f * kPi * float(i)) / float(kSegments);
-        const QVector3D current = center + (u * std::cos(angle) + v * std::sin(angle)) * radius;
-        appendLine(vertices, previous, current, color);
-        previous = current;
+    constexpr int kRingSegments = 64;
+    constexpr int kTubeSegments = 8;
+    const auto point = [&](float ringAngle, float tubeAngle) {
+        const QVector3D radial = u * std::cos(ringAngle) + v * std::sin(ringAngle);
+        return center + radial * (ringRadius + tubeRadius * std::cos(tubeAngle)) +
+               normal * (tubeRadius * std::sin(tubeAngle));
+    };
+
+    // 深度测试关闭时必须先画背侧、再画正侧，避免环接近侧视时暗面覆盖亮面。
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int ringIndex = 0; ringIndex < kRingSegments; ++ringIndex) {
+            const float ringAngle0 = 2.0f * kPi * float(ringIndex) / float(kRingSegments);
+            const float ringAngle1 = 2.0f * kPi * float(ringIndex + 1) / float(kRingSegments);
+            const float ringMid = (ringAngle0 + ringAngle1) * 0.5f;
+            const QVector3D radial = u * std::cos(ringMid) + v * std::sin(ringMid);
+            const float frontFactor = hasDepthSplit
+                ? std::clamp(QVector3D::dotProduct(radial, -viewInPlane) * 0.5f + 0.5f, 0.0f, 1.0f)
+                : 1.0f;
+            const bool frontHalf = !hasDepthSplit || frontFactor >= 0.5f;
+            if ((pass == 0 && frontHalf) || (pass == 1 && !frontHalf)) continue;
+
+            const float depthShade = 0.58f + 0.42f * frontFactor;
+            for (int tubeIndex = 0; tubeIndex < kTubeSegments; ++tubeIndex) {
+                const float tubeAngle0 = 2.0f * kPi * float(tubeIndex) / float(kTubeSegments);
+                const float tubeAngle1 = 2.0f * kPi * float(tubeIndex + 1) / float(kTubeSegments);
+                const float tubeShade = 0.72f + 0.28f * std::abs(std::cos((tubeAngle0 + tubeAngle1) * 0.5f));
+                const QVector3D faceColor = color * (depthShade * tubeShade);
+                const QVector3D a = point(ringAngle0, tubeAngle0);
+                const QVector3D b = point(ringAngle1, tubeAngle0);
+                const QVector3D c = point(ringAngle1, tubeAngle1);
+                const QVector3D d = point(ringAngle0, tubeAngle1);
+                appendTriangle(vertices, a, b, c, faceColor);
+                appendTriangle(vertices, a, c, d, faceColor);
+            }
+        }
     }
+}
+
+float pixelScaledSize(const Camera& camera,
+                      const QVector3D& world,
+                      float pixels,
+                      float fallback)
+{
+    const float unitsPerPixel = worldUnitsPerPixel(camera, world);
+    return unitsPerPixel > 0.0f ? unitsPerPixel * pixels : fallback;
 }
 
 struct RingHandle {
@@ -721,45 +862,7 @@ QVector<ColoredVertex> buildGizmoLines(const State& state, const Camera& camera)
     if (!state.enabled || !state.initialized || !state.controlsVisible) {
         return vertices;
     }
-
-    const auto segments = handleSegments(state, camera);
-    for (const auto& segment : segments) {
-        const bool highlighted = state.hoverHandle == segment.first || state.activeHandle == segment.first;
-        const QVector3D color = colorForHandle(segment.first, highlighted);
-        if (isTranslateHandle(segment.first)) {
-            const QVector3D axis = (segment.second.second - segment.second.first).normalized();
-            const float coneLength = boxScaledSize(state.box, kArrowHeadFactor);
-            appendLine(vertices, segment.second.first, segment.second.second - axis * coneLength, color);
-        } else if (isScaleHandle(segment.first)) {
-            appendLine(vertices, segment.second.first, segment.second.second, color);
-            appendCross(vertices,
-                        state.box,
-                        segment.second.second,
-                        boxScaledSize(state.box, kScaleCrossFactor),
-                        color);
-        } else {
-            appendLine(vertices, segment.second.first, segment.second.second, color);
-        }
-    }
-
-    for (const RingHandle& ring : rotationRings(state, camera)) {
-        appendCircle(vertices,
-                     state.box,
-                     ring.center,
-                     ring.normal,
-                     ring.radius,
-                     colorForHandle(ring.handle, state.hoverHandle == ring.handle || state.activeHandle == ring.handle));
-    }
-    appendCross(vertices,
-                state.box,
-                state.box.center,
-                boxScaledSize(state.box, kCenterCrossFactor),
-                colorForHandle(HandleType::Center, state.hoverHandle == HandleType::Center || state.activeHandle == HandleType::Center));
-    const QVector3D centerColor = colorForHandle(HandleType::Center, state.hoverHandle == HandleType::Center || state.activeHandle == HandleType::Center);
-    const float centerRadius = boxScaledSize(state.box, kCenterRingFactor);
-    appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 0), centerRadius, centerColor);
-    appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 1), centerRadius, centerColor);
-    appendCircle(vertices, state.box, state.box.center, localAxis(state.box, 2), centerRadius, centerColor);
+    Q_UNUSED(camera);
     return vertices;
 }
 
@@ -771,19 +874,67 @@ QVector<ColoredVertex> buildGizmoTriangles(const State& state, const Camera& cam
     }
 
     for (const auto& segment : handleSegments(state, camera)) {
-        if (!isTranslateHandle(segment.first)) {
-            continue;
-        }
         const bool highlighted = state.hoverHandle == segment.first || state.activeHandle == segment.first;
         const QVector3D color = colorForHandle(segment.first, highlighted);
         const QVector3D axis = (segment.second.second - segment.second.first).normalized();
-        appendCone(vertices,
-                   state.box,
-                   segment.second.second,
-                   axis,
-                   boxScaledSize(state.box, kArrowHeadFactor),
-                   color);
+        const QVector3D midpoint = (segment.second.first + segment.second.second) * 0.5f;
+        const float stemRadius = pixelScaledSize(camera,
+                                                 midpoint,
+                                                 highlighted ? 4.2f : 2.8f,
+                                                 boxScaledSize(state.box, 0.012f));
+        if (isTranslateHandle(segment.first)) {
+            const float coneLength = boxScaledSize(state.box, kArrowHeadFactor);
+            appendCylinder(vertices,
+                           state.box,
+                           segment.second.first,
+                           segment.second.second - axis * coneLength,
+                           stemRadius,
+                           color);
+            appendCone(vertices,
+                       state.box,
+                       segment.second.second,
+                       axis,
+                       coneLength,
+                       color);
+        } else if (isScaleHandle(segment.first)) {
+            appendCylinder(vertices,
+                           state.box,
+                           segment.second.first,
+                           segment.second.second,
+                           stemRadius,
+                           color);
+            const float boxHalfSize = pixelScaledSize(camera,
+                                                      segment.second.second,
+                                                      highlighted ? 7.0f : 5.2f,
+                                                      boxScaledSize(state.box, kScaleCrossFactor));
+            appendBox(vertices, state.box, segment.second.second, boxHalfSize, color);
+        }
     }
+
+    for (const RingHandle& ring : rotationRings(state, camera)) {
+        const bool highlighted = state.hoverHandle == ring.handle || state.activeHandle == ring.handle;
+        const QVector3D color = colorForHandle(ring.handle, highlighted);
+        const float tubeRadius = pixelScaledSize(camera,
+                                                 ring.center,
+                                                 highlighted ? 4.5f : 2.8f,
+                                                 boxScaledSize(state.box, 0.012f));
+        appendTorus(vertices,
+                    state.box,
+                    camera,
+                    ring.center,
+                    ring.normal,
+                    ring.radius,
+                    tubeRadius,
+                    color);
+    }
+
+    const bool centerHighlighted = state.hoverHandle == HandleType::Center || state.activeHandle == HandleType::Center;
+    const QVector3D centerColor = colorForHandle(HandleType::Center, centerHighlighted);
+    const float centerRadius = pixelScaledSize(camera,
+                                               state.box.center,
+                                               centerHighlighted ? 11.0f : 8.5f,
+                                               boxScaledSize(state.box, kCenterRingFactor));
+    appendSphere(vertices, state.box, state.box.center, centerRadius, centerColor);
     return vertices;
 }
 
