@@ -78,8 +78,12 @@ private:
     void syncTabTheme();
     void syncSplitButtons();
     void installFocusFilter(QWidget* widget, int tabId);
+    void enterFullScreen();
+    void exitFullScreen();
+    void updateFullScreenGeometry();
 
     QTabBar* m_tabBar = nullptr;
+    QToolButton* m_fullScreenButton = nullptr;
     QToolButton* m_singleButton = nullptr;
     QToolButton* m_horizontalButton = nullptr;
     QToolButton* m_verticalButton = nullptr;
@@ -94,6 +98,12 @@ private:
     int m_focusedPane = 0;
     int m_lastEmittedFocusedTabId = -1;
     int m_paneTabs[2] = {-1, -1};
+    QWidget* m_fullScreenHost = nullptr;
+    QWidget* m_fullScreenLayer = nullptr;
+    QWidget* m_fullScreenWidget = nullptr;
+    QLabel* m_fullScreenHint = nullptr;
+    int m_fullScreenPane = -1;
+    Qt::WindowStates m_windowStateBeforeFullScreen = Qt::WindowNoState;
     SplitMode m_splitMode = SplitMode::Single;
 };
 

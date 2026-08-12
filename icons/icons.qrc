@@ -67,6 +67,7 @@
     <file>status_pending.svg</file>
     <file>empty_state.svg</file>
     <file>layout_single.svg</file>
+    <file>layout_fullscreen.svg</file>
     <file>layout_split_horizontal.svg</file>
     <file>layout_split_vertical.svg</file>
     <file>layout_panel_left.svg</file>

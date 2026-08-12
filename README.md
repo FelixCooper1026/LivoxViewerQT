@@ -149,3 +149,13 @@ ROSbag LiDAR topic 支持 Livox CustomMsg、Livox driver2 PointCloud2、允许�
 ## 许可证
 
 本项目采用 GNU General Public License v2.0 only（GPL-2.0-only），详见 [LICENSE](LICENSE)。
+
+## 致谢
+
+感谢以下开源项目及其贡献者，本项目的开发从中受益：
+
+- [Livox SDK2](https://github.com/Livox-SDK/Livox-SDK2)
+- [FAST_LIO](https://github.com/hku-mars/FAST_LIO)
+- [M-detector](https://github.com/hku-mars/M-detector)
+- [FreeDOM](https://github.com/LC-Robotics/FreeDOM)
+- [FAST_LIO_SAM](https://github.com/kahowang/FAST_LIO_SAM)

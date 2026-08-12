@@ -6,10 +6,13 @@
 #include <QEvent>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QKeyEvent>
+#include <QKeySequence>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QSplitter>
+#include <QShortcut>
 #include <QStyle>
 #include <QTabBar>
 #include <QToolButton>
@@ -104,6 +107,14 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     syncTabTheme();
     tabLayout->addWidget(m_tabBar, 1);
 
+    m_fullScreenButton = new QToolButton(tabRow);
+    m_fullScreenButton->setAutoRaise(true);
+    m_fullScreenButton->setIconSize(QSize(16, 16));
+    m_fullScreenButton->setFixedSize(24, 22);
+    ThemeIconUtils::setThemedSvgIcon(m_fullScreenButton, QStringLiteral(":/icons/layout_fullscreen.svg"));
+    m_fullScreenButton->setToolTip(QStringLiteral("全屏显示"));
+    tabLayout->addWidget(m_fullScreenButton);
+
     m_singleButton = new QToolButton(tabRow);
     m_horizontalButton = new QToolButton(tabRow);
     m_verticalButton = new QToolButton(tabRow);
@@ -161,6 +172,7 @@ VisualizationWorkspace::VisualizationWorkspace(QWidget* parent)
     connect(m_tabBar, &QTabBar::tabCloseRequested, this, [this](int index) {
         emit tabCloseRequested(m_tabBar->tabData(index).toInt());
     });
+    connect(m_fullScreenButton, &QToolButton::clicked, this, &VisualizationWorkspace::enterFullScreen);
     connect(m_singleButton, &QToolButton::clicked, this, [this]() { setSplitMode(SplitMode::Single); });
     connect(m_horizontalButton, &QToolButton::clicked, this, [this]() { setSplitMode(SplitMode::Horizontal); });
     connect(m_verticalButton, &QToolButton::clicked, this, [this]() { setSplitMode(SplitMode::Vertical); });
@@ -255,6 +267,10 @@ int VisualizationWorkspace::addTab(TabKind kind, const QString& title, QWidget* 
 
 void VisualizationWorkspace::removeTab(int tabId)
 {
+    if (m_fullScreenWidget && focusedTabId() == tabId) {
+        exitFullScreen();
+    }
+
     const int index = tabBarIndexForId(tabId);
     if (index >= 0) {
         m_tabBar->removeTab(index);
@@ -403,6 +419,17 @@ void VisualizationWorkspace::changeEvent(QEvent* event)
 
 bool VisualizationWorkspace::eventFilter(QObject* watched, QEvent* event)
 {
+    if (m_fullScreenLayer && event->type() == QEvent::KeyPress &&
+        static_cast<QKeyEvent*>(event)->key() == Qt::Key_Escape) {
+        exitFullScreen();
+        return true;
+    }
+    if (m_fullScreenLayer &&
+        (watched == m_fullScreenHost || watched == m_fullScreenLayer) &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Show)) {
+        updateFullScreenGeometry();
+    }
+
     if (event->type() == QEvent::MouseButtonPress) {
         if (m_focusTabByObject.contains(watched)) {
             const int tabId = m_focusTabByObject.value(watched);
@@ -575,12 +602,86 @@ void VisualizationWorkspace::syncTabTheme()
 
 void VisualizationWorkspace::syncSplitButtons()
 {
+    m_fullScreenButton->setEnabled(!m_tabs.isEmpty());
     const bool splitEnabled = m_tabs.size() >= 2;
     m_horizontalButton->setEnabled(splitEnabled);
     m_verticalButton->setEnabled(splitEnabled);
     m_singleButton->setChecked(m_splitMode == SplitMode::Single);
     m_horizontalButton->setChecked(m_splitMode == SplitMode::Horizontal);
     m_verticalButton->setChecked(m_splitMode == SplitMode::Vertical);
+}
+
+void VisualizationWorkspace::enterFullScreen()
+{
+    const int tabId = focusedTabId();
+    VisualizationTab* tab = tabById(tabId);
+    m_fullScreenPane = paneForTab(tabId);
+    m_fullScreenHost = window();
+    m_windowStateBeforeFullScreen = m_fullScreenHost->windowState();
+
+    m_fullScreenLayer = new QWidget(m_fullScreenHost);
+    m_fullScreenLayer->setObjectName(QStringLiteral("PointCloudFullScreenLayer"));
+    m_fullScreenLayer->setAttribute(Qt::WA_StyledBackground, true);
+    m_fullScreenLayer->setStyleSheet(QStringLiteral(
+        "QWidget#PointCloudFullScreenLayer { background: black; }"
+        "QLabel#PointCloudFullScreenHint {"
+        "  color: white; background: rgba(24, 24, 24, 210);"
+        "  border: 1px solid rgba(255, 255, 255, 70); border-radius: 6px;"
+        "  padding: 7px 14px; font-weight: 600;"
+        "}"));
+    QVBoxLayout* layout = new QVBoxLayout(m_fullScreenLayer);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    m_paneLayouts[m_fullScreenPane]->removeWidget(tab->widget);
+    m_fullScreenWidget = tab->widget;
+    layout->addWidget(m_fullScreenWidget);
+
+    m_fullScreenHint = new QLabel(QStringLiteral("全屏模式 · 按 Esc 退出"), m_fullScreenLayer);
+    m_fullScreenHint->setObjectName(QStringLiteral("PointCloudFullScreenHint"));
+    m_fullScreenHint->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_fullScreenHint->adjustSize();
+
+    QShortcut* escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), m_fullScreenLayer);
+    escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escapeShortcut, &QShortcut::activated, this, &VisualizationWorkspace::exitFullScreen);
+    m_fullScreenHost->installEventFilter(this);
+    m_fullScreenLayer->installEventFilter(this);
+    m_fullScreenHost->showFullScreen();
+    updateFullScreenGeometry();
+    m_fullScreenLayer->show();
+    m_fullScreenLayer->raise();
+    m_fullScreenHint->raise();
+    m_fullScreenWidget->show();
+    m_fullScreenWidget->setFocus(Qt::OtherFocusReason);
+}
+
+void VisualizationWorkspace::exitFullScreen()
+{
+    m_fullScreenLayer->layout()->removeWidget(m_fullScreenWidget);
+    m_fullScreenWidget->setParent(m_panes[m_fullScreenPane]);
+    m_paneLayouts[m_fullScreenPane]->addWidget(m_fullScreenWidget, 1);
+    m_fullScreenWidget->show();
+
+    QWidget* host = m_fullScreenHost;
+    QWidget* layer = m_fullScreenLayer;
+    host->removeEventFilter(this);
+    m_fullScreenHost = nullptr;
+    m_fullScreenLayer = nullptr;
+    m_fullScreenHint = nullptr;
+    m_fullScreenWidget = nullptr;
+    m_fullScreenPane = -1;
+    layer->hide();
+    layer->deleteLater();
+    host->setWindowState(m_windowStateBeforeFullScreen);
+    host->show();
+}
+
+void VisualizationWorkspace::updateFullScreenGeometry()
+{
+    m_fullScreenLayer->setGeometry(m_fullScreenHost->rect());
+    m_fullScreenHint->adjustSize();
+    m_fullScreenHint->move((m_fullScreenLayer->width() - m_fullScreenHint->width()) / 2, 16);
 }
 
 void VisualizationWorkspace::installFocusFilter(QWidget* widget, int tabId)
