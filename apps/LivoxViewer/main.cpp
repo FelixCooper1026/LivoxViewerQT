@@ -33,6 +33,8 @@ int main(int argc, char *argv[])
     addNpcapDllDirectory();
 #endif
 
+    QApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
+
     QSurfaceFormat glFormat = QSurfaceFormat::defaultFormat();
     glFormat.setVersion(3, 3);
     glFormat.setProfile(QSurfaceFormat::CoreProfile);
