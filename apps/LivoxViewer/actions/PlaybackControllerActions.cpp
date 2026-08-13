@@ -1363,6 +1363,8 @@ bool LivoxViewerWindow::eventFilter(QObject* watched, QEvent* event)
                event->type() == QEvent::Resize) {
         refreshElidedPlaybackLabelText(playbackState.label);
         updatePlaybackBarGeometry();
+    } else if (watched == customTitleBar && event->type() == QEvent::Resize) {
+        updateMenuOverflow();
     } else if ((watched == visualizationWorkspace || qobject_cast<PointCloudView*>(watched)) &&
                (event->type() == QEvent::Resize ||
                 event->type() == QEvent::Move ||

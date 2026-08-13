@@ -24,6 +24,14 @@
 
 namespace {
 
+class ToolbarLayoutItemMetrics
+{
+public:
+    virtual ~ToolbarLayoutItemMetrics() = default;
+    virtual QVector<int> toolbarWidthSteps() const = 0;
+    virtual void prepareToolbarWidth(int width) = 0;
+};
+
 class FlowLayout : public QLayout
 {
 public:
@@ -138,10 +146,13 @@ private:
         for (int i = 0; i < rowItems.size(); ++i) {
             QLayoutItem* item = rowItems.at(i);
             const int fullWidth = itemFullWidth(item, lineWidth);
-            const int minWidth = itemMinWidth(item, lineWidth);
             widths.append(fullWidth);
-            minimums.append(minWidth);
-            if (canCompact(item) && minWidth < fullWidth) {
+            int minimumWidth = itemMinWidth(item, lineWidth);
+            if (ToolbarLayoutItemMetrics* metrics = dynamic_cast<ToolbarLayoutItemMetrics*>(item->widget())) {
+                minimumWidth = std::min(metrics->toolbarWidthSteps().constLast(), lineWidth);
+            }
+            minimums.append(minimumWidth);
+            if (canCompact(item) && minimumWidth < fullWidth) {
                 compactIndexes.append(i);
             }
         }
@@ -156,8 +167,10 @@ private:
         });
 
         for (int index : compactIndexes) {
-            usedWidth -= widths.at(index) - minimums.at(index);
-            widths[index] = minimums.at(index);
+            const int deficit = usedWidth - lineWidth;
+            const int reduction = std::min(deficit, widths.at(index) - minimums.at(index));
+            widths[index] -= reduction;
+            usedWidth -= reduction;
             if (usedWidth <= lineWidth) {
                 break;
             }
@@ -179,6 +192,9 @@ private:
             QLayoutItem* item = rowItems.at(i);
             const QSize itemSize(widths.at(i), item->sizeHint().height());
             if (!testOnly) {
+                if (ToolbarLayoutItemMetrics* metrics = dynamic_cast<ToolbarLayoutItemMetrics*>(item->widget())) {
+                    metrics->prepareToolbarWidth(itemSize.width());
+                }
                 item->setGeometry(QRect(QPoint(x, y), itemSize));
             }
             x += itemSize.width() + m_hSpacing;
@@ -191,7 +207,6 @@ private:
     {
         QMargins margins = contentsMargins();
         QRect effectiveRect = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom());
-        int y = effectiveRect.y();
         const int lineWidth = std::max(1, effectiveRect.width());
         QVector<QLayoutItem*> rowItems;
 
@@ -200,20 +215,11 @@ private:
             if (widget && widget->isHidden()) {
                 continue;
             }
-
-            QVector<QLayoutItem*> candidate = rowItems;
-            candidate.append(item);
-            const QVector<int> candidateWidths = rowWidths(candidate, lineWidth);
-            if (!rowItems.isEmpty() && totalWidth(candidateWidths) > lineWidth) {
-                y += layoutRow(rowItems, effectiveRect, y, lineWidth, testOnly) + m_vSpacing;
-                rowItems.clear();
-            }
-
             rowItems.append(item);
         }
 
-        y += layoutRow(rowItems, effectiveRect, y, lineWidth, testOnly);
-        return y - rect.y() + margins.bottom();
+        const int rowHeight = layoutRow(rowItems, effectiveRect, effectiveRect.y(), lineWidth, testOnly);
+        return margins.top() + rowHeight + margins.bottom();
     }
 
     QVector<QLayoutItem*> m_items;
@@ -221,7 +227,7 @@ private:
     int m_vSpacing = 6;
 };
 
-class ToolbarGroup : public QWidget
+class ToolbarGroup : public QWidget, public ToolbarLayoutItemMetrics
 {
 public:
     explicit ToolbarGroup(const QString& title, QWidget* parent = nullptr, int leftMargin = 8)
@@ -248,27 +254,28 @@ public:
         m_moreButton->setMenu(m_moreMenu);
         m_moreButton->setAutoRaise(true);
         m_moreButton->setStyleSheet("QToolButton::menu-indicator { image: none; }");
+        m_moreButton->setFixedSize(m_moreButton->sizeHint());
         m_moreButton->setVisible(false);
         m_controlsLayout->addWidget(m_moreButton);
         root->addWidget(m_controls, 1);
 
-        QWidget* titleRow = new QWidget(this);
-        QHBoxLayout* titleLayout = new QHBoxLayout(titleRow);
+        m_titleRow = new QWidget(this);
+        QHBoxLayout* titleLayout = new QHBoxLayout(m_titleRow);
         titleLayout->setContentsMargins(0, 0, 0, 0);
         titleLayout->setSpacing(3);
         titleLayout->addStretch();
 
-        m_title = new QLabel(title, titleRow);
+        m_title = new QLabel(title, m_titleRow);
         m_title->setObjectName("ViewerToolbarGroupTitle");
         QFont titleFont = m_title->font();
         titleFont.setPointSizeF(std::max(7.0, titleFont.pointSizeF() * 0.9));
         m_title->setFont(titleFont);
         m_title->setAlignment(Qt::AlignCenter);
-        titleRow->setFixedHeight(m_title->sizeHint().height() + 2);
+        m_titleRow->setFixedHeight(m_title->sizeHint().height() + 2);
         titleLayout->addWidget(m_title);
 
         titleLayout->addStretch();
-        root->addWidget(titleRow, 0, Qt::AlignBottom);
+        root->addWidget(m_titleRow, 0, Qt::AlignBottom);
 
         setStyleSheet(
             "#ViewerToolbarGroup {"
@@ -319,48 +326,59 @@ public:
 
     QSize sizeHint() const override
     {
-        return QSize(estimatedWidth(-1, true, false), height());
+        return QSize(toolbarWidthSteps().constFirst(), height());
     }
 
     QSize minimumSizeHint() const override
     {
-        return QSize(estimatedWidth(m_canCompact ? 1 : -1, false, m_canCompact), height());
+        const QVector<int> steps = toolbarWidthSteps();
+        return QSize(steps.constLast(), height());
+    }
+
+    QVector<int> toolbarWidthSteps() const override
+    {
+        QVector<QWidget*> controls;
+        for (QWidget* widget : m_primaryWidgets) {
+            if (!widget->property("toolbarOptionalHidden").toBool()) {
+                controls.append(widget);
+            }
+        }
+        for (QWidget* widget : m_secondaryWidgets) {
+            if (!widget->property("toolbarOptionalHidden").toBool()) {
+                controls.append(widget);
+            }
+        }
+
+        QVector<int> steps;
+        steps.append(estimatedWidth(controls, controls.size(), false));
+        if (m_canCompact && !m_moreMenu->actions().isEmpty()) {
+            for (int visibleCount = controls.size() - 1; visibleCount >= 1; --visibleCount) {
+                steps.append(estimatedWidth(controls, visibleCount, true));
+            }
+        }
+        return steps;
+    }
+
+    void prepareToolbarWidth(int width) override
+    {
+        updateOverflow(width);
     }
 
 protected:
     void resizeEvent(QResizeEvent* event) override
     {
         QWidget::resizeEvent(event);
-        updateOverflow();
     }
 
 private:
-    int estimatedWidth(int primaryCount, bool includeSecondary, bool includeMore) const
+    int estimatedWidth(const QVector<QWidget*>& controls, int visibleCount, bool includeMore) const
     {
         const QMargins margins = layout()->contentsMargins();
         int controlsWidth = 0;
-
-        int visibleControlCount = 0;
-        auto addWidgetWidth = [&](QWidget* widget) {
-            if (widget->property("toolbarOptionalHidden").toBool()) {
-                return;
-            }
-            controlsWidth += widget->sizeHint().width();
-            ++visibleControlCount;
-        };
-
-        if (primaryCount != 0) {
-            const int primarySize = static_cast<int>(m_primaryWidgets.size());
-            const int count = primaryCount < 0 ? primarySize : std::min(primaryCount, primarySize);
-            for (int i = 0; i < count; ++i) {
-                addWidgetWidth(m_primaryWidgets.at(i));
-            }
+        for (int index = 0; index < visibleCount; ++index) {
+            controlsWidth += controls.at(index)->sizeHint().width();
         }
-        if (includeSecondary) {
-            for (QWidget* widget : m_secondaryWidgets) {
-                addWidgetWidth(widget);
-            }
-        }
+        int visibleControlCount = visibleCount;
         if (includeMore && !m_moreMenu->actions().isEmpty()) {
             controlsWidth += m_moreButton->sizeHint().width();
             ++visibleControlCount;
@@ -374,29 +392,51 @@ private:
         return margins.left() + margins.right() + std::max(controlsWidth, titleWidth);
     }
 
-    void updateOverflow()
+    void updateOverflow(int targetWidth = -1)
     {
-        const int widthNow = width();
+        const int widthNow = targetWidth >= 0 ? targetWidth : width();
         if (widthNow <= 0) {
             return;
         }
 
-        const int fullWidth = estimatedWidth(-1, true, false);
-        const bool compact = widthNow < fullWidth;
-        const bool compactGroup = compact && m_canCompact;
-
-        for (int i = 0; i < m_primaryWidgets.size(); ++i) {
-            QWidget* widget = m_primaryWidgets.at(i);
-            widget->setVisible((!compactGroup || i == 0) && !widget->property("toolbarOptionalHidden").toBool());
+        QVector<QWidget*> availableControls;
+        for (QWidget* widget : m_primaryWidgets) {
+            if (!widget->property("toolbarOptionalHidden").toBool()) {
+                availableControls.append(widget);
+            }
         }
         for (QWidget* widget : m_secondaryWidgets) {
-            widget->setVisible(!compact && !widget->property("toolbarOptionalHidden").toBool());
+            if (!widget->property("toolbarOptionalHidden").toBool()) {
+                availableControls.append(widget);
+            }
         }
 
-        m_moreButton->setVisible(compact && !m_moreMenu->actions().isEmpty());
+        const QVector<int> steps = toolbarWidthSteps();
+        int compactStep = 0;
+        while (compactStep + 1 < steps.size() && widthNow < steps.at(compactStep)) {
+            ++compactStep;
+        }
+        const int visibleCount = availableControls.size() - compactStep;
+        for (int index = 0; index < availableControls.size(); ++index) {
+            availableControls.at(index)->setVisible(index < visibleCount);
+        }
+        for (QWidget* widget : m_primaryWidgets) {
+            if (widget->property("toolbarOptionalHidden").toBool()) {
+                widget->hide();
+            }
+        }
+        for (QWidget* widget : m_secondaryWidgets) {
+            if (widget->property("toolbarOptionalHidden").toBool()) {
+                widget->hide();
+            }
+        }
+
+        m_moreButton->setVisible(compactStep > 0);
+        m_titleRow->show();
     }
 
     QLabel* m_title = nullptr;
+    QWidget* m_titleRow = nullptr;
     QWidget* m_controls = nullptr;
     QHBoxLayout* m_controlsLayout = nullptr;
     QToolButton* m_moreButton = nullptr;
@@ -456,6 +496,7 @@ QToolButton* createIconButton(QAction* action, QWidget* parent, const QSize& ico
     button->setToolButtonStyle(Qt::ToolButtonIconOnly);
     button->setIconSize(iconSize);
     button->setAutoRaise(true);
+    button->setFixedSize(button->sizeHint());
     return button;
 }
 

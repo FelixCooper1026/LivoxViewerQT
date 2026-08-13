@@ -155,21 +155,36 @@ public:
 
     void refreshFixedWidth()
     {
-        setFixedWidth(fullMenuWidth());
+        setFixedWidth(visibleMenuWidth());
         updateGeometry();
+    }
+
+    int actionWidth(QAction* action) const
+    {
+        QString text = action->text();
+        text.replace(QStringLiteral("&&"), QStringLiteral("&"));
+        text.remove(QLatin1Char('&'));
+
+        QStyleOptionMenuItem option;
+        initStyleOption(&option, action);
+        return style()->sizeFromContents(
+            QStyle::CT_MenuBarItem,
+            &option,
+            QSize(fontMetrics().horizontalAdvance(text), fontMetrics().height()),
+            this).width();
     }
 
     QSize sizeHint() const override
     {
         QSize hint = QMenuBar::sizeHint();
-        hint.setWidth(fullMenuWidth());
+        hint.setWidth(visibleMenuWidth());
         return hint;
     }
 
     QSize minimumSizeHint() const override
     {
         QSize hint = QMenuBar::minimumSizeHint();
-        hint.setWidth(fullMenuWidth());
+        hint.setWidth(visibleMenuWidth());
         return hint;
     }
 
@@ -199,24 +214,14 @@ private:
         });
     }
 
-    int fullMenuWidth() const
+    int visibleMenuWidth() const
     {
         int width = 0;
         for (QAction* action : actions()) {
             if (!action->isVisible()) {
                 continue;
             }
-            QString text = action->text();
-            text.replace(QStringLiteral("&&"), QStringLiteral("&"));
-            text.remove(QLatin1Char('&'));
-
-            QStyleOptionMenuItem option;
-            initStyleOption(&option, action);
-            width += style()->sizeFromContents(
-                QStyle::CT_MenuBarItem,
-                &option,
-                QSize(fontMetrics().horizontalAdvance(text), fontMetrics().height()),
-                this).width();
+            width += actionWidth(action);
         }
         return width;
     }
@@ -599,7 +604,65 @@ void LivoxViewerWindow::updateMenuOverflow()
         }
     }
     menuOverflowAction->setVisible(false);
-    static_cast<CompactMenuBar*>(menuBar)->refreshFixedWidth();
+
+    CompactMenuBar* compactMenuBar = static_cast<CompactMenuBar*>(menuBar);
+    const int windowButtonsWidth = kWindowControlButtonWidth * 3;
+    QWidget* panelControls = customTitleBar->findChild<QWidget*>(QStringLiteral("PanelVisibilityControls"));
+    const int panelControlsWidth = panelControls ? panelControls->sizeHint().width() : 0;
+    const int titleWidth = windowTitleLabel ? windowTitleLabel->sizeHint().width() : 0;
+    const int centeredTitleReserve = titleWidth + 24;
+    int menuBudget = customTitleBar->width()
+        - kTitleBarLeftMargin
+        - kTitleBarAppIconAreaWidth
+        - windowButtonsWidth
+        - panelControlsWidth
+        - centeredTitleReserve;
+
+    const QList<QAction*> actions = menuBar->actions();
+    const int overflowWidth = compactMenuBar->actionWidth(menuOverflowAction);
+    int visibleWidth = 0;
+    for (QAction* action : actions) {
+        if (action != menuOverflowAction) {
+            visibleWidth += compactMenuBar->actionWidth(action);
+        }
+    }
+    for (int index = actions.size() - 1; index >= 0 && visibleWidth > menuBudget; --index) {
+        QAction* action = actions.at(index);
+        if (action == menuOverflowAction) {
+            continue;
+        }
+        action->setVisible(false);
+        visibleWidth -= compactMenuBar->actionWidth(action);
+    }
+
+    bool hasOverflow = false;
+    for (QAction* action : actions) {
+        hasOverflow |= action != menuOverflowAction && !action->isVisible();
+    }
+    menuOverflowAction->setVisible(hasOverflow);
+    if (hasOverflow) {
+        while (visibleWidth + overflowWidth > menuBudget) {
+            QAction* lastVisible = nullptr;
+            for (int index = actions.size() - 1; index >= 0; --index) {
+                QAction* action = actions.at(index);
+                if (action != menuOverflowAction && action->isVisible()) {
+                    lastVisible = action;
+                    break;
+                }
+            }
+            if (!lastVisible) {
+                break;
+            }
+            lastVisible->setVisible(false);
+            visibleWidth -= compactMenuBar->actionWidth(lastVisible);
+        }
+    }
+
+    compactMenuBar->refreshFixedWidth();
+    const int titleLeft = (customTitleBar->width() - titleWidth) / 2;
+    const int menuRight = kTitleBarLeftMargin + kTitleBarAppIconAreaWidth + compactMenuBar->width();
+    const int controlsLeft = customTitleBar->width() - windowButtonsWidth - panelControlsWidth;
+    windowTitleLabel->setVisible(titleLeft > menuRight + 8 && titleLeft + titleWidth < controlsLeft - 8);
 }
 
 void LivoxViewerWindow::rebuildMenuOverflow()
@@ -893,6 +956,7 @@ void LivoxViewerWindow::createMenusAndActions()
     panelControlsLayout->addWidget(rightPanelButton);
     panelControlsLayout->addWidget(settingsButton);
     customTitleBar = createCustomTitleBar(panelControls);
+    customTitleBar->installEventFilter(this);
     setMenuWidget(customTitleBar);
 #ifdef Q_OS_WIN
     enableNativeWindowBehavior(this);
