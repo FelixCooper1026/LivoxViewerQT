@@ -191,6 +191,13 @@ public:
     void submitSlamOutputForUi(const SlamOutput& output);
 
 private:
+    enum class PointCloudToolMode {
+        None,
+        Measurement,
+        Selection,
+        CrossSection
+    };
+
     void exportFreeDomMapFromDialog(bool voxelCenters);
     void initializeUserInterface();
     QWidget* createViewerToolbar(QWidget* parent);
@@ -274,6 +281,8 @@ private:
     void syncPointCloudStlModelAction();
     void syncPointCloudEdlAction();
     void syncPointCloudToolActions();
+    void setPointCloudSelectionEnabled(bool enabled);
+    void clearSelectionTableAndSummary();
     QVector<PointCloudView*> pointCloudViews() const;
     void forEachPointCloudView(const std::function<void(PointCloudView*)>& callback) const;
 
@@ -627,13 +636,16 @@ private:
 
     // 实时框选支持
     int lastSelectionCount = -1;
-    bool selectionRealtimeEnabled = false;
     quint64 selectionTableGeneration = 0;
+    bool selectionRightDockStateSaved = false;
+    bool selectionRestoreRightPanelVisible = false;
+    bool selectionRestoreParamsDockVisible = false;
+    bool selectionRestoreAttrDockVisible = false;
+    QPointer<QDockWidget> selectionRestoreActiveRightDock;
 
     // 测距暂停播放
-    bool measurementModeActive = false;
+    PointCloudToolMode pointCloudToolMode = PointCloudToolMode::None;
     bool pointCloudVisualizationBeforeMeasurement = true;
-    bool crossSectionModeActive = false;
     bool pointCloudVisualizationBeforeCrossSection = true;
     bool playbackPlayingBeforeCrossSection = false;
 

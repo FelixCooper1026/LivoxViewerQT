@@ -281,6 +281,85 @@ void LivoxViewerWindow::onMeasurementUpdated()
     }
 }
 
+void LivoxViewerWindow::clearSelectionTableAndSummary()
+{
+    QTableView* table = attrTable ? attrTable : selectionTable;
+    if (SelectionPointTableModel* model = ensureSelectionModel(table)) {
+        model->clear();
+    }
+    lastSelectionCount = -1;
+    if (selectionSummaryLabel) {
+        selectionSummaryLabel->setText(QStringLiteral("未框选点云"));
+    }
+}
+
+void LivoxViewerWindow::setPointCloudSelectionEnabled(bool enabled)
+{
+    enabled = enabled && pointCloudView;
+    const bool wasEnabled = pointCloudToolMode == PointCloudToolMode::Selection;
+
+    if (enabled && !wasEnabled) {
+        selectionRestoreRightPanelVisible = (paramsDock && paramsDock->isVisible()) ||
+                                            (attrDock && attrDock->isVisible());
+        selectionRestoreParamsDockVisible = selectionRestoreRightPanelVisible
+            ? paramsDock->isVisible()
+            : restoreRightParamsDock;
+        selectionRestoreAttrDockVisible = selectionRestoreRightPanelVisible
+            ? attrDock->isVisible()
+            : restoreRightAttrDock;
+        selectionRestoreActiveRightDock = activeRightDock;
+        selectionRightDockStateSaved = true;
+    }
+
+    ++selectionTableGeneration;
+    pointCloudToolMode = enabled ? PointCloudToolMode::Selection : PointCloudToolMode::None;
+    forEachPointCloudView([enabled](PointCloudView* view) {
+        view->setSelectionModeEnabled(enabled);
+    });
+
+    if (enabled) {
+        if (attrDock) {
+            attrDock->show();
+            attrDock->raise();
+            activeRightDock = attrDock;
+        }
+        updateSelectionTableAndLog();
+        return;
+    }
+
+    clearSelectionTableAndSummary();
+    if (!wasEnabled || !selectionRightDockStateSaved) {
+        return;
+    }
+
+    const bool rightPanelStillVisible = paramsDock->isVisible() || attrDock->isVisible();
+    const bool restorePanelNow = selectionRestoreRightPanelVisible && rightPanelStillVisible;
+    restoreRightParamsDock = selectionRestoreParamsDockVisible;
+    restoreRightAttrDock = selectionRestoreAttrDockVisible;
+    paramsDock->setVisible(restorePanelNow && selectionRestoreParamsDockVisible);
+    attrDock->setVisible(restorePanelNow && selectionRestoreAttrDockVisible);
+    if (!restorePanelNow) {
+        activeRightDock = selectionRestoreActiveRightDock;
+    } else if (selectionRestoreActiveRightDock == attrDock && selectionRestoreAttrDockVisible) {
+        attrDock->raise();
+        activeRightDock = attrDock;
+    } else if (selectionRestoreActiveRightDock == paramsDock && selectionRestoreParamsDockVisible) {
+        paramsDock->raise();
+        activeRightDock = paramsDock;
+    } else if (selectionRestoreParamsDockVisible) {
+        paramsDock->raise();
+        activeRightDock = paramsDock;
+    } else if (selectionRestoreAttrDockVisible) {
+        attrDock->raise();
+        activeRightDock = attrDock;
+    } else {
+        activeRightDock = nullptr;
+    }
+    selectionRightDockStateSaved = false;
+    selectionRestoreRightPanelVisible = false;
+    selectionRestoreActiveRightDock.clear();
+}
+
 void LivoxViewerWindow::updateSelectionTableAndLog()
 {
     QTableView* table = attrTable ? attrTable : selectionTable;
@@ -310,6 +389,9 @@ void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, 
     if (sourceView && sourceView != pointCloudView) {
         return;
     }
+    if (pointCloudToolMode != PointCloudToolMode::Selection) {
+        return;
+    }
 
     QTableView* table = attrTable ? attrTable : selectionTable;
     SelectionPointTableModel* model = ensureSelectionModel(table);
@@ -317,6 +399,7 @@ void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, 
         return;
     }
 
+    const QPointer<PointCloudView> selectionSource(sourceView ? sourceView : pointCloudView);
     const quint64 generation = ++selectionTableGeneration;
     if (points.isEmpty()) {
         lastSelectionCount = -1;
@@ -339,13 +422,16 @@ void LivoxViewerWindow::onSelectionPointsReady(QVector<PointCloudPoint> points, 
     }
 
     const QPointer<LivoxViewerWindow> guard(this);
-    QtConcurrent::run([guard, generation, points = std::move(points), zeroPointCount]() mutable {
+    QtConcurrent::run([guard, selectionSource, generation, points = std::move(points), zeroPointCount]() mutable {
         SelectionTableBuildResult result = buildSelectionTableRows(std::move(points), zeroPointCount);
         if (!guard) {
             return;
         }
-        QMetaObject::invokeMethod(guard.data(), [guard, generation, result = std::move(result)]() mutable {
-            if (!guard || generation != guard->selectionTableGeneration) {
+        QMetaObject::invokeMethod(guard.data(), [guard, selectionSource, generation, result = std::move(result)]() mutable {
+            if (!guard || !selectionSource ||
+                selectionSource != guard->pointCloudView ||
+                guard->pointCloudToolMode != PointCloudToolMode::Selection ||
+                generation != guard->selectionTableGeneration) {
                 return;
             }
             LivoxViewerWindow* window = guard.data();

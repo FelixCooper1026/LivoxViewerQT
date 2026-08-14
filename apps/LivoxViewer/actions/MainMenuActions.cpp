@@ -986,6 +986,26 @@ void LivoxViewerWindow::createMenusAndActions()
                          : QStringLiteral(":/icons/layout_panel_right.svg"));
     };
 
+    connect(this, &QMainWindow::tabifiedDockWidgetActivated, this, [this](QDockWidget* dock) {
+        if (dock == paramsDock || dock == attrDock) {
+            activeRightDock = dock;
+        }
+    });
+    connect(paramsDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (visible && !attrDock->isVisible()) {
+            activeRightDock = paramsDock;
+        } else if (!visible && activeRightDock == paramsDock) {
+            activeRightDock = attrDock->isVisible() ? attrDock : nullptr;
+        }
+    });
+    connect(attrDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (visible && !paramsDock->isVisible()) {
+            activeRightDock = attrDock;
+        } else if (!visible && activeRightDock == attrDock) {
+            activeRightDock = paramsDock->isVisible() ? paramsDock : nullptr;
+        }
+    });
+
     connect(leftPanelButton, &QToolButton::clicked, this, [this, syncPanelButtons]() {
         const bool visible = (networkDock && networkDock->isVisible()) ||
                              (lidarDevicesDock && lidarDevicesDock->isVisible()) ||

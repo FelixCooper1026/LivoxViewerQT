@@ -310,7 +310,7 @@ void LivoxViewerWindow::syncPointCloudVisualizationAction()
         pointCloudVisualizationEnabled
             ? QStringLiteral(":/icons/point_cloud_live.svg")
             : QStringLiteral(":/icons/point_cloud_frozen.svg"));
-    actionPointCloudVisualization->setEnabled(!measurementModeActive);
+    actionPointCloudVisualization->setEnabled(pointCloudToolMode != PointCloudToolMode::Measurement);
     QSignalBlocker blocker(actionPointCloudVisualization);
     actionPointCloudVisualization->setChecked(pointCloudVisualizationEnabled);
 }
@@ -349,10 +349,12 @@ void LivoxViewerWindow::syncPointCloudToolActions()
 {
     if (pointCloudMeasureAction) {
         QSignalBlocker blocker(pointCloudMeasureAction);
-        pointCloudMeasureAction->setChecked(measurementModeActive);
+        pointCloudMeasureAction->setChecked(pointCloudToolMode == PointCloudToolMode::Measurement);
+        pointCloudMeasureAction->setEnabled(pointCloudView && pointCloudToolMode != PointCloudToolMode::CrossSection);
     }
     if (pointCloudSelectionAction) {
         QSignalBlocker blocker(pointCloudSelectionAction);
-        pointCloudSelectionAction->setChecked(selectionRealtimeEnabled);
+        pointCloudSelectionAction->setChecked(pointCloudToolMode == PointCloudToolMode::Selection);
+        pointCloudSelectionAction->setEnabled(pointCloudView && pointCloudToolMode != PointCloudToolMode::CrossSection);
     }
 }

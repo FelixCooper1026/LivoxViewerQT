@@ -18,9 +18,7 @@ void LivoxViewerWindow::updateStatus()
     const bool operationStatusActive =
         playbackState.active ||
         playbackState.loading ||
-        measurementModeActive ||
-        selectionRealtimeEnabled ||
-        crossSectionModeActive ||
+        pointCloudToolMode != PointCloudToolMode::None ||
         captureTaskRunning(captureState.pointCloudTask) ||
         captureTaskRunning(captureState.imuTask) ||
         captureTaskRunning(captureState.parameterTask) ||
