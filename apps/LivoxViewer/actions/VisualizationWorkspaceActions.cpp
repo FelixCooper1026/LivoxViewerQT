@@ -185,13 +185,13 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     view->setEdlConfig(pointCloudEdlConfig);
     view->setGridConfig(pointCloudGridConfig);
     view->setGridVisible(realtimePointCloudView->isGridVisible());
-    view->setMeasurementModeEnabled(measurementModeActive);
-    view->setSelectionModeEnabled(selectionRealtimeEnabled);
+    view->setMeasurementModeEnabled(false);
+    view->setSelectionModeEnabled(pointCloudToolMode == PointCloudToolMode::Selection);
     view->resetView();
     connect(view, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
     connect(view, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
     connect(view, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
-        if (crossSectionModeActive && statusLabelBar) {
+        if (pointCloudToolMode == PointCloudToolMode::CrossSection && statusLabelBar) {
             statusLabelBar->setText(QString("点云裁切：%1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
         }
     });
@@ -282,6 +282,8 @@ void LivoxViewerWindow::closeVisualizationTab(int tabId)
 
 void LivoxViewerWindow::onVisualizationFocusedTabChanged(int tabId)
 {
+    ++selectionTableGeneration;
+
     if (boundPlaybackTabId >= 0 && boundPlaybackTabId != tabId) {
         saveBoundPlaybackState();
     }
@@ -313,6 +315,26 @@ void LivoxViewerWindow::onVisualizationFocusedTabChanged(int tabId)
             playbackState.timer->stop();
         }
         activeVisualizationTabId = -1;
+    }
+
+    if (pointCloudToolMode == PointCloudToolMode::Measurement) {
+        forEachPointCloudView([this](PointCloudView* view) {
+            view->setMeasurementModeEnabled(view == pointCloudView);
+        });
+        if (!pointCloudView) {
+            pointCloudToolMode = PointCloudToolMode::None;
+            onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
+        }
+    } else if (pointCloudToolMode == PointCloudToolMode::Selection) {
+        if (!pointCloudView) {
+            setPointCloudSelectionEnabled(false);
+        } else {
+            pointCloudView->setSelectionModeEnabled(true);
+            updateSelectionTableAndLog();
+        }
+    } else if (pointCloudToolMode == PointCloudToolMode::CrossSection &&
+               !pointCloudView && pointCloudCrossSectionAction) {
+        pointCloudCrossSectionAction->trigger();
     }
 
     updatePointCloudLegend();

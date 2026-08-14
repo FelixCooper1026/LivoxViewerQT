@@ -776,12 +776,12 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     slamPointCloudView->setEdlConfig(pointCloudEdlConfig);
     slamPointCloudView->setGridConfig(pointCloudGridConfig);
     slamPointCloudView->setGridVisible(realtimePointCloudView->isGridVisible());
-    slamPointCloudView->setMeasurementModeEnabled(measurementModeActive);
-    slamPointCloudView->setSelectionModeEnabled(selectionRealtimeEnabled);
+    slamPointCloudView->setMeasurementModeEnabled(false);
+    slamPointCloudView->setSelectionModeEnabled(pointCloudToolMode == PointCloudToolMode::Selection);
     connect(slamPointCloudView, &PointCloudView::lvx2FileDropped, this, &LivoxViewerWindow::onLvx2PlaybackFileDropped);
     connect(slamPointCloudView, &PointCloudView::selectionPointsReady, this, &LivoxViewerWindow::onSelectionPointsReady);
     connect(slamPointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
-        if (crossSectionModeActive && statusLabelBar) {
+        if (pointCloudToolMode == PointCloudToolMode::CrossSection && statusLabelBar) {
             statusLabelBar->setText(QString("点云裁切：%1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
         }
     });

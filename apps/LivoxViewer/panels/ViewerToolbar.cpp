@@ -923,19 +923,15 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     measureAction->setToolTip("点云测距");
     connect(measureAction, &QAction::triggered, this, [this](bool enable) {
         if (enable) {
-            if (crossSectionModeActive && pointCloudCrossSectionAction) {
+            if (pointCloudToolMode == PointCloudToolMode::CrossSection && pointCloudCrossSectionAction) {
                 pointCloudCrossSectionAction->trigger();
             }
-            selectionRealtimeEnabled = false;
-            forEachPointCloudView([](PointCloudView* view) {
-                view->setSelectionModeEnabled(false);
-            });
-            updateSelectionTableAndLog();
+            setPointCloudSelectionEnabled(false);
         }
-        measurementModeActive = enable;
-        forEachPointCloudView([enable](PointCloudView* view) {
-            view->setMeasurementModeEnabled(enable);
-        });
+        pointCloudToolMode = enable ? PointCloudToolMode::Measurement : PointCloudToolMode::None;
+        if (pointCloudView) {
+            pointCloudView->setMeasurementModeEnabled(enable);
+        }
         syncPointCloudToolActions();
         if (enable) {
             pointCloudVisualizationBeforeMeasurement = pointCloudVisualizationEnabled;
@@ -958,35 +954,21 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     selectionAction->setToolTip("点云框选");
     connect(selectionAction, &QAction::triggered, this, [this](bool enable) {
         if (enable) {
-            if (measurementModeActive) {
-                measurementModeActive = false;
-                forEachPointCloudView([](PointCloudView* view) {
-                    view->setMeasurementModeEnabled(false);
-                });
+            if (pointCloudToolMode == PointCloudToolMode::Measurement) {
+                pointCloudToolMode = PointCloudToolMode::None;
+                if (pointCloudView) {
+                    pointCloudView->setMeasurementModeEnabled(false);
+                }
                 onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
             }
-            if (crossSectionModeActive && pointCloudCrossSectionAction) {
+            if (pointCloudToolMode == PointCloudToolMode::CrossSection && pointCloudCrossSectionAction) {
                 pointCloudCrossSectionAction->trigger();
             }
         }
-        selectionRealtimeEnabled = enable;
-        forEachPointCloudView([enable](PointCloudView* view) {
-            view->setSelectionModeEnabled(enable);
-        });
+        setPointCloudSelectionEnabled(enable);
         if (!enable) {
-            updateSelectionTableAndLog();
-            if (attrDock) {
-                attrDock->hide();
-            }
-            activeRightDock = paramsDock;
             updateStatus();
         } else {
-            if (attrDock) {
-                attrDock->show();
-                attrDock->raise();
-                activeRightDock = attrDock;
-            }
-            updateSelectionTableAndLog();
             statusLabelBar->setText("点云框选模式：按住Ctrl+左键拖动选择区域");
         }
         syncPointCloudToolActions();
@@ -1018,38 +1000,32 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         crossSectionControlsAction->setChecked(checked);
     });
     connect(crossSectionAction, &QAction::triggered, this, [this, crossSectionAction, crossSectionControlsAction, crossSectionControlsSwitch, measureAction, selectionAction](bool enable) {
-        if (!pointCloudView) {
+        if (enable && !pointCloudView) {
             QSignalBlocker blocker(crossSectionAction);
             crossSectionAction->setChecked(false);
             return;
         }
 
         if (enable) {
-            if (measurementModeActive) {
-                measurementModeActive = false;
-                forEachPointCloudView([](PointCloudView* view) {
-                    view->setMeasurementModeEnabled(false);
-                });
+            if (pointCloudToolMode == PointCloudToolMode::Measurement) {
+                pointCloudToolMode = PointCloudToolMode::None;
+                if (pointCloudView) {
+                    pointCloudView->setMeasurementModeEnabled(false);
+                }
                 onPointCloudVisualizationToggled(pointCloudVisualizationBeforeMeasurement);
             }
-            if (selectionRealtimeEnabled) {
-                selectionRealtimeEnabled = false;
-                forEachPointCloudView([](PointCloudView* view) {
-                    view->setSelectionModeEnabled(false);
-                });
-                updateSelectionTableAndLog();
-            }
+            setPointCloudSelectionEnabled(false);
             syncPointCloudToolActions();
 
             measureAction->setEnabled(false);
             selectionAction->setEnabled(false);
             pointCloudVisualizationBeforeCrossSection = pointCloudVisualizationEnabled;
             playbackPlayingBeforeCrossSection = playbackState.playing;
-            crossSectionModeActive = true;
+            pointCloudToolMode = PointCloudToolMode::CrossSection;
             pointCloudView->setCrossSectionModeEnabled(true);
             pointCloudView->setCrossSectionControlsVisible(true);
             if (!pointCloudView->isCrossSectionModeEnabled()) {
-                crossSectionModeActive = false;
+                pointCloudToolMode = PointCloudToolMode::None;
                 measureAction->setEnabled(true);
                 selectionAction->setEnabled(true);
                 QSignalBlocker blocker(crossSectionAction);
@@ -1084,7 +1060,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
                 view->setCrossSectionModeEnabled(false);
                 view->setCrossSectionControlsVisible(true);
             });
-            crossSectionModeActive = false;
+            pointCloudToolMode = PointCloudToolMode::None;
             measureAction->setEnabled(true);
             selectionAction->setEnabled(true);
             updateLvx2PlaybackUi();
@@ -1109,7 +1085,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
         crossSectionAction->setChecked(enable);
     });
     connect(pointCloudView, &PointCloudView::crossSectionChanged, this, [this](int clippedPointCount, int sourcePointCount) {
-        if (crossSectionModeActive && statusLabelBar) {
+        if (pointCloudToolMode == PointCloudToolMode::CrossSection && statusLabelBar) {
             statusLabelBar->setText(QString("点云裁切：%1 / %2 点").arg(clippedPointCount).arg(sourcePointCount));
         }
     });
