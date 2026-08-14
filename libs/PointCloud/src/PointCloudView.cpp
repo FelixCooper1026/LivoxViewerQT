@@ -822,6 +822,8 @@ void PointCloudView::setupShaders()
         out vec3 vColor;
         out vec3 vNormal;
         out vec3 vViewPosition;
+        out vec3 vCubePosition;
+        flat out vec3 vCubeNormal;
 
         void main() {
             vec3 worldPosition = aInstancePosition + aCubePosition * uVoxelSizeM;
@@ -830,6 +832,8 @@ void PointCloudView::setupShaders()
             vColor = aInstanceColor;
             vNormal = normalize(normalMatrix * aCubeNormal);
             vViewPosition = viewPosition.xyz;
+            vCubePosition = aCubePosition;
+            vCubeNormal = aCubeNormal;
         }
     )";
 
@@ -838,7 +842,30 @@ void PointCloudView::setupShaders()
         in vec3 vColor;
         in vec3 vNormal;
         in vec3 vViewPosition;
+        in vec3 vCubePosition;
+        flat in vec3 vCubeNormal;
         layout(location = 0) out vec4 SceneColor;
+
+        float voxelBorderMask() {
+            vec3 faceNormal = abs(vCubeNormal);
+            vec2 facePosition;
+            if (faceNormal.x > 0.5) {
+                facePosition = vCubePosition.yz;
+            } else if (faceNormal.y > 0.5) {
+                facePosition = vCubePosition.xz;
+            } else {
+                facePosition = vCubePosition.xy;
+            }
+
+            float edgeDistance = 0.5 - max(abs(facePosition.x), abs(facePosition.y));
+            float edgeDerivative = max(fwidth(edgeDistance), 0.000001);
+            float edgeMask = 1.0 - smoothstep(0.0, edgeDerivative * 0.8, edgeDistance);
+
+            float faceDerivative = max(fwidth(facePosition.x), fwidth(facePosition.y));
+            float projectedVoxelPixels = 1.0 / max(faceDerivative, 0.000001);
+            float distanceFade = smoothstep(3.0, 6.0, projectedVoxelPixels);
+            return edgeMask * distanceFade;
+        }
 
         void main() {
             vec3 normal = normalize(vNormal);
@@ -850,6 +877,7 @@ void PointCloudView::setupShaders()
             vec3 halfDir = normalize(keyLight + viewDir);
             float specular = 0.10 * pow(max(dot(normal, halfDir), 0.0), 32.0);
             vec3 color = clamp(vColor * (0.36 + diffuse) + vec3(specular), 0.0, 1.0);
+            color *= 1.0 - 0.34 * voxelBorderMask();
             SceneColor = vec4(color, 1.0);
         }
     )";
