@@ -39,7 +39,8 @@ function Install-ZipDependency {
         [Parameter(Mandatory = $true)][string]$ArchiveName,
         [Parameter(Mandatory = $true)][string]$InstallDirName,
         [Parameter(Mandatory = $true)][string]$RequiredFile,
-        [string]$SourceSubdirectory = ""
+        [string]$SourceSubdirectory = "",
+        [switch]$UseExtractRoot
     )
 
     $installDir = Join-Path $thirdPartyRoot $InstallDirName
@@ -73,9 +74,13 @@ function Install-ZipDependency {
         throw "$Name extraction failed with exit code $LASTEXITCODE"
     }
 
-    $sourceRoot = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
-    if ($null -eq $sourceRoot) {
-        throw "Archive did not contain an extracted source directory: $archivePath"
+    if ($UseExtractRoot) {
+        $sourceRoot = Get-Item -LiteralPath $extractRoot
+    } else {
+        $sourceRoot = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
+        if ($null -eq $sourceRoot) {
+            throw "Archive did not contain an extracted source directory: $archivePath"
+        }
     }
     if ($SourceSubdirectory) {
         $sourceRoot = Get-Item -LiteralPath (Join-Path $sourceRoot.FullName $SourceSubdirectory)
@@ -141,6 +146,21 @@ Install-ZipDependency `
     -ArchiveName "eigen-3.4.0.zip" `
     -InstallDirName "eigen-3.4.0" `
     -RequiredFile "Eigen/Core"
+
+Install-ZipDependency `
+    -Name "LZ4 1.10.0" `
+    -Url "https://codeload.github.com/lz4/lz4/zip/refs/tags/v1.10.0" `
+    -ArchiveName "lz4-1.10.0.zip" `
+    -InstallDirName "lz4-1.10.0" `
+    -RequiredFile "lz4.c"
+
+Install-ZipDependency `
+    -Name "Npcap SDK 1.16" `
+    -Url "https://npcap.com/dist/npcap-sdk-1.16.zip" `
+    -ArchiveName "npcap-sdk-1.16.zip" `
+    -InstallDirName "npcap-sdk-1.16" `
+    -RequiredFile "Include/pcap.h" `
+    -UseExtractRoot
 
 Install-ZipDependency `
     -Name "MCAP C++ 2.1.3" `

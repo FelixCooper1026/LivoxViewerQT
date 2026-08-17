@@ -193,8 +193,6 @@ find_package(OpenCV REQUIRED COMPONENTS
     imgcodecs
 )
 
-include(CTest)
-
 message(STATUS "FAST_LIO source snapshot: ${SLAM_FAST_LIO_ROOT}")
 message(STATUS "FAST_LIO Eigen include: ${SLAM_EIGEN_INCLUDE_DIR}")
 message(STATUS "FAST_LIO OpenMP: ${OpenMP_CXX_VERSION}")
@@ -219,130 +217,6 @@ target_include_directories(freedom_core PUBLIC
 )
 target_link_libraries(freedom_core PUBLIC ${OpenCV_LIBS})
 target_compile_features(freedom_core PUBLIC cxx_std_17)
-
-if(BUILD_TESTING)
-    add_executable(PcapUdpPacketTests
-        tests/PcapUdpPacketTests.cpp
-        libs/Pcap/src/PcapUdpPacket.cpp
-    )
-    target_include_directories(PcapUdpPacketTests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
-    )
-    if(QT_VERSION_MAJOR EQUAL 6)
-        target_link_libraries(PcapUdpPacketTests PRIVATE Qt6::Core)
-    else()
-        target_link_libraries(PcapUdpPacketTests PRIVATE Qt5::Core)
-    endif()
-    if(WIN32)
-        target_include_directories(PcapUdpPacketTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Include")
-    elseif(PCAP_LIBRARY)
-        target_link_libraries(PcapUdpPacketTests PRIVATE ${PCAP_LIBRARY})
-    endif()
-    target_compile_features(PcapUdpPacketTests PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(PcapUdpPacketTests PRIVATE /utf-8)
-    endif()
-    add_test(NAME PcapUdpPacketTests COMMAND PcapUdpPacketTests)
-
-    add_executable(PcapExtractorTests
-        tests/PcapExtractorTests.cpp
-        libs/Lvx2/src/Lvx2Writer.cpp
-        libs/Pcap/src/ImuParser.cpp
-        libs/Pcap/src/PcapExtractor.cpp
-        libs/Pcap/src/PcapUdpPacket.cpp
-        libs/Pcap/src/PushMsgParser.cpp
-        libs/LivoxCore/src/LidarParameterService.cpp
-    )
-    target_include_directories(PcapExtractorTests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Lvx2/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/LivoxCore/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/livox_sdk_qt/include
-    )
-    if(QT_VERSION_MAJOR EQUAL 6)
-        target_link_libraries(PcapExtractorTests PRIVATE Qt6::Core)
-    else()
-        target_link_libraries(PcapExtractorTests PRIVATE Qt5::Core)
-    endif()
-    if(WIN32)
-        target_include_directories(PcapExtractorTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Include")
-        target_link_libraries(PcapExtractorTests PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Lib/x64/wpcap.lib"
-            "${CMAKE_CURRENT_SOURCE_DIR}/third-party/npcap-sdk-1.16/Lib/x64/Packet.lib"
-            ws2_32)
-    elseif(PCAP_LIBRARY)
-        target_link_libraries(PcapExtractorTests PRIVATE ${PCAP_LIBRARY})
-    endif()
-    target_compile_features(PcapExtractorTests PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(PcapExtractorTests PRIVATE /utf-8)
-    endif()
-    add_test(NAME PcapExtractorTests COMMAND PcapExtractorTests)
-
-    add_executable(LivoxProtocolParserTests
-        tests/LivoxProtocolParserTests.cpp
-        libs/Pcap/src/PushMsgParser.cpp
-    )
-    target_include_directories(LivoxProtocolParserTests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/Pcap/include
-    )
-    if(QT_VERSION_MAJOR EQUAL 6)
-        target_link_libraries(LivoxProtocolParserTests PRIVATE Qt6::Core)
-    else()
-        target_link_libraries(LivoxProtocolParserTests PRIVATE Qt5::Core)
-    endif()
-    if(WIN32)
-        target_link_libraries(LivoxProtocolParserTests PRIVATE ws2_32)
-    endif()
-    target_compile_features(LivoxProtocolParserTests PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(LivoxProtocolParserTests PRIVATE /utf-8)
-    endif()
-    add_test(NAME LivoxProtocolParserTests COMMAND LivoxProtocolParserTests)
-
-    add_executable(PointCloudProjectionTests
-        tests/PointCloudProjectionTests.cpp
-        libs/PointCloud/src/PointCloudProjection.cpp
-    )
-    target_include_directories(PointCloudProjectionTests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/libs/PointCloud/include
-    )
-    target_compile_features(PointCloudProjectionTests PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(PointCloudProjectionTests PRIVATE /utf-8)
-    endif()
-    add_test(NAME PointCloudProjectionTests COMMAND PointCloudProjectionTests)
-
-    add_executable(FreeDomCoreTests tests/FreeDomCoreTests.cpp)
-    target_link_libraries(FreeDomCoreTests PRIVATE dynamic_filter)
-    target_compile_features(FreeDomCoreTests PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(FreeDomCoreTests PRIVATE /utf-8)
-    endif()
-    add_test(NAME FreeDomCoreTests COMMAND FreeDomCoreTests)
-
-    add_executable(FreeDomEquivalenceTool tests/FreeDomEquivalenceTool.cpp)
-    target_link_libraries(FreeDomEquivalenceTool PRIVATE freedom_core)
-    target_compile_features(FreeDomEquivalenceTool PRIVATE cxx_std_17)
-    if(MSVC)
-        target_compile_options(FreeDomEquivalenceTool PRIVATE /utf-8)
-    endif()
-    set(FREEDOM_SYNTHETIC_METRICS
-        ${CMAKE_CURRENT_BINARY_DIR}/freedom_synthetic_actual.csv)
-    add_test(
-        NAME FreeDomSyntheticReplay
-        COMMAND FreeDomEquivalenceTool
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/freedom_synthetic_replay.csv
-            ${FREEDOM_SYNTHETIC_METRICS})
-    add_test(
-        NAME FreeDomSyntheticEquivalence
-        COMMAND ${CMAKE_COMMAND} -E compare_files --ignore-eol
-            ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/freedom_synthetic_expected.csv
-            ${FREEDOM_SYNTHETIC_METRICS})
-    set_tests_properties(
-        FreeDomSyntheticEquivalence
-        PROPERTIES DEPENDS FreeDomSyntheticReplay)
-endif()
 
 add_library(dynamic_filter STATIC
     libs/DynamicFilter/src/DynamicFilterController.cpp

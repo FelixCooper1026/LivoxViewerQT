@@ -28,6 +28,7 @@ install_tar_dependency() {
     local install_dir_name="$4"
     local required_file="$5"
     local source_subdirectory="${6:-}"
+    local use_extract_root="${7:-0}"
 
     local install_dir="$third_party_root/$install_dir_name"
     local required_path="$install_dir/$required_file"
@@ -55,11 +56,13 @@ install_tar_dependency() {
     echo "Extracting $name..."
     tar -xzf "$archive_path" -C "$extract_root"
 
-    local source_root
-    source_root="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-    if [[ -z "$source_root" ]]; then
-        echo "Archive did not contain an extracted source directory: $archive_path" >&2
-        exit 1
+    local source_root="$extract_root"
+    if [[ "$use_extract_root" -eq 0 ]]; then
+        source_root="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+        if [[ -z "$source_root" ]]; then
+            echo "Archive did not contain an extracted source directory: $archive_path" >&2
+            exit 1
+        fi
     fi
     if [[ -n "$source_subdirectory" ]]; then
         source_root="$source_root/$source_subdirectory"
@@ -82,6 +85,13 @@ install_tar_dependency \
     "eigen-3.4.0.tar.gz" \
     "eigen-3.4.0" \
     "Eigen/Core"
+
+install_tar_dependency \
+    "LZ4 1.10.0" \
+    "https://codeload.github.com/lz4/lz4/tar.gz/refs/tags/v1.10.0" \
+    "lz4-1.10.0.tar.gz" \
+    "lz4-1.10.0" \
+    "lz4.c"
 
 install_tar_dependency \
     "MCAP C++ 2.1.3" \
