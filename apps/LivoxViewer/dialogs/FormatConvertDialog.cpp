@@ -167,7 +167,7 @@ QStringList selectRosbagFiles(QWidget* parent, const QString& startDir)
     QFileDialog dialog(parent, QStringLiteral("添加 ROSbag 文件"), startDir);
     dialog.setOption(QFileDialog::DontUseNativeDialog, true);
     dialog.setFileMode(QFileDialog::ExistingFiles);
-    dialog.setNameFilter(QStringLiteral("ROSbag (*.bag *.db3 *.yaml *.yml)"));
+    dialog.setNameFilter(QStringLiteral("ROSbag (*.bag *.db3 *.mcap *.yaml *.yml)"));
     if (dialog.exec() != QDialog::Accepted) {
         return {};
     }
@@ -189,6 +189,7 @@ bool isRosbagConvertFile(const QFileInfo& info)
     const QString suffix = info.suffix();
     return suffix.compare(QStringLiteral("bag"), Qt::CaseInsensitive) == 0 ||
            suffix.compare(QStringLiteral("db3"), Qt::CaseInsensitive) == 0 ||
+           suffix.compare(QStringLiteral("mcap"), Qt::CaseInsensitive) == 0 ||
            suffix.compare(QStringLiteral("yaml"), Qt::CaseInsensitive) == 0 ||
            suffix.compare(QStringLiteral("yml"), Qt::CaseInsensitive) == 0;
 }
@@ -213,7 +214,7 @@ QStringList folderFilters(bool rosbagToPcd, bool pcapTool)
 {
     if (pcapTool) return {QStringLiteral("*.pcap"), QStringLiteral("*.pcapng"), QStringLiteral("*.cap")};
     return rosbagToPcd
-        ? QStringList{QStringLiteral("*.bag"), QStringLiteral("*.db3"), QStringLiteral("*.yaml"), QStringLiteral("*.yml")}
+        ? QStringList{QStringLiteral("*.bag"), QStringLiteral("*.db3"), QStringLiteral("*.mcap"), QStringLiteral("*.yaml"), QStringLiteral("*.yml")}
         : QStringList{QStringLiteral("*.lvx2")};
 }
 

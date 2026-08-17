@@ -85,6 +85,7 @@ bool isSupportedPlaybackDropFile(const QString& filePath)
            filePath.endsWith(QStringLiteral(".cap"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".bag"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".db3"), Qt::CaseInsensitive) ||
+           filePath.endsWith(QStringLiteral(".mcap"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".yaml"), Qt::CaseInsensitive) ||
            filePath.endsWith(QStringLiteral(".yml"), Qt::CaseInsensitive);
 }

@@ -27,6 +27,7 @@ install_tar_dependency() {
     local archive_name="$3"
     local install_dir_name="$4"
     local required_file="$5"
+    local source_subdirectory="${6:-}"
 
     local install_dir="$third_party_root/$install_dir_name"
     local required_path="$install_dir/$required_file"
@@ -60,6 +61,9 @@ install_tar_dependency() {
         echo "Archive did not contain an extracted source directory: $archive_path" >&2
         exit 1
     fi
+    if [[ -n "$source_subdirectory" ]]; then
+        source_root="$source_root/$source_subdirectory"
+    fi
 
     mkdir -p "$install_dir"
     find "$source_root" -mindepth 1 -maxdepth 1 -exec mv -t "$install_dir" {} +
@@ -78,6 +82,21 @@ install_tar_dependency \
     "eigen-3.4.0.tar.gz" \
     "eigen-3.4.0" \
     "Eigen/Core"
+
+install_tar_dependency \
+    "MCAP C++ 2.1.3" \
+    "https://codeload.github.com/foxglove/mcap/tar.gz/refs/tags/releases/cpp/v2.1.3" \
+    "mcap-cpp-2.1.3.tar.gz" \
+    "mcap-cpp-2.1.3" \
+    "include/mcap/reader.hpp" \
+    "cpp/mcap"
+
+install_tar_dependency \
+    "Zstd 1.5.7" \
+    "https://codeload.github.com/facebook/zstd/tar.gz/refs/tags/v1.5.7" \
+    "zstd-1.5.7.tar.gz" \
+    "zstd-1.5.7" \
+    "build/cmake/CMakeLists.txt"
 
 eigen_root="$third_party_root/eigen-3.4.0"
 eigen_config="$eigen_root/share/eigen3/cmake"

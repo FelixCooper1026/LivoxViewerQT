@@ -6,6 +6,7 @@
 #include "Io/LvxSlamSource.h"
 #include "Io/PcapSlamSource.h"
 #include "Io/RosbagSlamSource.h"
+#include "McapReader.h"
 #include "slam/SlamControlDialog.h"
 #include "slam/SlamUiBridge.h"
 
@@ -434,6 +435,9 @@ QString offlineSourceKindForPath(const QString& filePath)
     if (suffix == QStringLiteral("bag")) {
         return QStringLiteral("ROSbag");
     }
+    if (Rosbag::isMcapPath(filePath)) {
+        return QStringLiteral("MCAP");
+    }
     if (suffix == QStringLiteral("db3") ||
         suffix == QStringLiteral("yaml") ||
         suffix == QStringLiteral("yml")) {
@@ -711,10 +715,10 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
     dialog.setDirectory(lastDir);
     dialog.setFileMode(QFileDialog::ExistingFile);
     dialog.setNameFilters({
-        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag *.db3 *.yaml *.yml *.lvx *.lvx2)"),
+        QStringLiteral("SLAM 数据源 (*.pcap *.pcapng *.bag *.db3 *.mcap *.yaml *.yml *.lvx *.lvx2)"),
         QStringLiteral("PCAP 文件 (*.pcap *.pcapng)"),
         QStringLiteral("ROS1 Bag 文件 (*.bag)"),
-        QStringLiteral("ROS2 db3 文件 (*.db3 *.yaml *.yml)"),
+        QStringLiteral("ROS2 Bag 文件 (*.db3 *.mcap *.yaml *.yml)"),
         QStringLiteral("Livox LVX/LVX2 文件 (*.lvx *.lvx2)"),
         QStringLiteral("所有文件 (*.*)")
     });
@@ -731,6 +735,7 @@ bool LivoxViewerWindow::loadOfflineSlamSource()
         slamOfflineSourceKind = SlamOfflineSourceKind::Lvx;
     } else if (suffix == QStringLiteral("bag") ||
                suffix == QStringLiteral("db3") ||
+               suffix == QStringLiteral("mcap") ||
                suffix == QStringLiteral("yaml") ||
                suffix == QStringLiteral("yml")) {
         slamOfflineSourceKind = SlamOfflineSourceKind::Rosbag;

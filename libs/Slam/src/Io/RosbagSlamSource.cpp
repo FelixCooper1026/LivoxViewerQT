@@ -1,6 +1,7 @@
 #include "Io/RosbagSlamSource.h"
 
 #include "RosMessageParsers.h"
+#include "McapReader.h"
 #include "Ros2BagReader.h"
 #include "RosbagReader.h"
 #include "Core/FastLioInputSynchronizer.h"
@@ -38,6 +39,7 @@ bool isLivoxCustomMsgType(const QString& type)
 {
     return type == QStringLiteral("livox_ros_driver2/CustomMsg") ||
            type == QStringLiteral("livox_ros_driver/CustomMsg") ||
+           type == QStringLiteral("livox_msgs/CustomMsg") ||
            type == QStringLiteral("livox_ros_driver2/msg/CustomMsg");
 }
 
@@ -65,6 +67,31 @@ QString topicListText(const QVector<RosbagSlamTopicInfo>& topics)
         items << QStringLiteral("%1(%2)").arg(topic.topic, topic.type);
     }
     return items.join(QStringLiteral(", "));
+}
+
+QString mcapFormatName(const QVector<Rosbag::Connection>& connections)
+{
+    bool hasRos1 = false;
+    bool hasRos2 = false;
+    bool hasOther = false;
+    for (const Rosbag::Connection& connection : connections) {
+        const QString schemaEncoding = connection.schemaEncoding.toLower();
+        const QString messageEncoding = connection.messageEncoding.toLower();
+        if (messageEncoding == QStringLiteral("ros1") || schemaEncoding == QStringLiteral("ros1msg")) {
+            hasRos1 = true;
+        } else if (messageEncoding == QStringLiteral("cdr") || schemaEncoding.startsWith(QStringLiteral("ros2"))) {
+            hasRos2 = true;
+        } else {
+            hasOther = true;
+        }
+    }
+    if (hasRos1 && !hasRos2 && !hasOther) {
+        return QStringLiteral("ROS1 MCAP");
+    }
+    if (hasRos2 && !hasRos1 && !hasOther) {
+        return QStringLiteral("ROS2 MCAP");
+    }
+    return QStringLiteral("MCAP");
 }
 
 int lidarTopicPriority(const QString& topic, const QString& type)
@@ -674,14 +701,29 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
     clear();
     summary_.filePath = filePath;
     const QString suffix = QFileInfo(filePath).suffix().toLower();
-    const bool useRos2Reader = suffix == QStringLiteral("db3") ||
-                               suffix == QStringLiteral("yaml") ||
-                               suffix == QStringLiteral("yml");
-    summary_.format = useRos2Reader ? QStringLiteral("ROS2 db3") : QStringLiteral("ROS1 bag");
+    const bool useMcapReader = Rosbag::isMcapPath(filePath);
+    const bool useRos2Reader = !useMcapReader &&
+                               (suffix == QStringLiteral("db3") ||
+                                suffix == QStringLiteral("yaml") ||
+                                suffix == QStringLiteral("yml"));
+    summary_.format = useMcapReader
+        ? QStringLiteral("MCAP")
+        : (useRos2Reader ? QStringLiteral("ROS2 db3") : QStringLiteral("ROS1 bag"));
 
     QVector<Rosbag::Connection> connections;
     QVector<Rosbag::SerializedMessage> messages;
-    if (useRos2Reader) {
+    if (useMcapReader) {
+        Rosbag::McapReader reader;
+        if (!reader.read(filePath, &errorMessage_)) {
+            if (error != nullptr) {
+                *error = errorMessage_;
+            }
+            return false;
+        }
+        connections = reader.connections();
+        messages = reader.messages();
+        summary_.format = mcapFormatName(connections);
+    } else if (useRos2Reader) {
         Rosbag::Ros2BagReader reader;
         if (!reader.read(filePath, &errorMessage_)) {
             if (error != nullptr) {
@@ -1083,16 +1125,26 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
     clear();
     summary_.filePath = filePath;
     const QString suffix = QFileInfo(filePath).suffix().toLower();
-    const bool useRos2Reader = suffix == QStringLiteral("db3") ||
-                               suffix == QStringLiteral("yaml") ||
-                               suffix == QStringLiteral("yml");
-    summary_.format = useRos2Reader ? QStringLiteral("ROS2 db3") : QStringLiteral("ROS1 bag");
+    const bool useMcapReader = Rosbag::isMcapPath(filePath);
+    const bool useRos2Reader = !useMcapReader &&
+                               (suffix == QStringLiteral("db3") ||
+                                suffix == QStringLiteral("yaml") ||
+                                suffix == QStringLiteral("yml"));
+    summary_.format = useMcapReader
+        ? QStringLiteral("MCAP")
+        : (useRos2Reader ? QStringLiteral("ROS2 db3") : QStringLiteral("ROS1 bag"));
 
     Rosbag::Reader ros1Reader;
     Rosbag::Ros2BagReader ros2Reader;
-    const bool metadataOk = useRos2Reader
-        ? ros2Reader.readConnections(filePath, &errorMessage_)
-        : ros1Reader.readConnections(filePath, &errorMessage_);
+    Rosbag::McapReader mcapReader;
+    bool metadataOk = false;
+    if (useMcapReader) {
+        metadataOk = mcapReader.readConnections(filePath, &errorMessage_);
+    } else if (useRos2Reader) {
+        metadataOk = ros2Reader.readConnections(filePath, &errorMessage_);
+    } else {
+        metadataOk = ros1Reader.readConnections(filePath, &errorMessage_);
+    }
     if (!metadataOk) {
         if (error != nullptr) {
             *error = errorMessage_;
@@ -1100,9 +1152,15 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
         return false;
     }
 
-    const QVector<Rosbag::Connection> connections = useRos2Reader
-        ? ros2Reader.connections()
-        : ros1Reader.connections();
+    QVector<Rosbag::Connection> connections;
+    if (useMcapReader) {
+        connections = mcapReader.connections();
+        summary_.format = mcapFormatName(connections);
+    } else if (useRos2Reader) {
+        connections = ros2Reader.connections();
+    } else {
+        connections = ros1Reader.connections();
+    }
     for (const Rosbag::Connection& connection : connections) {
         RosbagSlamTopicInfo topic;
         topic.topic = connection.topic;
@@ -1429,19 +1487,29 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
         return true;
     };
 
-    const bool streamOk = useRos2Reader
-        ? ros2Reader.streamMessages(filePath,
-                                    selectedConnectionIds,
-                                    cancellationRequested,
-                                    consumeMessage,
-                                    progress,
-                                    &errorMessage_)
-        : ros1Reader.streamMessages(filePath,
-                                    selectedConnectionIds,
-                                    cancellationRequested,
-                                    consumeMessage,
-                                    progress,
-                                    &errorMessage_);
+    bool streamOk = false;
+    if (useMcapReader) {
+        streamOk = mcapReader.streamMessages(filePath,
+                                             selectedConnectionIds,
+                                             cancellationRequested,
+                                             consumeMessage,
+                                             progress,
+                                             &errorMessage_);
+    } else if (useRos2Reader) {
+        streamOk = ros2Reader.streamMessages(filePath,
+                                             selectedConnectionIds,
+                                             cancellationRequested,
+                                             consumeMessage,
+                                             progress,
+                                             &errorMessage_);
+    } else {
+        streamOk = ros1Reader.streamMessages(filePath,
+                                             selectedConnectionIds,
+                                             cancellationRequested,
+                                             consumeMessage,
+                                             progress,
+                                             &errorMessage_);
+    }
     if (!streamOk) {
         if (error != nullptr && !errorMessage_.isEmpty()) {
             *error = errorMessage_;

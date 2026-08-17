@@ -38,7 +38,8 @@ function Install-ZipDependency {
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$ArchiveName,
         [Parameter(Mandatory = $true)][string]$InstallDirName,
-        [Parameter(Mandatory = $true)][string]$RequiredFile
+        [Parameter(Mandatory = $true)][string]$RequiredFile,
+        [string]$SourceSubdirectory = ""
     )
 
     $installDir = Join-Path $thirdPartyRoot $InstallDirName
@@ -75,6 +76,9 @@ function Install-ZipDependency {
     $sourceRoot = Get-ChildItem -LiteralPath $extractRoot -Directory | Select-Object -First 1
     if ($null -eq $sourceRoot) {
         throw "Archive did not contain an extracted source directory: $archivePath"
+    }
+    if ($SourceSubdirectory) {
+        $sourceRoot = Get-Item -LiteralPath (Join-Path $sourceRoot.FullName $SourceSubdirectory)
     }
 
     New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -137,6 +141,21 @@ Install-ZipDependency `
     -ArchiveName "eigen-3.4.0.zip" `
     -InstallDirName "eigen-3.4.0" `
     -RequiredFile "Eigen/Core"
+
+Install-ZipDependency `
+    -Name "MCAP C++ 2.1.3" `
+    -Url "https://codeload.github.com/foxglove/mcap/zip/refs/tags/releases/cpp/v2.1.3" `
+    -ArchiveName "mcap-cpp-2.1.3.zip" `
+    -InstallDirName "mcap-cpp-2.1.3" `
+    -RequiredFile "include/mcap/reader.hpp" `
+    -SourceSubdirectory "cpp/mcap"
+
+Install-ZipDependency `
+    -Name "Zstd 1.5.7" `
+    -Url "https://codeload.github.com/facebook/zstd/zip/refs/tags/v1.5.7" `
+    -ArchiveName "zstd-1.5.7.zip" `
+    -InstallDirName "zstd-1.5.7" `
+    -RequiredFile "build/cmake/CMakeLists.txt"
 
 Install-OpenCvPrebuilt
 

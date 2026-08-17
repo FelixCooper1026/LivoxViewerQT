@@ -16,6 +16,8 @@ struct Connection {
     QString type;
     QString md5sum;
     QString messageDefinition;
+    QString schemaEncoding;
+    QString messageEncoding;
     QHash<QString, QByteArray> fields;
     int64_t messageCount = 0;
 };
@@ -25,6 +27,7 @@ struct SerializedMessage {
     QString topic;
     QString type;
     int64_t timestampNs = 0;
+    int64_t publishTimestampNs = 0;
     QByteArray data;
 };
 

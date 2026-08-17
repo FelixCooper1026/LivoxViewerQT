@@ -389,6 +389,37 @@ add_library(third_party_lz4 STATIC
 )
 target_include_directories(third_party_lz4 PUBLIC ${THIRD_PARTY_LZ4_DIR})
 
+set(THIRD_PARTY_MCAP_DIR "${THIRD_PARTY_ROOT}/mcap-cpp-2.1.3")
+set(THIRD_PARTY_ZSTD_DIR "${THIRD_PARTY_ROOT}/zstd-1.5.7")
+set(ZSTD_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+set(ZSTD_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(ZSTD_LEGACY_SUPPORT OFF CACHE BOOL "" FORCE)
+set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
+add_subdirectory("${THIRD_PARTY_ZSTD_DIR}/build/cmake" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zstd" EXCLUDE_FROM_ALL)
+
+add_library(mcap_reader_support STATIC
+    libs/Rosbag/src/McapImplementation.cpp
+    libs/Rosbag/src/McapReader.cpp
+)
+target_include_directories(mcap_reader_support PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/libs/Rosbag/include
+    ${THIRD_PARTY_MCAP_DIR}/include
+)
+if(QT_VERSION_MAJOR EQUAL 6)
+    target_link_libraries(mcap_reader_support PUBLIC Qt6::Core)
+else()
+    target_link_libraries(mcap_reader_support PUBLIC Qt5::Core)
+endif()
+target_link_libraries(mcap_reader_support PUBLIC third_party_lz4 libzstd_static)
+target_compile_features(mcap_reader_support PUBLIC cxx_std_17)
+target_compile_definitions(mcap_reader_support PUBLIC MCAP_PUBLIC=)
+if(MSVC)
+    target_compile_options(mcap_reader_support PRIVATE /utf-8)
+endif()
+
 # 基础源文件
 set(SOURCES
     apps/LivoxViewer/main.cpp
@@ -544,6 +575,7 @@ set(SOURCES
     libs/Rosbag/include/RosbagTypes.h
     libs/Rosbag/include/RosbagReader.h
     libs/Rosbag/include/Ros2BagReader.h
+    libs/Rosbag/include/McapReader.h
     libs/Rosbag/include/RosMessageParsers.h
     libs/Rosbag/include/RosbagPlaybackController.h
     libs/Rosbag/include/RosbagPlaybackSource.h
@@ -794,6 +826,7 @@ endif()
 target_link_libraries(LivoxViewerQT PRIVATE
     OpenMP::OpenMP_CXX
     third_party_lz4
+    mcap_reader_support
     gtsam
     dynamic_filter
 )
@@ -912,6 +945,7 @@ endif()
 target_link_libraries(SlamReplayTool PRIVATE
     OpenMP::OpenMP_CXX
     third_party_lz4
+    mcap_reader_support
     gtsam
     dynamic_filter
 )

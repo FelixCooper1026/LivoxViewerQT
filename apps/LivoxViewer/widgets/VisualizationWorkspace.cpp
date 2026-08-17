@@ -5,12 +5,14 @@
 #include <QButtonGroup>
 #include <QEvent>
 #include <QFrame>
+#include <QGraphicsOpacityEffect>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPropertyAnimation>
 #include <QSplitter>
 #include <QShortcut>
 #include <QStyle>
@@ -643,6 +645,21 @@ void VisualizationWorkspace::enterFullScreen()
     QShortcut* escapeShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), m_fullScreenWindow);
     escapeShortcut->setContext(Qt::WindowShortcut);
     connect(escapeShortcut, &QShortcut::activated, this, &VisualizationWorkspace::exitFullScreen);
+    const QList<QShortcut*> hostShortcuts = m_fullScreenHost->findChildren<QShortcut*>(
+        QString(), Qt::FindDirectChildrenOnly);
+    for (QShortcut* hostShortcut : hostShortcuts) {
+        if (hostShortcut->context() != Qt::WindowShortcut ||
+            hostShortcut->key() == QKeySequence(Qt::Key_Escape)) {
+            continue;
+        }
+        QShortcut* fullScreenShortcut = new QShortcut(hostShortcut->key(), m_fullScreenWindow);
+        fullScreenShortcut->setContext(Qt::WindowShortcut);
+        fullScreenShortcut->setAutoRepeat(hostShortcut->autoRepeat());
+        fullScreenShortcut->setEnabled(hostShortcut->isEnabled());
+        connect(fullScreenShortcut, &QShortcut::activated, hostShortcut, &QShortcut::activated);
+        connect(fullScreenShortcut, &QShortcut::activatedAmbiguously,
+                hostShortcut, &QShortcut::activatedAmbiguously);
+    }
     m_fullScreenWindow->installEventFilter(this);
     m_fullScreenWindow->showFullScreen();
     QTimer::singleShot(0, this, &VisualizationWorkspace::finishEnterFullScreen);
@@ -657,6 +674,17 @@ void VisualizationWorkspace::finishEnterFullScreen()
     updateFullScreenGeometry();
     m_fullScreenHint->show();
     m_fullScreenHint->raise();
+    QGraphicsOpacityEffect* opacityEffect = new QGraphicsOpacityEffect(m_fullScreenHint);
+    opacityEffect->setOpacity(1.0);
+    m_fullScreenHint->setGraphicsEffect(opacityEffect);
+    QTimer::singleShot(5000, m_fullScreenHint, [hint = m_fullScreenHint, opacityEffect]() {
+        QPropertyAnimation* fadeAnimation = new QPropertyAnimation(opacityEffect, "opacity", hint);
+        fadeAnimation->setDuration(800);
+        fadeAnimation->setStartValue(1.0);
+        fadeAnimation->setEndValue(0.0);
+        QObject::connect(fadeAnimation, &QPropertyAnimation::finished, hint, &QLabel::hide);
+        fadeAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+    });
     m_fullScreenWidget->setFocus(Qt::OtherFocusReason);
 }
 

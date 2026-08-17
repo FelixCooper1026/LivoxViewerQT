@@ -75,12 +75,12 @@ void LivoxViewerWindow::openPointCloudPlaybackFileDialog()
         this,
         "选择点云回放文件",
         lastDir,
-        "点云回放文件 (*.lvx *.lvx2 *.pcap *.pcapng *.cap *.bag *.db3 *.yaml *.yml);;"
+        "点云回放文件 (*.lvx *.lvx2 *.pcap *.pcapng *.cap *.bag *.db3 *.mcap *.yaml *.yml);;"
         "LVX文件 (*.lvx);;"
         "LVX2文件 (*.lvx2);;"
         "Pcap文件 (*.pcap *.pcapng *.cap);;"
         "ROS1 Bag文件 (*.bag);;"
-        "ROS2 Bag文件 (*.db3 *.yaml *.yml);;"
+        "ROS2 Bag文件 (*.db3 *.mcap *.yaml *.yml);;"
         "所有文件 (*.*)");
     if (filePath.isEmpty()) {
         return;

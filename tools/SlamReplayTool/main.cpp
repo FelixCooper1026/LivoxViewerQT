@@ -93,6 +93,7 @@ bool isRosbagPath(const QString& filePath)
     const QString suffix = QFileInfo(filePath).suffix().toLower();
     return suffix == QStringLiteral("bag") ||
            suffix == QStringLiteral("db3") ||
+           suffix == QStringLiteral("mcap") ||
            suffix == QStringLiteral("yaml") ||
            suffix == QStringLiteral("yml");
 }
@@ -118,6 +119,7 @@ QString resolveInputPath(const QString& inputPath)
     const QStringList entries = dir.entryList(QStringList()
                                                   << QStringLiteral("*.bag")
                                                   << QStringLiteral("*.db3")
+                                                  << QStringLiteral("*.mcap")
                                                   << QStringLiteral("*.pcap")
                                                   << QStringLiteral("*.pcapng"),
                                               QDir::Files,
@@ -729,7 +731,7 @@ void printUsage(QTextStream& out)
 {
     out << "Usage:\n";
     out << "  SlamReplayTool <with_imu.pcap> <no_imu.pcap>\n";
-    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--loop-closure] [--app-settings] [--save-map] [--keyframe-distance M] [--history-radius M] [--max-frames N] <pcap|bag|db3|lvx|lvx2|metadata.yaml|directory> [...]\n";
+    out << "  SlamReplayTool --diagnose [--source-only] [--lidar-only] [--loop-closure] [--app-settings] [--save-map] [--keyframe-distance M] [--history-radius M] [--max-frames N] <pcap|bag|db3|mcap|lvx|lvx2|metadata.yaml|directory> [...]\n";
 }
 
 } // namespace
