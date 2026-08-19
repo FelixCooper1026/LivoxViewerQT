@@ -19,6 +19,7 @@
 #include <QVector>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <memory>
 
@@ -27,6 +28,7 @@ namespace PcapExtractor {
 namespace {
 
 constexpr size_t kDataHeaderSize = 36;
+constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
 
 struct DeviceData {
     uint32_t lidarId = 0;
@@ -79,6 +81,26 @@ size_t pointStride(uint8_t dataType)
     case 17: return 28;
     default: return 0;
     }
+}
+
+QByteArray sphericalToCartesian(const uint8_t* data, uint16_t pointCount)
+{
+    QByteArray converted(int(size_t(pointCount) * sizeof(LivoxLidarCartesianHighRawPoint)), Qt::Uninitialized);
+    for (uint16_t index = 0; index < pointCount; ++index) {
+        LivoxLidarSpherPoint source{};
+        std::memcpy(&source, data + size_t(index) * sizeof(source), sizeof(source));
+
+        const double theta = double(source.theta) / 100.0 * kDegreesToRadians;
+        const double phi = double(source.phi) / 100.0 * kDegreesToRadians;
+        LivoxLidarCartesianHighRawPoint target{};
+        target.x = int32_t(double(source.depth) * std::sin(theta) * std::cos(phi));
+        target.y = int32_t(double(source.depth) * std::sin(theta) * std::sin(phi));
+        target.z = int32_t(double(source.depth) * std::cos(theta));
+        target.reflectivity = source.reflectivity;
+        target.tag = source.tag;
+        std::memcpy(converted.data() + size_t(index) * sizeof(target), &target, sizeof(target));
+    }
+    return converted;
 }
 
 bool validPointPayload(const uint8_t* payload, size_t length)
@@ -466,7 +488,16 @@ Result extractLvx2(const QString& sourcePath,
         Lvx2::Lvx2Writer* writer = mode == Mode::Merge ? writers.value(0).get() : writers.value(lidarId).get();
         if (writer == nullptr) continue;
         const uint16_t dotCount = readLe16(packet.payload + 5);
-        const size_t dataLength = size_t(dotCount) * pointStride(packet.payload[10]);
+        const uint8_t sourceDataType = packet.payload[10];
+        const uint8_t* pointData = packet.payload + kDataHeaderSize;
+        QByteArray convertedData;
+        if (sourceDataType == kLivoxLidarSphericalCoordinateData) {
+            convertedData = sphericalToCartesian(pointData, dotCount);
+            pointData = reinterpret_cast<const uint8_t*>(convertedData.constData());
+        }
+        const size_t dataLength = sourceDataType == kLivoxLidarSphericalCoordinateData
+            ? size_t(convertedData.size())
+            : size_t(dotCount) * pointStride(sourceDataType);
         Lvx2PackageHeader package{};
         package.version = packet.payload[0];
         package.lidar_id = lidarId;
@@ -474,11 +505,13 @@ Result extractLvx2(const QString& sourcePath,
         package.timestamp_type = packet.payload[11];
         package.timestamp = readLe64(packet.payload + 28);
         package.udp_counter = readLe16(packet.payload + 7);
-        package.data_type = packet.payload[10];
+        package.data_type = sourceDataType == kLivoxLidarSphericalCoordinateData
+            ? kLivoxLidarCartesianCoordinateHighData
+            : sourceDataType;
         package.data_length = uint32_t(dataLength);
         package.frame_counter = packet.payload[9];
         if (!writer->appendPacket(captureTimestampNs(packetHeader), package,
-                                  packet.payload + kDataHeaderSize, dataLength, error)) {
+                                  pointData, dataLength, error)) {
             for (auto& opened : writers) opened->abort();
             result.errorMessage = error;
             return result;
