@@ -51,7 +51,7 @@ function Install-ZipDependency {
         return
     }
 
-    if ((Test-Path -LiteralPath $installDir) -and $Force) {
+    if (Test-Path -LiteralPath $installDir) {
         Remove-Item -LiteralPath $installDir -Recurse -Force
     }
 
@@ -152,7 +152,8 @@ Install-ZipDependency `
     -Url "https://codeload.github.com/lz4/lz4/zip/refs/tags/v1.10.0" `
     -ArchiveName "lz4-1.10.0.zip" `
     -InstallDirName "lz4-1.10.0" `
-    -RequiredFile "lz4.c"
+    -RequiredFile "lz4.c" `
+    -SourceSubdirectory "lib"
 
 Install-ZipDependency `
     -Name "Npcap SDK 1.16" `

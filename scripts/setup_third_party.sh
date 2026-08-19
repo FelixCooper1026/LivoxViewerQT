@@ -38,7 +38,7 @@ install_tar_dependency() {
         return
     fi
 
-    if [[ -d "$install_dir" && "$force" -eq 1 ]]; then
+    if [[ -d "$install_dir" ]]; then
         rm -rf "$install_dir"
     fi
 
@@ -91,7 +91,8 @@ install_tar_dependency \
     "https://codeload.github.com/lz4/lz4/tar.gz/refs/tags/v1.10.0" \
     "lz4-1.10.0.tar.gz" \
     "lz4-1.10.0" \
-    "lz4.c"
+    "lz4.c" \
+    "lib"
 
 install_tar_dependency \
     "MCAP C++ 2.1.3" \
