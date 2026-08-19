@@ -11,10 +11,32 @@
 #include <QApplication>
 #include <QPalette>
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace {
 constexpr double kImuChartRetentionSec = 60.0;
+constexpr double kDegreesToRadians = 3.14159265358979323846 / 180.0;
+
+QByteArray sphericalToCartesian(const uint8_t* data, uint16_t pointCount)
+{
+    QByteArray converted(int(size_t(pointCount) * sizeof(LivoxLidarCartesianHighRawPoint)), Qt::Uninitialized);
+    for (uint16_t index = 0; index < pointCount; ++index) {
+        LivoxLidarSpherPoint source{};
+        std::memcpy(&source, data + size_t(index) * sizeof(source), sizeof(source));
+
+        const double theta = double(source.theta) / 100.0 * kDegreesToRadians;
+        const double phi = double(source.phi) / 100.0 * kDegreesToRadians;
+        LivoxLidarCartesianHighRawPoint target{};
+        target.x = int32_t(double(source.depth) * std::sin(theta) * std::cos(phi));
+        target.y = int32_t(double(source.depth) * std::sin(theta) * std::sin(phi));
+        target.z = int32_t(double(source.depth) * std::cos(theta));
+        target.reflectivity = source.reflectivity;
+        target.tag = source.tag;
+        std::memcpy(converted.data() + size_t(index) * sizeof(target), &target, sizeof(target));
+    }
+    return converted;
+}
 
 QString lidarTypeName(uint8_t devType)
 {
@@ -308,21 +330,37 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             window->decodePointCloudPacket(handle, dev_type, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入
-            if (window->captureState.lvx2SaveActive && packet_copy->data_type == 0x01) {
+            const bool isLvx2PointData =
+                packet_copy->data_type == kLivoxLidarCartesianCoordinateHighData ||
+                packet_copy->data_type == kLivoxLidarCartesianCoordinateLowData ||
+                packet_copy->data_type == kLivoxLidarSphericalCoordinateData;
+            if (window->captureState.lvx2SaveActive && isLvx2PointData) {
                 QMutexLocker lk(&window->captureState.lvx2Mutex);
                 uint64_t ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                 if (window->captureState.lvx2FrameStartNs == 0) window->captureState.lvx2FrameStartNs = ts;
+                uint8_t storedDataType = packet_copy->data_type;
+                const char* storedPointData = reinterpret_cast<const char*>(packet_copy->data);
+                uint32_t storedDataLength = uint32_t(packet_copy->dot_num) *
+                    (storedDataType == kLivoxLidarCartesianCoordinateLowData
+                         ? uint32_t(sizeof(LivoxLidarCartesianLowRawPoint))
+                         : uint32_t(sizeof(LivoxLidarCartesianHighRawPoint)));
+                QByteArray convertedData;
+                if (storedDataType == kLivoxLidarSphericalCoordinateData) {
+                    convertedData = sphericalToCartesian(packet_copy->data, packet_copy->dot_num);
+                    storedDataType = kLivoxLidarCartesianCoordinateHighData;
+                    storedPointData = convertedData.constData();
+                }
                 QByteArray pkg;
                 Lvx2PackageHeader hdr{};
                 hdr.lidar_id = handle;
                 hdr.timestamp_type = packet_copy->time_type;
                 memcpy(&hdr.timestamp, packet_copy->timestamp, 8);
                 hdr.udp_counter = packet_copy->udp_cnt;
-                hdr.data_type = packet_copy->data_type;
-                hdr.data_length = packet_copy->dot_num * 14;
+                hdr.data_type = storedDataType;
+                hdr.data_length = storedDataLength;
                 hdr.frame_counter = packet_copy->frame_cnt;
                 pkg.append(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-                pkg.append(reinterpret_cast<const char*>(packet_copy->data), hdr.data_length);
+                pkg.append(storedPointData, hdr.data_length);
                 window->captureState.lvx2PendingPkgs.push_back(pkg);
                 if (ts - window->captureState.lvx2FrameStartNs >= 50ULL * 1000000ULL) {
                     uint64_t frameStart = window->captureState.lvx2File.pos();
