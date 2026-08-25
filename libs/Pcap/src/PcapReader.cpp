@@ -43,7 +43,6 @@ bool PcapReader::load(const QString& filePath)
         uiInfo.deviceType = device.deviceType;
         uiInfo.lidarSn = device.lidarSn;
         uiInfo.modelDisplay = device.modelDisplay;
-        devices_.push_back(uiInfo);
 
         if (device.hasExtrinsic) {
             Playback::Extrinsic extrinsic;
@@ -54,7 +53,9 @@ bool PcapReader::load(const QString& filePath)
             extrinsic.transform.rotate(device.offsetPitch, 0.0f, 1.0f, 0.0f);
             extrinsic.transform.rotate(device.offsetRoll, 1.0f, 0.0f, 0.0f);
             extrinsics_.insert(device.lidarId, extrinsic);
+            uiInfo.extrinsic = extrinsic;
         }
+        devices_.push_back(uiInfo);
     }
 
     return true;

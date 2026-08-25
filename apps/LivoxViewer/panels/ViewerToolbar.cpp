@@ -679,73 +679,108 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             return;
         }
 
-        QString modelName;
-        if (playbackState.active && !playbackState.devices.isEmpty()) {
-            const Playback::DeviceInfo* selectedDevice = nullptr;
-            for (const Playback::DeviceInfo& device : playbackState.devices) {
-                if (playbackState.deviceVisible.value(device.lidarId, true)) {
-                    selectedDevice = &device;
-                    break;
-                }
-            }
-            if (!selectedDevice) {
-                selectedDevice = &playbackState.devices.first();
-            }
-            modelName = selectedDevice->modelDisplay.isEmpty()
-                ? lvx2DeviceTypeToModel(selectedDevice->deviceType)
-                : selectedDevice->modelDisplay;
-        } else {
-            LidarDeviceInfo currentDevice;
-            if (tryGetCurrentDevice(currentDevice)) {
-                modelName = currentDevice.product_info.isEmpty()
-                    ? lvx2DeviceTypeToModel(currentDevice.dev_type)
-                    : currentDevice.product_info;
-            }
-        }
+        QVector<PointCloudView::StlModelInstance> instances;
+        QStringList missingExtrinsicDevices;
+        QStringList missingModelDevices;
+        int faceCount = 0;
 
-        const QString modelKey = DeviceModelResource::modelKeyForName(modelName);
-        if (modelKey.isEmpty()) {
-            QMessageBox::warning(this, "显示GLB模型", QString("没有匹配的设备模型: %1").arg(modelName));
-            QSignalBlocker blocker(stlModelAction);
-            stlModelAction->setChecked(false);
-            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
-            return;
-        }
-
-        const QString filePath = DeviceModelResource::modelPathForKey(modelKey);
-        if (!QFileInfo::exists(filePath)) {
-            QMessageBox::warning(this, "显示GLB模型", QString("未找到GLB模型文件: %1").arg(QDir::toNativeSeparators(filePath)));
-            QSignalBlocker blocker(stlModelAction);
-            stlModelAction->setChecked(false);
-            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
-            return;
-        }
-
-        if (pointCloudView->property("stlModelKey").toString() != modelKey || !pointCloudView->hasStlModel()) {
-            StlModel::Mesh mesh;
-            QString errorMessage;
-            if (!StlModel::load(filePath, mesh, errorMessage)) {
-                QMessageBox::warning(this, "显示GLB模型", errorMessage);
-                QSignalBlocker blocker(stlModelAction);
-                stlModelAction->setChecked(false);
-                ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
+        auto appendModelInstance = [&](uint32_t deviceId,
+                                       const QString& deviceName,
+                                       const QString& modelName,
+                                       const QMatrix4x4& worldFromDevice,
+                                       bool visible) {
+            const QString modelKey = DeviceModelResource::modelKeyForName(modelName);
+            const QString filePath = DeviceModelResource::modelPathForKey(modelKey);
+            if (modelKey.isEmpty() || !QFileInfo::exists(filePath)) {
+                missingModelDevices.append(deviceName);
                 return;
             }
 
-            const bool sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
-            const float sourceUnitToMeters = DeviceModelResource::sourceUnitToMetersForKey(modelKey);
-            pointCloudView->setStlModelMesh(mesh, sourceXReversed, sourceUnitToMeters);
-            pointCloudView->setProperty("stlModelKey", modelKey);
-            syncPointCloudStlModelAction();
-            statusLabelBar->setText(QString("GLB模型: %1 %2 面").arg(modelKey).arg(mesh.triangles.size() / 3));
-            logMessage(QString("GLB模型已加载: %1").arg(QDir::toNativeSeparators(filePath)));
+            StlModel::Mesh mesh;
+            QString errorMessage;
+            if (!StlModel::load(filePath, mesh, errorMessage)) {
+                missingModelDevices.append(deviceName);
+                return;
+            }
+
+            PointCloudView::StlModelInstance instance;
+            instance.deviceId = deviceId;
+            instance.mesh = std::move(mesh);
+            instance.worldFromDevice = worldFromDevice;
+            instance.sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
+            instance.sourceUnitToMeters = DeviceModelResource::sourceUnitToMetersForKey(modelKey);
+            instance.visible = visible;
+            faceCount += instance.mesh.triangles.size() / 3;
+            instances.push_back(std::move(instance));
+        };
+
+        if (playbackState.active && !playbackState.devices.isEmpty()) {
+            const bool multipleDevices = playbackState.devices.size() > 1;
+            for (const Playback::DeviceInfo& device : playbackState.devices) {
+                const QString modelName = device.modelDisplay.isEmpty()
+                    ? lvx2DeviceTypeToModel(device.deviceType)
+                    : device.modelDisplay;
+                const QString deviceName = device.lidarSn.isEmpty()
+                    ? QStringLiteral("ID %1").arg(device.lidarId)
+                    : device.lidarSn;
+                if (multipleDevices && !device.extrinsic.enabled) {
+                    missingExtrinsicDevices.append(deviceName);
+                    continue;
+                }
+
+                QMatrix4x4 worldFromDevice;
+                worldFromDevice.setToIdentity();
+                if (device.extrinsic.enabled) {
+                    worldFromDevice = device.extrinsic.transform;
+                }
+                appendModelInstance(device.lidarId,
+                                    deviceName,
+                                    modelName,
+                                    worldFromDevice,
+                                    playbackState.deviceVisible.value(device.lidarId, true));
+            }
+        } else {
+            LidarDeviceInfo currentDevice;
+            if (tryGetCurrentDevice(currentDevice)) {
+                const QString modelName = currentDevice.product_info.isEmpty()
+                    ? lvx2DeviceTypeToModel(currentDevice.dev_type)
+                    : currentDevice.product_info;
+                QMatrix4x4 worldFromDevice;
+                worldFromDevice.setToIdentity();
+                appendModelInstance(currentDevice.handle,
+                                    currentDevice.sn,
+                                    modelName,
+                                    worldFromDevice,
+                                    true);
+            }
+        }
+
+        if (!missingExtrinsicDevices.isEmpty()) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("显示GLB模型"),
+                QStringLiteral("文件包含多个设备，以下设备缺少外参，无法确定其在世界坐标系中的位置，已跳过模型显示：\n%1")
+                    .arg(missingExtrinsicDevices.join(QLatin1Char('\n'))));
+        }
+        if (!missingModelDevices.isEmpty()) {
+            QMessageBox::warning(
+                this,
+                QStringLiteral("显示GLB模型"),
+                QStringLiteral("以下设备没有可用的GLB模型，已跳过：\n%1")
+                    .arg(missingModelDevices.join(QLatin1Char('\n'))));
+        }
+        if (instances.isEmpty()) {
+            QSignalBlocker blocker(stlModelAction);
+            stlModelAction->setChecked(false);
+            ThemeIconUtils::setThemedSvgIcon(stlModelAction, QStringLiteral(":/icons/3d_model_off.svg"));
             return;
         }
 
-        pointCloudView->setStlModelVisible(true);
+        const int instanceCount = instances.size();
+        pointCloudView->setStlModelInstances(instances);
         syncPointCloudStlModelAction();
-        statusLabelBar->setText(QString("GLB模型已显示: %1").arg(modelKey));
-        logMessage(QString("GLB模型已显示: %1").arg(modelKey));
+        statusLabelBar->setText(QStringLiteral("GLB模型已显示：%1 台设备，%2 面").arg(instanceCount).arg(faceCount));
+        logMessage(QStringLiteral("GLB模型已按设备外参显示：%1 台设备").arg(instanceCount));
     });
     displayGroup->addPrimaryWidget(createIconButton(stlModelAction, displayGroup, toolbarIconSize));
 

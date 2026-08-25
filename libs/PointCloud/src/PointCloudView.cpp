@@ -155,6 +155,21 @@ QVector<StlRenderVertex> transformDeviceModelVertices(const QVector<StlModel::Ve
     return transformed;
 }
 
+void applyDeviceModelPose(QVector<StlRenderVertex>& vertices, const QMatrix4x4& worldFromDevice)
+{
+    for (StlRenderVertex& vertex : vertices) {
+        const QVector3D position = worldFromDevice.map(QVector3D(vertex.x, vertex.y, vertex.z));
+        QVector3D normal = worldFromDevice.mapVector(QVector3D(vertex.nx, vertex.ny, vertex.nz));
+        normal.normalize();
+        vertex.x = position.x();
+        vertex.y = position.y();
+        vertex.z = position.z();
+        vertex.nx = normal.x();
+        vertex.ny = normal.y();
+        vertex.nz = normal.z();
+    }
+}
+
 bool uploadPointCloudBuffer(QOpenGLWidget* widget,
                             QOpenGLShaderProgram* program,
                             const QVector<PointCloudPoint>& points,
@@ -3973,17 +3988,55 @@ void PointCloudView::setStlModelMesh(const StlModel::Mesh& mesh,
                                      bool sourceXReversed,
                                      float sourceUnitToMeters)
 {
-    m_stlModelVertices = transformDeviceModelVertices(mesh.triangles,
-                                                      sourceXReversed,
-                                                      sourceUnitToMeters);
-    m_stlModelVisible = true;
+    StlModelInstance instance;
+    instance.mesh = mesh;
+    instance.worldFromDevice.setToIdentity();
+    instance.sourceXReversed = sourceXReversed;
+    instance.sourceUnitToMeters = sourceUnitToMeters;
+    setStlModelInstances({instance});
+}
+
+void PointCloudView::setStlModelInstances(const QVector<StlModelInstance>& instances)
+{
+    m_stlModelInstances = instances;
+    m_stlModelVisible = !m_stlModelInstances.isEmpty();
+    rebuildStlModelVertices();
     uploadStlModelVertices();
     update();
 }
 
+void PointCloudView::setStlModelInstanceVisible(uint32_t deviceId, bool visible)
+{
+    for (StlModelInstance& instance : m_stlModelInstances) {
+        if (instance.deviceId == deviceId) {
+            instance.visible = visible;
+            break;
+        }
+    }
+    rebuildStlModelVertices();
+    uploadStlModelVertices();
+    update();
+}
+
+void PointCloudView::rebuildStlModelVertices()
+{
+    m_stlModelVertices.clear();
+    for (const StlModelInstance& instance : m_stlModelInstances) {
+        if (!instance.visible) {
+            continue;
+        }
+        QVector<StlRenderVertex> vertices = transformDeviceModelVertices(
+            instance.mesh.triangles,
+            instance.sourceXReversed,
+            instance.sourceUnitToMeters);
+        applyDeviceModelPose(vertices, instance.worldFromDevice);
+        m_stlModelVertices += vertices;
+    }
+}
+
 void PointCloudView::setStlModelVisible(bool visible)
 {
-    m_stlModelVisible = visible && !m_stlModelVertices.isEmpty();
+    m_stlModelVisible = visible && hasStlModel();
     update();
 }
 

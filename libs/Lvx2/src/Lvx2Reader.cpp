@@ -79,6 +79,7 @@ bool Lvx2Reader::load(const QString& filePath)
         uiInfo.lidarId = deviceInfo.lidar_id;
         uiInfo.deviceType = deviceInfo.device_type;
         uiInfo.lidarSn = QString::fromLatin1(deviceInfo.lidar_sn).trimmed();
+        uiInfo.extrinsic = extrinsics_.value(deviceInfo.lidar_id);
         devices_.push_back(uiInfo);
     }
 

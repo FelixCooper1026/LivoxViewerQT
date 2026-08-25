@@ -1022,6 +1022,9 @@ void LivoxViewerWindow::rebuildLvx2DeviceTab()
         connect(visibleButton, &QToolButton::toggled, this, [this, source, lidarId, visibleButton, modelLabel, snLabel, ipLabel](bool checked) {
             updatePlaybackDeviceCardState(checked, visibleButton, modelLabel, snLabel, ipLabel);
             playbackState.deviceVisible[lidarId] = checked;
+            if (pointCloudView) {
+                pointCloudView->setStlModelInstanceVisible(lidarId, checked);
+            }
             source->invalidateCache();
             playbackState.resetSlidingWindow();
             if (playbackState.active && playbackState.frame >= 0) {

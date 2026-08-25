@@ -92,6 +92,15 @@ public:
         Type type = Square;
     };
 
+    struct StlModelInstance {
+        uint32_t deviceId = 0;
+        StlModel::Mesh mesh;
+        QMatrix4x4 worldFromDevice;
+        bool sourceXReversed = false;
+        float sourceUnitToMeters = 0.001f;
+        bool visible = true;
+    };
+
     explicit PointCloudView(QWidget *parent = nullptr);
     ~PointCloudView();
 
@@ -139,9 +148,11 @@ public:
     void setStlModelMesh(const StlModel::Mesh& mesh,
                          bool sourceXReversed = false,
                          float sourceUnitToMeters = 0.001f);
+    void setStlModelInstances(const QVector<StlModelInstance>& instances);
+    void setStlModelInstanceVisible(uint32_t deviceId, bool visible);
     void setStlModelVisible(bool visible);
     bool isStlModelVisible() const { return m_stlModelVisible; }
-    bool hasStlModel() const { return !m_stlModelVertices.isEmpty(); }
+    bool hasStlModel() const { return !m_stlModelInstances.isEmpty(); }
 
     void setSelectionAabb(const QVector3D& min, const QVector3D& max) { m_aabbMin = min; m_aabbMax = max; m_selectionLocked = true; update(); }
     void clearSelectionAabb() { m_selectionLocked = false; update(); }
@@ -226,6 +237,7 @@ private:
     void uploadCrossSectionLines(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void uploadCrossSectionTriangles(const QVector<PointCloudCrossSection::ColoredVertex>& vertices);
     void setupStlModelBuffers();
+    void rebuildStlModelVertices();
     void uploadStlModelVertices();
     PointCloudCrossSection::Camera crossSectionCamera() const;
     QVector3D cameraForward() const;
@@ -328,6 +340,7 @@ private:
     int m_crossSectionTriangleVertexCount = 0;
     QOpenGLBuffer m_stlModelVbo;
     QOpenGLVertexArrayObject m_stlModelVao;
+    QVector<StlModelInstance> m_stlModelInstances;
     QVector<StlRenderVertex> m_stlModelVertices;
     bool m_stlModelVisible = false;
 

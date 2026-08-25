@@ -36,6 +36,7 @@ struct DeviceInfo {
     uint8_t deviceType = 0;
     QString lidarSn;
     QString modelDisplay;
+    Extrinsic extrinsic;
 };
 
 struct TopicInfo {

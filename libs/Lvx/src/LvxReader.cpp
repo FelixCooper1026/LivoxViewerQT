@@ -164,6 +164,7 @@ bool LvxReader::load(const QString& filePath)
             uiInfo.deviceType = deviceInfo.device_type;
             uiInfo.lidarSn = fixedString(deviceInfo.lidar_sn, int(sizeof(deviceInfo.lidar_sn)));
             uiInfo.modelDisplay = lvxDeviceTypeToModel(deviceInfo.device_type);
+            uiInfo.extrinsic = extrinsics_.value(deviceKey);
             devices_.push_back(uiInfo);
         }
     } else {
@@ -189,6 +190,7 @@ bool LvxReader::load(const QString& filePath)
             uiInfo.deviceType = deviceInfo.device_type;
             uiInfo.lidarSn = fixedString(deviceInfo.lidar_sn, int(sizeof(deviceInfo.lidar_sn)));
             uiInfo.modelDisplay = lvxDeviceTypeToModel(deviceInfo.device_type);
+            uiInfo.extrinsic = extrinsics_.value(deviceKey);
             devices_.push_back(uiInfo);
         }
     }
