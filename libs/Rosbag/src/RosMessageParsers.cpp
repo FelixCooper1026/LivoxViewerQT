@@ -329,15 +329,6 @@ bool parseLivoxCustomMsg(const QByteArray& data, LivoxCustomMsg* out, QString* e
         }
         return false;
     }
-    if (pointArrayLen != out->pointNum) {
-        if (error != nullptr) {
-            *error = QStringLiteral("Livox CustomMsg 反序列化失败：point_num=%1 与 points 数组长度=%2 不一致。")
-                         .arg(out->pointNum)
-                         .arg(pointArrayLen);
-        }
-        return false;
-    }
-
     out->points.reserve(int(pointArrayLen));
     for (uint32_t i = 0; i < pointArrayLen; ++i) {
         LivoxCustomPoint point;
@@ -522,15 +513,6 @@ bool parseRos2LivoxCustomMsg(const QByteArray& data, LivoxCustomMsg* out, QStrin
         }
         return false;
     }
-    if (pointArrayLen != out->pointNum) {
-        if (error != nullptr) {
-            *error = QStringLiteral("ROS2 Livox CustomMsg 反序列化失败：point_num=%1 与 points 数组长度=%2 不一致。")
-                         .arg(out->pointNum)
-                         .arg(pointArrayLen);
-        }
-        return false;
-    }
-
     out->points.reserve(int(pointArrayLen));
     for (uint32_t i = 0; i < pointArrayLen; ++i) {
         LivoxCustomPoint point;

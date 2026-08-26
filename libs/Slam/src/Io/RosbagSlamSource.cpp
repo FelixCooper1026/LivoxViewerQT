@@ -55,9 +55,9 @@ bool isImuType(const QString& type)
            type == QStringLiteral("sensor_msgs/msg/Imu");
 }
 
-bool isRos2Type(const QString& type)
+bool usesCdrSerialization(const Rosbag::Connection& connection)
 {
-    return type.contains(QStringLiteral("/msg/"));
+    return connection.fields.value(QStringLiteral("serialization_format")) == QByteArrayLiteral("cdr");
 }
 
 QString topicListText(const QVector<RosbagSlamTopicInfo>& topics)
@@ -167,23 +167,32 @@ const Rosbag::Connection* autoSelectImuConnection(const QVector<Rosbag::Connecti
     return selected;
 }
 
-bool parseLivoxCustomMessage(const QString& type, const QByteArray& data, Rosbag::LivoxCustomMsg* out, QString* error)
+bool parseLivoxCustomMessage(const Rosbag::Connection& connection,
+                             const QByteArray& data,
+                             Rosbag::LivoxCustomMsg* out,
+                             QString* error)
 {
-    return isRos2Type(type)
+    return usesCdrSerialization(connection)
         ? Rosbag::parseRos2LivoxCustomMsg(data, out, error)
         : Rosbag::parseLivoxCustomMsg(data, out, error);
 }
 
-bool parseImuMessage(const QString& type, const QByteArray& data, Rosbag::ImuMsg* out, QString* error)
+bool parseImuMessage(const Rosbag::Connection& connection,
+                     const QByteArray& data,
+                     Rosbag::ImuMsg* out,
+                     QString* error)
 {
-    return isRos2Type(type)
+    return usesCdrSerialization(connection)
         ? Rosbag::parseRos2SensorImu(data, out, error)
         : Rosbag::parseSensorImu(data, out, error);
 }
 
-bool parsePointCloud2Message(const QString& type, const QByteArray& data, Rosbag::PointCloud2Msg* out, QString* error)
+bool parsePointCloud2Message(const Rosbag::Connection& connection,
+                             const QByteArray& data,
+                             Rosbag::PointCloud2Msg* out,
+                             QString* error)
 {
-    return isRos2Type(type)
+    return usesCdrSerialization(connection)
         ? Rosbag::parseRos2SensorPointCloud2(data, out, error)
         : Rosbag::parseSensorPointCloud2(data, out, error);
 }
@@ -809,7 +818,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         if (imuConnection != nullptr && message.connectionId == imuConnection->id) {
             Rosbag::ImuMsg imu;
             QString parseError;
-            if (!parseImuMessage(imuConnection->type, message.data, &imu, &parseError)) {
+            if (!parseImuMessage(*imuConnection, message.data, &imu, &parseError)) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU topic %1 解析失败：%2")
                                     .arg(imuConnection->topic, parseError);
                 if (error != nullptr) {
@@ -835,7 +844,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
         for (const Rosbag::SerializedMessage* message : lidarMessages) {
             Rosbag::LivoxCustomMsg livoxMsg;
             QString parseError;
-            if (!parseLivoxCustomMessage(lidarConnection->type, message->data, &livoxMsg, &parseError)) {
+            if (!parseLivoxCustomMessage(*lidarConnection, message->data, &livoxMsg, &parseError)) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 解析失败：%2")
                                     .arg(lidarConnection->topic, parseError);
                 if (error != nullptr) {
@@ -893,7 +902,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
             for (int i = index + 1; i < lidarMessages.size(); ++i) {
                 Rosbag::PointCloud2Msg nextCloud;
                 QString ignoredError;
-                if (!parsePointCloud2Message(lidarConnection->type, lidarMessages.at(i)->data, &nextCloud, &ignoredError)) {
+                if (!parsePointCloud2Message(*lidarConnection, lidarMessages.at(i)->data, &nextCloud, &ignoredError)) {
                     continue;
                 }
                 if (pointCloud2PointCount(nextCloud) <= 0) {
@@ -908,7 +917,7 @@ bool RosbagSlamSource::load(const QString& filePath, QString* error)
             const Rosbag::SerializedMessage* message = lidarMessages.at(i);
             Rosbag::PointCloud2Msg cloud;
             QString parseError;
-            if (!parsePointCloud2Message(lidarConnection->type, message->data, &cloud, &parseError)) {
+            if (!parsePointCloud2Message(*lidarConnection, message->data, &cloud, &parseError)) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 PointCloud2 解析失败：%2")
                                     .arg(lidarConnection->topic, parseError);
                 if (error != nullptr) {
@@ -1382,7 +1391,7 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
         if (imuConnection != nullptr && message.connectionId == imuConnection->id) {
             Rosbag::ImuMsg imu;
             QString parseError;
-            if (!parseImuMessage(imuConnection->type, message.data, &imu, &parseError)) {
+            if (!parseImuMessage(*imuConnection, message.data, &imu, &parseError)) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：IMU topic %1 解析失败：%2")
                                     .arg(imuConnection->topic, parseError);
                 return false;
@@ -1412,7 +1421,7 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
         if (lidarIsCustomMsg) {
             Rosbag::LivoxCustomMsg livoxMsg;
             QString parseError;
-            if (!parseLivoxCustomMessage(lidarConnection->type, message.data, &livoxMsg, &parseError)) {
+            if (!parseLivoxCustomMessage(*lidarConnection, message.data, &livoxMsg, &parseError)) {
                 errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 解析失败：%2")
                                     .arg(lidarConnection->topic, parseError);
                 return false;
@@ -1448,7 +1457,7 @@ bool RosbagSlamSource::streamFrames(const QString& filePath,
 
         Rosbag::PointCloud2Msg cloud;
         QString parseError;
-        if (!parsePointCloud2Message(lidarConnection->type, message.data, &cloud, &parseError)) {
+        if (!parsePointCloud2Message(*lidarConnection, message.data, &cloud, &parseError)) {
             errorMessage_ = QStringLiteral("ROSbag 加载失败：LiDAR topic %1 PointCloud2 解析失败：%2")
                                 .arg(lidarConnection->topic, parseError);
             return false;
