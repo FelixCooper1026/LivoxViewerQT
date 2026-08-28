@@ -4029,7 +4029,9 @@ void PointCloudView::rebuildStlModelVertices()
             instance.mesh.triangles,
             instance.sourceXReversed,
             instance.sourceUnitToMeters);
-        applyDeviceModelPose(vertices, instance.worldFromDevice);
+        QMatrix4x4 worldFromModel = instance.worldFromDevice;
+        worldFromModel.rotate(instance.modelYawAlignmentDegrees, QVector3D(0.0f, 0.0f, 1.0f));
+        applyDeviceModelPose(vertices, worldFromModel);
         m_stlModelVertices += vertices;
     }
 }

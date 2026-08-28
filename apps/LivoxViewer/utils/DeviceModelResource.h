@@ -10,6 +10,8 @@ QString modelPathForKey(const QString& modelKey);
 QString modelPathForName(const QString& modelName);
 bool sourceXReversedForKey(const QString& modelKey);
 float sourceUnitToMetersForKey(const QString& modelKey);
+float imuModelYawAlignmentDegreesForKey(const QString& modelKey);
+float pointCloudModelYawAlignmentDegreesForKey(const QString& modelKey);
 
 } // namespace DeviceModelResource
 

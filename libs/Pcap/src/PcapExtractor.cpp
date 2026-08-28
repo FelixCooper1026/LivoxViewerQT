@@ -51,6 +51,7 @@ struct ScanResult {
     int datalinkType = 0;
     QMap<uint32_t, DeviceData> devices;
     QMap<uint8_t, uint64_t> unsupportedPointTypes;
+    QStringList warnings;
 };
 
 struct CsvOutput {
@@ -322,9 +323,16 @@ bool scanFile(const QString& path,
         }
     }
     if (status == -1) {
-        error = QStringLiteral("抓包文件读取失败：%1").arg(QString::fromLocal8Bit(pcap_geterr(handle)));
-        pcap_close(handle);
-        return false;
+        const QString readError = QString::fromLocal8Bit(pcap_geterr(handle));
+        if (scan.totalPackets == 0) {
+            error = QStringLiteral("抓包文件读取失败：%1").arg(readError);
+            pcap_close(handle);
+            return false;
+        }
+        scan.warnings.push_back(
+            QStringLiteral("抓包文件在第 %1 个数据包后存在损坏数据，已提取损坏位置之前的有效数据：%2")
+                .arg(scan.totalPackets)
+                .arg(readError));
     }
     pcap_close(handle);
     if (progress) {
@@ -733,6 +741,7 @@ Result extract(const QString& sourcePath,
     Result extracted = kind == Kind::Lvx2
         ? extractLvx2(sourcePath, outputDirectory, mode, scan, progress, cancellationRequested)
         : extractCsv(sourcePath, outputDirectory, kind, mode, scan, progress, cancellationRequested);
+    extracted.warnings.append(scan.warnings);
     if (extracted.ok && kind == Kind::Lvx2) {
         for (auto it = scan.unsupportedPointTypes.constBegin(); it != scan.unsupportedPointTypes.constEnd(); ++it) {
             extracted.warnings.push_back(

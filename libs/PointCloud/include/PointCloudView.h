@@ -98,6 +98,7 @@ public:
         QMatrix4x4 worldFromDevice;
         bool sourceXReversed = false;
         float sourceUnitToMeters = 0.001f;
+        float modelYawAlignmentDegrees = 0.0f;
         bool visible = true;
     };
 

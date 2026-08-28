@@ -709,6 +709,8 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
             instance.worldFromDevice = worldFromDevice;
             instance.sourceXReversed = DeviceModelResource::sourceXReversedForKey(modelKey);
             instance.sourceUnitToMeters = DeviceModelResource::sourceUnitToMetersForKey(modelKey);
+            instance.modelYawAlignmentDegrees =
+                DeviceModelResource::pointCloudModelYawAlignmentDegreesForKey(modelKey);
             instance.visible = visible;
             faceCount += instance.mesh.triangles.size() / 3;
             instances.push_back(std::move(instance));

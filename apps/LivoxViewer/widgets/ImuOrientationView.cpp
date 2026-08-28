@@ -18,7 +18,7 @@
 namespace {
 
 constexpr float kTwoPi = 6.28318530717958647692f;
-const QQuaternion kModelYawAlignment = QQuaternion::fromAxisAndAngle(QVector3D(0.0f, 0.0f, 1.0f), 180.0f);
+const QQuaternion kImuAxisAlignment = QQuaternion::fromAxisAndAngle(QVector3D(0.0f, 0.0f, 1.0f), 180.0f);
 
 class ScopedOpenGLContext
 {
@@ -296,7 +296,8 @@ void ImuOrientationView::paintGL()
         if (m_modelLoaded && !m_modelVertices.isEmpty()) {
             QMatrix4x4 model;
             model.rotate(m_orientation);
-            model.rotate(kModelYawAlignment);
+            model.rotate(DeviceModelResource::imuModelYawAlignmentDegreesForKey(m_modelKey),
+                         QVector3D(0.0f, 0.0f, 1.0f));
             model.scale(m_modelScale);
             const QMatrix4x4 modelView = view * model;
             m_program->setUniformValue("mvp", projection * modelView);
@@ -310,7 +311,7 @@ void ImuOrientationView::paintGL()
 
         QMatrix4x4 axesModel;
         axesModel.rotate(m_orientation);
-        axesModel.rotate(kModelYawAlignment);
+        axesModel.rotate(kImuAxisAlignment);
         axesModel.scale(1.0f);
         const QMatrix4x4 axesModelView = view * axesModel;
         QMatrix3x3 axesNormalMatrix;

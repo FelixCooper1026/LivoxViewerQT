@@ -57,4 +57,14 @@ float sourceUnitToMetersForKey(const QString& modelKey)
     return modelKey == QStringLiteral("Mid360L") ? 1.0f : 0.001f;
 }
 
+float imuModelYawAlignmentDegreesForKey(const QString& modelKey)
+{
+    return modelKey == QStringLiteral("Mid360L") ? 0.0f : 180.0f;
+}
+
+float pointCloudModelYawAlignmentDegreesForKey(const QString& modelKey)
+{
+    return modelKey == QStringLiteral("Mid360L") ? 180.0f : 0.0f;
+}
+
 } // namespace DeviceModelResource
