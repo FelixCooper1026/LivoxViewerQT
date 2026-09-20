@@ -1,0 +1,8 @@
+<RCC>
+  <qresource prefix="/models">
+    <file alias="Avia2.glb">models/Avia2.glb</file>
+    <file alias="Mid360.glb">models/Mid360.glb</file>
+    <file alias="Mid360L.glb">models/Mid360L.glb</file>
+    <file alias="Mid360S.glb">models/Mid360S.glb</file>
+  </qresource>
+</RCC>

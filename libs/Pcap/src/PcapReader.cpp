@@ -2,6 +2,8 @@
 
 #include "Lvx2PointParser.h"
 #include "PcapParser.h"
+#include "PcapUdpPacket.h"
+#include "PointParser.h"
 #include "PushMsgParser.h"
 
 #include <algorithm>
@@ -12,6 +14,7 @@ bool PcapReader::load(const QString& filePath)
 {
     filePath_ = filePath;
     errorMessage_.clear();
+    warningMessage_.clear();
     frames_.clear();
     imuSamples_.clear();
     devices_.clear();
@@ -36,6 +39,29 @@ bool PcapReader::load(const QString& filePath)
         playbackSample.accY = sample.accY;
         playbackSample.accZ = sample.accZ;
         imuSamples_.push_back(playbackSample);
+    }
+    if (frames_.isEmpty() && !imuSamples_.isEmpty()) {
+        const uint64_t firstTimestampNs = imuSamples_.first().timestampNs;
+        const uint64_t lastTimestampNs = imuSamples_.last().timestampNs;
+        const uint64_t frameCount = (lastTimestampNs - firstTimestampNs) /
+                                        PointParser::FrameBuilder::kFrameDurationNs +
+                                    1;
+        frames_.reserve(int(frameCount));
+        for (uint64_t i = 0; i < frameCount; ++i) {
+            PointCloudFrame frame;
+            frame.timestamp = firstTimestampNs + i * PointParser::FrameBuilder::kFrameDurationNs;
+            frames_.push_back(std::move(frame));
+        }
+        warningMessage_ =
+            QStringLiteral("文件仅包含IMU数据，未检测到有效的点云数据包（源端口 %1）。\n\n"
+                           "已加载 %2 条IMU数据，可通过“IMU数据可视化”面板查看。\n\n"
+                           "统计信息：\n"
+                           "- 扫描数据包总数: %3\n"
+                           "- 链路层类型(DLT): %4")
+                .arg(PcapUdp::kLivoxPointCloudPort)
+                .arg(imuSamples_.size())
+                .arg(parseResult.totalPacketsScanned)
+                .arg(parseResult.datalinkType);
     }
     for (const PushMsgParser::PushDeviceRecord& device : parseResult.devices) {
         Playback::DeviceInfo uiInfo;
@@ -74,6 +100,11 @@ QString PcapReader::path() const
 QString PcapReader::errorMessage() const
 {
     return errorMessage_;
+}
+
+QString PcapReader::warningMessage() const
+{
+    return warningMessage_;
 }
 
 int PcapReader::frameCount() const

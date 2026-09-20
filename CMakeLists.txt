@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.16)
 project(LivoxViewerQT
-    VERSION 2.4.4
+    VERSION 2.4.5
     DESCRIPTION "Livox LiDAR Qt Viewer Application"
     LANGUAGES C CXX
 )
@@ -494,6 +494,10 @@ set(RESOURCE_FILES
     icons/icons.qrc
 )
 
+set(BIG_RESOURCE_FILES
+    plugins/StlModel/models.qrc
+)
+
 # 应用图标配置
 set(APP_ICON_RESOURCE "")
 set(APP_LINUX_ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app_icon.png")
@@ -544,6 +548,11 @@ if(QT_VERSION_MAJOR EQUAL 6)
         qt_add_resources(QRC_SOURCES ${RESOURCE_FILES})
         target_sources(LivoxViewerQT PRIVATE ${QRC_SOURCES})
     endif()
+
+    if(BIG_RESOURCE_FILES)
+        qt_add_big_resources(BIG_QRC_SOURCES ${BIG_RESOURCE_FILES})
+        target_sources(LivoxViewerQT PRIVATE ${BIG_QRC_SOURCES})
+    endif()
     
 else()
     # Qt5方式
@@ -563,6 +572,11 @@ else()
         qt5_add_resources(QRC_SOURCES ${RESOURCE_FILES})
         target_sources(LivoxViewerQT PRIVATE ${QRC_SOURCES})
     endif()
+
+    if(BIG_RESOURCE_FILES)
+        qt5_add_big_resources(BIG_QRC_SOURCES ${BIG_RESOURCE_FILES})
+        target_sources(LivoxViewerQT PRIVATE ${BIG_QRC_SOURCES})
+    endif()
 endif()
 
 set(APP_VERSION_HEADER "${CMAKE_CURRENT_BINARY_DIR}/generated/AppVersion.h")
@@ -578,7 +592,6 @@ target_compile_definitions(LivoxViewerQT PRIVATE
     LIVOX_VIEWER_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     LIVOX_VIEWER_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     LIVOX_VIEWER_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-    LIVOX_VIEWER_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 # =============================================================================

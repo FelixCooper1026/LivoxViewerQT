@@ -177,7 +177,7 @@ ParseResult parseFileToFrames(const QString& filePath)
     parseDataFramesAndImuSamples(frameHandle, result.datalinkType, lineCountsByLidarId(result.devices), result.frames, result.imuSamples);
     pcap_close(frameHandle);
 
-    if (result.frames.isEmpty()) {
+    if (result.frames.isEmpty() && result.imuSamples.isEmpty()) {
         result.errorMessage =
             QString("文件已解析，但未匹配到有效的点云数据包（源端口 %1）。\n\n"
                     "统计信息:\n"

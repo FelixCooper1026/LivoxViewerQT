@@ -11,6 +11,7 @@ public:
     Playback::SourceKind kind() const override;
     QString path() const override;
     QString errorMessage() const override;
+    QString warningMessage() const;
     int frameCount() const override;
     QVector<Playback::DeviceInfo> devices() const override;
     bool readFrame(int frameIndex,
@@ -21,6 +22,7 @@ public:
 private:
     QString filePath_;
     QString errorMessage_;
+    QString warningMessage_;
     QVector<PointCloudFrame> frames_;
     QVector<Playback::ImuSample> imuSamples_;
     QVector<Playback::DeviceInfo> devices_;

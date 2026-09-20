@@ -28,8 +28,9 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
         auto source = std::make_shared<Pcap::PcapReader>();
         const bool ok = source->load(filePath);
         const QString errorMessage = source->errorMessage();
+        const QString warningMessage = source->warningMessage();
 
-        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage]() {
+        QMetaObject::invokeMethod(this, [this, tabId, currentToken, source, ok, errorMessage, warningMessage]() {
             PlaybackControllerState* state = playbackStateForTab(tabId);
             if (!state || currentToken != state->loadToken) {
                 return;
@@ -46,6 +47,9 @@ bool LivoxViewerWindow::loadPcapPlaybackFile(const QString& filePath)
             }
 
             finishPlaybackSourceLoad(tabId, source);
+            if (!warningMessage.isEmpty()) {
+                QMessageBox::warning(this, "播放Pcap文件", warningMessage);
+            }
         }, Qt::QueuedConnection);
     }).detach();
 

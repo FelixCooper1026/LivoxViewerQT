@@ -243,6 +243,7 @@ private:
     void refreshSlamWorldPointCloud();
     void clearSlamWorldPointCloud();
     void finishSlamWorkerUi();
+    bool isLeftPanelVisible() const;
     void showSlamInfoPanel();
     void rebuildSlamInfoPanel();
     void showSlamStatusPanel();

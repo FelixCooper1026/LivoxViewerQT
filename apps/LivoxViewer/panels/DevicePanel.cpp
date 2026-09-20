@@ -324,9 +324,18 @@ void LivoxViewerWindow::rebuildSlamInfoPanel()
     slamLayerListLayout->addStretch();
 }
 
+bool LivoxViewerWindow::isLeftPanelVisible() const
+{
+    return (networkDock && networkDock->isVisible()) ||
+           (lidarDevicesDock && lidarDevicesDock->isVisible()) ||
+           (imuDock && imuDock->isVisible()) ||
+           (lvx2FileDock && lvx2FileDock->isVisible()) ||
+           (slamInfoDock && slamInfoDock->isVisible());
+}
+
 void LivoxViewerWindow::showSlamInfoPanel()
 {
-    if (!slamInfoDock) {
+    if (!slamInfoDock || !isLeftPanelVisible()) {
         return;
     }
     slamInfoDock->show();

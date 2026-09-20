@@ -1,7 +1,5 @@
 #include "utils/DeviceModelResource.h"
 
-#include <QDir>
-
 namespace DeviceModelResource {
 
 QString modelKeyForName(QString modelName)
@@ -37,8 +35,7 @@ QString modelKeyForName(QString modelName)
 
 QString modelPathForKey(const QString& modelKey)
 {
-    return QDir(QStringLiteral(LIVOX_VIEWER_SOURCE_DIR))
-        .filePath(QStringLiteral("plugins/StlModel/models/%1.glb").arg(modelKey));
+    return QStringLiteral(":/models/%1.glb").arg(modelKey);
 }
 
 QString modelPathForName(const QString& modelName)
