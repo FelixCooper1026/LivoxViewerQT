@@ -289,7 +289,7 @@ private:
 
     // 点云处理
     void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
-    void presentPointCloudFrame(const PointCloudFrame& frame);
+    void resetRealtimePointCloudWindow();
     void applyPointCloudPipeline(PointCloudFrame& frame, PointCloudView* targetView = nullptr);
     QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
     bool loadLvxPlaybackFile(const QString& filePath);
@@ -441,11 +441,20 @@ private:
     void clearCurrentDevice();
 
     // 点云组帧相关
-    QMap<uint32_t, QQueue<PointCloudFrame>> pendingFrames;
+    struct PendingPointCloudFrame {
+        quint64 sequence = 0;
+        PointCloudFrame frame;
+    };
+    QMap<uint32_t, QQueue<PendingPointCloudFrame>> pendingFrames;
     QMap<uint32_t, uint64_t> lastFrameTimestamp;
     QMap<uint32_t, uint64_t> lastSeenTimestamp; // 最新到达的每设备时间戳（用于滑动窗口）
     QMutex frameMutex;
     uint64_t frameIntervalMs = 100; // 100ms帧间隔
+    quint64 nextPendingPointCloudSequence = 1;
+    quint64 realtimeLastPresentedSequence = 0;
+    QQueue<uint64_t> realtimePointCloudSegmentTimestamps;
+    uint32_t realtimePointCloudSourceHandle = 0;
+    bool realtimePointCloudSourceHasTarget = false;
 
     // 点云回调状态
     bool pointCloudCallbackEnabled;

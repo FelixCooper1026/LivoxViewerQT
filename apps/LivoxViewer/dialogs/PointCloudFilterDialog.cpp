@@ -140,7 +140,7 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
                     playbackState.resetSlidingWindow();
                     showLvx2PlaybackFrame(playbackState.frame);
                 } else if (pointCloudView) {
-                    pointCloudView->update();
+                    resetRealtimePointCloudWindow();
                 }
             };
 
