@@ -124,8 +124,11 @@ void LivoxViewerWindow::onRenderTick()
     }
     if (now_ns == 0) return;
 
-    uint64_t window_ns = frameIntervalMs * 1000000ULL;
-    uint64_t window_begin = (now_ns > window_ns) ? (now_ns - window_ns) : 0ULL;
+    constexpr uint64_t displayTimeBucketNs = 50000000ULL;
+    const uint64_t window_ns = frameIntervalMs * 1000000ULL;
+    const uint64_t window_begin = (now_ns > window_ns) ? (now_ns - window_ns) : 0ULL;
+    const uint64_t display_end = (now_ns / displayTimeBucketNs) * displayTimeBucketNs;
+    const uint64_t display_window_begin = (display_end > window_ns) ? (display_end - window_ns) : 0ULL;
     if (pointCloudFileCaptureActive && captureState.pointCloudNextSaveTimestamp == 0) {
         captureState.pointCloudNextSaveTimestamp = now_ns + captureState.pointCloudSaveIntervalNs;
     }
@@ -141,14 +144,12 @@ void LivoxViewerWindow::onRenderTick()
     }
 
     while (!realtimePointCloudSegmentTimestamps.isEmpty() &&
-           realtimePointCloudSegmentTimestamps.head() < window_begin) {
+           realtimePointCloudSegmentTimestamps.head() < display_window_begin) {
         realtimePointCloudSegmentTimestamps.dequeue();
         realtimePointCloudView->removeFirstPointCloudSegment();
     }
 
-    PointCloudFrame displaySegment;
-    displaySegment.timestamp = now_ns;
-    displaySegment.device_handle = 0;
+    QMap<uint64_t, PointCloudFrame> displaySegments;
 
     PointCloudFrame recordingFrame;
     recordingFrame.timestamp = now_ns;
@@ -163,13 +164,15 @@ void LivoxViewerWindow::onRenderTick()
             }
 
             QQueue<PendingPointCloudFrame>& q = it.value();
-            while (!q.isEmpty() && q.head().frame.timestamp < window_begin) {
+            while (!q.isEmpty() && q.head().frame.timestamp < display_window_begin) {
                 q.dequeue();
             }
 
             if (pointCloudRecordingDue) {
                 for (const PendingPointCloudFrame& pending : q) {
-                    recordingFrame.points += pending.frame.points;
+                    if (pending.frame.timestamp >= window_begin) {
+                        recordingFrame.points += pending.frame.points;
+                    }
                 }
             }
 
@@ -181,7 +184,14 @@ void LivoxViewerWindow::onRenderTick()
                 }
                 for (int i = firstNewFrame; i < q.size(); ++i) {
                     const PendingPointCloudFrame& pending = q.at(i);
-                    displaySegment.points += pending.frame.points;
+                    if (pending.frame.timestamp >= display_end) {
+                        continue;
+                    }
+                    PointCloudFrame& segment = displaySegments[pending.frame.timestamp / displayTimeBucketNs];
+                    if (segment.points.isEmpty()) {
+                        segment.timestamp = (pending.frame.timestamp / displayTimeBucketNs) * displayTimeBucketNs;
+                    }
+                    segment.points += pending.frame.points;
                     latestPresentedSequence = std::max(latestPresentedSequence, pending.sequence);
                 }
             }
@@ -193,10 +203,13 @@ void LivoxViewerWindow::onRenderTick()
         handlePointCloudRecording(recordingFrame, now_ns);
     }
 
-    if (!displaySegment.points.isEmpty()) {
-        applyPointCloudPipeline(displaySegment, realtimePointCloudView);
-        realtimePointCloudView->appendPointCloudSegment(std::move(displaySegment.points));
-        realtimePointCloudSegmentTimestamps.enqueue(now_ns);
+    for (auto it = displaySegments.begin(); it != displaySegments.end(); ++it) {
+        PointCloudFrame& segment = it.value();
+        applyPointCloudPipeline(segment, realtimePointCloudView);
+        realtimePointCloudView->appendPointCloudSegment(std::move(segment.points));
+        realtimePointCloudSegmentTimestamps.enqueue(segment.timestamp);
+    }
+    if (!displaySegments.isEmpty()) {
         realtimeLastPresentedSequence = latestPresentedSequence;
     }
 
