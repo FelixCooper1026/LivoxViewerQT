@@ -17,6 +17,7 @@ void LivoxViewerWindow::onFrameIntervalChanged(int ms)
                                                         playbackState.mode,
                                                         previousFrameIntervalMs);
     frameIntervalMs = static_cast<uint64_t>(ms);
+    resetRealtimePointCloudWindow();
     if (captureState.pointCloudTask.status == CaptureTaskStatus::Running &&
         (captureState.pcdSaveActive || captureState.lasSaveActive)) {
         captureState.pointCloudTask.integrationMs = ms;

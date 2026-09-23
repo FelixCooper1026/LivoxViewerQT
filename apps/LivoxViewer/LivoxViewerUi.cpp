@@ -295,6 +295,8 @@ void LivoxViewerWindow::updateLidarDeviceList()
         }
         if (realtimePointCloudView) {
             realtimePointCloudView->clearPointCloud();
+            realtimeLastPresentedSequence = 0;
+            realtimePointCloudSegmentTimestamps.clear();
         }
     } else if (!hasCurrentLidarHandle || !currentExists) {
         setCurrentDeviceHandle(devices.first().handle);
@@ -398,6 +400,8 @@ void LivoxViewerWindow::setActiveRealtimeDevice(uint32_t handle)
     }
     if (realtimePointCloudView) {
         realtimePointCloudView->clearPointCloud();
+        realtimeLastPresentedSequence = 0;
+        realtimePointCloudSegmentTimestamps.clear();
     }
     updateLidarDeviceList();
     if (paramTabWidget) {
