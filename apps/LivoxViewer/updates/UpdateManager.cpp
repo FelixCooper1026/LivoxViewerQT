@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -18,6 +19,8 @@
 #include <QStringList>
 #include <QUrl>
 #include <QVersionNumber>
+
+#include <cmath>
 
 namespace {
 
@@ -78,6 +81,17 @@ bool supportedArchitecture()
 #else
     return false;
 #endif
+}
+
+QString remainingTime(qint64 seconds)
+{
+    const qint64 minutes = seconds / 60;
+    const qint64 hours = minutes / 60;
+    const QString minuteAndSecond = QStringLiteral("%1:%2")
+        .arg(minutes % 60, 2, 10, QLatin1Char('0'))
+        .arg(seconds % 60, 2, 10, QLatin1Char('0'));
+    return hours > 0 ? QStringLiteral("%1:%2").arg(hours).arg(minuteAndSecond)
+                     : minuteAndSecond;
 }
 
 } // namespace
@@ -228,9 +242,13 @@ void UpdateManager::tryDownload(const QVector<QUrl>& sources, int sourceIndex,
         return;
     }
 
-    dialog->setLabelText(QStringLiteral("正在下载更新（线路 %1/%2）：%3")
-                             .arg(sourceIndex + 1).arg(sources.size()).arg(sources[sourceIndex].host()));
+    const QString sourceLabel = QStringLiteral("正在下载更新（线路 %1/%2）：%3")
+                                    .arg(sourceIndex + 1).arg(sources.size())
+                                    .arg(sources[sourceIndex].host());
+    dialog->setLabelText(sourceLabel + QStringLiteral("\n0% · 预计剩余时间…"));
     dialog->setValue(0);
+    QElapsedTimer elapsed;
+    elapsed.start();
     std::shared_ptr<QCryptographicHash> hash;
     if (!digest.isEmpty()) {
         hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
@@ -248,8 +266,21 @@ void UpdateManager::tryDownload(const QVector<QUrl>& sources, int sourceIndex,
             hash->addData(chunk);
         }
     });
-    connect(reply, &QNetworkReply::downloadProgress, this, [dialog, size](qint64 received, qint64) {
-        dialog->setValue(static_cast<int>(qMin<qint64>(100, received * 100 / size)));
+    connect(reply, &QNetworkReply::downloadProgress, this,
+            [dialog, size, sourceLabel, elapsed](qint64 received, qint64) {
+        received = qBound<qint64>(0, received, size);
+        const int percent = static_cast<int>(received * 100 / size);
+        QString estimate = QStringLiteral("预计剩余时间…");
+        if (received == size) {
+            estimate = QStringLiteral("预计剩余 00:00");
+        } else if (received > 0 && elapsed.elapsed() >= 2000) {
+            const qint64 seconds = static_cast<qint64>(std::ceil(
+                static_cast<double>(size - received) * elapsed.elapsed() / (received * 1000.0)));
+            estimate = QStringLiteral("预计剩余 %1").arg(remainingTime(seconds));
+        }
+        dialog->setValue(percent);
+        dialog->setLabelText(QStringLiteral("%1\n%2% · %3")
+                                 .arg(sourceLabel).arg(percent).arg(estimate));
     });
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, sources, sourceIndex, path, size, digest, dialog, hash]() {
