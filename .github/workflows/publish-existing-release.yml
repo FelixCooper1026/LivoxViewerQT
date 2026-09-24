@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: Successful Build packages run ID
+        description: Build packages run ID with successful version, Windows and Linux jobs
         required: true
         type: string
 
@@ -25,13 +25,22 @@ jobs:
         run: |
           run_json="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID")"
           status="$(jq -r '.status' <<< "$run_json")"
-          conclusion="$(jq -r '.conclusion' <<< "$run_json")"
           source_repo="$(jq -r '.head_repository.full_name' <<< "$run_json")"
+          workflow_path="$(jq -r '.path' <<< "$run_json")"
           source_sha="$(jq -r '.head_sha' <<< "$run_json")"
-          if [[ "$status" != completed || "$conclusion" != success || "$source_repo" != "$GH_REPO" ]]; then
-            echo "Run $RUN_ID is not a successful run of $GH_REPO" >&2
+          if [[ "$status" != completed || "$source_repo" != "$GH_REPO" ||
+                "$workflow_path" != '.github/workflows/release.yml' ]]; then
+            echo "Run $RUN_ID is not a completed Build packages run of $GH_REPO" >&2
             exit 1
           fi
+          jobs_json="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID/jobs?per_page=100")"
+          for job in version windows linux; do
+            conclusion="$(jq -r --arg job "$job" '[.jobs[] | select(.name == $job) | .conclusion] | last // empty' <<< "$jobs_json")"
+            if [[ "$conclusion" != success ]]; then
+              echo "Run $RUN_ID job $job did not succeed" >&2
+              exit 1
+            fi
+          done
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
@@ -81,5 +90,10 @@ jobs:
               exit 1
             fi
           done
-          gh release create "$TAG" "${files[@]}" \
-            --target "$SOURCE_SHA" --title "$TAG" --generate-notes
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${files[@]}" --clobber
+            gh release edit "$TAG" --draft=false
+          else
+            gh release create "$TAG" "${files[@]}" \
+              --target "$SOURCE_SHA" --title "$TAG" --generate-notes
+          fi

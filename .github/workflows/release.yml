@@ -215,8 +215,20 @@ jobs:
           TAG: ${{ github.ref_name }}
         shell: bash
         run: |
+          files=(
+            "release-assets/installer/LivoxViewerQT_Setup_v${{ needs.version.outputs.number }}_x64.exe"
+            "release-assets/LivoxViewerQT-${{ needs.version.outputs.number }}-win64-portable.zip"
+            "release-assets/livoxviewerqt_${{ needs.version.outputs.number }}_amd64.deb"
+            "release-assets/LivoxViewerQT-${{ needs.version.outputs.number }}-x86_64.AppImage"
+          )
+          for file in "${files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "Missing release asset: $file" >&2
+              exit 1
+            fi
+          done
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" release-assets/* --clobber
+            gh release upload "$TAG" "${files[@]}" --clobber
           else
-            gh release create "$TAG" release-assets/* --title "$TAG" --generate-notes
+            gh release create "$TAG" "${files[@]}" --title "$TAG" --generate-notes
           fi
