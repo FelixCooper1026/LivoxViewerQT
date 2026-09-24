@@ -87,6 +87,7 @@ scripts/*
 !scripts/create_deb.sh
 !scripts/create_appimage.sh
 !scripts/build_qt_linux.sh
+!scripts/ChineseSimplified.isl
 
 # distribution files
 dist/

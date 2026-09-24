@@ -427,7 +427,7 @@ if exist "%ISS_FILE%" del /f /q "%ISS_FILE%"
 >>"%ISS_FILE%" echo RestartApplications=no
 >>"%ISS_FILE%" echo.
 >>"%ISS_FILE%" echo [Languages]
->>"%ISS_FILE%" echo Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+>>"%ISS_FILE%" echo Name: "chinesesimp"; MessagesFile: "%SCRIPT_DIR%\ChineseSimplified.isl"
 >>"%ISS_FILE%" echo Name: "english"; MessagesFile: "compiler:Default.isl"
 >>"%ISS_FILE%" echo.
 >>"%ISS_FILE%" echo [Tasks]

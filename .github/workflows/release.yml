@@ -66,7 +66,8 @@ jobs:
           "VS_VCVARS=$vs\VC\Auxiliary\Build\vcvars64.bat" >> $env:GITHUB_ENV
           "ISCC_EXE=$iscc" >> $env:GITHUB_ENV
           "PACKAGE_BUILD_JOBS=2" >> $env:GITHUB_ENV
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: windows-deps-cache
         with:
           path: |
             third-party/eigen-3.4.0
@@ -82,6 +83,20 @@ jobs:
       - name: Build third-party libraries
         shell: pwsh
         run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_third_party.ps1
+      - uses: actions/cache/save@v4
+        if: steps.windows-deps-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            third-party/eigen-3.4.0
+            third-party/lz4-1.10.0
+            third-party/npcap-sdk-1.16
+            third-party/mcap-cpp-2.1.3
+            third-party/zstd-1.5.7
+            third-party/opencv-4.13.0
+            third-party/boost-1.82.0
+            third-party/gtsam-4.2.0
+            third-party/gtsam-4.2.0-install
+          key: ${{ steps.windows-deps-cache.outputs.cache-primary-key }}
       - name: Build ZIP and installer
         shell: cmd
         run: scripts\package_windows_release.bat incremental
@@ -103,6 +118,7 @@ jobs:
       QT_DIR: ${{ github.workspace }}/.qt/6.8.3
       CC: gcc-10
       CXX: g++-10
+      BUILD_JOBS: '2'
     steps:
       - name: Install system dependencies
         run: |
@@ -121,7 +137,7 @@ jobs:
             libfreetype6-dev libssl-dev libsqlite3-dev libdbus-1-dev libudev-dev \
             patchelf desktop-file-utils
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         id: qt-cache
         with:
           path: ${{ env.QT_DIR }}
@@ -129,6 +145,11 @@ jobs:
       - name: Build Qt 6.8.3 for Ubuntu 20.04
         if: steps.qt-cache.outputs.cache-hit != 'true'
         run: bash scripts/build_qt_linux.sh
+      - uses: actions/cache/save@v4
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ env.QT_DIR }}
+          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
       - name: Prepare AppImage tools
         run: |
           mkdir -p "$HOME/.local/bin"
@@ -137,7 +158,8 @@ jobs:
             -o "$HOME/.local/bin/linuxdeployqt"
           chmod +x "$HOME/.local/bin/linuxdeployqt"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: linux-deps-cache
         with:
           path: |
             third-party/eigen-3.4.0
@@ -150,6 +172,18 @@ jobs:
           key: linux-ubuntu-20.04-gcc-10-deps-${{ hashFiles('scripts/setup_third_party.sh') }}
       - name: Build third-party libraries
         run: bash scripts/setup_third_party.sh
+      - uses: actions/cache/save@v4
+        if: steps.linux-deps-cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            third-party/eigen-3.4.0
+            third-party/lz4-1.10.0
+            third-party/mcap-cpp-2.1.3
+            third-party/zstd-1.5.7
+            third-party/boost-1.82.0
+            third-party/gtsam-4.2.0
+            third-party/gtsam-4.2.0-install
+          key: ${{ steps.linux-deps-cache.outputs.cache-primary-key }}
       - name: Build DEB
         run: bash scripts/create_deb.sh
       - name: Build AppImage

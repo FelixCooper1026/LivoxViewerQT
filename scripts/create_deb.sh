@@ -153,7 +153,7 @@ cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
 
 log "Build"
 
-cmake --build "$BUILD_DIR" --target "$APP" "$CAPTURE_HELPER" -j"$(nproc)"
+cmake --build "$BUILD_DIR" --target "$APP" "$CAPTURE_HELPER" --parallel "${BUILD_JOBS:-$(nproc)}"
 
 APP_EXE="$BUILD_DIR/$APP"
 

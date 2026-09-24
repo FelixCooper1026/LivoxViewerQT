@@ -13,6 +13,7 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 third_party_root="$repo_root/third-party"
 download_root="$third_party_root/.downloads"
+build_jobs="${BUILD_JOBS:-$(nproc)}"
 
 mkdir -p "$third_party_root" "$download_root"
 
@@ -160,7 +161,7 @@ if ! find "$boost_library_dir" -maxdepth 1 -type f -name '*serialization*' -prin
             link=static \
             threading=multi \
             stage \
-            -j "$(getconf _NPROCESSORS_ONLN)"
+            -j "$build_jobs"
     )
 fi
 
@@ -193,7 +194,7 @@ if [[ ! -f "$gtsam_config" || "$force" -eq 1 ]]; then
         -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF \
         -DBUILD_SHARED_LIBS=OFF \
         -DGTSAM_WITH_TBB=OFF
-    cmake --build "$gtsam_build" --target install --parallel
+    cmake --build "$gtsam_build" --target install --parallel "$build_jobs"
 fi
 
 echo "Third-party dependencies are ready."
