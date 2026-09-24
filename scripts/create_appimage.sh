@@ -328,6 +328,10 @@ fi
 
 log "Deploy AppDir dependencies"
 
+# Required by linuxdeployqt when -unsupported-allow-new-glibc is used.
+mkdir -p "$APPDIR/usr/share/doc/libc6"
+cp /usr/share/doc/libc6/copyright "$APPDIR/usr/share/doc/libc6/copyright"
+
 cd "$DIST_DIR"
 
 export VERSION="$APP_VERSION"
