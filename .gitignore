@@ -83,6 +83,10 @@ scripts/*
 !scripts/compile.sh
 !scripts/setup_third_party.ps1
 !scripts/setup_third_party.sh
+!scripts/package_windows_release.bat
+!scripts/create_deb.sh
+!scripts/create_appimage.sh
+!scripts/build_qt_linux.sh
 
 # distribution files
 dist/

@@ -1,0 +1,188 @@
+name: Build packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-22.04
+    outputs:
+      number: ${{ steps.read.outputs.number }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        name: Check tag and project version
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          text = Path('CMakeLists.txt').read_text(encoding='utf-8')
+          match = re.search(r'project\s*\(\s*LivoxViewerQT\b.*?\bVERSION\s+(\d+\.\d+\.\d+)', text, re.S)
+          if not match:
+              raise SystemExit('Project version not found in CMakeLists.txt')
+          version = match.group(1)
+          if os.environ['GITHUB_REF_TYPE'] == 'tag' and os.environ['GITHUB_REF_NAME'] != f'v{version}':
+              raise SystemExit(f'Tag {os.environ["GITHUB_REF_NAME"]} does not match project version {version}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'number={version}\n')
+          PY
+
+  windows:
+    needs: version
+    runs-on: windows-2022
+    timeout-minutes: 360
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtcharts qtserialport qtsvg'
+          cache: true
+      - name: Prepare packaging tools
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          "QT_DIR=$env:QT_ROOT_DIR" >> $env:GITHUB_ENV
+          "VS_VCVARS=$vs\VC\Auxiliary\Build\vcvars64.bat" >> $env:GITHUB_ENV
+          "ISCC_EXE=$iscc" >> $env:GITHUB_ENV
+          "PACKAGE_BUILD_JOBS=2" >> $env:GITHUB_ENV
+      - uses: actions/cache@v4
+        with:
+          path: |
+            third-party/eigen-3.4.0
+            third-party/lz4-1.10.0
+            third-party/npcap-sdk-1.16
+            third-party/mcap-cpp-2.1.3
+            third-party/zstd-1.5.7
+            third-party/opencv-4.13.0
+            third-party/boost-1.82.0
+            third-party/gtsam-4.2.0
+            third-party/gtsam-4.2.0-install
+          key: windows-deps-${{ hashFiles('scripts/setup_third_party.ps1') }}
+      - name: Build third-party libraries
+        shell: pwsh
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_third_party.ps1
+      - name: Build ZIP and installer
+        shell: cmd
+        run: scripts\package_windows_release.bat incremental
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          if-no-files-found: error
+          path: |
+            dist/windows/LivoxViewerQT-${{ needs.version.outputs.number }}-win64-portable.zip
+            dist/windows/installer/LivoxViewerQT_Setup_v${{ needs.version.outputs.number }}_x64.exe
+
+  linux:
+    needs: version
+    runs-on: ubuntu-22.04
+    container: ubuntu:20.04
+    timeout-minutes: 360
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: '1'
+      QT_DIR: ${{ github.workspace }}/.qt/6.8.3
+      CC: gcc-10
+      CXX: g++-10
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            ca-certificates curl git tar xz-utils zstd file perl python3 \
+            build-essential gcc-10 g++-10 \
+            cmake ninja-build pkg-config libopencv-dev libpcap-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev libfuse2 \
+            libx11-dev libx11-xcb-dev libxext-dev libxrender-dev libxi-dev \
+            libxcb1-dev libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev \
+            libxcb-shm0-dev libxcb-icccm4-dev libxcb-sync-dev libxcb-xfixes0-dev \
+            libxcb-shape0-dev libxcb-randr0-dev libxcb-render-util0-dev \
+            libxcb-xinerama0-dev libxcb-xkb-dev libxcb-cursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev \
+            libfreetype6-dev libssl-dev libsqlite3-dev libdbus-1-dev libudev-dev \
+            patchelf desktop-file-utils
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: qt-cache
+        with:
+          path: ${{ env.QT_DIR }}
+          key: qt-6.8.3-ubuntu-20.04-gcc-10-v1
+      - name: Build Qt 6.8.3 for Ubuntu 20.04
+        if: steps.qt-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build_qt_linux.sh
+      - name: Prepare AppImage tools
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -fL --retry 3 \
+            'https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage' \
+            -o "$HOME/.local/bin/linuxdeployqt"
+          chmod +x "$HOME/.local/bin/linuxdeployqt"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/cache@v4
+        with:
+          path: |
+            third-party/eigen-3.4.0
+            third-party/lz4-1.10.0
+            third-party/mcap-cpp-2.1.3
+            third-party/zstd-1.5.7
+            third-party/boost-1.82.0
+            third-party/gtsam-4.2.0
+            third-party/gtsam-4.2.0-install
+          key: linux-ubuntu-20.04-gcc-10-deps-${{ hashFiles('scripts/setup_third_party.sh') }}
+      - name: Build third-party libraries
+        run: bash scripts/setup_third_party.sh
+      - name: Build DEB
+        run: bash scripts/create_deb.sh
+      - name: Build AppImage
+        run: bash scripts/create_appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          if-no-files-found: error
+          path: |
+            dist/linux/livoxviewerqt_${{ needs.version.outputs.number }}_amd64.deb
+            dist/linux/LivoxViewerQT-${{ needs.version.outputs.number }}-x86_64.AppImage
+
+  release:
+    if: github.event_name == 'push'
+    needs: [version, windows, linux]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-packages'
+          path: release-assets
+          merge-multiple: true
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            gh release create "$TAG" release-assets/* --title "$TAG" --generate-notes
+          fi

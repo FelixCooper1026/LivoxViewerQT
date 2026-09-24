@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "LidarSdkService.h"
+#include "updates/UpdateManager.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialogButtonBox>
@@ -7,6 +8,7 @@
 #include <QGridLayout>
 #include <QListWidget>
 #include <QUrl>
+#include <QTimer>
 
 namespace {
 
@@ -50,6 +52,15 @@ void LivoxViewerWindow::createHelpActions()
     QAction* actionKnowledgeBase = helpMenu->addAction("产品知识库");
     // 6. 下载中心
     QAction* actionDownloadCenter = helpMenu->addAction("下载中心");
+
+    QAction* actionCheckUpdates = helpMenu->addAction(QStringLiteral("检查更新"));
+    auto* updateManager = new UpdateManager(this);
+    connect(actionCheckUpdates, &QAction::triggered, updateManager, [updateManager]() {
+        updateManager->check(true);
+    });
+    QTimer::singleShot(0, updateManager, [updateManager]() {
+        updateManager->check(false);
+    });
 
     // 关于
     aboutAction = helpMenu->addAction("关于");
