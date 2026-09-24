@@ -25,7 +25,8 @@ for module in qtbase qtsvg qtserialport qtcharts; do
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$QT_DIR" \
         -DQT_BUILD_TESTS=OFF \
-        -DQT_BUILD_EXAMPLES=OFF
+        -DQT_BUILD_EXAMPLES=OFF \
+        -DQT_GENERATE_SBOM=OFF
     cmake --build "$build_dir" --parallel "$QT_BUILD_JOBS"
     cmake --install "$build_dir"
     rm -rf "$source_dir" "$build_dir" "$SOURCE_ROOT/$archive"

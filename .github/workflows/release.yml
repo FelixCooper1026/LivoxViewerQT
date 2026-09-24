@@ -50,7 +50,7 @@ jobs:
           host: windows
           target: desktop
           arch: win64_msvc2022_64
-          modules: 'qtcharts qtserialport qtsvg'
+          modules: 'qtcharts qtserialport'
           cache: true
       - name: Prepare packaging tools
         shell: pwsh
