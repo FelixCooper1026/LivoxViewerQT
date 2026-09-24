@@ -24,6 +24,7 @@ for module in qtbase qtsvg qtserialport qtcharts; do
     cmake -S "$source_dir" -B "$build_dir" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="$QT_DIR" \
+        -DINPUT_openssl=linked \
         -DQT_BUILD_TESTS=OFF \
         -DQT_BUILD_EXAMPLES=OFF \
         -DQT_GENERATE_SBOM=OFF

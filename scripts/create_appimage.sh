@@ -338,6 +338,16 @@ linuxdeployqt "$DESKTOP_FILE" \
     -bundle-non-qt-libs \
     -verbose=3
 
+TLS_PLUGIN="$QT_DIR/plugins/tls/libqopensslbackend.so"
+[ -f "$TLS_PLUGIN" ] || die "Qt OpenSSL TLS plugin not found"
+mkdir -p "$APPDIR/usr/plugins/tls" "$APPDIR/usr/lib"
+cp -L "$TLS_PLUGIN" "$APPDIR/usr/plugins/tls/"
+for lib in libssl libcrypto; do
+    dep="$(ldd "$TLS_PLUGIN" | awk -v name="$lib" '$1 ~ "^" name "\\.so\\." { print $3; exit }')"
+    [ -f "$dep" ] || die "Qt TLS plugin must be linked to $lib"
+    cp -L "$dep" "$APPDIR/usr/lib/"
+done
+
 log "Create AppImage launcher"
 
 [ -e "$APPDIR/AppRun" ] || die "linuxdeployqt did not create AppRun"

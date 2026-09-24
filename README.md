@@ -125,6 +125,17 @@ cmake --build build/cmd-linux-Release -j
 ./build/cmd-linux-Release/LivoxViewerQT
 ```
 
+如果 Linux 上的 Qt 与系统 OpenSSL 主版本不匹配（例如 Ubuntu 20.04 的 OpenSSL 1.1 与按 OpenSSL 3 构建的 Qt），可在本机重新构建 Qt，并使用新的构建目录：
+
+```bash
+export QT_DIR="$HOME/qt-6.8.3-local"
+bash scripts/build_qt_linux.sh
+QT_DIR="$QT_DIR" bash scripts/compile.sh Release "$PWD/build-linux-local"
+./build-linux-local/LivoxViewerQT
+```
+
+`build_qt_linux.sh` 将 Qt TLS 后端直接链接到构建机上的 OpenSSL；请先安装系统的 `libssl-dev`。新的构建目录可避免沿用旧的 Qt CMake 缓存。
+
 Linux 下可执行文件会优先从 `./livox_sdk_qt/lib` 查找 Livox SDK 动态库。
 
 ## 离线 SLAM 诊断

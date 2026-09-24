@@ -258,6 +258,10 @@ do
     fi
 done
 
+TLS_PLUGIN="$OPT_DIR/plugins/tls/libqopensslbackend.so"
+[ -f "$TLS_PLUGIN" ] || die "Qt OpenSSL TLS plugin not found"
+ldd "$TLS_PLUGIN" | grep -q 'libssl\.so' || die "Qt TLS plugin must be linked to OpenSSL"
+
 log "Copy plugin dependencies"
 
 find "$OPT_DIR/plugins" -type f -name "*.so" | while read -r plugin; do
