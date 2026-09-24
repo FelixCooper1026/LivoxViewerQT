@@ -98,7 +98,7 @@ void LivoxViewerWindow::showPointCloudFilterDialog()
             QVBoxLayout* noiseLayout = new QVBoxLayout(noiseGroup);
 
             filterState.showNoiseCheck = new QCheckBox("高亮显示噪点", noiseGroup);
-            filterState.removeNoiseCheck = new QCheckBox("移除噪点（仅移除显示，并非真正不输出）", noiseGroup);
+            filterState.removeNoiseCheck = new QCheckBox("移除噪点（仅移除本软件显示，原始点云数据中仍会输出）", noiseGroup);
 
             noiseLayout->addWidget(filterState.showNoiseCheck);
             noiseLayout->addWidget(filterState.removeNoiseCheck);

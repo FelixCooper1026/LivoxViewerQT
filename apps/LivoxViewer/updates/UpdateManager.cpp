@@ -132,14 +132,14 @@ void UpdateManager::fetchRelease(int sourceIndex, bool manual, const QString& la
             QVersionNumber::fromString(QCoreApplication::applicationVersion())) {
             if (manual) {
                 QMessageBox::information(window_, QStringLiteral("检查更新"),
-                                         QStringLiteral("当前已是最新版本（%1）。")
+                                         QStringLiteral("当前已是最新版本（%1）")
                                              .arg(QCoreApplication::applicationVersion()));
             }
             return;
         }
 
         if (!supportedArchitecture() || installerName(version).isEmpty()) {
-            showFailure(QStringLiteral("当前平台暂无可用的自动更新安装包。"));
+            showFailure(QStringLiteral("当前平台暂无可用的更新安装包"));
             return;
         }
         const QString name = installerName(version);
@@ -162,7 +162,7 @@ void UpdateManager::fetchRelease(int sourceIndex, bool manual, const QString& la
         }
         if (assetUrl.scheme() != QStringLiteral("https") ||
             assetUrl.host() != QStringLiteral("github.com") || assetSize <= 0) {
-            showFailure(QStringLiteral("发现新版本 %1，但发布页缺少适用于本机的安装包。").arg(version));
+            showFailure(QStringLiteral("发现新版本 %1，但发布页缺少适用于本机的安装包").arg(version));
             return;
         }
 
@@ -174,7 +174,7 @@ void UpdateManager::fetchRelease(int sourceIndex, bool manual, const QString& la
         const QMessageBox::StandardButton choice = QMessageBox::question(
             window_, QStringLiteral("检测到新版本"),
             (appImage
-                ? QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载 AppImage？下载后需手动替换当前文件。")
+                ? QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载 AppImage？下载后需手动替换当前文件")
                 : QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载并更新？"))
                     .arg(version, QCoreApplication::applicationVersion()),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
@@ -307,7 +307,7 @@ void UpdateManager::install(const QString& path, QProgressDialog* dialog)
         dialog->close();
         dialog->deleteLater();
         QMessageBox::information(window_, QStringLiteral("下载完成"),
-                                 QStringLiteral("新版 AppImage 已下载到：\n%1\n请自行替换当前文件。").arg(path));
+                                 QStringLiteral("新版 AppImage 已下载到：\n%1\n请自行替换当前文件").arg(path));
         return;
     }
     dialog->setLabelText(QStringLiteral("正在安装更新，请完成系统授权…"));
