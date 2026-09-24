@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       run_id:
-        description: Build packages run ID with successful version, Windows and Linux jobs
+        description: Build packages tag run ID with successful version, Windows and Linux jobs
         required: true
         type: string
 
@@ -64,6 +64,16 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "TAG=v$version" >> "$GITHUB_ENV"
 
+      - name: Verify release tag
+        shell: bash
+        run: |
+          git fetch --quiet origin "refs/tags/$TAG"
+          tag_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
+          if [[ "$tag_sha" != "$SOURCE_SHA" ]]; then
+            echo "Tag $TAG points to $tag_sha, but run was built from $SOURCE_SHA" >&2
+            exit 1
+          fi
+
       - uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.run_id }}
@@ -95,5 +105,5 @@ jobs:
             gh release edit "$TAG" --draft=false
           else
             gh release create "$TAG" "${files[@]}" \
-              --target "$SOURCE_SHA" --title "$TAG" --generate-notes
+              --verify-tag --title "$TAG" --generate-notes
           fi
