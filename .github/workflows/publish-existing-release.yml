@@ -1,0 +1,85 @@
+name: Publish existing CI artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Build packages run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check source run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+        shell: bash
+        run: |
+          run_json="$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID")"
+          status="$(jq -r '.status' <<< "$run_json")"
+          conclusion="$(jq -r '.conclusion' <<< "$run_json")"
+          source_repo="$(jq -r '.head_repository.full_name' <<< "$run_json")"
+          source_sha="$(jq -r '.head_sha' <<< "$run_json")"
+          if [[ "$status" != completed || "$conclusion" != success || "$source_repo" != "$GH_REPO" ]]; then
+            echo "Run $RUN_ID is not a successful run of $GH_REPO" >&2
+            exit 1
+          fi
+          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+
+      - name: Read release version
+        shell: bash
+        run: |
+          version="$(python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path('CMakeLists.txt').read_text(encoding='utf-8')
+          match = re.search(r'project\s*\(\s*LivoxViewerQT\b.*?\bVERSION\s+(\d+\.\d+\.\d+)', text, re.S)
+          if not match:
+              raise SystemExit('Project version not found in CMakeLists.txt')
+          print(match.group(1))
+          PY
+          )"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: '*-packages'
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          files=(
+            "release-assets/LivoxViewerQT_Setup_v${VERSION}_x64.exe"
+            "release-assets/LivoxViewerQT-${VERSION}-win64-portable.zip"
+            "release-assets/livoxviewerqt_${VERSION}_amd64.deb"
+            "release-assets/LivoxViewerQT-${VERSION}-x86_64.AppImage"
+          )
+          for file in "${files[@]}"; do
+            if [[ ! -s "$file" ]]; then
+              echo "Missing release asset: $file" >&2
+              exit 1
+            fi
+          done
+          gh release create "$TAG" "${files[@]}" \
+            --target "$SOURCE_SHA" --title "$TAG" --generate-notes
