@@ -70,7 +70,7 @@ jobs:
         shell: bash
         run: |
           files=(
-            "release-assets/LivoxViewerQT_Setup_v${VERSION}_x64.exe"
+            "release-assets/installer/LivoxViewerQT_Setup_v${VERSION}_x64.exe"
             "release-assets/LivoxViewerQT-${VERSION}-win64-portable.zip"
             "release-assets/livoxviewerqt_${VERSION}_amd64.deb"
             "release-assets/LivoxViewerQT-${VERSION}-x86_64.AppImage"
