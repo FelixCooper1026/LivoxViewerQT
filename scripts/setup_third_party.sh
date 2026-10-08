@@ -157,7 +157,7 @@ if ! find "$boost_library_dir" -maxdepth 1 -type f -name '*serialization*' -prin
             --with-chrono \
             --with-regex \
             --layout=tagged \
-            variant=debug,release \
+            "variant=${BOOST_VARIANTS:-debug,release}" \
             link=static \
             threading=multi \
             stage \

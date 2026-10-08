@@ -1,11 +1,11 @@
 param(
-    [switch]$Force
+    [switch]$Force,
+    [string]$ThirdPartyRoot = (Join-Path (Split-Path -Parent $PSScriptRoot) "third-party"),
+    [ValidateSet("Release", "Debug")][string[]]$Configurations = @("Release", "Debug")
 )
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$thirdPartyRoot = Join-Path $repoRoot "third-party"
 $downloadRoot = Join-Path $thirdPartyRoot ".downloads"
 
 New-Item -ItemType Directory -Force -Path $thirdPartyRoot | Out-Null
@@ -244,7 +244,7 @@ option.set keep-going : false ;
             --with-timer `
             --with-chrono `
             --with-regex `
-            variant=debug,release `
+            "variant=$(($Configurations | ForEach-Object { $_.ToLowerInvariant() }) -join ',')" `
             link=static `
             runtime-link=shared `
             address-model=64 `
@@ -314,7 +314,7 @@ if (-not (Test-Path -LiteralPath $gtsamConfig) -or $Force) {
         throw "GTSAM configure failed with exit code $LASTEXITCODE"
     }
 
-    foreach ($configuration in @("Release", "Debug")) {
+    foreach ($configuration in $Configurations) {
         Write-Host "Building and installing GTSAM $configuration..."
         & cmake --build $gtsamBuild --target install --config $configuration --parallel 1
         if ($LASTEXITCODE -ne 0) {

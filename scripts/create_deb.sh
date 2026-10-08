@@ -11,7 +11,7 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 QT_DIR="${QT_DIR:-${QT_ROOT_DIR:-}}"
 
-BUILD_DIR="$ROOT_DIR/build/cmd-linux-deb"
+BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build/cmd-linux-deb}"
 DIST_DIR="$ROOT_DIR/dist/linux"
 DEBROOT="$DIST_DIR/debroot"
 OPT_DIR="$DEBROOT/opt/$APP"
@@ -149,6 +149,7 @@ log "Configure"
 
 cmake -S "$ROOT_DIR" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
     -DCMAKE_PREFIX_PATH="$QT_DIR"
 
 log "Build"

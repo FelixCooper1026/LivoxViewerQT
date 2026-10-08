@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       number: ${{ steps.read.outputs.number }}
+      environment_tag: ${{ steps.environment.outputs.tag }}
+      linux_image: ${{ steps.environment.outputs.image }}
     steps:
       - uses: actions/checkout@v4
       - id: read
@@ -36,67 +38,47 @@ jobs:
               output.write(f'number={version}\n')
           PY
 
+      - id: environment
+        name: Read fixed build environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          tag="$(cat ci/environment-version)"
+          gh release download "$tag" --pattern linux-image.txt --dir "$RUNNER_TEMP/ci-environment"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$(cat "$RUNNER_TEMP/ci-environment/linux-image.txt")" >> "$GITHUB_OUTPUT"
+
   windows:
     needs: version
     runs-on: windows-2022
-    timeout-minutes: 360
+    timeout-minutes: 60
     env:
       CI: 'true'
+      QT_DIR: C:\livox-build-env\Qt\6.8.3\msvc2022_64
+      LIVOX_THIRD_PARTY_ROOT: C:/livox-build-env/third-party
+      ISCC_EXE: C:\livox-build-env\innosetup\ISCC.exe
+      PACKAGE_BUILD_JOBS: '2'
     steps:
       - uses: actions/checkout@v4
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.3'
-          host: windows
-          target: desktop
-          arch: win64_msvc2022_64
-          modules: 'qtcharts qtserialport'
-          cache: true
-      - name: Prepare packaging tools
+      - name: Download fixed Windows environment
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ENV_TAG: ${{ needs.version.outputs.environment_tag }}
+        run: |
+          gh release download "$env:ENV_TAG" --pattern windows-env.7z --dir "$env:RUNNER_TEMP"
+          if ($LASTEXITCODE -ne 0) { throw 'Environment download failed' }
+          7z x "$env:RUNNER_TEMP\windows-env.7z" '-oC:\livox-build-env' -y
+          if ($LASTEXITCODE -ne 0) { throw 'Environment extraction failed' }
+      - name: Select MSVC 2022
         shell: pwsh
         run: |
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path -LiteralPath $iscc)) {
-            choco install innosetup --yes --no-progress
-            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
-          }
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          "QT_DIR=$env:QT_ROOT_DIR" >> $env:GITHUB_ENV
           "VS_VCVARS=$vs\VC\Auxiliary\Build\vcvars64.bat" >> $env:GITHUB_ENV
-          "ISCC_EXE=$iscc" >> $env:GITHUB_ENV
-          "PACKAGE_BUILD_JOBS=2" >> $env:GITHUB_ENV
-      - uses: actions/cache/restore@v4
-        id: windows-deps-cache
-        with:
-          path: |
-            third-party/eigen-3.4.0
-            third-party/lz4-1.10.0
-            third-party/npcap-sdk-1.16
-            third-party/mcap-cpp-2.1.3
-            third-party/zstd-1.5.7
-            third-party/opencv-4.13.0
-            third-party/boost-1.82.0
-            third-party/gtsam-4.2.0
-            third-party/gtsam-4.2.0-install
-          key: windows-deps-${{ hashFiles('scripts/setup_third_party.ps1') }}
-      - name: Build third-party libraries
-        shell: pwsh
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_third_party.ps1
-      - uses: actions/cache/save@v4
-        if: steps.windows-deps-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            third-party/eigen-3.4.0
-            third-party/lz4-1.10.0
-            third-party/npcap-sdk-1.16
-            third-party/mcap-cpp-2.1.3
-            third-party/zstd-1.5.7
-            third-party/opencv-4.13.0
-            third-party/boost-1.82.0
-            third-party/gtsam-4.2.0
-            third-party/gtsam-4.2.0-install
-          key: ${{ steps.windows-deps-cache.outputs.cache-primary-key }}
       - name: Build ZIP and installer
         shell: cmd
         run: scripts\package_windows_release.bat incremental
@@ -111,83 +93,25 @@ jobs:
   linux:
     needs: version
     runs-on: ubuntu-22.04
-    container: ubuntu:20.04
-    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.version.outputs.linux_image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+    timeout-minutes: 60
     env:
-      APPIMAGE_EXTRACT_AND_RUN: '1'
-      QT_DIR: ${{ github.workspace }}/.qt/6.8.3
-      CC: gcc-10
-      CXX: g++-10
       BUILD_JOBS: '2'
     steps:
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            ca-certificates curl git tar xz-utils zstd file perl python3 \
-            build-essential gcc-10 g++-10 \
-            cmake ninja-build pkg-config libopencv-dev libpcap-dev \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev libfuse2 \
-            libx11-dev libx11-xcb-dev libxext-dev libxrender-dev libxi-dev \
-            libxcb1-dev libxcb-glx0-dev libxcb-keysyms1-dev libxcb-image0-dev \
-            libxcb-shm0-dev libxcb-icccm4-dev libxcb-sync-dev libxcb-xfixes0-dev \
-            libxcb-shape0-dev libxcb-randr0-dev libxcb-render-util0-dev \
-            libxcb-xinerama0-dev libxcb-xkb-dev libxcb-cursor-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev \
-            libfreetype6-dev libssl-dev libsqlite3-dev libdbus-1-dev libudev-dev \
-            patchelf desktop-file-utils
       - uses: actions/checkout@v4
-      - uses: actions/cache/restore@v4
-        id: qt-cache
-        with:
-          path: ${{ env.QT_DIR }}
-          key: qt-6.8.3-ubuntu-20.04-gcc-10-v1
-      - name: Build Qt 6.8.3 for Ubuntu 20.04
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build_qt_linux.sh
-      - uses: actions/cache/save@v4
-        if: steps.qt-cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ env.QT_DIR }}
-          key: ${{ steps.qt-cache.outputs.cache-primary-key }}
-      - name: Prepare AppImage tools
+      - name: Build DEB and AppImage from shared compilation
+        shell: bash
         run: |
-          mkdir -p "$HOME/.local/bin"
-          curl -fL --retry 3 \
-            'https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage' \
-            -o "$HOME/.local/bin/linuxdeployqt"
-          chmod +x "$HOME/.local/bin/linuxdeployqt"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - uses: actions/cache/restore@v4
-        id: linux-deps-cache
-        with:
-          path: |
-            third-party/eigen-3.4.0
-            third-party/lz4-1.10.0
-            third-party/mcap-cpp-2.1.3
-            third-party/zstd-1.5.7
-            third-party/boost-1.82.0
-            third-party/gtsam-4.2.0
-            third-party/gtsam-4.2.0-install
-          key: linux-ubuntu-20.04-gcc-10-deps-${{ hashFiles('scripts/setup_third_party.sh') }}
-      - name: Build third-party libraries
-        run: bash scripts/setup_third_party.sh
-      - uses: actions/cache/save@v4
-        if: steps.linux-deps-cache.outputs.cache-hit != 'true'
-        with:
-          path: |
-            third-party/eigen-3.4.0
-            third-party/lz4-1.10.0
-            third-party/mcap-cpp-2.1.3
-            third-party/zstd-1.5.7
-            third-party/boost-1.82.0
-            third-party/gtsam-4.2.0
-            third-party/gtsam-4.2.0-install
-          key: ${{ steps.linux-deps-cache.outputs.cache-primary-key }}
-      - name: Build DEB
-        run: bash scripts/create_deb.sh
-      - name: Build AppImage
-        run: bash scripts/create_appimage.sh
+          export BUILD_DIR="$GITHUB_WORKSPACE/build/linux-package"
+          bash scripts/create_deb.sh
+          bash scripts/create_appimage.sh
       - uses: actions/upload-artifact@v4
         with:
           name: linux-packages

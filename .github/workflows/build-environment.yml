@@ -1,0 +1,129 @@
+name: Build fixed CI environment
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: build-fixed-ci-environment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.environment.outputs.tag }}
+      image: ${{ steps.environment.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: environment
+        name: Create build environment release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          tag="$(cat ci/environment-version)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-build" >> "$GITHUB_OUTPUT"
+          gh release create "$tag" --target "$GITHUB_SHA" --draft --prerelease --latest=false \
+            --title "CI build environment: $tag" \
+            --notes "Fixed build dependencies for CI. This is not an application release."
+
+  windows:
+    needs: prepare
+    runs-on: windows-2022
+    timeout-minutes: 180
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          dir: C:\livox-build-env
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: 'qtcharts qtserialport'
+      - name: Build Release dependencies
+        shell: pwsh
+        run: ./scripts/setup_third_party.ps1 -ThirdPartyRoot C:\livox-build-env\third-party -Configurations Release
+      - name: Archive fixed Windows environment
+        shell: pwsh
+        run: |
+          $inno = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6'
+          if (-not (Test-Path "$inno\ISCC.exe")) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+          Copy-Item -LiteralPath $inno -Destination C:\livox-build-env\innosetup -Recurse
+          Push-Location C:\livox-build-env
+          7z a "$env:RUNNER_TEMP\windows-env.7z" Qt third-party innosetup -mx=1 -mmt=2 '-xr!.downloads' '-xr!.build' '-xr!bin.v2' '-xr!gtsam-4.2.0'
+          if ($LASTEXITCODE -ne 0) { throw 'Environment archive failed' }
+          Pop-Location
+      - name: Upload Windows environment
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ENV_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "$env:ENV_TAG" "$env:RUNNER_TEMP\windows-env.7z" --clobber
+
+  linux:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare image build context
+        run: |
+          mkdir -p "$RUNNER_TEMP/linux-build-env/scripts"
+          cp ci/linux/Dockerfile "$RUNNER_TEMP/linux-build-env/Dockerfile"
+          cp scripts/build_qt_linux.sh scripts/setup_third_party.sh "$RUNNER_TEMP/linux-build-env/scripts/"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - id: image
+        name: Build and publish Ubuntu 20.04 environment
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: ${{ runner.temp }}/linux-build-env
+          push: true
+          tags: ${{ needs.prepare.outputs.image }}:${{ needs.prepare.outputs.tag }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Save immutable image reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ENV_TAG: ${{ needs.prepare.outputs.tag }}
+          IMAGE: ${{ needs.prepare.outputs.image }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          printf '%s@%s\n' "$IMAGE" "$DIGEST" > linux-image.txt
+          gh release upload "$ENV_TAG" linux-image.txt --clobber
+
+  publish:
+    needs: [prepare, windows, linux]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish fixed environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ENV_TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release edit "$ENV_TAG" --draft=false --latest=false
