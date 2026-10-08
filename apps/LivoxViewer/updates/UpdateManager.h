@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QCryptographicHash>
 #include <QNetworkAccessManager>
 #include <QSaveFile>
 #include <QVector>
@@ -30,4 +31,5 @@ private:
     QNetworkAccessManager network_;
     QNetworkReply* reply_ = nullptr;
     std::unique_ptr<QSaveFile> file_;
+    std::unique_ptr<QCryptographicHash> hash_;
 };

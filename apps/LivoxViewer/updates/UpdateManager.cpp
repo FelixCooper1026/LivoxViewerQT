@@ -28,8 +28,8 @@ const QUrl kReleaseUrl(QStringLiteral(
     "https://api.github.com/repos/FelixCooper1026/LivoxViewerQT/releases/latest"));
 
 const QStringList kProxyPrefixes = {
-    QStringLiteral("https://ghproxy.net/"),
     QStringLiteral("https://gh-proxy.com/"),
+    QStringLiteral("https://ghproxy.net/"),
     QStringLiteral("https://ghfast.top/"),
     QStringLiteral("https://githubproxy.cc/"),
     QStringLiteral("https://ghproxy.homeboyc.cn/")
@@ -93,6 +93,23 @@ QString remainingTime(qint64 seconds)
     return hours > 0 ? QStringLiteral("%1:%2").arg(hours).arg(minuteAndSecond)
                      : minuteAndSecond;
 }
+
+bool restartDownload(QSaveFile* file, QCryptographicHash* hash)
+{
+    if (!file->resize(0) || !file->seek(0)) {
+        return false;
+    }
+    if (hash) {
+        hash->reset();
+    }
+    return true;
+}
+
+struct DownloadAttempt {
+    qint64 offset = 0;
+    bool responseChecked = false;
+    QString error;
+};
 
 } // namespace
 
@@ -218,6 +235,17 @@ void UpdateManager::download(const QUrl& url, const QString& fileName, qint64 si
     dialog->setAutoReset(false);
     dialog->show();
 
+    file_ = std::make_unique<QSaveFile>(path);
+    if (!file_->open(QIODevice::WriteOnly)) {
+        const QString error = file_->errorString();
+        file_.reset();
+        dialog->deleteLater();
+        showFailure(QStringLiteral("无法保存安装包：%1").arg(error));
+        return;
+    }
+    if (!digest.isEmpty()) {
+        hash_ = std::make_unique<QCryptographicHash>(QCryptographicHash::Sha256);
+    }
     tryDownload(sourcesFor(url, false), 0, path, size, digest, dialog);
 }
 
@@ -226,98 +254,152 @@ void UpdateManager::tryDownload(const QVector<QUrl>& sources, int sourceIndex,
                                 QProgressDialog* dialog, const QString& lastError)
 {
     if (sourceIndex == sources.size()) {
+        file_.reset();
+        hash_.reset();
         dialog->close();
         dialog->deleteLater();
         showFailure(QStringLiteral("所有下载线路均失败：%1").arg(lastError));
         return;
     }
 
-    file_ = std::make_unique<QSaveFile>(path);
-    if (!file_->open(QIODevice::WriteOnly)) {
-        const QString error = file_->errorString();
-        file_.reset();
-        dialog->close();
-        dialog->deleteLater();
-        showFailure(QStringLiteral("无法保存安装包：%1").arg(error));
-        return;
+    const qint64 offset = file_->size();
+    QString label = QStringLiteral("正在下载更新（线路 %1/%2）：%3")
+                        .arg(sourceIndex + 1).arg(sources.size()).arg(sources[sourceIndex].host());
+    if (offset > 0) {
+        label += QStringLiteral("，从 %1% 续传").arg(offset * 100 / size);
     }
-
-    const QString sourceLabel = QStringLiteral("正在下载更新（线路 %1/%2）：%3")
-                                    .arg(sourceIndex + 1).arg(sources.size())
-                                    .arg(sources[sourceIndex].host());
-    dialog->setLabelText(sourceLabel + QStringLiteral("\n0% · 预计剩余时间…"));
-    dialog->setValue(0);
+    if (!lastError.isEmpty()) {
+        label += QStringLiteral("\n上一线路失败：%1").arg(lastError);
+    }
+    dialog->setLabelText(label + QStringLiteral("\n%1% · 预计剩余时间…")
+                                   .arg(offset * 100 / size));
+    dialog->setValue(static_cast<int>(offset * 100 / size));
     QElapsedTimer elapsed;
     elapsed.start();
-    std::shared_ptr<QCryptographicHash> hash;
-    if (!digest.isEmpty()) {
-        hash = std::make_shared<QCryptographicHash>(QCryptographicHash::Sha256);
+    QNetworkRequest request = releaseRequest(sources[sourceIndex], 20000);
+    request.setRawHeader("Accept-Encoding", "identity");
+    if (offset > 0) {
+        request.setRawHeader("Range", QByteArrayLiteral("bytes=") + QByteArray::number(offset) + '-');
     }
-    QNetworkReply* reply = network_.get(releaseRequest(sources[sourceIndex], 20000));
+    auto attempt = std::make_shared<DownloadAttempt>();
+    attempt->offset = offset;
+    QNetworkReply* reply = network_.get(request);
     reply_ = reply;
     connect(dialog, &QProgressDialog::canceled, reply, [reply]() { reply->abort(); });
-    connect(reply, &QNetworkReply::readyRead, this, [this, reply, hash]() {
+    auto consume = [this, reply, attempt, size]() {
+        if (reply->bytesAvailable() == 0 || !attempt->error.isEmpty()) {
+            return;
+        }
+        if (!attempt->responseChecked) {
+            const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+            if (status == 206) {
+                const QByteArray range = reply->rawHeader("Content-Range");
+                const QByteArray expectedStart = "bytes " + QByteArray::number(attempt->offset) + '-';
+                const QByteArray expectedTotal = '/' + QByteArray::number(size);
+                if (!range.startsWith(expectedStart) || !range.endsWith(expectedTotal)) {
+                    attempt->error = QStringLiteral("续传范围不匹配");
+                }
+            } else if (status == 200) {
+                const QVariant contentLength = reply->header(QNetworkRequest::ContentLengthHeader);
+                if (contentLength.isValid() && contentLength.toLongLong() != size) {
+                    attempt->error = QStringLiteral("响应文件大小不符");
+                }
+                if (attempt->error.isEmpty() && attempt->offset > 0 &&
+                    !restartDownload(file_.get(), hash_.get())) {
+                    attempt->error = file_->errorString();
+                }
+                attempt->offset = 0;
+            } else {
+                attempt->error = QStringLiteral("HTTP %1").arg(status);
+            }
+            if (!attempt->error.isEmpty()) {
+                reply->abort();
+                return;
+            }
+            attempt->responseChecked = true;
+        }
         const QByteArray chunk = reply->readAll();
         if (file_->write(chunk) != chunk.size()) {
+            attempt->error = file_->errorString();
             reply->abort();
             return;
         }
-        if (hash) {
-            hash->addData(chunk);
+        if (hash_) {
+            hash_->addData(chunk);
         }
-    });
+    };
+    connect(reply, &QNetworkReply::readyRead, this, consume);
     connect(reply, &QNetworkReply::downloadProgress, this,
-            [dialog, size, sourceLabel, elapsed](qint64 received, qint64) {
-        received = qBound<qint64>(0, received, size);
-        const int percent = static_cast<int>(received * 100 / size);
+            [dialog, reply, offset, size, label, elapsed](qint64 received, qint64) {
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const qint64 total = qBound<qint64>(0, (status == 206 ? offset : 0) + received, size);
+        const int percent = static_cast<int>(total * 100 / size);
         QString estimate = QStringLiteral("预计剩余时间…");
-        if (received == size) {
+        if (total == size) {
             estimate = QStringLiteral("预计剩余 00:00");
         } else if (received > 0 && elapsed.elapsed() >= 2000) {
             const qint64 seconds = static_cast<qint64>(std::ceil(
-                static_cast<double>(size - received) * elapsed.elapsed() / (received * 1000.0)));
+                static_cast<double>(size - total) * elapsed.elapsed() / (received * 1000.0)));
             estimate = QStringLiteral("预计剩余 %1").arg(remainingTime(seconds));
         }
         dialog->setValue(percent);
         dialog->setLabelText(QStringLiteral("%1\n%2% · %3")
-                                 .arg(sourceLabel).arg(percent).arg(estimate));
+                                 .arg(label).arg(percent).arg(estimate));
     });
     connect(reply, &QNetworkReply::finished, this,
-            [this, reply, sources, sourceIndex, path, size, digest, dialog, hash]() {
+            [this, reply, sources, sourceIndex, path, size, digest, dialog, attempt, consume]() {
+        consume();
         reply_ = nullptr;
         const QNetworkReply::NetworkError error = reply->error();
         const QString errorText = reply->errorString();
-        const QByteArray remaining = reply->readAll();
-        if (!remaining.isEmpty() && file_->write(remaining) == remaining.size() && hash) {
-            hash->addData(remaining);
-        }
         reply->deleteLater();
         if (dialog->wasCanceled()) {
             file_.reset();
+            hash_.reset();
             dialog->close();
             dialog->deleteLater();
             return;
         }
-        if (error != QNetworkReply::NoError || file_->error() != QFileDevice::NoError ||
-            file_->size() != size || (hash && hash->result().toHex() != digest)) {
-            const QString reason = file_->error() != QFileDevice::NoError
-                ? file_->errorString()
-                : (error != QNetworkReply::NoError ? errorText
-                   : (file_->size() != size ? QStringLiteral("文件大小不符")
-                                            : QStringLiteral("SHA-256 校验失败")));
+        if (file_->error() != QFileDevice::NoError) {
+            const QString reason = file_->errorString();
             file_.reset();
+            hash_.reset();
+            dialog->close();
+            dialog->deleteLater();
+            showFailure(QStringLiteral("无法保存安装包：%1").arg(reason));
+            return;
+        }
+        const bool complete = file_->size() == size;
+        const bool digestValid = !complete || !hash_ || hash_->result().toHex() == digest;
+        if (error != QNetworkReply::NoError || !attempt->error.isEmpty() || !complete || !digestValid) {
+            const QString reason = !attempt->error.isEmpty() ? attempt->error
+                : (error != QNetworkReply::NoError ? errorText
+                   : (!complete ? QStringLiteral("文件大小不符")
+                                : QStringLiteral("SHA-256 校验失败")));
+            if ((file_->size() >= size || (error == QNetworkReply::NoError && !complete)) &&
+                !restartDownload(file_.get(), hash_.get())) {
+                const QString fileError = file_->errorString();
+                file_.reset();
+                hash_.reset();
+                dialog->close();
+                dialog->deleteLater();
+                showFailure(QStringLiteral("无法重置下载文件：%1").arg(fileError));
+                return;
+            }
             tryDownload(sources, sourceIndex + 1, path, size, digest, dialog, reason);
             return;
         }
         if (!file_->commit()) {
             const QString fileError = file_->errorString();
             file_.reset();
+            hash_.reset();
             dialog->close();
             dialog->deleteLater();
             showFailure(QStringLiteral("保存安装包失败：%1").arg(fileError));
             return;
         }
         file_.reset();
+        hash_.reset();
         install(path, dialog);
     });
 }
