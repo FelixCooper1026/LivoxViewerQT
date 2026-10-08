@@ -6,7 +6,7 @@ QT_DIR="${QT_DIR:?Set QT_DIR to the Qt installation prefix}"
 QT_BUILD_JOBS="${QT_BUILD_JOBS:-2}"
 SOURCE_ROOT="${RUNNER_TEMP:-/tmp}/qt-$QT_VERSION-sources"
 BUILD_ROOT="${RUNNER_TEMP:-/tmp}/qt-$QT_VERSION-build"
-BASE_URL="https://download.qt.io/official_releases/qt/6.8/$QT_VERSION/submodules"
+BASE_URL="https://download.qt.io/archive/qt/6.8/$QT_VERSION/submodules"
 
 mkdir -p "$SOURCE_ROOT" "$BUILD_ROOT" "$QT_DIR"
 export CMAKE_PREFIX_PATH="$QT_DIR"
