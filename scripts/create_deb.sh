@@ -288,9 +288,8 @@ find "$OPT_DIR/lib" -type f -name "*.so*" | while read -r so; do
     patch_rpath "$so" '$ORIGIN'
 done
 
-find "$OPT_DIR/plugins" -type f -name "*.so" | while read -r so; do
-    patch_rpath "$so" '$ORIGIN/../../lib:$ORIGIN/../lib:$ORIGIN'
-done
+# Ubuntu 20.04's patchelf 0.10 relocates Qt plugin metadata without updating
+# its PT_NOTE segment. Keep plugins intact; the launcher sets LD_LIBRARY_PATH.
 
 log "Create launcher"
 
