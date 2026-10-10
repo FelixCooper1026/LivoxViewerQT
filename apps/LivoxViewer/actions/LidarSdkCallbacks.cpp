@@ -294,14 +294,31 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
         return;
     }
     if (data) {
+        uint32_t pointSize;
+        switch (data->data_type) {
+        case kLivoxLidarCartesianCoordinateHighData:
+            pointSize = sizeof(LivoxLidarCartesianHighRawPoint);
+            break;
+        case kLivoxLidarCartesianCoordinateLowData:
+            pointSize = sizeof(LivoxLidarCartesianLowRawPoint);
+            break;
+        case kLivoxLidarSphericalCoordinateData:
+            pointSize = sizeof(LivoxLidarSpherPoint);
+            break;
+        case kLivoxLidarDoubleEchoData:
+            pointSize = sizeof(LivoxLidarDoubleEchoRawPoint);
+            break;
+        default:
+            return;
+        }
         // 数据验证 - 检查数据包是否有效
-        if (data->dot_num > 10000 || data->data_type > 10 || data->length > 10000) {
+        if (data->dot_num > 10000 || data->length > 10000) {
             // 数据异常，跳过处理
             return;
         }
         
-        // 计算完整数据包大小
-        size_t packet_size = sizeof(LivoxLidarEthernetPacket) + data->length - 1; // -1是因为data[1]已经包含在结构体中
+        // length 已包含协议包头。
+        size_t packet_size = data->length;
         
         // 深拷贝数据包
         uint8_t* data_copy = new uint8_t[packet_size];
@@ -309,19 +326,12 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
         LivoxLidarEthernetPacket* packet_copy = reinterpret_cast<LivoxLidarEthernetPacket*>(data_copy);
         
         // 使用QueuedConnection确保在主线程中执行
-        QMetaObject::invokeMethod(window, [window, handle, dev_type, packet_copy]() {
+        QMetaObject::invokeMethod(window, [window, handle, dev_type, packet_copy, pointSize]() {
             if (window->shutting_down || !window->pointCloudCallbackEnabled) {
                 delete[] reinterpret_cast<uint8_t*>(packet_copy);
                 return;
             }
 
-            // 再次验证数据
-            if (packet_copy->dot_num > 10000 || packet_copy->data_type > 10) {
-                window->logMessage(QString("设备%1 数据包异常，跳过处理").arg(handle));
-                delete[] reinterpret_cast<uint8_t*>(packet_copy);
-                return;
-            }
-            
             // 处理点云数据
             window->registerPointCloudDeviceIfNeeded(handle, dev_type);
             const bool isCurrentDevice = window->hasCurrentLidarHandle && window->currentLidarHandle == handle;
@@ -331,25 +341,19 @@ void LivoxViewerWindow::onPointCloudData(uint32_t handle, uint8_t dev_type, Livo
             window->decodePointCloudPacket(handle, dev_type, packet_copy);
 
             // LVX2录制：在主线程中累积并分帧写入
-            const bool isLvx2PointData =
-                packet_copy->data_type == kLivoxLidarCartesianCoordinateHighData ||
-                packet_copy->data_type == kLivoxLidarCartesianCoordinateLowData ||
-                packet_copy->data_type == kLivoxLidarSphericalCoordinateData;
-            if (window->captureState.lvx2SaveActive && isLvx2PointData) {
+            if (window->captureState.lvx2SaveActive) {
                 QMutexLocker lk(&window->captureState.lvx2Mutex);
                 uint64_t ts = LivoxCore::parseLivoxTimestamp(packet_copy->timestamp);
                 if (window->captureState.lvx2FrameStartNs == 0) window->captureState.lvx2FrameStartNs = ts;
                 uint8_t storedDataType = packet_copy->data_type;
                 const char* storedPointData = reinterpret_cast<const char*>(packet_copy->data);
-                uint32_t storedDataLength = uint32_t(packet_copy->dot_num) *
-                    (storedDataType == kLivoxLidarCartesianCoordinateLowData
-                         ? uint32_t(sizeof(LivoxLidarCartesianLowRawPoint))
-                         : uint32_t(sizeof(LivoxLidarCartesianHighRawPoint)));
+                uint32_t storedDataLength = uint32_t(packet_copy->dot_num) * pointSize;
                 QByteArray convertedData;
                 if (storedDataType == kLivoxLidarSphericalCoordinateData) {
                     convertedData = sphericalToCartesian(packet_copy->data, packet_copy->dot_num);
                     storedDataType = kLivoxLidarCartesianCoordinateHighData;
                     storedPointData = convertedData.constData();
+                    storedDataLength = uint32_t(convertedData.size());
                 }
                 QByteArray pkg;
                 Lvx2PackageHeader hdr{};
@@ -399,8 +403,8 @@ void LivoxViewerWindow::onImuData(uint32_t handle, uint8_t dev_type, LivoxLidarE
             return;
         }
 
-        // 计算完整数据包大小
-        size_t packet_size = sizeof(LivoxLidarEthernetPacket) + data->length - 1;
+        // length 已包含协议包头。
+        size_t packet_size = data->length;
 
         // 深拷贝数据包
         uint8_t* data_copy = new uint8_t[packet_size];
