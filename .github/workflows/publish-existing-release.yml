@@ -64,15 +64,11 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "TAG=v$version" >> "$GITHUB_ENV"
 
-      - name: Create or verify release tag
+      - name: Verify release tag
         shell: bash
         run: |
-          git fetch --quiet --tags origin
-          if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
-            git tag "$TAG" "$SOURCE_SHA"
-            git push origin "refs/tags/$TAG"
-          fi
-          tag_sha="$(git rev-parse "refs/tags/$TAG^{commit}")"
+          git fetch --quiet origin "refs/tags/$TAG"
+          tag_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
           if [[ "$tag_sha" != "$SOURCE_SHA" ]]; then
             echo "Tag $TAG points to $tag_sha, but run was built from $SOURCE_SHA" >&2
             exit 1
