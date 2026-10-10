@@ -233,6 +233,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
 
             const bool isCurrentDevice = window->hasCurrentLidarHandle && window->currentLidarHandle == device.handle;
             if (isCurrentDevice) {
+                window->updateParameterDeviceControls();
                 window->parameterState.updatedConfigKeys.clear();
             }
             if (device.is_connected) {
@@ -688,6 +689,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                         if (valueStr.contains("高精度")) setOptionIndex(0);
                                         else if (valueStr.contains("低精度")) setOptionIndex(1);
                                         else if (valueStr.contains("球坐标")) setOptionIndex(2);
+                                        else if (valueStr.contains("双回波")) setOptionIndex(3);
                                         window->updateProjectionControlsVisibility();
                                     } else if (key == kKeyPatternMode) {
                                             if (valueStr == "非重复扫描") setOptionIndex(0);
@@ -709,18 +711,11 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                     } else if (key == kKeyImuDataEn) {
                                         if (valueStr.contains("启用") || valueStr.contains("开启")) setOptionIndex(1);
                                         else setOptionIndex(0);
-                                    } else if (key == kKeySetEscMode) {
-                                        if (valueStr.contains("正常转速")) setOptionIndex(0);
-                                        else if (valueStr.contains("低转速")) setOptionIndex(1);
-                                    }else if (key == kKeySetPpsSyncMode){
-                                        if (valueStr.contains("关闭异常时间过滤")) setOptionIndex(0);
-                                        else if (valueStr.contains("开启异常时间过滤")) setOptionIndex(1);
-                                    }else if (key == kKeySetFovMode) {
-                                        if (valueStr.contains("Focus FOV")) setOptionIndex(0);
-                                        else if (valueStr.contains("Normal FOV")) setOptionIndex(1);
-                                    } else if (key == kKeySetEchoMode) {
-                                        if (valueStr.contains("最强回波")) setOptionIndex(0);
-                                        else if (valueStr.contains("第一回波")) setOptionIndex(1);
+                                    } else if (key == kKeySetEscMode || key == kKeySetTimeFilterMode ||
+                                               key == kKeySetFovMode || key == kKeySetEchoMode ||
+                                               key == kKeySetITOCtrl || key == kKeySetFogNoiseFilter ||
+                                               key == kKeySetPclFreqMod) {
+                                        setOptionIndex(value[0]);
                                     }
 
                                     ParameterOptionButtons::setSignalsBlocked(control, false);
@@ -787,7 +782,11 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                                     checkBox->blockSignals(false);
                                 } else if (QWidget* container = qobject_cast<QWidget*>(control)) {
                                     // 处理复杂的配置控件（网络、FOV、外参）
-                                    if (key == kKeyLidarIpCfg) {
+                                    if (key == kKeySetImuRange && length >= sizeof(LivoxLidarImuRange)) {
+                                        container->findChild<QComboBox*>("imuOutputRateCombo")->setCurrentIndex(value[0]);
+                                        container->findChild<QComboBox*>("imuAccelRangeCombo")->setCurrentIndex(value[1]);
+                                        container->findChild<QComboBox*>("imuGyroRangeCombo")->setCurrentIndex(value[2]);
+                                    } else if (key == kKeyLidarIpCfg) {
                                         // 雷达IP配置更新
                                         // 从valueStr中解析IP、掩码、网关信息
                                         // 格式: "IP:192.168.1.50 Mask:255.255.255.0 Gateway:192.168.1.1"

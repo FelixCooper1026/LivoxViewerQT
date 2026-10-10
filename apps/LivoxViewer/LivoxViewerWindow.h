@@ -205,6 +205,7 @@ private:
     QWidget* createSlamControlBar(QWidget* parent);
     void createDevicePanel();
     void createParameterPanel();
+    void updateParameterDeviceControls();
     void createImuPanel();
     void createFileInfoPanel();
     void createSlamInfoPanel();

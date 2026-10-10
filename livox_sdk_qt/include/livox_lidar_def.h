@@ -33,7 +33,9 @@
 
 #define LIVOX_LIDAR_SDK_MAJOR_VERSION       1
 #define LIVOX_LIDAR_SDK_MINOR_VERSION       5
-#define LIVOX_LIDAR_SDK_PATCH_VERSION       0
+#define LIVOX_LIDAR_SDK_PATCH_VERSION       2
+#define LIVOX_LIDAR_SDK_BUILD_DATE          20261010
+#define LIVOX_LIDAR_SDK_VERSION_STRING     "1.5.2-20261010"
 
 #define kBroadcastCodeSize 16
 
@@ -103,7 +105,11 @@ typedef enum {
   kKeySetFovMode              = 0x0022,
   kKeySetEchoMode             = 0x0024,
   kKeySetNTPServerIp          = 0x0025,
-  kKeySetPpsSyncMode          = 0x0026,
+  kKeySetTimeFilterMode       = 0x0026,
+  kKeySetITOCtrl              = 0x0027,
+  kKeySetFogNoiseFilter       = 0x0028,
+  kKeySetPclFreqMod           = 0x0029,
+  kKeySetImuRange             = 0x002B,
 
   kKeyLogParamSet             = 0x7FFF,
 
@@ -211,7 +217,7 @@ typedef enum {
   kLivoxLidarCartesianCoordinateHighData = 0x01,
   kLivoxLidarCartesianCoordinateLowData = 0x02,
   kLivoxLidarSphericalCoordinateData = 0x03,
-  kLivoxLidarDoubleEchoData            = 0x11
+  kLivoxLidarDoubleEchoData          = 0x11
 } LivoxLidarPointDataType;
 
 typedef enum {
@@ -279,18 +285,69 @@ typedef enum {
 } LivoxLidarWorkMode;
 
 typedef enum {
-  kLivoxEscSpeedNormal = 0x00,
-  kLivoxEscSpeedSlow = 0x01,
+  kLivoxFogNoiseFilterDisable = 0x00,
+  kLivoxRainFilterMode= 0x01,
+  kLivoxFogFilterMode= 0x02
+} LivoxFogNoiseFilterMode;
+
+typedef enum {
+  kLivoxItoCtrlDisable = 0x00,
+  kLivoxItoCtrlEnable = 0x01,
+  kLivoxItoCtrlAuto   = 0x02
+} LivoxLidarItoCtrlMode;
+
+
+typedef enum {
+  kLivoxLidarPclFreq80k  = 0x00,
+  kLivoxLidarPclFreq50k = 0x01,
+  kLivoxLidarPclFreq100k = 0x02
+} LivoxLidarPclFreqMod;
+
+typedef enum {
+  kLivoxLidarTimeFilterNormal = 0x00,
+  kLivoxLidarTimeFilterSpec   = 0x01
+} LivoxLidarTimeFilterMode;
+
+typedef enum {
+  kLivoxLidarImuOutRate200Hz = 0x00,
+  kLivoxLidarImuOutRate500Hz = 0x01,
+  kLivoxLidarImuOutRate100Hz = 0x02,
+  kLivoxLidarImuOutRate50Hz  = 0x03
+} LivoxLidarImuOutRate;
+
+typedef enum {
+  kLivoxLidarAccelRange4G  = 0x00,
+  kLivoxLidarAccelRange8G  = 0x01,
+  kLivoxLidarAccelRange16G = 0x02,
+  kLivoxLidarAccelRange32G = 0x03
+} LivoxLidarAccelRange;
+
+typedef enum {
+  kLivoxLidarGyroRange2000Dps    = 0x00,
+  kLivoxLidarGyroRange1000Dps    = 0x01,
+  kLivoxLidarGyroRange500Dps     = 0x02,
+  kLivoxLidarGyroRange250Dps     = 0x03,
+  kLivoxLidarGyroRange125Dps     = 0x04,
+  kLivoxLidarGyroRange62_5Dps    = 0x05,
+  kLivoxLidarGyroRange31_25Dps   = 0x06,
+  kLivoxLidarGyroRange15_625Dps  = 0x07
+} LivoxLidarGyroRange;
+
+typedef struct {
+  uint8_t imu_out_rate;   /**< IMU output rate, refer to \ref LivoxLidarImuOutRate. */
+  uint8_t accel_range;    /**< Accelerometer range, refer to \ref LivoxLidarAccelRange. */
+  uint8_t gyro_range;     /**< Gyroscope range, refer to \ref LivoxLidarGyroRange. */
+} LivoxLidarImuRange;
+
+typedef enum {
+  kLivoxEscSpeedNormal = 0x00, // mid360s / mid360l 通用
+  kLivoxEscSpeedSlow = 0x01, // mid360s / mid360l 通用
+  kLivoxEscSpeedHigh = 0x02 // mid360l only
 } LivoxLidarEscMode;
 
 typedef struct {
   char host_ip[16];
 } NTPServerIpInfo;
-
-typedef enum {
-  kLivoxPpsSyncNormal = 0x00,
-  kLivoxPpsSyncSpec = 0x01,
-} LivoxLidarPpsSyncMode;
 
 typedef enum {
   kLivoxSmallFovMode = 0x00,
@@ -425,7 +482,13 @@ typedef struct {
   uint8_t             fusa_en;                  // 0x001D
   uint8_t             esc_mode;                 // 0x0021
   uint8_t             fov_mode;                 // 0x0022
-  uint8_t             pps_sync_mode;            // 0x0026
+  uint8_t             echo_mode;                // 0x0024
+  NTPServerIpInfo     ntp_server_ip;            // 0x0025
+  uint8_t             time_filter_mode;         // 0x0026
+  uint8_t             ito_mode;                 // 0x0027
+  uint8_t             fog_noise_filter;         // 0x0028
+  uint8_t             pcl_freq_mode;            // 0x0029
+  LivoxLidarImuRange  imu_range;                // 0x002B
 
   char                sn[16];                   // 0x8000
   char                product_info[64];         // 0x8001

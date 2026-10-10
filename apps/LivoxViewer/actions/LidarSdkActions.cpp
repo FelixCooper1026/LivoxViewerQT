@@ -114,12 +114,14 @@ void LivoxViewerWindow::setCurrentDeviceHandle(uint32_t handle)
 {
     currentLidarHandle = handle;
     hasCurrentLidarHandle = true;
+    updateParameterDeviceControls();
 }
 
 void LivoxViewerWindow::clearCurrentDevice()
 {
     currentLidarHandle = 0;
     hasCurrentLidarHandle = false;
+    updateParameterDeviceControls();
 }
 
 std::optional<NetworkInterfaceService::NetworkInterfaceInfo> LivoxViewerWindow::selectedLidarInterface() const

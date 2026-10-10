@@ -1,4 +1,5 @@
 #include "PushMsgParser.h"
+#include "LidarParameterService.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -344,6 +345,10 @@ QString keyName(uint16_t key)
     case 0x0024: return QStringLiteral("回波模式");
     case 0x0025: return QStringLiteral("NTP 服务器 IP");
     case 0x0026: return QStringLiteral("异常时间过滤");
+    case 0x0027: return QStringLiteral("ITO控制");
+    case 0x0028: return QStringLiteral("雨雾过滤");
+    case 0x0029: return QStringLiteral("点频");
+    case 0x002B: return QStringLiteral("IMU配置");
     case 0x8000: return QStringLiteral("SN 号");
     case 0x8001: return QStringLiteral("产品信息");
     case 0x8002: return QStringLiteral("固件版本");
@@ -376,6 +381,7 @@ QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length)
             case 0x01: return QStringLiteral("直角坐标（32 bits）");
             case 0x02: return QStringLiteral("直角坐标（16 bits）");
             case 0x03: return QStringLiteral("球坐标");
+            case 0x11: return QStringLiteral("双回波直角坐标");
             }
         }
         break;
@@ -480,11 +486,6 @@ QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length)
             if (data[0] == 2) return QStringLiteral("待机状态");
         }
         break;
-    case 0x0021:
-        if (length >= 1) {
-            return data[0] == 0 ? QStringLiteral("默认转速") : QStringLiteral("低转速");
-        }
-        break;
     case 0x0022:
         if (length >= 1) {
             return data[0] == 0 ? QStringLiteral("Focus Detection Mode（小 FOV）")
@@ -501,13 +502,13 @@ QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length)
             return ipv4Value(data);
         }
         break;
+    case 0x0021:
     case 0x0026:
-        if (length >= 1) {
-            return data[0] == 0
-                ? QStringLiteral("无异常时间过滤（时间回退可能导致点云中断）")
-                : QStringLiteral("有异常时间过滤（时间回退不会导致点云中断）");
-        }
-        break;
+    case 0x0027:
+    case 0x0028:
+    case 0x0029:
+    case 0x002B:
+        return LidarParameterService::formatValue(key, const_cast<uint8_t*>(data), uint16_t(length));
     case 0x8000:
     case 0x8001:
         return textValue(data, length);

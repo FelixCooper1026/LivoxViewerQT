@@ -30,12 +30,7 @@ void shutdown()
 
 QString versionString()
 {
-    LivoxLidarSdkVer sdkVersion;
-    GetLivoxLidarSdkVer(&sdkVersion);
-    return QString("v%1.%2.%3")
-        .arg(sdkVersion.major)
-        .arg(sdkVersion.minor)
-        .arg(sdkVersion.patch);
+    return QStringLiteral("v%1").arg(QString::fromLatin1(GetLivoxLidarSdkVersionString()));
 }
 
 QString statusString(livox_status status)

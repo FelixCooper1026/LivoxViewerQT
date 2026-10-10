@@ -564,14 +564,15 @@ const QVector<uint16_t>& infoKeys()
         kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
         kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
         kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode,
-        kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp
+        kKeySetTimeFilterMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp,
+        kKeySetITOCtrl, kKeySetFogNoiseFilter, kKeySetPclFreqMod, kKeySetImuRange
     };
     return keys;
 }
 
 QString infoHeader()
 {
-    return QStringLiteral("时间戳,序列号,产品信息,固件版本,LOADER版本,硬件版本,MAC地址,当前工作状态,核心温度 ℃,上电次数,本地时间,最后同步时间,时间偏移,时间同步类型,雷达诊断状态,固件类型,HMS诊断码,点云格式,扫描模式,探测模式,工作模式,IMU数据发送,雷达IP配置,状态信息目的IP,点云数据目的IP,IMU数据目的IP,FOV0配置,FOV1配置,FOV使能状态,安装姿态,电机转速,异常时间过滤,FOV模式,回波模式,NTP服务器IP");
+    return QStringLiteral("时间戳,序列号,产品信息,固件版本,LOADER版本,硬件版本,MAC地址,当前工作状态,核心温度 ℃,上电次数,本地时间,最后同步时间,时间偏移,时间同步类型,雷达诊断状态,固件类型,HMS诊断码,点云格式,扫描模式,探测模式,工作模式,IMU数据发送,雷达IP配置,状态信息目的IP,点云数据目的IP,IMU数据目的IP,FOV0配置,FOV1配置,FOV使能状态,安装姿态,电机转速,异常时间过滤,FOV模式,回波模式,NTP服务器IP,ITO控制,雨雾过滤,点频,IMU配置");
 }
 
 bool updateInfoSnapshot(const uint8_t* payload, size_t length, QMap<uint16_t, QString>& snapshot)

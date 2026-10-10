@@ -40,7 +40,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
             switch (key) {
                 case kKeyPclDataType: {
                     paramName = "点云格式";
-                    LivoxLidarPointDataType dataType = static_cast<LivoxLidarPointDataType>(index + 1); // 0->1, 1->2, 2->3
+                    LivoxLidarPointDataType dataType = index == 3 ? kLivoxLidarDoubleEchoData : static_cast<LivoxLidarPointDataType>(index + 1);
                     livox_status status = SetLivoxLidarPclDataType(currentDevice.handle, dataType, onAsyncControlResponse, this);
                     success = (status == kLivoxLidarStatusSuccess);
                     newValue = currentText;
@@ -105,32 +105,38 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                 }
                 case kKeySetEscMode: {
                     paramName = "电机转速";
-                    LivoxLidarEscMode motorSpeed;
-                    switch (index) {
-                        case 0: motorSpeed = kLivoxEscSpeedNormal; break;
-                        case 1: motorSpeed = kLivoxEscSpeedSlow; break;
-                        default: 
-                            logMessage(QString("电机转速索引无效: %1").arg(index));
-                    }
-                    livox_status status = SetLivoxLidarEscMode(currentDevice.handle, motorSpeed, onAsyncControlResponse, this);
-                    success = (status == kLivoxLidarStatusSuccess);
+                    success = SetLivoxLidarEscMode(currentDevice.handle, static_cast<LivoxLidarEscMode>(index),
+                                                   onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
                     newValue = currentText;
                     break;
                 }
-                case kKeySetPpsSyncMode: {
+                case kKeySetTimeFilterMode: {
                     paramName = "异常时间过滤";
-                    LivoxLidarPpsSyncMode syncFilterMode;
-                    switch (index) {
-                        case 0: syncFilterMode = kLivoxPpsSyncNormal; break;
-                        case 1: syncFilterMode = kLivoxPpsSyncSpec; break;
-                        default: 
-                            logMessage(QString("异常时间过滤索引无效: %1").arg(index));
-                    }
-                    livox_status status = SetLivoxLidarPpsSyncMode(currentDevice.handle, syncFilterMode, onAsyncControlResponse, this);
-                    success = (status == kLivoxLidarStatusSuccess);
+                    success = SetLivoxLidarTimeFilterMode(currentDevice.handle, static_cast<LivoxLidarTimeFilterMode>(index),
+                                                          onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
                     newValue = currentText;
                     break;
-                    
+                }
+                case kKeySetITOCtrl: {
+                    paramName = "ITO控制";
+                    success = SetLivoxLidarITOCtrlMode(currentDevice.handle, static_cast<LivoxLidarItoCtrlMode>(index),
+                                                       onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
+                    newValue = currentText;
+                    break;
+                }
+                case kKeySetFogNoiseFilter: {
+                    paramName = "雨雾过滤";
+                    success = SetLidarFogNoiseFilterMode(currentDevice.handle, static_cast<LivoxFogNoiseFilterMode>(index),
+                                                         onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
+                    newValue = currentText;
+                    break;
+                }
+                case kKeySetPclFreqMod: {
+                    paramName = "点频";
+                    success = SetLivoxLidarPclFreqMod(currentDevice.handle, static_cast<LivoxLidarPclFreqMod>(index),
+                                                      onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
+                    newValue = currentText;
+                    break;
                 }
                 case kKeySetFovMode: {
                     paramName = "FOV模式";
@@ -178,6 +184,17 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     logMessage(QString("未知的参数key: 0x%1").arg(key, 4, 16, QChar('0')));
                     return;
             }
+        } else if (key == kKeySetImuRange) {
+            QComboBox* rate = control->findChild<QComboBox*>("imuOutputRateCombo");
+            QComboBox* accel = control->findChild<QComboBox*>("imuAccelRangeCombo");
+            QComboBox* gyro = control->findChild<QComboBox*>("imuGyroRangeCombo");
+            paramName = "IMU配置";
+            newValue = QString("%1 / %2 / %3").arg(rate->currentText(), accel->currentText(), gyro->currentText());
+            success = SetLivoxLidarImuRange(currentDevice.handle,
+                                           static_cast<LivoxLidarImuOutRate>(rate->currentIndex()),
+                                           static_cast<LivoxLidarAccelRange>(accel->currentIndex()),
+                                           static_cast<LivoxLidarGyroRange>(gyro->currentIndex()),
+                                           onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
         } else if (QCheckBox* checkBox = qobject_cast<QCheckBox*>(control)) {
             bool enabled = checkBox->isChecked();
             
@@ -564,7 +581,8 @@ bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durati
         kKeyTimeOffset, kKeyTimeSyncType, kKeyLidarDiagStatus, kKeyFwType, kKeyHmsCode,
         kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
         kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
-        kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetPpsSyncMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp
+        kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude, kKeySetEscMode, kKeySetTimeFilterMode, kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp,
+        kKeySetITOCtrl, kKeySetFogNoiseFilter, kKeySetPclFreqMod, kKeySetImuRange
     };
 
     parameterState.recordedOrder = allKeys;
@@ -601,10 +619,14 @@ bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durati
             case kKeyFovCfgEn: parameterState.recordedKeys[key] = "FOV使能状态"; break;
             case kKeyInstallAttitude: parameterState.recordedKeys[key] = "安装姿态"; break;
             case kKeySetEscMode: parameterState.recordedKeys[key] = "电机转速"; break;
-            case kKeySetPpsSyncMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
+            case kKeySetTimeFilterMode: parameterState.recordedKeys[key] = "异常时间过滤"; break;
             case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
             case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
             case kKeySetNTPServerIp: parameterState.recordedKeys[key] = "NTP服务器IP"; break;
+            case kKeySetITOCtrl: parameterState.recordedKeys[key] = "ITO控制"; break;
+            case kKeySetFogNoiseFilter: parameterState.recordedKeys[key] = "雨雾过滤"; break;
+            case kKeySetPclFreqMod: parameterState.recordedKeys[key] = "点频"; break;
+            case kKeySetImuRange: parameterState.recordedKeys[key] = "IMU配置"; break;
             default: parameterState.recordedKeys[key] = QString("参数0x%1").arg(key, 4, 16, QChar('0')); break;
         }
     }

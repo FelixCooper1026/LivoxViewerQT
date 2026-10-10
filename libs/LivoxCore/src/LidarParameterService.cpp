@@ -23,6 +23,7 @@ QString formatValue(uint16_t key, uint8_t* value, uint16_t length)
                     case 0x01: return "高精度笛卡尔坐标";
                     case 0x02: return "低精度笛卡尔坐标";
                     case 0x03: return "球坐标";
+                    case 0x11: return "双回波笛卡尔坐标";
                     default: return QString("未知类型: %1").arg(dataType);
                 }
             }
@@ -181,17 +182,58 @@ QString formatValue(uint16_t key, uint8_t* value, uint16_t length)
         }
         case kKeySetEscMode: { // 电机转速
             if (length >= 1) {
-                return value[0] ? "低转速" : "正常转速";
+                switch (value[0]) {
+                    case kLivoxEscSpeedNormal: return "正常转速";
+                    case kLivoxEscSpeedSlow: return "低转速";
+                    case kLivoxEscSpeedHigh: return "高转速";
+                    default: return QString("未知转速: %1").arg(value[0]);
+                }
             }
             break;
         }
-        case kKeySetPpsSyncMode: { // 异常时间过滤
+        case kKeySetTimeFilterMode: { // 异常时间过滤
             if (length >= 1) {
                 uint8_t mode = value[0];
                 switch (mode) {
-                    case 0x00: return "关闭异常时间过滤";
-                    case 0x01: return "开启异常时间过滤";
+                    case 0x00: return "开启异常时间过滤";
+                    case 0x01: return "关闭异常时间过滤";
                     default: return QString("未知模式: %1").arg(mode);
+                }
+            }
+            break;
+        }
+        case kKeySetITOCtrl: {
+            switch (value[0]) {
+                case kLivoxItoCtrlDisable: return "关闭";
+                case kLivoxItoCtrlEnable: return "开启";
+                case kLivoxItoCtrlAuto: return "自动";
+                default: return QString("未知ITO模式: %1").arg(value[0]);
+            }
+        }
+        case kKeySetFogNoiseFilter: {
+            switch (value[0]) {
+                case kLivoxFogNoiseFilterDisable: return "关闭";
+                case kLivoxRainFilterMode: return "雨过滤";
+                case kLivoxFogFilterMode: return "雾过滤";
+                default: return QString("未知过滤模式: %1").arg(value[0]);
+            }
+        }
+        case kKeySetPclFreqMod: {
+            switch (value[0]) {
+                case kLivoxLidarPclFreq80k: return "80k";
+                case kLivoxLidarPclFreq50k: return "50k";
+                case kLivoxLidarPclFreq100k: return "100k";
+                default: return QString("未知点频: %1").arg(value[0]);
+            }
+        }
+        case kKeySetImuRange: {
+            if (length >= sizeof(LivoxLidarImuRange)) {
+                const QStringList rates = {"200 Hz", "500 Hz", "100 Hz", "50 Hz"};
+                const QStringList accel = {"±4 g", "±8 g", "±16 g", "±32 g"};
+                const QStringList gyro = {"±2000 dps", "±1000 dps", "±500 dps", "±250 dps",
+                                          "±125 dps", "±62.5 dps", "±31.25 dps", "±15.625 dps"};
+                if (value[0] < rates.size() && value[1] < accel.size() && value[2] < gyro.size()) {
+                    return QString("%1 / %2 / %3").arg(rates[value[0]], accel[value[1]], gyro[value[2]]);
                 }
             }
             break;

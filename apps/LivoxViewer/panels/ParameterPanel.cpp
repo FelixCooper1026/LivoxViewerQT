@@ -366,13 +366,39 @@ void LivoxViewerWindow::createParameterPanel()
 
     addBasicOptionRow("工作模式", kKeyWorkMode, {{"采样模式", 0}, {"待机模式", 1}}, 0);
     addBasicOptionRow("扫描模式", kKeyPatternMode, {{"非重复扫描", 0}, {"重复扫描", 1}, {"低帧率重复扫描", 2}}, 0);
-    addBasicOptionRow("点云格式", kKeyPclDataType, {{"高精度直角", 0}, {"低精度直角", 1}, {"球坐标", 2}}, 0);
+    addBasicOptionRow("点云格式", kKeyPclDataType, {{"高精度直角", 0}, {"低精度直角", 1}, {"球坐标", 2}, {"双回波直角", 3}}, 0);
     addBasicOptionRow("探测模式", kKeyDetectMode, {{"正常模式", 0}, {"敏感模式", 1}}, 0);
     addBasicOptionRow("IMU数据发送", kKeyImuDataEn, {{"开启", 1}, {"关闭", 0}}, 0);
-    addBasicOptionRow("电机转速", kKeySetEscMode, {{"正常转速", 0}, {"低转速", 1}}, 0);
-    addBasicOptionRow("异常时间过滤", kKeySetPpsSyncMode, {{"开启", 1}, {"关闭", 0}}, 0);
+    addBasicOptionRow("电机转速", kKeySetEscMode, {{"正常转速", 0}, {"低转速", 1}, {"高转速", 2}}, 0);
+    addBasicOptionRow("异常时间过滤", kKeySetTimeFilterMode, {{"开启", 0}, {"关闭", 1}}, 0);
+    parameterState.controls[kKeySetTimeFilterMode]->setToolTip("开启：丢弃时间戳倒退的点云；关闭：允许时间戳倒退的点云输出。");
     addBasicOptionRow("FOV模式", kKeySetFovMode, {{"Normal", 1}, {"Focus", 0}}, 1);
     addBasicOptionRow("回波模式", kKeySetEchoMode, {{"最强回波", 0}, {"第一回波", 1}}, 0);
+    addBasicOptionRow("ITO控制", kKeySetITOCtrl, {{"关闭", 0}, {"开启", 1}, {"自动", 2}}, 0);
+    addBasicOptionRow("雨雾过滤", kKeySetFogNoiseFilter, {{"关闭", 0}, {"雨过滤", 1}, {"雾过滤", 2}}, 0);
+    addBasicOptionRow("点频", kKeySetPclFreqMod, {{"80k", 0}, {"50k", 1}, {"100k", 2}}, 0);
+
+    QWidget* imuRangeControl = new QWidget(basicTab);
+    QGridLayout* imuRangeLayout = new QGridLayout(imuRangeControl);
+    imuRangeLayout->setContentsMargins(0, 0, 0, 0);
+    auto addImuCombo = [imuRangeControl, imuRangeLayout](int row, const QString& title,
+                                                       const QString& name, const QStringList& values) {
+        QComboBox* combo = new QComboBox(imuRangeControl);
+        combo->setObjectName(name);
+        combo->addItems(values);
+        imuRangeLayout->addWidget(new QLabel(title, imuRangeControl), row, 0);
+        imuRangeLayout->addWidget(combo, row, 1);
+    };
+    addImuCombo(0, "输出频率", "imuOutputRateCombo", {"200 Hz", "500 Hz", "100 Hz", "50 Hz"});
+    addImuCombo(1, "加速度计", "imuAccelRangeCombo", {"±4 g", "±8 g", "±16 g", "±32 g"});
+    addImuCombo(2, "陀螺仪", "imuGyroRangeCombo", {"±2000 dps", "±1000 dps", "±500 dps", "±250 dps",
+                                               "±125 dps", "±62.5 dps", "±31.25 dps", "±15.625 dps"});
+    QPushButton* imuApplyButton = new QPushButton("应用", imuRangeControl);
+    imuRangeLayout->addWidget(imuApplyButton, 3, 1, Qt::AlignRight);
+    basicLayout->addWidget(createConfigPanelSection("IMU配置", imuRangeControl, basicTab));
+    parameterState.controls[kKeySetImuRange] = imuRangeControl;
+    connect(imuApplyButton, &QPushButton::clicked, this, [this]() { onParamConfigChanged(kKeySetImuRange); });
+
     basicLayout->addStretch();
 
     paramTabWidget->addTab(basicTab, "基本配置");
@@ -751,4 +777,33 @@ void LivoxViewerWindow::createParameterPanel()
     paramsDock->raise();
     activeRightDock = paramsDock;
     attrDock->hide();
+    updateParameterDeviceControls();
+}
+
+void LivoxViewerWindow::updateParameterDeviceControls()
+{
+    LidarDeviceInfo device;
+    const bool connected = tryGetCurrentDevice(device) && device.is_connected;
+    const bool avia2 = connected && device.dev_type == kLivoxLidarTypeAvia2;
+    const bool mid360l = connected && device.dev_type == kLivoxLidarTypeMid360l;
+    const bool mid360s = connected && device.dev_type == kLivoxLidarTypeMid360s;
+    if (QWidget* pclControl = parameterState.controls.value(kKeyPclDataType)) {
+        ParameterOptionButtons::buttonGroup(pclControl)->button(3)->setVisible(avia2 || mid360l);
+    }
+    for (uint16_t key : {kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp,
+                         kKeySetITOCtrl, kKeySetFogNoiseFilter,
+                         kKeySetEscMode, kKeySetTimeFilterMode, kKeySetImuRange, kKeySetPclFreqMod}) {
+        QWidget* control = parameterState.controls.value(key);
+        if (!control) continue;
+        const bool aviaParameter = key == kKeySetFovMode || key == kKeySetEchoMode ||
+                                   key == kKeySetNTPServerIp || key == kKeySetITOCtrl ||
+                                   key == kKeySetFogNoiseFilter;
+        const bool supported = aviaParameter ? avia2 :
+                               key == kKeySetPclFreqMod ? mid360l : (mid360s || mid360l);
+        control->parentWidget()->setVisible(supported);
+        control->setEnabled(supported && device.parameter_query_ready);
+        if (key == kKeySetEscMode) {
+            ParameterOptionButtons::buttonGroup(control)->button(kLivoxEscSpeedHigh)->setVisible(mid360l);
+        }
+    }
 }
