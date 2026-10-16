@@ -1,6 +1,6 @@
 #include "LivoxViewerWindow.h"
-#include "LidarParameterService.h"
 #include "LidarSdkService.h"
+#include "LidarParameterService.h"
 #include "widgets/ParameterOptionButtons.h"
 #include <QRegularExpression>
 #include <QDir>
@@ -18,7 +18,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
     LidarDeviceInfo currentDevice;
     if (!tryGetCurrentDevice(currentDevice) ||
         !currentDevice.is_connected ||
-        !currentDevice.parameter_query_ready) {
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(key)) {
         return;
     }
     
@@ -35,6 +35,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
     try {
         if (ParameterOptionButtons::isOptionControl(control)) {
             int index = ParameterOptionButtons::currentIndex(control);
+            if (!LidarParameterService::isOptionSupported(currentDevice.dev_type, key, index)) return;
             const QString currentText = ParameterOptionButtons::currentText(control);
             
             switch (key) {
@@ -289,7 +290,8 @@ void LivoxViewerWindow::onIpConfigResponse(livox_status status, uint32_t handle,
 void LivoxViewerWindow::applyIpConfig(uint16_t key, const QString& ip, const QString& mask, const QString& gateway)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(key)) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -334,7 +336,8 @@ void LivoxViewerWindow::applyIpConfig(uint16_t key, const QString& ip, const QSt
 void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int port)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(key)) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -394,7 +397,8 @@ void LivoxViewerWindow::applyHostIpConfig(uint16_t key, const QString& ip, int p
 void LivoxViewerWindow::applyNtpServerIpConfig(const QString& ip)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(kKeySetNTPServerIp)) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -423,7 +427,8 @@ void LivoxViewerWindow::applyNtpServerIpConfig(const QString& ip)
 void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, int pitchStart, int pitchStop)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(key)) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -454,7 +459,8 @@ void LivoxViewerWindow::applyFovConfig(uint16_t key, int yawStart, int yawStop, 
 void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pitch, double yaw, int x, int y, int z)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(key)) {
         logMessage("设备未连接，无法配置");
         return;
     }
@@ -480,7 +486,8 @@ void LivoxViewerWindow::applyAttitudeConfig(uint16_t key, double roll, double pi
 void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fov1Check)
 {
     LidarDeviceInfo currentDevice;
-    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected) {
+    if (!tryGetCurrentDevice(currentDevice) || !currentDevice.is_connected ||
+        !currentDevice.parameter_query_ready || !parameterState.availableKeys.contains(kKeyFovCfgEn)) {
         return;
     }
     
@@ -490,7 +497,7 @@ void LivoxViewerWindow::updateFovEnableState(QCheckBox* fov0Check, QCheckBox* fo
     if (fov0Check->isChecked()) {
         fovEnableValue |= 1; // 设置FOV0位
     }
-    if (fov1Check->isChecked()) {
+    if (parameterState.availableKeys.contains(kKeyFovCfg1) && fov1Check->isChecked()) {
         fovEnableValue |= 2; // 设置FOV1位
     }
     
@@ -522,9 +529,7 @@ void LivoxViewerWindow::onParamQueryTimeout()
         return;
     }
     
-    // 只查询状态参数，不查询可配置参数
-    // 状态参数：序列号、产品信息、版本、温度、时间等
-    // 可配置参数：工作模式、扫描模式、点云格式等
+    // SDK 按型号查询参数；回调持续更新状态值，保留用户正在编辑的配置值。
     livox_status status = QueryLivoxLidarInternalInfo(currentDevice.handle, onQueryInternalInfoResponse, this);
     
     if (status != kLivoxLidarStatusSuccess) {
@@ -535,11 +540,6 @@ void LivoxViewerWindow::onParamQueryTimeout()
             statusLabelBar->setText("查询超时，请检查网络连接");
         }
     }
-}
-
-QString LivoxViewerWindow::formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length)
-{
-    return LidarParameterService::formatValue(key, value, length);
 }
 
 bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durationSec, QString& errorMessage)

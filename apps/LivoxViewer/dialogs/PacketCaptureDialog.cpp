@@ -1003,6 +1003,7 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
     }
 
     const int dataLinkType = pcap_datalink(capture);
+    QMap<QString, uint8_t> deviceTypes;
     QVector<PacketRow> batch;
     batch.reserve(kPacketBatchSize);
     auto lastBatchPost = std::chrono::steady_clock::now();
@@ -1043,7 +1044,8 @@ void PacketCaptureDialog::captureLoop(QString systemName, QString ipv4)
                                   packetNumber,
                                   timestamp - firstTimestamp,
                                   qint64(header->ts.tv_sec),
-                                  qint64(header->ts.tv_usec)));
+                                  qint64(header->ts.tv_usec),
+                                  deviceTypes));
         if (batch.size() >= kPacketBatchSize ||
             std::chrono::steady_clock::now() - lastBatchPost >= std::chrono::milliseconds(100)) {
             postPackets(std::move(batch));
@@ -1172,6 +1174,7 @@ void PacketCaptureDialog::capturePrivilegedSession(QProcess& helper, const QStri
         return;
     }
 
+    QMap<QString, uint8_t> deviceTypes;
     QVector<PacketRow> batch;
     batch.reserve(kPacketBatchSize);
     auto lastBatchPost = std::chrono::steady_clock::now();
@@ -1210,7 +1213,8 @@ void PacketCaptureDialog::capturePrivilegedSession(QProcess& helper, const QStri
             packetNumber,
             timestamp - firstTimestamp,
             packetHeader.timestampSec,
-            packetHeader.timestampUsec));
+            packetHeader.timestampUsec,
+            deviceTypes));
         if (batch.size() >= kPacketBatchSize ||
             std::chrono::steady_clock::now() - lastBatchPost >= std::chrono::milliseconds(100)) {
             postPackets(std::move(batch));
@@ -1242,7 +1246,8 @@ PacketCaptureDialog::PacketRow PacketCaptureDialog::decodePacket(const unsigned 
                                                                  quint64 number,
                                                                  double relativeTimeSec,
                                                                  qint64 timestampSec,
-                                                                 qint64 timestampUsec)
+                                                                 qint64 timestampUsec,
+                                                                 QMap<QString, uint8_t>& deviceTypes)
 {
     PacketRow packet;
     packet.number = number;
@@ -1301,12 +1306,17 @@ PacketCaptureDialog::PacketRow PacketCaptureDialog::decodePacket(const unsigned 
                 packet.protocol = QStringLiteral("PTP");
             }
             dataOffset = transportOffset + 8;
+            const bool fromLidar = capturedLength - dataOffset >= 24 &&
+                                   data[dataOffset] == 0xAA && data[dataOffset + 11] == 1;
+            const QString& deviceIp = fromLidar ? packet.source : packet.destination;
             const PushMsgParser::ProtocolDecodeResult decoded =
                 PushMsgParser::decodeProtocolPacket(sourcePort,
                                                     destinationPort,
                                                     data + dataOffset,
-                                                    size_t(capturedLength - dataOffset));
+                                                    size_t(capturedLength - dataOffset),
+                                                    deviceTypes.value(deviceIp));
             if (decoded.valid) {
+                if (decoded.deviceType != 0) deviceTypes.insert(deviceIp, decoded.deviceType);
                 packet.protocol = decoded.protocol;
                 packet.decodedSummary = decoded.summary;
                 packet.decodedDetails = decoded.details;

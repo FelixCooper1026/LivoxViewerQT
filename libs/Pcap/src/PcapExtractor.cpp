@@ -575,7 +575,7 @@ QString infoHeader()
     return QStringLiteral("时间戳,序列号,产品信息,固件版本,LOADER版本,硬件版本,MAC地址,当前工作状态,核心温度 ℃,上电次数,本地时间,最后同步时间,时间偏移,时间同步类型,雷达诊断状态,固件类型,HMS诊断码,点云格式,扫描模式,探测模式,工作模式,IMU数据发送,雷达IP配置,状态信息目的IP,点云数据目的IP,IMU数据目的IP,FOV0配置,FOV1配置,FOV使能状态,安装姿态,电机转速,异常时间过滤,FOV模式,回波模式,NTP服务器IP,ITO控制,雨雾过滤,点频,IMU配置");
 }
 
-bool updateInfoSnapshot(const uint8_t* payload, size_t length, QMap<uint16_t, QString>& snapshot)
+bool updateInfoSnapshot(const uint8_t* payload, size_t length, uint8_t deviceType, QMap<uint16_t, QString>& snapshot)
 {
     if (length < 28) return false;
     const uint16_t count = readLe16(payload + 24);
@@ -593,7 +593,7 @@ bool updateInfoSnapshot(const uint8_t* payload, size_t length, QMap<uint16_t, QS
                 snapshot.insert(key, QString::number(double(temperature) / 100.0, 'f', 2));
             } else {
                 snapshot.insert(key, LidarParameterService::formatValue(key,
-                    const_cast<uint8_t*>(payload + offset), valueLength));
+                    const_cast<uint8_t*>(payload + offset), valueLength, deviceType));
             }
         }
         offset += valueLength;
@@ -691,7 +691,7 @@ Result extractCsv(const QString& sourcePath,
         } else {
             if (packet.srcPort != PcapUdp::kLivoxPushDataPort) continue;
             QMap<uint16_t, QString>& snapshot = snapshots[lidarId];
-            if (!updateInfoSnapshot(packet.payload, packet.payloadLen, snapshot)) continue;
+            if (!updateInfoSnapshot(packet.payload, packet.payloadLen, device.push.deviceType, snapshot)) continue;
             if (!snapshot.contains(kKeySn)) snapshot.insert(kKeySn, sn);
             if (!snapshot.contains(kKeyLidarIpCfg)) snapshot.insert(kKeyLidarIpCfg, packet.srcIp);
             const qint64 timestampMs = qint64(packetHeader->ts.tv_sec) * 1000 + packetHeader->ts.tv_usec / 1000;

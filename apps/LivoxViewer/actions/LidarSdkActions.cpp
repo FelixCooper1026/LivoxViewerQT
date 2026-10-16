@@ -112,15 +112,19 @@ bool LivoxViewerWindow::tryGetCurrentDevice(LidarDeviceInfo& out)
 
 void LivoxViewerWindow::setCurrentDeviceHandle(uint32_t handle)
 {
+    const bool changed = !hasCurrentLidarHandle || currentLidarHandle != handle;
     currentLidarHandle = handle;
     hasCurrentLidarHandle = true;
+    if (changed) resetParameterDeviceControls();
     updateParameterDeviceControls();
+    if (changed) onParamQueryTimeout();
 }
 
 void LivoxViewerWindow::clearCurrentDevice()
 {
     currentLidarHandle = 0;
     hasCurrentLidarHandle = false;
+    resetParameterDeviceControls();
     updateParameterDeviceControls();
 }
 

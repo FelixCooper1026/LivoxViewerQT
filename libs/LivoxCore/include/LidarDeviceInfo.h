@@ -16,7 +16,7 @@ struct LidarDeviceInfo {
     int diagnostic_severity = 0;
     bool is_connected;
     bool is_streaming;
-    bool parameter_query_ready = false;
+    bool parameter_query_ready = false; // SDK 命令通道可用；各参数是否已读取由返回的参数键决定。
 };
 
 #endif // LIVOXCORE_LIDARDEVICEINFO_H

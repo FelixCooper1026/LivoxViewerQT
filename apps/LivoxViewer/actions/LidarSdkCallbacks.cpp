@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "LidarDiagnostics.h"
+#include "LidarParameterService.h"
 #include "LidarPacketUtils.h"
 #include "LidarSdkService.h"
 #include "widgets/ParameterOptionButtons.h"
@@ -225,7 +226,8 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
             }
 
             if (window->statusLabel) window->statusLabel->setText("状态: 已连接");
-            if (!window->hasCurrentLidarHandle) {
+            const bool selectingDevice = !window->hasCurrentLidarHandle;
+            if (selectingDevice) {
                 window->setCurrentDeviceHandle(device.handle);
             }
             window->updateLidarDeviceList();
@@ -236,7 +238,7 @@ void LivoxViewerWindow::onLidarDeviceInfoChange(uint32_t handle, const LivoxLida
                 window->updateParameterDeviceControls();
                 window->parameterState.updatedConfigKeys.clear();
             }
-            if (device.is_connected) {
+            if (device.is_connected && !selectingDevice) {
                 livox_status status = QueryLivoxLidarInternalInfo(device.handle, onQueryInternalInfoResponse, window);
                 if (status != kLivoxLidarStatusSuccess) {
                     window->logMessage(QString("查询设备配置参数失败: %1 (错误码: %2)").arg(getLivoxStatusString(status)).arg(static_cast<int>(status)));
@@ -569,10 +571,9 @@ void LivoxViewerWindow::onAsyncControlResponse(livox_status status, uint32_t han
 void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handle, LivoxLidarDiagInternalInfoResponse* response, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);
-    if (window && !window->shutting_down && response && status == kLivoxLidarStatusSuccess) {
+    if (window && !window->shutting_down && response && status == kLivoxLidarStatusSuccess && response->ret_code == 0) {
         
         // 在回调线程中立即深拷贝数据，避免跨线程内存生命周期问题
-        uint8_t ret_code = response->ret_code;
         uint16_t param_num = response->param_num;
         
         // 计算response->data的总长度
@@ -590,14 +591,9 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
         }
         
         // 深拷贝response->data
-        QByteArray data_copy;
-        if (total_data_length > 0 && total_data_length <= 65535) {
-            data_copy = QByteArray(reinterpret_cast<const char*>(response->data), total_data_length);
-        } else {
-            return;
-        }
-        
-        QMetaObject::invokeMethod(window, [window, handle, ret_code, param_num, data_copy]() {
+        const QByteArray data_copy(reinterpret_cast<const char*>(response->data), total_data_length);
+
+        QMetaObject::invokeMethod(window, [window, handle, param_num, data_copy]() {
             if (window->shutting_down) {
                 return;
             }
@@ -607,6 +603,12 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
             uint16_t paramNum = param_num; // 使用拷贝的param_num
             const bool isCurrentResponse = window->hasCurrentLidarHandle && window->currentLidarHandle == handle;
             bool deviceCardNeedsRefresh = false;
+            QSet<uint16_t> availableKeys;
+            uint8_t deviceType = 0;
+            {
+                QMutexLocker locker(&window->lidarDeviceMutex);
+                deviceType = window->lidarDevices.value(handle).dev_type;
+            }
             
             // 使用字节级别的安全解析 - 基于拷贝的数据
             for (uint16_t i = 0; i < paramNum; ++i) {
@@ -625,7 +627,7 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                 
                 // 检查参数长度是否合理
                 if (length > 0 && length <= 1024) {
-                    QString valueStr = window->formatLidarParameterValue(key, const_cast<uint8_t*>(value), length);
+                    QString valueStr = LidarParameterService::formatValue(key, const_cast<uint8_t*>(value), length, deviceType);
                     const QVector<LivoxCore::HmsCodeInfo> hmsCodes =
                         key == kKeyHmsCode ? LivoxCore::parseHmsCodes(value, length) : QVector<LivoxCore::HmsCodeInfo>();
                     if (key == kKeyVersionApp || key == kKeyCurWorkState) {
@@ -678,240 +680,37 @@ void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_
                             label->setTextFormat(Qt::PlainText);
                             label->setText(valueStr);
                         }
+                        availableKeys.insert(key);
                     } else if (window->parameterState.controls.contains(key)) {
-                        // 可配置参数：只在设备连接时更新一次，避免与用户配置冲突
-                        // 只处理非状态参数的可配置参数，且只在设备连接时更新一次
-                        if (!window->parameterState.updatedConfigKeys.contains(key)) {
-                                QWidget* control = window->parameterState.controls[key];
-                                if (ParameterOptionButtons::isOptionControl(control)) {
-                                    ParameterOptionButtons::setSignalsBlocked(control, true);
-                                    auto setOptionIndex = [control](int index) {
-                                        ParameterOptionButtons::setCurrentIndex(control, index);
-                                    };
-                                    
-                                    if (key == kKeyPclDataType) {
-                                        if (valueStr.contains("高精度")) setOptionIndex(0);
-                                        else if (valueStr.contains("低精度")) setOptionIndex(1);
-                                        else if (valueStr.contains("球坐标")) setOptionIndex(2);
-                                        else if (valueStr.contains("双回波")) setOptionIndex(3);
-                                        window->updateProjectionControlsVisibility();
-                                    } else if (key == kKeyPatternMode) {
-                                            if (valueStr == "非重复扫描") setOptionIndex(0);
-                                            else if (valueStr == "重复扫描") setOptionIndex(1);
-                                            else if (valueStr == "低帧率重复扫描") setOptionIndex(2);
-                                    } else if (key == kKeyDetectMode) {
-                                        if (valueStr.contains("正常")) setOptionIndex(0);
-                                        else if (valueStr.contains("敏感")) setOptionIndex(1);
-                                    } else if (key == kKeyWorkMode) {
-                                        if (valueStr.contains("采样")) setOptionIndex(0);
-                                        else if (valueStr.contains("待机")) setOptionIndex(1);
-                                        else if (valueStr.contains("睡眠")) setOptionIndex(2);
-                                        else if (valueStr.contains("错误")) setOptionIndex(3);
-                                        else if (valueStr.contains("自检")) setOptionIndex(4);
-                                        else if (valueStr.contains("电机启动")) setOptionIndex(5);
-                                        else if (valueStr.contains("停止")) setOptionIndex(6);
-                                        else if (valueStr.contains("升级")) setOptionIndex(7);
-                                        else if (valueStr.contains("就绪")) setOptionIndex(8);
-                                    } else if (key == kKeyImuDataEn) {
-                                        if (valueStr.contains("启用") || valueStr.contains("开启")) setOptionIndex(1);
-                                        else setOptionIndex(0);
-                                    } else if (key == kKeySetEscMode || key == kKeySetTimeFilterMode ||
-                                               key == kKeySetFovMode || key == kKeySetEchoMode ||
-                                               key == kKeySetITOCtrl || key == kKeySetFogNoiseFilter ||
-                                               key == kKeySetPclFreqMod) {
-                                        setOptionIndex(value[0]);
-                                    }
-
-                                    ParameterOptionButtons::setSignalsBlocked(control, false);
-                                } else if (QCheckBox* checkBox = qobject_cast<QCheckBox*>(control)) {
-                                    // 只更新复选框控件（FOV使能）
-                                    // 暂时断开信号连接
-                                    checkBox->blockSignals(true);
-                                    
-                                    // 根据值设置复选框
-                                    if (key == kKeyFovCfgEn) {
-                                        // FOV0使能复选框，根据位掩码设置状态
-                                        // 直接使用原始数值：0=禁用所有, 1=仅FOV0, 2=仅FOV1, 3=都启用
-                                        bool fov0Enabled = false;
-                                        
-                                        // 从原始数值解析FOV0使能状态
-                                        if (length >= 1) {
-                                            uint8_t fovEnableValue = value[0];
-                                            fov0Enabled = (fovEnableValue & 0x01) != 0; // 第0位
-                                        }
-                                        
-                                        // 设置FOV0复选框的状态
-                                        checkBox->setChecked(fov0Enabled);
-                                        
-                                        // 同时更新FOV1复选框的状态
-                                        QWidget* fov1Control = window->parameterState.controls[0x001F];
-                                        if (QCheckBox* fov1CheckBox = qobject_cast<QCheckBox*>(fov1Control)) {
-                                            bool fov1Enabled = false;
-                                            if (length >= 1) {
-                                                uint8_t fovEnableValue = value[0];
-                                                fov1Enabled = (fovEnableValue & 0x02) != 0; // 第1位
-                                            }
-                                            fov1CheckBox->blockSignals(true);
-                                            fov1CheckBox->setChecked(fov1Enabled);
-                                            fov1CheckBox->blockSignals(false);
-                                        }
-                                    } else if (key == 0x001F) {
-                                        // FOV1使能复选框，根据位掩码设置状态
-                                        bool fov1Enabled = false;
-                                        
-                                        // 从原始数值解析FOV1使能状态
-                                        if (length >= 1) {
-                                            uint8_t fovEnableValue = value[0];
-                                            fov1Enabled = (fovEnableValue & 0x02) != 0; // 第1位
-                                        }
-                                        
-                                        // 设置FOV1复选框的状态
-                                        checkBox->setChecked(fov1Enabled);
-                                        
-                                        // 同时更新FOV0复选框的状态
-                                        QWidget* fov0Control = window->parameterState.controls[kKeyFovCfgEn];
-                                        if (QCheckBox* fov0CheckBox = qobject_cast<QCheckBox*>(fov0Control)) {
-                                            bool fov0Enabled = false;
-                                            if (length >= 1) {
-                                                uint8_t fovEnableValue = value[0];
-                                                fov0Enabled = (fovEnableValue & 0x01) != 0; // 第0位
-                                            }
-                                            fov0CheckBox->blockSignals(true);
-                                            fov0CheckBox->setChecked(fov0Enabled);
-                                            fov0CheckBox->blockSignals(false);
-                                        }
-                                    }
-                                    
-                                    // 恢复信号连接
-                                    checkBox->blockSignals(false);
-                                } else if (QWidget* container = qobject_cast<QWidget*>(control)) {
-                                    // 处理复杂的配置控件（网络、FOV、外参）
-                                    if (key == kKeySetImuRange && length >= sizeof(LivoxLidarImuRange)) {
-                                        container->findChild<QComboBox*>("imuOutputRateCombo")->setCurrentIndex(value[0]);
-                                        container->findChild<QComboBox*>("imuAccelRangeCombo")->setCurrentIndex(value[1]);
-                                        container->findChild<QComboBox*>("imuGyroRangeCombo")->setCurrentIndex(value[2]);
-                                    } else if (key == kKeyLidarIpCfg) {
-                                        // 雷达IP配置更新
-                                        // 从valueStr中解析IP、掩码、网关信息
-                                        // 格式: "IP:192.168.1.50 Mask:255.255.255.0 Gateway:192.168.1.1"
-                                        QRegularExpression ipRegex(R"(IP:(\d+\.\d+\.\d+\.\d+)\s+Mask:(\d+\.\d+\.\d+\.\d+)\s+Gateway:(\d+\.\d+\.\d+\.\d+))");
-                                        QRegularExpressionMatch match = ipRegex.match(valueStr);
-                                        if (match.hasMatch()) {
-                                            QString ip = match.captured(1);
-                                            QString mask = match.captured(2);
-                                            QString gateway = match.captured(3);
-                                            
-                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceIpEdit")) {
-                                                edit->setText(ip);
-                                            }
-                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceMaskEdit")) {
-                                                edit->setText(mask);
-                                            }
-                                            if (QLineEdit* edit = container->findChild<QLineEdit*>("deviceGatewayEdit")) {
-                                                edit->setText(gateway);
-                                            }
-                                        }
-                                    } else if (key == kKeyLidarPointDataHostIpCfg || 
-                                               key == kKeyLidarImuHostIpCfg || 
-                                               key == kKeyStateInfoHostIpCfg) {
-                                        // 目的IP配置更新
-                                        // 格式: "Host:192.168.1.100:56301"
-                                        QRegularExpression hostRegex(R"(Host:(\d+\.\d+\.\d+\.\d+):(\d+))");
-                                        QRegularExpressionMatch match = hostRegex.match(valueStr);
-                                        if (match.hasMatch()) {
-                                            QString ip = match.captured(1);
-                                            int port = match.captured(2).toInt();
-                                            
-                                            const QString ipEditName = QString("targetIpEdit_%1").arg(key);
-                                            const QString portSpinName = QString("targetPortSpin_%1").arg(key);
-                                            if (QLineEdit* edit = container->findChild<QLineEdit*>(ipEditName)) {
-                                                edit->setText(ip);
-                                            }
-                                            if (QSpinBox* spin = container->findChild<QSpinBox*>(portSpinName)) {
-                                                spin->setValue(port);
-                                            }
-                                        }
-                                    } else if (key == kKeySetNTPServerIp) {
-                                        if (QLineEdit* edit = container->findChild<QLineEdit*>("ntpServerIpEdit")) {
-                                            edit->setText(valueStr);
-                                        }
-                                    } else if (key == kKeyFovCfg0 || key == kKeyFovCfg1) {
-                                        // FOV配置更新
-                                        // 格式: "Yaw:0~360° Pitch:-10~60°" (单位: 1°)
-                                        QRegularExpression fovRegex(R"(Yaw:(-?\d+)~(-?\d+)°\s+Pitch:(-?\d+)~(-?\d+)°)");
-                                        QRegularExpressionMatch match = fovRegex.match(valueStr);
-                                        if (match.hasMatch()) {
-                                            int yawStart = match.captured(1).toInt();
-                                            int yawStop = match.captured(2).toInt();
-                                            int pitchStart = match.captured(3).toInt();
-                                            int pitchStop = match.captured(4).toInt();
-                                            
-                                            // 找到对应的输入框并更新
-                                            QLayout* layout = container->layout();
-                                            if (layout) {
-                                                int spinIndex = 0;
-                                                for (int i = 0; i < layout->count(); ++i) {
-                                                    QLayoutItem* item = layout->itemAt(i);
-                                                    QWidget* widget = item ? item->widget() : nullptr;
-                                                    if (QSpinBox* spin = qobject_cast<QSpinBox*>(widget)) {
-                                                        switch (spinIndex) {
-                                                            case 0: spin->setValue(yawStart); break;
-                                                            case 1: spin->setValue(yawStop); break;
-                                                            case 2: spin->setValue(pitchStart); break;
-                                                            case 3: spin->setValue(pitchStop); break;
-                                                        }
-                                                        spinIndex++;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    } else if (key == kKeyInstallAttitude) {
-                                        // 安装姿态配置更新
-                                        // 格式: "Roll:0.00° Pitch:0.00° Yaw:0.00° X:0mm Y:0mm Z:0mm"
-                                        QRegularExpression attitudeRegex(R"(Roll:([-\d.]+)°\s+Pitch:([-\d.]+)°\s+Yaw:([-\d.]+)°\s+X:(-?\d+)mm\s+Y:(-?\d+)mm\s+Z:(-?\d+)mm)");
-                                        QRegularExpressionMatch match = attitudeRegex.match(valueStr);
-                                        if (match.hasMatch()) {
-                                            double roll = match.captured(1).toDouble();
-                                            double pitch = match.captured(2).toDouble();
-                                            double yaw = match.captured(3).toDouble();
-                                            int x = match.captured(4).toInt();
-                                            int y = match.captured(5).toInt();
-                                            int z = match.captured(6).toInt();
-                                            
-                                            // 找到对应的输入框并更新
-                                              // 现在外参是每行一个控件，直接通过 findChild 查找
-                                              if (auto* rollSpin = container->findChild<QDoubleSpinBox*>(QString(), Qt::FindDirectChildrenOnly)) {
-                                                  // 保留兼容：优先找 QDoubleSpinBox，若多个则依次设置
-                                              }
-                                              // 通用：遍历所有子控件并按类型赋值
-                                              QList<QDoubleSpinBox*> dSpins = container->findChildren<QDoubleSpinBox*>();
-                                              QList<QSpinBox*> iSpins = container->findChildren<QSpinBox*>();
-                                              if (dSpins.size() >= 3) {
-                                                  dSpins[0]->setValue(roll);
-                                                  dSpins[1]->setValue(pitch);
-                                                  dSpins[2]->setValue(yaw);
-                                              }
-                                              if (iSpins.size() >= 3) {
-                                                  iSpins[0]->setValue(x);
-                                                  iSpins[1]->setValue(y);
-                                                  iSpins[2]->setValue(z);
-                                              }
-                                        }
-                                    }
-                                }
-                                
-                                // 标记该参数已更新，防止被定时器重复更新
-                                window->parameterState.updatedConfigKeys.insert(key);
-                            }
+                        if (window->parameterState.updatedConfigKeys.contains(key) &&
+                            window->parameterState.availableKeys.contains(key)) {
+                            availableKeys.insert(key);
+                        } else if (window->updateParameterControl(key, value, length)) {
+                            availableKeys.insert(key);
+                            window->parameterState.updatedConfigKeys.insert(key);
                         }
+                    } else {
+                        availableKeys.insert(key);
+                    }
                 }
-                
+
                 // 计算下一个参数的偏移量
                 // 当前参数大小 = key(2字节) + length(2字节) + value(length字节)
                 off += sizeof(uint16_t) * 2;  // key + length
                 off += length;                 // value length
             }
 
+            if (isCurrentResponse) {
+                window->parameterState.availableKeys = availableKeys;
+                window->parameterState.updatedConfigKeys.intersect(availableKeys);
+                for (uint16_t key : window->parameterState.values.keys()) {
+                    if (!availableKeys.contains(key)) {
+                        window->parameterState.values.remove(key);
+                        window->parameterState.csvValues.remove(key);
+                    }
+                }
+                window->updateParameterDeviceControls();
+            }
             if (deviceCardNeedsRefresh) {
                 window->updateLidarDeviceList();
             }

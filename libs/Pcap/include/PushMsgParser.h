@@ -25,6 +25,7 @@ struct PushDeviceRecord {
 
 struct ProtocolDecodeResult {
     bool valid = false;
+    uint8_t deviceType = 0;
     QString protocol;
     QString summary;
     QString details;
@@ -33,7 +34,8 @@ struct ProtocolDecodeResult {
 ProtocolDecodeResult decodeProtocolPacket(uint16_t sourcePort,
                                           uint16_t destinationPort,
                                           const uint8_t* payload,
-                                          size_t payloadLen);
+                                          size_t payloadLen,
+                                          uint8_t deviceType = 0);
 
 void parsePushPayload(const uint8_t* payload, size_t payloadLen, PushDeviceRecord& device);
 

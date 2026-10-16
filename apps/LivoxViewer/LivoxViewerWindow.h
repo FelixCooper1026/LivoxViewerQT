@@ -206,6 +206,8 @@ private:
     void createDevicePanel();
     void createParameterPanel();
     void updateParameterDeviceControls();
+    void resetParameterDeviceControls();
+    bool updateParameterControl(uint16_t key, const uint8_t* value, uint16_t length);
     void createImuPanel();
     void createFileInfoPanel();
     void createSlamInfoPanel();
@@ -292,7 +294,6 @@ private:
     void decodePointCloudPacket(uint32_t handle, uint8_t dev_type, const LivoxLidarEthernetPacket* packet);
     void resetRealtimePointCloudWindow();
     void applyPointCloudPipeline(PointCloudFrame& frame, PointCloudView* targetView = nullptr);
-    QString formatLidarParameterValue(uint16_t key, uint8_t* value, uint16_t length);
     bool loadLvxPlaybackFile(const QString& filePath);
     bool loadLvx2PlaybackFile(const QString& filePath);
     bool loadPcapPlaybackFile(const QString& filePath);

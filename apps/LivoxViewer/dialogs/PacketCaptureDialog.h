@@ -7,12 +7,14 @@
 #include <QDateTime>
 #include <QDialog>
 #include <QElapsedTimer>
+#include <QMap>
 #include <QSet>
 #include <QString>
 #include <QVector>
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -119,7 +121,8 @@ private:
                                   quint64 number,
                                   double relativeTimeSec,
                                   qint64 timestampSec,
-                                  qint64 timestampUsec);
+                                  qint64 timestampUsec,
+                                  QMap<QString, uint8_t>& deviceTypes);
 
     QComboBox* m_interfaceCombo = nullptr;
     QToolButton* m_broadcastFilter = nullptr;

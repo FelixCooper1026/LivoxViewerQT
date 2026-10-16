@@ -17,6 +17,9 @@ struct ParameterUiState
     QMap<uint16_t, QString> csvValues;
     QMap<uint16_t, QLabel*> labels;
     QMap<uint16_t, QWidget*> controls;
+    QMap<uint16_t, QWidget*> sections;
+    QSet<uint16_t> availableKeys;
+    QWidget* targetIpSection = nullptr;
 
     QSet<uint16_t> configurableKeys;
     QSet<uint16_t> statusKeys;

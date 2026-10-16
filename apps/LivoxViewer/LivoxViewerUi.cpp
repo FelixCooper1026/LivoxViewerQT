@@ -404,9 +404,6 @@ void LivoxViewerWindow::setActiveRealtimeDevice(uint32_t handle)
         realtimePointCloudSegmentTimestamps.clear();
     }
     updateLidarDeviceList();
-    if (paramTabWidget) {
-        onTabChanged(paramTabWidget->currentIndex());
-    }
 }
 
 QWidget* LivoxViewerWindow::createRealtimeDeviceCard(const LidarDeviceInfo& device)

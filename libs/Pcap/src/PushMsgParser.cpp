@@ -1,5 +1,6 @@
 #include "PushMsgParser.h"
 #include "LidarParameterService.h"
+#include "LidarDiagnostics.h"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -246,77 +247,6 @@ QString workModeDescription(uint8_t value)
     }
 }
 
-QString faultDescription(uint16_t faultId)
-{
-    switch (faultId) {
-    case 0x0102: return QStringLiteral("设备运行环境温度偏高；请检查环境温度，或排查散热措施");
-    case 0x0103: return QStringLiteral("设备运行环境温度较高；请检查环境温度，或排查散热措施");
-    case 0x0104: return QStringLiteral("设备球罩存在脏污或附近有遮挡物，请清洁球罩并确保球罩 0.1m 范围内无遮挡物");
-    case 0x0105: return QStringLiteral("设备固件升级过程中出现错误；请重新进行固件升级");
-    case 0x0111:
-    case 0x0112: return QStringLiteral("设备内部器件温度异常；请检查环境温度，或排查散热措施");
-    case 0x0113: return QStringLiteral("设备内部 IMU 器件暂停工作；请重启设备恢复");
-    case 0x0114: return QStringLiteral("设备运行环境温度高；请检查环境温度，或排查散热措施");
-    case 0x0115: return QStringLiteral("设备运行环境温度超过承受极限，设备已停止工作；请检查环境温度或散热措施");
-    case 0x0116: return QStringLiteral("设备外部电压异常；请检查外部电压");
-    case 0x0117: return QStringLiteral("设备参数异常；请尝试重启设备恢复");
-    case 0x0118: return QStringLiteral("设备内部器件损坏，无法正常工作，请联系维修人员");
-    case 0x0201: return QStringLiteral("扫描模块低温加热中");
-    case 0x0210:
-    case 0x0211:
-    case 0x0212:
-    case 0x0213:
-    case 0x0214:
-    case 0x0215:
-    case 0x0216:
-    case 0x0217:
-    case 0x0218:
-    case 0x0219: return QStringLiteral("扫描模块异常，请检查供电、重启设备并更新到最新固件");
-    case 0x0401: return QStringLiteral("检测到以太网连接曾经断开，现已恢复；请检查以太网链路");
-    case 0x0402: return QStringLiteral("PTP 同步中断或时间跳变过大；请排查 PTP 时钟源");
-    case 0x0403: return QStringLiteral("设备不支持 IEEE 1588 v2.1；请改用 IEEE 1588 v2.0");
-    case 0x0404: return QStringLiteral("PPS 同步异常；请检查 PPS 及 GPS 信号");
-    case 0x0405: return QStringLiteral("时间同步曾发生异常，现已恢复；请检查异常原因");
-    case 0x0406: return QStringLiteral("时间同步精度低；请检查同步源");
-    case 0x0407: return QStringLiteral("缺失 GPS 信号导致 GPS 同步失败；请检查 GPS 信号");
-    case 0x0408: return QStringLiteral("缺失 PPS 信号导致 GPS 同步失败；请检查 PPS 信号");
-    case 0x0409: return QStringLiteral("GPS 信号异常；请检查 GPS 信号源");
-    case 0x040A: return QStringLiteral("PTP 和 gPTP 信号同时存在；请检查网络拓扑并仅使用一种同步源");
-    default: return QStringLiteral("未知故障 ID %1").arg(hexValue(faultId, 4));
-    }
-}
-
-QString faultLevelDescription(uint8_t level)
-{
-    switch (level) {
-    case 0x01: return QStringLiteral("Info 消息");
-    case 0x02: return QStringLiteral("Warning 警告");
-    case 0x03: return QStringLiteral("Error 错误");
-    case 0x04: return QStringLiteral("Fatal 严重错误");
-    default: return QStringLiteral("未知等级");
-    }
-}
-
-QString formatHmsCodes(const uint8_t* data, size_t length)
-{
-    QStringList faults;
-    const size_t codeCount = length / 4;
-    for (size_t i = 0; i < codeCount; ++i) {
-        const uint32_t code = readLe32(data + i * 4);
-        if (code == 0) {
-            continue;
-        }
-        const uint16_t faultId = uint16_t(code >> 16);
-        const uint8_t faultLevel = uint8_t(code & 0xFF);
-        faults.append(QStringLiteral("[%1] %2 [%3] %4")
-                          .arg(faults.size() + 1)
-                          .arg(hexValue(code, 8))
-                          .arg(faultLevelDescription(faultLevel))
-                          .arg(faultDescription(faultId)));
-    }
-    return faults.isEmpty() ? QStringLiteral("无故障") : faults.join(QLatin1Char('\n'));
-}
-
 QString keyName(uint16_t key)
 {
     switch (key) {
@@ -372,7 +302,7 @@ QString keyName(uint16_t key)
     }
 }
 
-QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length)
+QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length, uint8_t deviceType)
 {
     switch (key) {
     case 0x0000:
@@ -580,7 +510,7 @@ QString formatKeyValue(uint16_t key, const uint8_t* data, size_t length)
         }
         break;
     case 0x8011:
-        return formatHmsCodes(data, length);
+        return LivoxCore::formatHmsCodes(data, uint16_t(length), deviceType);
     case 0x8012:
         if (length >= 1) {
             return data[0] == 0 ? QStringLiteral("未加热") : QStringLiteral("正在加热");
@@ -595,8 +525,21 @@ void appendKvList(const uint8_t* data,
                   size_t offset,
                   uint16_t count,
                   QStringList& lines,
-                  QStringList& summaryParts)
+                  QStringList& summaryParts,
+                  uint8_t& deviceType)
 {
+    // Resolve the model before formatting HMS, regardless of TLV order.
+    size_t typeOffset = offset;
+    for (uint16_t i = 0; i < count && typeOffset + 4 <= length; ++i) {
+        const uint16_t key = readLe16(data + typeOffset);
+        const uint16_t valueLength = readLe16(data + typeOffset + 2);
+        typeOffset += 4;
+        if (typeOffset + valueLength > length) break;
+        if (deviceType == 0 && key == 0x8002 && valueLength >= 4) {
+            deviceType = getDeviceConfig(data[typeOffset]).typeId;
+        }
+        typeOffset += valueLength;
+    }
     for (uint16_t i = 0; i < count && offset + 4 <= length; ++i) {
         const uint16_t key = readLe16(data + offset);
         const uint16_t valueLength = readLe16(data + offset + 2);
@@ -605,7 +548,7 @@ void appendKvList(const uint8_t* data,
             break;
         }
 
-        const QString value = formatKeyValue(key, data + offset, valueLength);
+        const QString value = formatKeyValue(key, data + offset, valueLength, deviceType);
         appendField(lines,
                     QStringLiteral("Key %1 %2").arg(hexValue(key, 4), keyName(key)),
                     value);
@@ -639,14 +582,15 @@ void appendControlData(uint16_t commandId,
                        size_t length,
                        bool forcePush,
                        QStringList& lines,
-                       QStringList& summaryParts)
+                       QStringList& summaryParts,
+                       uint8_t& deviceType)
 {
     if (forcePush || commandId == 0x0102) {
         if (length >= 4) {
             const uint16_t keyCount = readLe16(data);
             appendField(lines, QStringLiteral("参数数量"), QString::number(keyCount));
             appendField(lines, QStringLiteral("Data 预留位 (Reserved)"), hexValue(readLe16(data + 2), 4));
-            appendKvList(data, length, 4, keyCount, lines, summaryParts);
+            appendKvList(data, length, 4, keyCount, lines, summaryParts, deviceType);
         }
         return;
     }
@@ -654,6 +598,7 @@ void appendControlData(uint16_t commandId,
     switch (commandId) {
     case 0x0000:
         if (commandType == 0x01 && length >= 24) {
+            deviceType = data[1];
             appendReturnCode(lines, data[0]);
             appendField(lines, QStringLiteral("设备类型"), QString::number(data[1]));
             const QString serialNumber = textValue(data + 2, 16);
@@ -670,7 +615,7 @@ void appendControlData(uint16_t commandId,
             const uint16_t keyCount = readLe16(data);
             appendField(lines, QStringLiteral("参数数量"), QString::number(keyCount));
             appendField(lines, QStringLiteral("Data 预留位 (Reserved)"), hexValue(readLe16(data + 2), 4));
-            appendKvList(data, length, 4, keyCount, lines, summaryParts);
+            appendKvList(data, length, 4, keyCount, lines, summaryParts, deviceType);
         } else if (commandType == 0x01 && length >= 3) {
             appendReturnCode(lines, data[0]);
             appendField(lines, QStringLiteral("错误参数"), hexValue(readLe16(data + 1), 4));
@@ -686,7 +631,7 @@ void appendControlData(uint16_t commandId,
             appendReturnCode(lines, data[0]);
             const uint16_t keyCount = readLe16(data + 1);
             appendField(lines, QStringLiteral("参数数量"), QString::number(keyCount));
-            appendKvList(data, length, 3, keyCount, lines, summaryParts);
+            appendKvList(data, length, 3, keyCount, lines, summaryParts, deviceType);
         }
         break;
     case 0x0200:
@@ -863,7 +808,8 @@ ProtocolDecodeResult decodeDataPacket(bool isPointCloud,
 ProtocolDecodeResult decodeProtocolPacket(uint16_t sourcePort,
                                           uint16_t destinationPort,
                                           const uint8_t* payload,
-                                          size_t payloadLen)
+                                          size_t payloadLen,
+                                          uint8_t deviceType)
 {
     const bool isBroadcast = sourcePort == 56000 || destinationPort == 56000;
     const bool isControl = sourcePort == 56100 || destinationPort == 56100;
@@ -886,6 +832,7 @@ ProtocolDecodeResult decodeProtocolPacket(uint16_t sourcePort,
 
     ProtocolDecodeResult result;
     result.valid = true;
+    result.deviceType = deviceType;
     result.protocol = isPush
         ? QStringLiteral("Livox Push")
         : (isBroadcast ? QStringLiteral("Livox Broadcast") : QStringLiteral("Livox Control"));
@@ -917,7 +864,8 @@ ProtocolDecodeResult decodeProtocolPacket(uint16_t sourcePort,
                           payloadLen - 24,
                           isPush,
                           lines,
-                          summaryParts);
+                          summaryParts,
+                          result.deviceType);
     }
 
     result.summary = summaryParts.join(QStringLiteral(" · "));

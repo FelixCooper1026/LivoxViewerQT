@@ -1,5 +1,6 @@
 #include "LivoxViewerWindow.h"
 #include "NetworkInterfaceService.h"
+#include "LidarParameterService.h"
 #include "widgets/ParameterOptionButtons.h"
 #include "widgets/SwitchCheckBox.h"
 #include <QAbstractSpinBox>
@@ -10,6 +11,8 @@
 #include <QSizePolicy>
 #include <QTableView>
 #include <QToolButton>
+#include <QSignalBlocker>
+#include <cstring>
 
 namespace {
 
@@ -52,6 +55,7 @@ QWidget* createParameterOptionButtons(const QVector<ParameterOption>& options, i
         button->setMinimumWidth(button->fontMetrics().horizontalAdvance(options.at(i).text) + 22);
         button->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
         button->setProperty("parameterOptionButton", true);
+        button->setProperty("parameterOptionOrder", i);
         button->setProperty("parameterOptionButtonTheme", parameterOptionButtonTheme());
         button->setStyleSheet(
             "QToolButton {"
@@ -355,7 +359,9 @@ void LivoxViewerWindow::createParameterPanel()
                                                            const QVector<ParameterOption>& options,
                                                            int currentIndex) {
         QWidget* optionButtons = createParameterOptionButtons(options, currentIndex, basicTab);
-        basicLayout->addWidget(createBasicConfigSection(title, optionButtons, basicTab));
+        QWidget* section = createBasicConfigSection(title, optionButtons, basicTab);
+        basicLayout->addWidget(section);
+        parameterState.sections[key] = section;
         parameterState.controls[key] = optionButtons;
         connect(ParameterOptionButtons::buttonGroup(optionButtons), &QButtonGroup::idToggled, this, [this, key](int, bool checked) {
             if (checked) {
@@ -395,7 +401,9 @@ void LivoxViewerWindow::createParameterPanel()
                                                "±125 dps", "±62.5 dps", "±31.25 dps", "±15.625 dps"});
     QPushButton* imuApplyButton = new QPushButton("应用", imuRangeControl);
     imuRangeLayout->addWidget(imuApplyButton, 3, 1, Qt::AlignRight);
-    basicLayout->addWidget(createConfigPanelSection("IMU配置", imuRangeControl, basicTab));
+    QWidget* imuSection = createConfigPanelSection("IMU配置", imuRangeControl, basicTab);
+    basicLayout->addWidget(imuSection);
+    parameterState.sections[kKeySetImuRange] = imuSection;
     parameterState.controls[kKeySetImuRange] = imuRangeControl;
     connect(imuApplyButton, &QPushButton::clicked, this, [this]() { onParamConfigChanged(kKeySetImuRange); });
 
@@ -451,6 +459,7 @@ void LivoxViewerWindow::createParameterPanel()
     lidarGrid->addWidget(lidarIpButton, 3, 1, Qt::AlignRight);
     networkLayout->addWidget(createConfigPanelSection("雷达设备网络", lidarIpContainer, networkTab));
     parameterState.controls[kKeyLidarIpCfg] = lidarIpContainer;
+    parameterState.sections[kKeyLidarIpCfg] = lidarIpContainer->parentWidget();
     connect(lidarIpButton, &QPushButton::clicked, [this, lidarIpEdit, lidarMaskEdit, lidarGatewayEdit]() { applyIpConfig(kKeyLidarIpCfg, lidarIpEdit->text(), lidarMaskEdit->text(), lidarGatewayEdit->text()); });
 
     QWidget* targetGroup = new QWidget(networkTab);
@@ -469,18 +478,24 @@ void LivoxViewerWindow::createParameterPanel()
 
     int targetRowIndex = 1;
     auto createTargetRow = [&](const QString& title, uint16_t key, int defaultPort, const QString& tooltip) {
-        QLabel* titleLabel = new QLabel(title, targetGroup);
+        QWidget* row = new QWidget(targetGroup);
+        QGridLayout* rowLayout = new QGridLayout(row);
+        rowLayout->setContentsMargins(0, 0, 0, 0);
+        rowLayout->setHorizontalSpacing(6);
+        rowLayout->setVerticalSpacing(5);
+        rowLayout->setColumnStretch(0, 1);
+        QLabel* titleLabel = new QLabel(title, row);
         QFont titleFont = titleLabel->font();
         titleFont.setBold(true);
         titleLabel->setFont(titleFont);
         titleLabel->setToolTip(tooltip);
-        QLineEdit* ipEdit = new QLineEdit(targetGroup);
+        QLineEdit* ipEdit = new QLineEdit(row);
         ipEdit->setObjectName(QString("targetIpEdit_%1").arg(key));
         ipEdit->setToolTip(tooltip);
         configureIpEdit(ipEdit);
         ipEdit->setMinimumWidth(fontMetrics().horizontalAdvance("255.255.255.255") + 8);
         targetIpEdits.append(ipEdit);
-        QSpinBox* portEdit = new QSpinBox(targetGroup);
+        QSpinBox* portEdit = new QSpinBox(row);
         portEdit->setObjectName(QString("targetPortSpin_%1").arg(key));
         portEdit->setToolTip(tooltip);
         portEdit->setRange(1, 65535);
@@ -488,19 +503,18 @@ void LivoxViewerWindow::createParameterPanel()
         portEdit->setButtonSymbols(QAbstractSpinBox::NoButtons);
         portEdit->setMinimumWidth(fontMetrics().horizontalAdvance("65535") + 24);
         portEdit->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        QLabel* separator = new QLabel(":", targetGroup);
+        QLabel* separator = new QLabel(":", row);
         separator->setAlignment(Qt::AlignCenter);
-        QPushButton* applyButton = new QPushButton(targetGroup);
+        QPushButton* applyButton = new QPushButton(row);
         configureApplyButton(applyButton, tooltip);
-
-        targetLayout->addWidget(titleLabel, targetRowIndex, 0, 1, 4);
-        ++targetRowIndex;
-        targetLayout->addWidget(ipEdit, targetRowIndex, 0);
-        targetLayout->addWidget(separator, targetRowIndex, 1);
-        targetLayout->addWidget(portEdit, targetRowIndex, 2);
-        targetLayout->addWidget(applyButton, targetRowIndex, 3);
-        ++targetRowIndex;
-        parameterState.controls[key] = targetGroup;
+        rowLayout->addWidget(titleLabel, 0, 0, 1, 4);
+        rowLayout->addWidget(ipEdit, 1, 0);
+        rowLayout->addWidget(separator, 1, 1);
+        rowLayout->addWidget(portEdit, 1, 2);
+        rowLayout->addWidget(applyButton, 1, 3);
+        targetLayout->addWidget(row, targetRowIndex++, 0, 1, 4);
+        parameterState.controls[key] = row;
+        parameterState.sections[key] = row;
         connect(applyButton, &QPushButton::clicked, [this, key, ipEdit, portEdit]() { applyHostIpConfig(key, ipEdit->text(), portEdit->value()); });
     };
 
@@ -529,7 +543,8 @@ void LivoxViewerWindow::createParameterPanel()
         statusLabelBar->setText(QString("目标 IP 已同步为 %1").arg(hostIp));
         logMessage(QString("数据发送目标 IP 已同步为当前主机 IP: %1").arg(hostIp));
     });
-    networkLayout->addWidget(createConfigPanelSection("数据发送目标", targetGroup, networkTab));
+    parameterState.targetIpSection = createConfigPanelSection("数据发送目标", targetGroup, networkTab);
+    networkLayout->addWidget(parameterState.targetIpSection);
 
     QWidget* ntpGroup = new QWidget(networkTab);
     ntpGroup->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -551,6 +566,7 @@ void LivoxViewerWindow::createParameterPanel()
     ntpLayout->addWidget(ntpApplyButton, 0, 2);
     networkLayout->addWidget(createConfigPanelSection("NTP 服务器", ntpGroup, networkTab));
     parameterState.controls[kKeySetNTPServerIp] = ntpGroup;
+    parameterState.sections[kKeySetNTPServerIp] = ntpGroup->parentWidget();
     connect(ntpApplyButton, &QPushButton::clicked, [this, ntpIpEdit]() { applyNtpServerIpConfig(ntpIpEdit->text()); });
 
     networkLayout->addStretch();
@@ -646,6 +662,7 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* fov0Container = new QWidget();
     fovLayout->addWidget(createFovSection("FOV0配置", fov0EnableCheck, fov0Container, fov0YawStartEdit, fov0YawStopEdit, fov0PitchStartEdit, fov0PitchStopEdit, fov0Button));
     parameterState.controls[kKeyFovCfg0] = fov0Container;
+    parameterState.sections[kKeyFovCfg0] = fov0Container->parentWidget();
     connect(fov0Button, &QPushButton::clicked, [this, fov0YawStartEdit, fov0YawStopEdit, fov0PitchStartEdit, fov0PitchStopEdit]() { applyFovConfig(kKeyFovCfg0, fov0YawStartEdit->value(), fov0YawStopEdit->value(), fov0PitchStartEdit->value(), fov0PitchStopEdit->value()); });
 
     QSpinBox* fov1YawStartEdit = new QSpinBox();
@@ -661,6 +678,7 @@ void LivoxViewerWindow::createParameterPanel()
     QWidget* fov1Container = new QWidget();
     fovLayout->addWidget(createFovSection("FOV1配置", fov1EnableCheck, fov1Container, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit, fov1Button));
     parameterState.controls[kKeyFovCfg1] = fov1Container;
+    parameterState.sections[kKeyFovCfg1] = fov1Container->parentWidget();
     connect(fov1Button, &QPushButton::clicked, [this, fov1YawStartEdit, fov1YawStopEdit, fov1PitchStartEdit, fov1PitchStopEdit]() { applyFovConfig(kKeyFovCfg1, fov1YawStartEdit->value(), fov1YawStopEdit->value(), fov1PitchStartEdit->value(), fov1PitchStopEdit->value()); });
 
     QDoubleSpinBox* rollEdit = new QDoubleSpinBox();
@@ -714,6 +732,7 @@ void LivoxViewerWindow::createParameterPanel()
     fovLayout->addWidget(attitudeSection);
     fovLayout->addStretch();
     parameterState.controls[kKeyInstallAttitude] = attitudeSection;
+    parameterState.sections[kKeyInstallAttitude] = attitudeSection;
     connect(attitudeButton, &QPushButton::clicked, [this, rollEdit, pitchEdit, yawEdit, xEdit, yEdit, zEdit]() { applyAttitudeConfig(kKeyInstallAttitude, rollEdit->value(), pitchEdit->value(), yawEdit->value(), xEdit->value(), yEdit->value(), zEdit->value()); });
     paramTabWidget->addTab(fovTab, "其他配置");
 
@@ -777,33 +796,192 @@ void LivoxViewerWindow::createParameterPanel()
     paramsDock->raise();
     activeRightDock = paramsDock;
     attrDock->hide();
+    for (QWidget* control : parameterState.controls) {
+        if (ParameterOptionButtons::isOptionControl(control)) {
+            control->setProperty("parameterDefaultOption", ParameterOptionButtons::currentIndex(control));
+        }
+        auto inputs = control->findChildren<QWidget*>();
+        inputs.prepend(control);
+        for (QWidget* input : inputs) {
+            if (auto* spin = qobject_cast<QSpinBox*>(input)) input->setProperty("parameterDefaultValue", spin->value());
+            else if (auto* doubleSpin = qobject_cast<QDoubleSpinBox*>(input)) input->setProperty("parameterDefaultValue", doubleSpin->value());
+            else if (auto* edit = qobject_cast<QLineEdit*>(input)) input->setProperty("parameterDefaultValue", edit->text());
+            else if (auto* combo = qobject_cast<QComboBox*>(input)) input->setProperty("parameterDefaultValue", combo->currentIndex());
+            else if (auto* check = qobject_cast<QCheckBox*>(input)) input->setProperty("parameterDefaultValue", check->isChecked());
+        }
+    }
     updateParameterDeviceControls();
+}
+
+void LivoxViewerWindow::resetParameterDeviceControls()
+{
+    parameterState.availableKeys.clear();
+    parameterState.values.clear();
+    parameterState.csvValues.clear();
+    parameterState.updatedConfigKeys.clear();
+    for (QLabel* label : parameterState.labels) label->setText(QStringLiteral("无信息"));
+    for (QWidget* control : parameterState.controls) {
+        if (ParameterOptionButtons::isOptionControl(control)) {
+            ParameterOptionButtons::setSignalsBlocked(control, true);
+            ParameterOptionButtons::setCurrentIndex(control, control->property("parameterDefaultOption").toInt());
+            ParameterOptionButtons::setSignalsBlocked(control, false);
+        }
+        auto inputs = control->findChildren<QWidget*>();
+        inputs.prepend(control);
+        for (QWidget* input : inputs) {
+            const QSignalBlocker blocker(input);
+            const QVariant value = input->property("parameterDefaultValue");
+            if (auto* spin = qobject_cast<QSpinBox*>(input)) spin->setValue(value.toInt());
+            else if (auto* doubleSpin = qobject_cast<QDoubleSpinBox*>(input)) doubleSpin->setValue(value.toDouble());
+            else if (auto* edit = qobject_cast<QLineEdit*>(input)) edit->setText(value.toString());
+            else if (auto* combo = qobject_cast<QComboBox*>(input)) combo->setCurrentIndex(value.toInt());
+            else if (auto* check = qobject_cast<QCheckBox*>(input)) check->setChecked(value.toBool());
+        }
+    }
+}
+
+bool LivoxViewerWindow::updateParameterControl(uint16_t key, const uint8_t* value, uint16_t length)
+{
+    QWidget* control = parameterState.controls.value(key);
+    if (ParameterOptionButtons::isOptionControl(control)) {
+        int id = value[0];
+        if (key == kKeyPclDataType) id = value[0] == kLivoxLidarDoubleEchoData ? 3 : value[0] - 1;
+        if (key == kKeyWorkMode) id = value[0] == kLivoxLidarNormal ? 0 : value[0] == kLivoxLidarWakeUp ? 1 : -1;
+        LidarDeviceInfo device;
+        tryGetCurrentDevice(device);
+        if (!LidarParameterService::isOptionSupported(device.dev_type, key, id)) id = -1;
+        ParameterOptionButtons::setSignalsBlocked(control, true);
+        ParameterOptionButtons::setCurrentIndex(control, id);
+        ParameterOptionButtons::setSignalsBlocked(control, false);
+        if (key == kKeyPclDataType) updateProjectionControlsVisibility();
+        return true;
+    }
+    switch (key) {
+    case kKeySetImuRange: {
+        if (length < sizeof(LivoxLidarImuRange)) return false;
+        const QStringList names = {"imuOutputRateCombo", "imuAccelRangeCombo", "imuGyroRangeCombo"};
+        for (int i = 0; i < names.size(); ++i) {
+            if (value[i] >= control->findChild<QComboBox*>(names[i])->count()) return false;
+        }
+        for (int i = 0; i < names.size(); ++i) control->findChild<QComboBox*>(names[i])->setCurrentIndex(value[i]);
+        return true;
+    }
+    case kKeyFovCfgEn: {
+        auto* fov0 = qobject_cast<QCheckBox*>(control);
+        auto* fov1 = qobject_cast<QCheckBox*>(parameterState.controls.value(0x001F));
+        const QSignalBlocker block0(fov0), block1(fov1);
+        fov0->setChecked(value[0] & 1);
+        fov1->setChecked(value[0] & 2);
+        return true;
+    }
+    case kKeyLidarIpCfg:
+        if (length < 12) return false;
+        control->findChild<QLineEdit*>("deviceIpEdit")->setText(QString("%1.%2.%3.%4").arg(value[0]).arg(value[1]).arg(value[2]).arg(value[3]));
+        control->findChild<QLineEdit*>("deviceMaskEdit")->setText(QString("%1.%2.%3.%4").arg(value[4]).arg(value[5]).arg(value[6]).arg(value[7]));
+        control->findChild<QLineEdit*>("deviceGatewayEdit")->setText(QString("%1.%2.%3.%4").arg(value[8]).arg(value[9]).arg(value[10]).arg(value[11]));
+        return true;
+    case kKeyLidarPointDataHostIpCfg:
+    case kKeyLidarImuHostIpCfg:
+    case kKeyStateInfoHostIpCfg: {
+        if (length < 8) return false;
+        uint16_t port;
+        std::memcpy(&port, value + 4, sizeof(port));
+        control->findChild<QLineEdit*>(QString("targetIpEdit_%1").arg(key))->setText(
+            QString("%1.%2.%3.%4").arg(value[0]).arg(value[1]).arg(value[2]).arg(value[3]));
+        control->findChild<QSpinBox*>(QString("targetPortSpin_%1").arg(key))->setValue(port);
+        return true;
+    }
+    case kKeySetNTPServerIp:
+        if (length != 4) return false;
+        control->findChild<QLineEdit*>("ntpServerIpEdit")->setText(
+            QString("%1.%2.%3.%4").arg(value[0]).arg(value[1]).arg(value[2]).arg(value[3]));
+        return true;
+    case kKeyFovCfg0:
+    case kKeyFovCfg1: {
+        if (length < sizeof(FovCfg)) return false;
+        FovCfg config;
+        std::memcpy(&config, value, sizeof(config));
+        const auto spins = control->findChildren<QSpinBox*>();
+        spins[0]->setValue(config.yaw_start);
+        spins[1]->setValue(config.yaw_stop);
+        spins[2]->setValue(config.pitch_start);
+        spins[3]->setValue(config.pitch_stop);
+        return true;
+    }
+    case kKeyInstallAttitude: {
+        if (length < sizeof(LivoxLidarInstallAttitude)) return false;
+        LivoxLidarInstallAttitude config;
+        std::memcpy(&config, value, sizeof(config));
+        const auto angles = control->findChildren<QDoubleSpinBox*>();
+        const auto offsets = control->findChildren<QSpinBox*>();
+        angles[0]->setValue(config.roll_deg);
+        angles[1]->setValue(config.pitch_deg);
+        angles[2]->setValue(config.yaw_deg);
+        offsets[0]->setValue(config.x);
+        offsets[1]->setValue(config.y);
+        offsets[2]->setValue(config.z);
+        return true;
+    }
+    default:
+        return false;
+    }
 }
 
 void LivoxViewerWindow::updateParameterDeviceControls()
 {
     LidarDeviceInfo device;
     const bool connected = tryGetCurrentDevice(device) && device.is_connected;
-    const bool avia2 = connected && device.dev_type == kLivoxLidarTypeAvia2;
-    const bool mid360l = connected && device.dev_type == kLivoxLidarTypeMid360l;
-    const bool mid360s = connected && device.dev_type == kLivoxLidarTypeMid360s;
-    if (QWidget* pclControl = parameterState.controls.value(kKeyPclDataType)) {
-        ParameterOptionButtons::buttonGroup(pclControl)->button(3)->setVisible(avia2 || mid360l);
+    const bool reading = connected && parameterState.availableKeys.isEmpty();
+    const uint8_t displayType = connected && !reading ? device.dev_type : kLivoxLidarTypeMid360s;
+    QSet<uint16_t> keys = parameterState.availableKeys;
+    if (!connected || reading) {
+        keys = parameterState.statusKeys;
+        keys.unite({kKeyPclDataType, kKeyPatternMode, kKeyDetectMode, kKeyWorkMode, kKeyImuDataEn,
+                    kKeyLidarIpCfg, kKeyStateInfoHostIpCfg, kKeyLidarPointDataHostIpCfg, kKeyLidarImuHostIpCfg,
+                    kKeyFovCfg0, kKeyFovCfg1, kKeyFovCfgEn, kKeyInstallAttitude,
+                    kKeySetEscMode, kKeySetTimeFilterMode, kKeySetImuRange});
     }
-    for (uint16_t key : {kKeySetFovMode, kKeySetEchoMode, kKeySetNTPServerIp,
-                         kKeySetITOCtrl, kKeySetFogNoiseFilter,
-                         kKeySetEscMode, kKeySetTimeFilterMode, kKeySetImuRange, kKeySetPclFreqMod}) {
-        QWidget* control = parameterState.controls.value(key);
-        if (!control) continue;
-        const bool aviaParameter = key == kKeySetFovMode || key == kKeySetEchoMode ||
-                                   key == kKeySetNTPServerIp || key == kKeySetITOCtrl ||
-                                   key == kKeySetFogNoiseFilter;
-        const bool supported = aviaParameter ? avia2 :
-                               key == kKeySetPclFreqMod ? mid360l : (mid360s || mid360l);
-        control->parentWidget()->setVisible(supported);
-        control->setEnabled(supported && device.parameter_query_ready);
-        if (key == kKeySetEscMode) {
-            ParameterOptionButtons::buttonGroup(control)->button(kLivoxEscSpeedHigh)->setVisible(mid360l);
+    for (auto it = parameterState.controls.cbegin(); it != parameterState.controls.cend(); ++it) {
+        const uint16_t key = it.key();
+        QWidget* control = it.value();
+        const auto& readKeys = parameterState.availableKeys;
+        bool available = readKeys.contains(key);
+        if (key == kKeyFovCfgEn) available = available && readKeys.contains(kKeyFovCfg0);
+        if (key == 0x001F) available = readKeys.contains(kKeyFovCfgEn) && readKeys.contains(kKeyFovCfg1);
+        control->setEnabled(connected && device.parameter_query_ready && available);
+        if (ParameterOptionButtons::isOptionControl(control)) {
+            QButtonGroup* group = ParameterOptionButtons::buttonGroup(control);
+            for (QAbstractButton* button : group->buttons()) {
+                button->setVisible(LidarParameterService::isOptionSupported(displayType, key, group->id(button)));
+            }
+            ParameterOptionButtons::relayoutVisibleButtons(control);
         }
+    }
+    for (auto it = parameterState.sections.cbegin(); it != parameterState.sections.cend(); ++it) {
+        it.value()->setVisible(keys.contains(it.key()));
+    }
+    if (parameterState.targetIpSection) {
+        parameterState.targetIpSection->setVisible(keys.contains(kKeyLidarPointDataHostIpCfg) ||
+            keys.contains(kKeyLidarImuHostIpCfg) || keys.contains(kKeyStateInfoHostIpCfg));
+        parameterState.targetIpSection->setEnabled(connected && !reading);
+    }
+    for (auto it = parameterState.labels.cbegin(); it != parameterState.labels.cend(); ++it) {
+        it.value()->parentWidget()->setVisible(keys.contains(it.key()));
+        if (!connected || reading) {
+            it.value()->setTextFormat(Qt::PlainText);
+            it.value()->setText(reading ? QStringLiteral("正在读取设备参数...") : QStringLiteral("无信息"));
+        }
+    }
+    if (paramTabWidget) {
+        const QSignalBlocker blocker(paramTabWidget);
+        for (int tab = 1; tab < paramTabWidget->count(); ++tab) {
+            QWidget* page = paramTabWidget->widget(tab);
+            bool hasParameters = false;
+            for (QWidget* section : parameterState.sections) {
+                if (page->isAncestorOf(section) && !section->isHidden()) hasParameters = true;
+            }
+            paramTabWidget->setTabVisible(tab, hasParameters);
+        }
+        if (!paramTabWidget->isTabVisible(paramTabWidget->currentIndex())) paramTabWidget->setCurrentIndex(0);
     }
 }
