@@ -248,9 +248,9 @@ QString formatValue(uint16_t key, uint8_t* value, uint16_t length, uint8_t devic
         case kKeySetITOCtrl: {
             switch (value[0]) {
                 case kLivoxItoCtrlDisable: return "关闭";
-                case kLivoxItoCtrlEnable: return "开启";
-                case kLivoxItoCtrlAuto: return "自动";
-                default: return QString("未知ITO模式: %1").arg(value[0]);
+                case kLivoxItoCtrlEnable: return "强制加热";
+                case kLivoxItoCtrlAuto: return "恒温自动";
+                default: return QString("未知窗口加热模式: %1").arg(value[0]);
             }
         }
         case kKeySetFogNoiseFilter: {

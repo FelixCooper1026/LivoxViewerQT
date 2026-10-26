@@ -119,7 +119,7 @@ void LivoxViewerWindow::onParamConfigChanged(uint16_t key)
                     break;
                 }
                 case kKeySetITOCtrl: {
-                    paramName = "ITO控制";
+                    paramName = "窗口加热";
                     success = SetLivoxLidarITOCtrlMode(currentDevice.handle, static_cast<LivoxLidarItoCtrlMode>(index),
                                                        onAsyncControlResponse, this) == kLivoxLidarStatusSuccess;
                     newValue = currentText;
@@ -623,7 +623,7 @@ bool LivoxViewerWindow::startParameterCapture(const QString& baseDir, int durati
             case kKeySetFovMode: parameterState.recordedKeys[key] = "FOV模式"; break;
             case kKeySetEchoMode: parameterState.recordedKeys[key] = "回波模式"; break;
             case kKeySetNTPServerIp: parameterState.recordedKeys[key] = "NTP服务器IP"; break;
-            case kKeySetITOCtrl: parameterState.recordedKeys[key] = "ITO控制"; break;
+            case kKeySetITOCtrl: parameterState.recordedKeys[key] = "窗口加热"; break;
             case kKeySetFogNoiseFilter: parameterState.recordedKeys[key] = "雨雾过滤"; break;
             case kKeySetPclFreqMod: parameterState.recordedKeys[key] = "点频"; break;
             case kKeySetImuRange: parameterState.recordedKeys[key] = "IMU配置"; break;

@@ -275,7 +275,7 @@ QString keyName(uint16_t key)
     case 0x0024: return QStringLiteral("回波模式");
     case 0x0025: return QStringLiteral("NTP 服务器 IP");
     case 0x0026: return QStringLiteral("异常时间过滤");
-    case 0x0027: return QStringLiteral("ITO控制");
+    case 0x0027: return QStringLiteral("窗口加热");
     case 0x0028: return QStringLiteral("雨雾过滤");
     case 0x0029: return QStringLiteral("点频");
     case 0x002B: return QStringLiteral("IMU配置");

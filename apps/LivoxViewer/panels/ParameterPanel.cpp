@@ -380,7 +380,8 @@ void LivoxViewerWindow::createParameterPanel()
     parameterState.controls[kKeySetTimeFilterMode]->setToolTip("开启：丢弃时间戳倒退的点云；关闭：允许时间戳倒退的点云输出。");
     addBasicOptionRow("FOV模式", kKeySetFovMode, {{"Normal", 1}, {"Focus", 0}}, 1);
     addBasicOptionRow("回波模式", kKeySetEchoMode, {{"最强回波", 0}, {"第一回波", 1}}, 0);
-    addBasicOptionRow("ITO控制", kKeySetITOCtrl, {{"关闭", 0}, {"开启", 1}, {"自动", 2}}, 0);
+    addBasicOptionRow("窗口加热", kKeySetITOCtrl, {{"关闭", 0}, {"强制加热", 1}, {"恒温自动", 2}}, 0);
+    parameterState.sections[kKeySetITOCtrl]->setToolTip("窗口玻璃加热：0：关闭；1：强制开启加热；2：恒温自动控制加热。");
     addBasicOptionRow("雨雾过滤", kKeySetFogNoiseFilter, {{"关闭", 0}, {"雨过滤", 1}, {"雾过滤", 2}}, 0);
     addBasicOptionRow("点频", kKeySetPclFreqMod, {{"80k", 0}, {"50k", 1}, {"100k", 2}}, 0);
 
