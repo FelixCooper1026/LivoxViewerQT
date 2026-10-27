@@ -86,10 +86,12 @@ public:
             SquareAndConcentricCircles = 2
         };
 
-        float range = 100.0f;
+        float range = 1000.0f;
         float step = 1.0f;
         QColor color = QColor(77, 77, 77);
         Type type = Square;
+        bool autoSpacing = true;
+        bool showScale = true;
     };
 
     struct StlModelInstance {
@@ -201,6 +203,8 @@ private:
     struct PointCloudSegment;
 
     void setupShaders();
+    void drawGrid(bool edlActive);
+    float maximumCameraDistance() const { return m_gridConfig.range * 2.0f; }
     void setupBackgroundBuffers();
     void setupBuffers();
     void setupAxesBuffers();
@@ -401,8 +405,16 @@ private:
 
     bool m_gridVisible;
     QOpenGLVertexArrayObject m_gridVao;
-    QOpenGLBuffer m_gridVbo;
-    int m_gridVertexCount = 0;
+    QOpenGLShaderProgram* m_gridProgram = nullptr;
+    float m_gridMinorStep = 1.0f;
+    float m_gridMajorStep = 5.0f;
+    float m_gridOuterStep = 10.0f;
+    float m_gridLevelBlend = 0.0f;
+    float m_gridLabelStep = 5.0f;
+    float m_gridFadeStep = 1.0f;
+    float m_gridDensityScale = 0.0f;
+    float m_gridZoomDistance = -1.0f;
+    float m_gridZoomDepth = 1.0f;
     GridConfig m_gridConfig;
 
     float m_distance;

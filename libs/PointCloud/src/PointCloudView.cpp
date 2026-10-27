@@ -68,13 +68,22 @@ constexpr float kDefaultCameraDistance = 25.0f;
 constexpr float kDefaultNearPlane = 0.1f;
 constexpr float kMinimumNearPlane = 0.005f;
 constexpr float kNearPlaneDistanceRatio = 0.05f;
+constexpr float kGridRangeFadeStart = 0.8f;
+constexpr float kGridDensityFadeStartPx = 8.0f;
+constexpr float kGridDensityFadeEndPx = 2.0f;
+
+float gridFade(float value, float start, float end)
+{
+    const float t = std::clamp((value - start) / (end - start), 0.0f, 1.0f);
+    return 1.0f - t * t * (3.0f - 2.0f * t);
+}
+
 constexpr float kSlamFollowLookAheadM = 4.0f;
 constexpr float kSlamFollowTargetHeightM = 0.5f;
 constexpr float kSlamFollowPositionSmoothingSeconds = 0.12f;
 constexpr float kSlamFollowOrientationSmoothingSeconds = 0.22f;
 constexpr float kSlamFollowOrbitSensitivityDeg = 0.3f;
 constexpr float kSlamFollowMinDistanceM = 0.5f;
-constexpr float kSlamFollowMaxDistanceM = 500.0f;
 
 bool isSupportedPlaybackDropFile(const QString& filePath)
 {
@@ -553,8 +562,8 @@ PointCloudView::~PointCloudView()
     destroySlamRenderOverlay();
     m_backgroundVbo.destroy();
     m_backgroundVao.destroy();
-    m_gridVbo.destroy();
     m_gridVao.destroy();
+    delete m_gridProgram;
     m_axesVbo.destroy();
     m_axesVao.destroy();
     destroyPointCloudSegments();
@@ -671,7 +680,7 @@ void PointCloudView::mouseDoubleClickEvent(QMouseEvent *event)
                 const QVector3D toPoint = pickedWorld - m_viewerPosition;
                 const float pickedDistance = toPoint.length();
                 if (pickedDistance > 1e-3f) {
-                    m_distance = qMax(1.0f, pickedDistance * 0.5f);
+                    m_distance = std::clamp(pickedDistance * 0.5f, 1.0f, maximumCameraDistance());
                     m_viewerPosition = pickedWorld - toPoint.normalized() * m_distance;
                     m_target = pickedWorld;
                     update();
@@ -1444,99 +1453,286 @@ void PointCloudView::setGridConfig(const GridConfig& config)
     }
 
     m_gridConfig = normalized;
-
-    if (context()) {
-        makeCurrent();
-        setupGridBuffers();
-        doneCurrent();
+    m_gridZoomDistance = -1.0f;
+    const float oldDistance = m_distance;
+    m_distance = std::clamp(m_distance, 0.1f, maximumCameraDistance());
+    if (m_projectionMode == ProjectionMode::ObserverPerspective) {
+        m_viewerPosition += cameraForward() * (oldDistance - m_distance);
     }
+    m_slamFollowDistanceM = std::clamp(m_slamFollowDistanceM,
+                                      kSlamFollowMinDistanceM, maximumCameraDistance());
     update();
 }
 
 void PointCloudView::setupGridBuffers()
 {
-    struct GridVertex {
-        float x, y, z;
-        float r, g, b;
-    };
-
-    std::vector<GridVertex> gridVertices;
-
-    const float range = std::max(1.0f, m_gridConfig.range);
-    const float step = std::max(0.1f, m_gridConfig.step);
-    const QVector3D gridColor(float(m_gridConfig.color.redF()),
-                              float(m_gridConfig.color.greenF()),
-                              float(m_gridConfig.color.blueF()));
-    const QVector3D xAxisColor(1.0f, 0.12f, 0.10f);
-    const QVector3D yAxisColor(0.10f, 0.80f, 0.20f);
-    const int ringSegments = 96;
-    const float pi = 3.14159265358979323846f;
-
-    auto addLine = [&](const QVector3D& p1, const QVector3D& p2, const QVector3D& color) {
-        gridVertices.push_back({p1.x(), p1.y(), p1.z(), color.x(), color.y(), color.z()});
-        gridVertices.push_back({p2.x(), p2.y(), p2.z(), color.x(), color.y(), color.z()});
-    };
-
-    const bool drawSquareGrid =
-        m_gridConfig.type == GridConfig::Square ||
-        m_gridConfig.type == GridConfig::SquareAndConcentricCircles;
-    const bool drawConcentricCircles =
-        m_gridConfig.type == GridConfig::ConcentricCircles ||
-        m_gridConfig.type == GridConfig::SquareAndConcentricCircles;
-
-    if (drawSquareGrid) {
-        for (float i = -range; i <= range + 1e-4f; i += step) {
-            if (std::abs(i) <= 1e-4f) {
-                continue;
-            }
-            addLine(QVector3D(i, -range, 0.0f), QVector3D(i, range, 0.0f), gridColor);
-            addLine(QVector3D(-range, i, 0.0f), QVector3D(range, i, 0.0f), gridColor);
+    const char* vertexSource = R"(
+        #version 330 core
+        uniform mat4 uViewProjection;
+        out vec2 vNdc;
+        flat out vec3 vXAxisLine;
+        flat out vec3 vYAxisLine;
+        void main() {
+            vec2 position = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+            vNdc = position * 2.0 - 1.0;
+            gl_Position = vec4(vNdc, 0.0, 1.0);
+            vec3 origin = uViewProjection[3].xyw;
+            vXAxisLine = cross(origin, uViewProjection[0].xyw);
+            vYAxisLine = cross(origin, uViewProjection[1].xyw);
         }
-    }
+    )";
+    const char* fragmentSource = R"(
+        #version 330 core
+        in vec2 vNdc;
+        flat in vec3 vXAxisLine;
+        flat in vec3 vYAxisLine;
+        out vec4 FragColor;
+        uniform mat4 uInverseViewProjection;
+        uniform mat4 uViewProjection;
+        uniform mat4 uView;
+        uniform vec3 uColor;
+        uniform float uRange;
+        uniform float uMinorStep;
+        uniform float uMajorStep;
+        uniform float uOuterStep;
+        uniform float uLevelBlend;
+        uniform float uFadeStep;
+        uniform float uPixelRatio;
+        uniform vec2 uViewportSize;
+        uniform float uDensityScale;
+        uniform vec2 uDensityFade;
+        uniform float uRangeFadeStart;
+        uniform int uType;
+        uniform int uPerspective;
+        uniform int uUseSceneDepth;
+        uniform sampler2D uSceneDepth;
 
-    if (drawConcentricCircles) {
-        for (float radius = step; radius <= range + 1e-4f; radius += step) {
-            for (int i = 0; i < ringSegments; ++i) {
-                const float a0 = (2.0f * pi * float(i)) / float(ringSegments);
-                const float a1 = (2.0f * pi * float(i + 1)) / float(ringSegments);
-                addLine(QVector3D(radius * std::cos(a0), radius * std::sin(a0), 0.0f),
-                        QVector3D(radius * std::cos(a1), radius * std::sin(a1), 0.0f),
-                        gridColor);
-            }
+        // Derivative-based coverage keeps lines near one logical pixel wide.
+        float lineCoverage(float distanceToLine, float footprint) {
+            return 1.0 - smoothstep(0.0, uPixelRatio, distanceToLine / footprint);
         }
-    }
-
-    if (drawSquareGrid || drawConcentricCircles) {
-        addLine(QVector3D(-range, 0.0f, 0.0f), QVector3D(range, 0.0f, 0.0f), xAxisColor);
-        addLine(QVector3D(0.0f, -range, 0.0f), QVector3D(0.0f, range, 0.0f), yAxisColor);
-    }
-
-    m_gridVertexCount = int(gridVertices.size());
-
-    if (m_gridVbo.isCreated()) {
-        m_gridVbo.destroy();
-    }
-    if (m_gridVao.isCreated()) {
-        m_gridVao.destroy();
-    }
-
+        float axisCoverage(vec3 line) {
+            // Ground-coordinate derivatives jump across the horizon; use the projected axis instead.
+            float footprint = length(2.0 * line.xy / uViewportSize);
+            if (footprint == 0.0) return 0.0; // An axis viewed end-on projects to a point.
+            return lineCoverage(abs(dot(line, vec3(vNdc, 1.0))), footprint);
+        }
+        float periodicLine(float coordinate, float spacing, float footprint) {
+            float distanceToLine = abs(fract(coordinate / spacing + 0.5) - 0.5) * spacing;
+            return lineCoverage(distanceToLine, footprint);
+        }
+        float densityFade(float footprint, float spacing) {
+            return 1.0 - smoothstep(uDensityFade.x, uDensityFade.y, footprint / spacing);
+        }
+        float squareGrid(vec2 p, vec2 footprint, float spacing) {
+            return max(periodicLine(p.x, spacing, footprint.x),
+                       periodicLine(p.y, spacing, footprint.y));
+        }
+        float gridLayer(vec2 p, vec2 footprint, float radius, float radialFootprint,
+                        float spacing) {
+            float square = 0.0;
+            float rings = 0.0;
+            if (uType != 1) {
+                square = squareGrid(p, footprint, spacing);
+            }
+            if (uType != 0) {
+                // No zero-radius ring: the axes mark the world origin.
+                rings = periodicLine(radius, spacing, radialFootprint)
+                    * smoothstep(0.0, spacing * 0.5, radius);
+                if (uType == 2) rings *= 0.55;
+            }
+            return max(square, rings);
+        }
+        void main() {
+            vec4 nearH = uInverseViewProjection * vec4(vNdc, -1.0, 1.0);
+            vec4 farH = uInverseViewProjection * vec4(vNdc, 1.0, 1.0);
+            vec3 nearPoint = nearH.xyz / nearH.w;
+            vec3 ray = farH.xyz / farH.w - nearPoint;
+            if (abs(ray.z) < 0.000001) discard;
+            float t = -nearPoint.z / ray.z;
+            if (t <= 0.0 || t >= 1.0) discard;
+            vec3 world = nearPoint + ray * t;
+            vec4 clip = uViewProjection * vec4(world, 1.0);
+            float depth = clip.z / clip.w * 0.5 + 0.5;
+            gl_FragDepth = depth;
+            vec2 p = world.xy;
+            vec2 footprint = max(fwidth(p), vec2(0.000001));
+            float radius = length(p);
+            float radialFootprint = max(fwidth(radius), 0.000001);
+            if (uUseSceneDepth == 1 && depth >= texture(uSceneDepth, vNdc * 0.5 + 0.5).r)
+                discard;
+            float viewDepth = -(uView * vec4(world, 1.0)).z;
+            // One density footprint per depth slice, shared by both grid directions.
+            // This avoids wedge-shaped cutoffs from independent X/Y derivatives.
+            float densityFootprint = uDensityScale
+                * (uPerspective == 1 ? viewDepth * viewDepth : 1.0);
+            float squareDistance = max(abs(p.x), abs(p.y));
+            // All layers share one fade, including during a spacing transition.
+            float rangeDistance = uType == 0 ? squareDistance : radius;
+            float rangeFade = 1.0 - smoothstep(uRange * uRangeFadeStart, uRange, rangeDistance);
+            float gridVisibility = densityFade(densityFootprint, uFadeStep) * rangeFade;
+            // All three intervals divide into each other. Coarsening removes existing lines
+            // and promotes shared ones instead of overlaying two incompatible lattices.
+            float coverage = max(
+                0.36 * (1.0 - uLevelBlend) * gridLayer(p, footprint, radius, radialFootprint, uMinorStep),
+                mix(0.86, 0.36, uLevelBlend) * gridLayer(p, footprint, radius, radialFootprint, uMajorStep));
+            if (uLevelBlend > 0.0) {
+                coverage = max(coverage, 0.86 * uLevelBlend
+                    * gridLayer(p, footprint, radius, radialFootprint, uOuterStep));
+            }
+            float alpha = coverage;
+            float xAxis = axisCoverage(vXAxisLine) * 0.92;
+            float yAxis = axisCoverage(vYAxisLine) * 0.92;
+            vec3 color = uColor;
+            float axisAlpha = max(xAxis, yAxis);
+            if (axisAlpha > 0.0) {
+                vec3 axisColor = xAxis >= yAxis ? vec3(0.95, 0.18, 0.15) : vec3(0.12, 0.82, 0.24);
+                float combined = axisAlpha + alpha * (1.0 - axisAlpha);
+                color = (axisColor * axisAlpha + color * alpha * (1.0 - axisAlpha)) / combined;
+                alpha = combined;
+            }
+            alpha *= gridVisibility;
+            if (alpha <= 0.001) discard;
+            FragColor = vec4(color, alpha);
+        }
+    )";
+    m_gridProgram = new QOpenGLShaderProgram();
+    m_gridProgram->addShaderFromSourceCode(QOpenGLShader::Vertex, vertexSource);
+    m_gridProgram->addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentSource);
+    m_gridProgram->link();
     m_gridVao.create();
+}
+
+void PointCloudView::drawGrid(bool edlActive)
+{
+    const bool perspective = m_projectionMode != ProjectionMode::Orthographic;
+    const QMatrix4x4 inverseView = m_modelView.inverted();
+    const QVector3D eye = inverseView.map(QVector3D());
+    const QVector3D forward = inverseView.mapVector(QVector3D(0.0f, 0.0f, -1.0f));
+    const float range = m_gridConfig.range;
+    const float zoomDistance = m_projectionMode == ProjectionMode::SlamPoseFollow
+        ? m_slamFollowDistanceM : m_distance;
+    const QMatrix4x4 viewProjection = m_projection * m_modelView;
+    const QMatrix4x4 inverseViewProjection = viewProjection.inverted();
+    if (zoomDistance != m_gridZoomDistance) {
+        // Refresh the density reference only on zoom. Rotating or panning alone keeps the levels.
+        m_gridZoomDistance = zoomDistance;
+        m_gridZoomDepth = zoomDistance;
+        if (perspective && m_gridConfig.autoSpacing) {
+            // The observer can look away from its pivot. Sample the visible ground instead of
+            // treating the camera's virtual orbit distance as the depth of the displayed grid.
+            float weightedLogDepth = 0.0f;
+            float totalWeight = 0.0f;
+            for (int y = -2; y <= 2; ++y) {
+                for (int x = -2; x <= 2; ++x) {
+                    const QVector3D nearPoint = (inverseViewProjection
+                        * QVector4D(x * 0.375f, y * 0.375f, -1.0f, 1.0f)).toVector3DAffine();
+                    const QVector3D farPoint = (inverseViewProjection
+                        * QVector4D(x * 0.375f, y * 0.375f, 1.0f, 1.0f)).toVector3DAffine();
+                    const QVector3D ray = farPoint - nearPoint;
+                    if (std::abs(ray.z()) < 0.000001f) continue;
+                    const float t = -nearPoint.z() / ray.z();
+                    if (t <= 0.0f || t >= 1.0f) continue;
+                    const QVector3D ground = nearPoint + ray * t;
+                    const float rangeDistance = m_gridConfig.type == GridConfig::Square
+                        ? std::max(std::abs(ground.x()), std::abs(ground.y()))
+                        : QVector2D(ground.x(), ground.y()).length();
+                    if (rangeDistance >= range) continue;
+                    // Samples leave the range with zero weight, avoiding density jumps
+                    // when a sample crosses the grid boundary during zoom.
+                    const float weight = gridFade(rangeDistance, range * kGridRangeFadeStart, range)
+                        * gridFade(t, 0.8f, 1.0f);
+                    weightedLogDepth += std::log(-m_modelView.map(ground).z()) * weight;
+                    totalWeight += weight;
+                }
+            }
+            if (totalWeight > 0.0f) {
+                m_gridZoomDepth = std::exp(weightedLogDepth / totalWeight);
+            }
+        }
+    }
+    const float viewSpan = perspective ? m_gridZoomDepth : 1.0f;
+    const float metersPerPixel = 2.0f * viewSpan
+        / (m_projection(1, 1) * float(qMax(1, height())));
+    const float planeScale = perspective ? std::abs(eye.z()) : std::abs(forward.z());
+    const float densityScale = 2.0f
+        / (m_projection(1, 1) * float(qMax(1, height())) * std::max(0.000001f, planeScale));
+    m_gridDensityScale = densityScale;
+    m_gridMinorStep = m_gridFadeStep = m_gridConfig.step;
+    m_gridMajorStep = m_gridOuterStep = m_gridConfig.step * 5.0f;
+    m_gridLevelBlend = 0.0f;
+    if (m_gridConfig.autoSpacing) {
+        // Nested 1/5/10/50/... levels stay aligned throughout a zoom transition.
+        // The configured base interval anchors the hierarchy and remains its lower bound.
+        const float desiredStep = std::max(m_gridConfig.step, metersPerPixel * 48.0f);
+        const float decade = m_gridConfig.step
+            * std::pow(10.0f, std::floor(std::log10(desiredStep / m_gridConfig.step)));
+        const float mantissa = desiredStep / decade;
+        if (mantissa < 5.0f) {
+            m_gridMinorStep = decade;
+            m_gridMajorStep = decade * 5.0f;
+            m_gridOuterStep = decade * 10.0f;
+        } else {
+            m_gridMinorStep = decade * 5.0f;
+            m_gridMajorStep = decade * 10.0f;
+            m_gridOuterStep = decade * 50.0f;
+        }
+        m_gridFadeStep = desiredStep;
+        const float blend = std::log(desiredStep / m_gridMinorStep)
+            / std::log(m_gridMajorStep / m_gridMinorStep);
+        m_gridLevelBlend = blend * blend * (3.0f - 2.0f * blend);
+    }
+    // Reference numbers always use one uniform interval. A hysteresis band prevents
+    // small zoom reversals from repeatedly adding and removing intermediate labels.
+    if (m_gridLabelStep <= m_gridMajorStep) {
+        m_gridLabelStep = m_gridLevelBlend > 0.6f ? m_gridOuterStep : m_gridMajorStep;
+    } else {
+        m_gridLabelStep = m_gridLevelBlend < 0.4f ? m_gridMajorStep : m_gridOuterStep;
+    }
+
+    m_gridProgram->bind();
+    m_gridProgram->setUniformValue("uInverseViewProjection", inverseViewProjection);
+    m_gridProgram->setUniformValue("uViewProjection", viewProjection);
+    m_gridProgram->setUniformValue("uView", m_modelView);
+    m_gridProgram->setUniformValue("uColor", QVector3D(m_gridConfig.color.redF(),
+                                                     m_gridConfig.color.greenF(),
+                                                     m_gridConfig.color.blueF()));
+    m_gridProgram->setUniformValue("uRange", range);
+    m_gridProgram->setUniformValue("uMinorStep", m_gridMinorStep);
+    m_gridProgram->setUniformValue("uMajorStep", m_gridMajorStep);
+    m_gridProgram->setUniformValue("uOuterStep", m_gridOuterStep);
+    m_gridProgram->setUniformValue("uLevelBlend", m_gridLevelBlend);
+    m_gridProgram->setUniformValue("uFadeStep", m_gridFadeStep);
+    m_gridProgram->setUniformValue("uPixelRatio", float(devicePixelRatioF()));
+    const QSize viewportSize = widgetPhysicalSize();
+    m_gridProgram->setUniformValue("uViewportSize",
+        QVector2D(float(viewportSize.width()), float(viewportSize.height())));
+    m_gridProgram->setUniformValue("uDensityScale", densityScale);
+    m_gridProgram->setUniformValue("uDensityFade",
+        QVector2D(1.0f / kGridDensityFadeStartPx, 1.0f / kGridDensityFadeEndPx));
+    m_gridProgram->setUniformValue("uRangeFadeStart", kGridRangeFadeStart);
+    m_gridProgram->setUniformValue("uType", int(m_gridConfig.type));
+    m_gridProgram->setUniformValue("uPerspective", perspective ? 1 : 0);
+    m_gridProgram->setUniformValue("uUseSceneDepth", edlActive ? 1 : 0);
+    m_gridProgram->setUniformValue("uSceneDepth", 0);
+    glActiveTexture(GL_TEXTURE0);
+    if (edlActive) {
+        glDisable(GL_DEPTH_TEST);
+        glBindTexture(GL_TEXTURE_2D, m_edlRenderer->sceneDepthTexture());
+    } else {
+        glEnable(GL_DEPTH_TEST);
+    }
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ZERO, GL_ONE);
     m_gridVao.bind();
-
-    m_gridVbo.create();
-    m_gridVbo.bind();
-    m_gridVbo.setUsagePattern(QOpenGLBuffer::StaticDraw);
-    m_gridVbo.allocate(gridVertices.data(), int(gridVertices.size() * sizeof(GridVertex)));
-
-    // 复用现有 shader 的 layout (loc 0=pos, loc 1=color)
-    m_program->enableAttributeArray(0);
-    m_program->setAttributeBuffer(0, GL_FLOAT, 0, 3, sizeof(GridVertex));
-    
-    m_program->enableAttributeArray(1);
-    m_program->setAttributeBuffer(1, GL_FLOAT, 3 * sizeof(float), 3, sizeof(GridVertex));
-
+    glDrawArrays(GL_TRIANGLES, 0, 3);
     m_gridVao.release();
-    m_gridVbo.release();
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    m_gridProgram->release();
 }
 
 static QMatrix4x4 quaternionToMatrix(const QQuaternion& q)
@@ -1937,35 +2133,6 @@ void PointCloudView::paintGL()
         m_program->setUniformValue("uModelLighting", 0);
     }
 
-    // 网格最后写入场景颜色，复用已经完成的点云深度，不参与 qEDL 深度生成。
-    if (m_gridVisible) {
-        m_program->setUniformValue("uSelectionEnabled", 0);
-        m_program->setUniformValue("uPersistEnabled", 0);
-        m_program->setUniformValue("uModelLighting", 0);
-        setPrimitiveState(false, false);
-        if (edlActive) {
-            glDepthMask(GL_FALSE);
-        } else {
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_LINE_SMOOTH);
-            glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
-        }
-        glLineWidth(1.0f);
-        if (m_gridVertexCount > 0) {
-            m_gridVao.bind();
-            glDrawArrays(GL_LINES, 0, m_gridVertexCount);
-            m_gridVao.release();
-        }
-        if (edlActive) {
-            glDepthMask(GL_TRUE);
-        } else {
-            glDisable(GL_LINE_SMOOTH);
-            glDisable(GL_BLEND);
-        }
-    }
-    glLineWidth(1.0f);
-
     if (edlActive) {
         m_program->release();
         const QSize physicalSize = widgetPhysicalSize();
@@ -1992,6 +2159,13 @@ void PointCloudView::paintGL()
         m_program->setUniformValue("uSelectionEnabled", 0);
         m_program->setUniformValue("uPersistEnabled", 0);
         setPrimitiveState(false, false);
+    }
+
+    // Composite the grid after qEDL; its alpha is opacity, never a qEDL category.
+    if (m_gridVisible) {
+        m_program->release();
+        drawGrid(edlActive);
+        m_program->bind();
     }
 
     if (m_slamPoseAxisVertexCount > 0 && m_slamPoseAxisVao.isCreated()) {
@@ -2154,6 +2328,74 @@ void PointCloudView::paintGL()
 
             // 微调居中，让字母正中心对准坐标
             painter.drawText(sx - 4, sy + 4, labels[i]); 
+        }
+    }
+
+    if (m_gridVisible && m_gridConfig.showScale) {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        QFont font = painter.font();
+        font.setPixelSize(12);
+        painter.setFont(font);
+        const QFontMetrics fm(painter.font());
+        const QMatrix4x4 mvp = m_projection * m_modelView;
+        const QMatrix4x4 inverseMvp = mvp.inverted();
+        const bool perspective = m_projectionMode != ProjectionMode::Orthographic;
+        const float labelRange = m_gridConfig.range;
+        const bool darkBackground = m_backgroundBottomColor.lightnessF() < 0.5;
+        const float foreground = darkBackground ? 0.78f : 0.22f;
+        const QColor labelColor = QColor::fromRgbF(
+            m_gridConfig.color.redF() * 0.35f + foreground * 0.65f,
+            m_gridConfig.color.greenF() * 0.35f + foreground * 0.65f,
+            m_gridConfig.color.blueF() * 0.35f + foreground * 0.65f);
+        QVector<QRectF> labelBounds;
+        // Keep the existing orientation indicator clear of grid reference numbers.
+        labelBounds.append(QRectF(20, height() - 150, 130, 130));
+        for (int axis = 0; axis < 2; ++axis) {
+            const QVector3D direction = axis == 0 ? QVector3D(1, 0, 0) : QVector3D(0, 1, 0);
+            QVector4D clipA = mvp * QVector4D(direction * -labelRange, 1.0f);
+            QVector4D clipB = mvp * QVector4D(direction * labelRange, 1.0f);
+            if (!clipHomogeneousSegment(clipA, clipB)) continue;
+            const QLineF axisLine(clipToScreenPoint(clipA, width(), height()),
+                                  clipToScreenPoint(clipB, width(), height()));
+            if (axisLine.length() < 1.0) continue;
+            // Keep labels on one oriented side of the whole axis, without screen-quadrant flips.
+            const QPointF normal(-axisLine.dy() / axisLine.length(), axisLine.dx() / axisLine.length());
+            const QVector3D worldA = (inverseMvp * clipA).toVector3DAffine();
+            const QVector3D worldB = (inverseMvp * clipB).toVector3DAffine();
+            const float low = axis == 0 ? worldA.x() : worldA.y();
+            const float high = axis == 0 ? worldB.x() : worldB.y();
+            const int first = int(std::ceil(low / m_gridLabelStep));
+            const int last = int(std::floor(high / m_gridLabelStep));
+            for (int tick = first; tick <= last; ++tick) {
+                if (tick == 0) continue;
+                const float value = float(tick) * m_gridLabelStep;
+                const QVector3D anchor = direction * value;
+                const float viewDepth = -m_modelView.map(anchor).z();
+                const float densityFootprint = m_gridDensityScale
+                    * (perspective ? viewDepth * viewDepth : 1.0f);
+                const float visibility = gridFade(densityFootprint / m_gridFadeStep,
+                    1.0f / kGridDensityFadeStartPx, 1.0f / kGridDensityFadeEndPx)
+                    * gridFade(std::abs(value), labelRange * kGridRangeFadeStart, labelRange);
+                if (visibility <= 0.001f) continue;
+                const QString label = QString::number(value, 'g', 4) + QStringLiteral(" m");
+                ProjectedScreenPoint projected;
+                if (!projectVisiblePointToScreen(QVector4D(anchor, 1.0f), mvp,
+                                                  width(), height(), projected)) continue;
+                QRectF textRect(0, 0, fm.horizontalAdvance(label) + 2, fm.height());
+                const qreal offset = 6.0 + std::abs(normal.x()) * textRect.width() * 0.5
+                                         + std::abs(normal.y()) * textRect.height() * 0.5;
+                textRect.moveCenter(QPointF(projected.x, projected.y) + normal * offset);
+                const QRectF bounds = textRect.adjusted(-6, -4, 6, 4);
+                if (!QRectF(rect()).contains(bounds)) continue;
+                if (std::any_of(labelBounds.cbegin(), labelBounds.cend(),
+                                [&bounds](const QRectF& other) { return bounds.intersects(other); })) continue;
+                labelBounds.append(bounds);
+                QColor color = labelColor;
+                color.setAlphaF(visibility);
+                painter.setPen(color);
+                painter.drawText(textRect, Qt::AlignCenter, label);
+            }
         }
     }
 
@@ -2621,18 +2863,19 @@ void PointCloudView::leaveEvent(QEvent *event)
 
 void PointCloudView::wheelEvent(QWheelEvent *event)
 {
+    const float maxDistance = maximumCameraDistance();
     if (m_projectionMode == ProjectionMode::SlamPoseFollow) {
         const float factor = std::clamp(1.0f - event->angleDelta().y() * 0.001f, 0.1f, 10.0f);
         m_slamFollowDistanceM = std::clamp(m_slamFollowDistanceM * factor,
                                           kSlamFollowMinDistanceM,
-                                          kSlamFollowMaxDistanceM);
+                                          maxDistance);
         update();
         event->accept();
         return;
     }
     const float oldDistance = m_distance;
     const float factor = 1.0f - event->angleDelta().y() * 0.001f; // 每格约 1.5% 的比例变化
-    m_distance = qMax(0.1f, m_distance * factor);                  // 最小距离 0.1
+    m_distance = std::clamp(m_distance * factor, 0.1f, maxDistance);
     if (m_projectionMode == ProjectionMode::ObserverPerspective) {
         m_viewerPosition += cameraForward() * (oldDistance - m_distance);
     }
@@ -3713,7 +3956,7 @@ void PointCloudView::resetView()
     m_orientation = QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), -45.0f)
                 * QQuaternion::fromAxisAndAngle(QVector3D(0, 0, 1), 90.0f);
     m_target = QVector3D(0, 0, 0);
-    m_distance = kDefaultCameraDistance;
+    m_distance = std::min(kDefaultCameraDistance, maximumCameraDistance());
     syncViewerPositionFromOrbit();
     update();
 }
@@ -3742,6 +3985,7 @@ void PointCloudView::setProjectionMode(ProjectionMode mode)
         syncOrbitTargetFromViewer();
     }
     m_projectionMode = mode;
+    m_gridZoomDistance = -1.0f;
     if (mode == ProjectionMode::SlamPoseFollow && m_slamFollowPoseValid) {
         m_slamFollowPosition = m_slamFollowTargetPosition;
         m_slamFollowOrientation = m_slamFollowTargetOrientation;
@@ -3810,7 +4054,7 @@ void PointCloudView::setViewPreset(ViewPreset preset)
         break;
     }
     m_target = QVector3D(0, 0, 0);
-    m_distance = kDefaultCameraDistance;
+    m_distance = std::min(kDefaultCameraDistance, maximumCameraDistance());
     syncViewerPositionFromOrbit();
     update();
 }

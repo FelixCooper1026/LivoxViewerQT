@@ -1116,12 +1116,14 @@ void LivoxViewerWindow::loadViewPreferences()
     if (elevationLegendMax <= elevationLegendMin) {
         elevationLegendMax = elevationLegendMin + 1.0f;
     }
-    PointCloudView::GridConfig config = pointCloudGridConfig;
-    config.range = settings.value("grid/range", config.range).toFloat();
-    config.step = settings.value("grid/step", config.step).toFloat();
-    config.color = settings.value("grid/color", config.color).value<QColor>();
+    PointCloudView::GridConfig config;
+    config.range = settings.value("worldGrid/range", config.range).toFloat();
+    config.step = settings.value("worldGrid/baseStep", config.step).toFloat();
+    config.color = settings.value("worldGrid/color", config.color).value<QColor>();
     config.type = static_cast<PointCloudView::GridConfig::Type>(
-        settings.value("grid/type", int(config.type)).toInt());
+        settings.value("worldGrid/type", int(config.type)).toInt());
+    config.autoSpacing = settings.value("worldGrid/autoSpacing", config.autoSpacing).toBool();
+    config.showScale = settings.value("worldGrid/showScale", config.showScale).toBool();
     config.range = std::max(1.0f, config.range);
     config.step = std::max(0.1f, config.step);
     if (!config.color.isValid()) {
@@ -1188,10 +1190,12 @@ void LivoxViewerWindow::saveViewPreferences()
 
     const PointCloudView::GridConfig config = pointCloudGridConfig;
     QSettings settings("Livox", "LivoxViewerQT");
-    settings.setValue("grid/range", config.range);
-    settings.setValue("grid/step", config.step);
-    settings.setValue("grid/color", config.color);
-    settings.setValue("grid/type", int(config.type));
+    settings.setValue("worldGrid/range", config.range);
+    settings.setValue("worldGrid/baseStep", config.step);
+    settings.setValue("worldGrid/color", config.color);
+    settings.setValue("worldGrid/type", int(config.type));
+    settings.setValue("worldGrid/autoSpacing", config.autoSpacing);
+    settings.setValue("worldGrid/showScale", config.showScale);
     settings.setValue("legend/distanceMin", distanceLegendMin);
     settings.setValue("legend/distanceMax", distanceLegendMax);
     settings.setValue("legend/elevationMin", elevationLegendMin);
@@ -1381,6 +1385,15 @@ void LivoxViewerWindow::showPreferencesDialog()
     stepSpin->setSuffix(" m");
     stepSpin->setValue(config.step);
     preparePreferenceSpinBox(stepSpin);
+
+    QComboBox* gridSpacingCombo = new QComboBox(&dlg);
+    gridSpacingCombo->addItem(QStringLiteral("自动"), true);
+    gridSpacingCombo->addItem(QStringLiteral("固定"), false);
+    gridSpacingCombo->setCurrentIndex(config.autoSpacing ? 0 : 1);
+    gridSpacingCombo->setFixedWidth(kPreferenceComboBoxWidth);
+    usePreferenceControlColumn(gridSpacingCombo, kPreferenceComboBoxWidth);
+    SwitchCheckBox* gridScaleCheck = new SwitchCheckBox(gridTab);
+    gridScaleCheck->setChecked(config.showScale);
 
     QWidget* colorRow = new QWidget(&dlg);
     usePreferenceControlColumn(colorRow);
@@ -2513,10 +2526,12 @@ void LivoxViewerWindow::showPreferencesDialog()
 
     addPreferenceSectionTitle(gridLayout, "世界坐标网格");
     QFrame* gridSection = createPreferenceSection(gridTab);
-    addPreferenceRow(gridSection, "范围", "控制网格从中心向外显示的最大距离。", rangeSpin);
-    addPreferenceRow(gridSection, "间距", "控制相邻网格线或圆环之间的距离。", stepSpin);
-    addPreferenceRow(gridSection, "颜色", "设置网格线的显示颜色。", colorRow);
-    addPreferenceRow(gridSection, "类型", "选择方形网格、同心圆网格或两者同时显示。", gridTypeCombo);
+    addPreferenceRow(gridSection, "范围", "从原点向外显示的最大网格距离。", rangeSpin);
+    addPreferenceRow(gridSection, "密度", "自动：随缩放自动切换网格间距；固定：使用固定网格间距。", gridSpacingCombo);
+    addPreferenceRow(gridSection, "间距", "固定模式下为实际网格间距；自动模式下为网格间距下限。", stepSpin);
+    addPreferenceRow(gridSection, "颜色", "设置网格颜色。", colorRow);
+    addPreferenceRow(gridSection, "类型", "显示方形网格、同心圆网格或两者同时显示。", gridTypeCombo);
+    addPreferenceRow(gridSection, "坐标", "在网格轴线附近显示距离坐标值。", gridScaleCheck);
     gridLayout->addWidget(gridSection);
     gridLayout->addStretch();
 
@@ -3244,6 +3259,8 @@ void LivoxViewerWindow::showPreferencesDialog()
     config.step = float(stepSpin->value());
     config.color = selectedColor;
     config.type = static_cast<PointCloudView::GridConfig::Type>(gridTypeCombo->currentData().toInt());
+    config.autoSpacing = gridSpacingCombo->currentData().toBool();
+    config.showScale = gridScaleCheck->isChecked();
     distanceLegendMin = float(distanceMinSpin->value());
     distanceLegendMax = float(distanceMaxSpin->value());
     elevationLegendMin = float(elevationMinSpin->value());
@@ -3425,7 +3442,9 @@ void LivoxViewerWindow::showPreferencesDialog()
         config.range != previousGridConfig.range ||
         config.step != previousGridConfig.step ||
         config.color != previousGridConfig.color ||
-        config.type != previousGridConfig.type;
+        config.type != previousGridConfig.type ||
+        config.autoSpacing != previousGridConfig.autoSpacing ||
+        config.showScale != previousGridConfig.showScale;
     pointCloudGridConfig = config;
     const bool pointCloudColorChanged =
         distanceLegendMin != previousDistanceLegendMin ||

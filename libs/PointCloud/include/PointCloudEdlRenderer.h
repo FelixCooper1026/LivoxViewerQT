@@ -32,6 +32,7 @@ public:
     bool isSupported() const { return m_shaderValid; }
     QString errorMessage() const { return m_errorMessage; }
     QSize framebufferSize() const { return m_framebufferSize; }
+    GLuint sceneDepthTexture() const { return m_sceneDepthTexture; }
 
 private:
     struct ScalePass
