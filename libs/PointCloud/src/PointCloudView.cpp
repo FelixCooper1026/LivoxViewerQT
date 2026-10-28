@@ -2340,6 +2340,7 @@ void PointCloudView::paintGL()
         const QFontMetrics fm(painter.font());
         const QMatrix4x4 mvp = m_projection * m_modelView;
         const QMatrix4x4 inverseMvp = mvp.inverted();
+        const QVector3D eye = m_modelView.inverted().map(QVector3D());
         const bool perspective = m_projectionMode != ProjectionMode::Orthographic;
         const float labelRange = m_gridConfig.range;
         const bool darkBackground = m_backgroundBottomColor.lightnessF() < 0.5;
@@ -2348,9 +2349,15 @@ void PointCloudView::paintGL()
             m_gridConfig.color.redF() * 0.35f + foreground * 0.65f,
             m_gridConfig.color.greenF() * 0.35f + foreground * 0.65f,
             m_gridConfig.color.blueF() * 0.35f + foreground * 0.65f);
-        QVector<QRectF> labelBounds;
-        // Keep the existing orientation indicator clear of grid reference numbers.
-        labelBounds.append(QRectF(20, height() - 150, 130, 130));
+        struct GridLabel {
+            float distanceSquared;
+            float opacity;
+            QString text;
+            QRectF rect;
+            QRectF bounds;
+        };
+        QVector<GridLabel> labels;
+        const QRectF indicatorBounds(20, height() - 150, 130, 130);
         for (int axis = 0; axis < 2; ++axis) {
             const QVector3D direction = axis == 0 ? QVector3D(1, 0, 0) : QVector3D(0, 1, 0);
             QVector4D clipA = mvp * QVector4D(direction * -labelRange, 1.0f);
@@ -2388,14 +2395,24 @@ void PointCloudView::paintGL()
                 textRect.moveCenter(QPointF(projected.x, projected.y) + normal * offset);
                 const QRectF bounds = textRect.adjusted(-6, -4, 6, 4);
                 if (!QRectF(rect()).contains(bounds)) continue;
-                if (std::any_of(labelBounds.cbegin(), labelBounds.cend(),
-                                [&bounds](const QRectF& other) { return bounds.intersects(other); })) continue;
-                labelBounds.append(bounds);
-                QColor color = labelColor;
-                color.setAlphaF(visibility);
-                painter.setPen(color);
-                painter.drawText(textRect, Qt::AlignCenter, label);
+                if (bounds.intersects(indicatorBounds)) continue;
+                labels.append({(anchor - eye).lengthSquared(), visibility, label, textRect, bounds});
             }
+        }
+        std::stable_sort(labels.begin(), labels.end(), [](const GridLabel& a, const GridLabel& b) {
+            return a.distanceSquared < b.distanceSquared;
+        });
+        QVector<QRectF> labelBounds;
+        for (const GridLabel& label : labels) {
+            // Both axes share one distance cutoff. Once a near label cannot fit, hide
+            // every farther label instead of skipping it and resuming farther away.
+            if (std::any_of(labelBounds.cbegin(), labelBounds.cend(),
+                            [&label](const QRectF& other) { return label.bounds.intersects(other); })) break;
+            labelBounds.append(label.bounds);
+            QColor color = labelColor;
+            color.setAlphaF(label.opacity);
+            painter.setPen(color);
+            painter.drawText(label.rect, Qt::AlignCenter, label.text);
         }
     }
 

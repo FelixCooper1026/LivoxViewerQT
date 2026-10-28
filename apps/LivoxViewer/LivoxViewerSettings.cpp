@@ -167,6 +167,22 @@ private:
     }
 };
 
+class AlignedDoubleSpinBox : public QDoubleSpinBox
+{
+public:
+    using QDoubleSpinBox::QDoubleSpinBox;
+
+protected:
+    void stepBy(int steps) override
+    {
+        if (steps == 0) return;
+        interpretText();
+        const double position = value() / singleStep();
+        const double aligned = steps > 0 ? std::floor(position) : std::ceil(position);
+        setValue((aligned + steps) * singleStep());
+    }
+};
+
 class TrimmedDoubleSpinBox : public QDoubleSpinBox
 {
 public:
@@ -1370,7 +1386,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     autoConfigHostIpPreferenceCheck->setChecked(autoConfigHostIpEnabled);
     autoConfigHostIpPreferenceCheck->setToolTip("开启后程序会尝试自动将所选网卡的 IPv4 配置到与雷达同网段。\nLinux 可能需要 sudo/root 权限；默认关闭以避免权限导致的失败。");
 
-    QDoubleSpinBox* rangeSpin = new QDoubleSpinBox(&dlg);
+    QDoubleSpinBox* rangeSpin = new AlignedDoubleSpinBox(&dlg);
     rangeSpin->setRange(1.0, 10000.0);
     rangeSpin->setDecimals(1);
     rangeSpin->setSingleStep(10.0);
@@ -1378,7 +1394,7 @@ void LivoxViewerWindow::showPreferencesDialog()
     rangeSpin->setValue(config.range);
     preparePreferenceSpinBox(rangeSpin);
 
-    QDoubleSpinBox* stepSpin = new QDoubleSpinBox(&dlg);
+    QDoubleSpinBox* stepSpin = new AlignedDoubleSpinBox(&dlg);
     stepSpin->setRange(0.1, 1000.0);
     stepSpin->setDecimals(1);
     stepSpin->setSingleStep(0.5);
