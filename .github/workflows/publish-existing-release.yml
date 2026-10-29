@@ -27,7 +27,6 @@ jobs:
           status="$(jq -r '.status' <<< "$run_json")"
           source_repo="$(jq -r '.head_repository.full_name' <<< "$run_json")"
           workflow_path="$(jq -r '.path' <<< "$run_json")"
-          source_sha="$(jq -r '.head_sha' <<< "$run_json")"
           if [[ "$status" != completed || "$source_repo" != "$GH_REPO" ||
                 "$workflow_path" != '.github/workflows/release.yml' ]]; then
             echo "Run $RUN_ID is not a completed Build packages run of $GH_REPO" >&2
@@ -41,36 +40,35 @@ jobs:
               exit 1
             fi
           done
-          echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          name: release-metadata
+          path: release-metadata
+
+      - name: Read actual build version and commit
+        shell: bash
+        run: |
+          metadata=release-metadata/release-metadata.json
+          echo "VERSION=$(jq -r '.version' "$metadata")" >> "$GITHUB_ENV"
+          echo "TAG=$(jq -r '.tag' "$metadata")" >> "$GITHUB_ENV"
+          echo "SOURCE_SHA=$(jq -r '.commit' "$metadata")" >> "$GITHUB_ENV"
+          echo "TAG_OBJECT=$(jq -r '.tag_object' "$metadata")" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.SOURCE_SHA }}
 
-      - name: Read release version
+      - name: Verify annotated tag still matches the build
         shell: bash
         run: |
-          version="$(python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          text = Path('CMakeLists.txt').read_text(encoding='utf-8')
-          match = re.search(r'project\s*\(\s*LivoxViewerQT\b.*?\bVERSION\s+(\d+\.\d+\.\d+)', text, re.S)
-          if not match:
-              raise SystemExit('Project version not found in CMakeLists.txt')
-          print(match.group(1))
-          PY
-          )"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "TAG=v$version" >> "$GITHUB_ENV"
-
-      - name: Verify release tag
-        shell: bash
-        run: |
-          git fetch --quiet origin "refs/tags/$TAG"
-          tag_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
-          if [[ "$tag_sha" != "$SOURCE_SHA" ]]; then
-            echo "Tag $TAG points to $tag_sha, but run was built from $SOURCE_SHA" >&2
+          git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG"
+          if [[ "$(git cat-file -t "refs/tags/$TAG")" != tag ||
+                "$(git rev-parse "refs/tags/$TAG^{commit}")" != "$SOURCE_SHA" ||
+                "$(git rev-parse "refs/tags/$TAG")" != "$TAG_OBJECT" ]]; then
+            echo "Release tag or annotation does not match the source build" >&2
             exit 1
           fi
 
@@ -82,7 +80,7 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Publish GitHub Release
+      - name: Publish packages with Chinese tag notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -102,8 +100,9 @@ jobs:
           done
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber
-            gh release edit "$TAG" --draft=false
+            git for-each-ref --format='%(contents)' "refs/tags/$TAG" |
+              gh release edit "$TAG" --notes-file - --draft=false --latest
           else
             gh release create "$TAG" "${files[@]}" \
-              --verify-tag --title "$TAG" --generate-notes
+              --verify-tag --title "$TAG" --notes-from-tag --latest
           fi

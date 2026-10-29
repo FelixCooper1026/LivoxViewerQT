@@ -1,10 +1,13 @@
 name: Build packages
+run-name: Build and publish ${{ inputs.release_tag }}
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*.*.*'
+    inputs:
+      release_tag:
+        description: Annotated version tag with Chinese release notes (e.g. v2.5.1)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,17 +17,25 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       number: ${{ steps.read.outputs.number }}
+      commit: ${{ steps.read.outputs.commit }}
+      tag_object: ${{ steps.read.outputs.tag_object }}
       environment_tag: ${{ steps.environment.outputs.tag }}
       linux_image: ${{ steps.environment.outputs.image }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
       - id: read
-        name: Check tag and project version
+        name: Check annotated tag, Chinese notes and project version
+        env:
+          TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
           python3 - <<'PY'
           import os
           import re
+          import json
+          import subprocess
           from pathlib import Path
 
           text = Path('CMakeLists.txt').read_text(encoding='utf-8')
@@ -32,10 +43,26 @@ jobs:
           if not match:
               raise SystemExit('Project version not found in CMakeLists.txt')
           version = match.group(1)
-          if os.environ['GITHUB_REF_TYPE'] == 'tag' and os.environ['GITHUB_REF_NAME'] != f'v{version}':
-              raise SystemExit(f'Tag {os.environ["GITHUB_REF_NAME"]} does not match project version {version}')
+          tag = os.environ['TAG']
+          if tag != f'v{version}':
+              raise SystemExit(f'Tag {tag} does not match project version {version}')
+          ref = f'refs/tags/{tag}'
+          def git(*args):
+              return subprocess.check_output(['git', *args], encoding='utf-8').strip()
+          if git('cat-file', '-t', ref) != 'tag':
+              raise SystemExit('Release requires an annotated tag, not a lightweight tag')
+          notes = git('for-each-ref', '--format=%(contents)', ref)
+          if not re.search(r'[\u4e00-\u9fff]', notes):
+              raise SystemExit('Tag annotation must contain user-facing Chinese release notes')
+          commit = git('rev-parse', 'HEAD')
+          tag_object = git('rev-parse', ref)
+          metadata = dict(tag=tag, version=version, commit=commit, tag_object=tag_object)
+          Path(os.environ['RUNNER_TEMP'], 'release-metadata.json').write_text(
+              json.dumps(metadata), encoding='utf-8')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
               output.write(f'number={version}\n')
+              output.write(f'commit={commit}\n')
+              output.write(f'tag_object={tag_object}\n')
           PY
 
       - id: environment
@@ -50,6 +77,12 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "image=$(cat "$RUNNER_TEMP/ci-environment/linux-image.txt")" >> "$GITHUB_OUTPUT"
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: ${{ runner.temp }}/release-metadata.json
+          if-no-files-found: error
+
   windows:
     needs: version
     runs-on: windows-2022
@@ -62,6 +95,8 @@ jobs:
       PACKAGE_BUILD_JOBS: '2'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.commit }}
       - name: Download fixed Windows environment
         shell: pwsh
         env:
@@ -106,6 +141,8 @@ jobs:
       BUILD_JOBS: '2'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.commit }}
       - name: Build DEB and AppImage from shared compilation
         shell: bash
         run: |
@@ -121,22 +158,36 @@ jobs:
             dist/linux/LivoxViewerQT-${{ needs.version.outputs.number }}-x86_64.AppImage
 
   release:
-    if: github.event_name == 'push'
     needs: [version, windows, linux]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+      - name: Verify tag still matches the build
+        env:
+          TAG: ${{ inputs.release_tag }}
+          BUILD_COMMIT: ${{ needs.version.outputs.commit }}
+          TAG_OBJECT: ${{ needs.version.outputs.tag_object }}
+        shell: bash
+        run: |
+          if [[ "$(git rev-parse HEAD)" != "$BUILD_COMMIT" ||
+                "$(git rev-parse "refs/tags/$TAG")" != "$TAG_OBJECT" ]]; then
+            echo "Release tag or annotation changed during the build" >&2
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           pattern: '*-packages'
           path: release-assets
           merge-multiple: true
-      - name: Publish GitHub Release
+      - name: Publish packages with Chinese tag notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.release_tag }}
         shell: bash
         run: |
           files=(
@@ -153,6 +204,9 @@ jobs:
           done
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "${files[@]}" --clobber
+            git for-each-ref --format='%(contents)' "refs/tags/$TAG" |
+              gh release edit "$TAG" --notes-file - --draft=false --latest
           else
-            gh release create "$TAG" "${files[@]}" --title "$TAG" --generate-notes
+            gh release create "$TAG" "${files[@]}" \
+              --verify-tag --title "$TAG" --notes-from-tag --latest
           fi

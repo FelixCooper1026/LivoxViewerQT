@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QCryptographicHash>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QSaveFile>
 #include <QVector>
@@ -19,6 +21,9 @@ public:
 
 private:
     void fetchRelease(int sourceIndex, bool manual, const QString& lastError = {});
+    void fetchReleaseNotes(const QJsonObject& latest, int page, const QJsonArray& releases,
+                           int sourceIndex = 0, const QString& lastError = {});
+    void showUpdateDialog(const QJsonObject& latest, const QJsonArray& releases);
     void download(const QUrl& url, const QString& fileName, qint64 size,
                   const QByteArray& digest);
     void tryDownload(const QVector<QUrl>& sources, int sourceIndex,

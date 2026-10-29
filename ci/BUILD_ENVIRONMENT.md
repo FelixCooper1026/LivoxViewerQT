@@ -11,9 +11,13 @@ Release 资产和 GHCR 镜像不受 Actions 缓存的闲置清理规则影响。
 
 ## 日常制包
 
-运行 `Build packages` 即可。Windows 解压环境到 `C:\livox-build-env`，Linux 在预制镜像中构建。Linux 的 DEB 和 AppImage 共用同一编译目录，主程序只需编译一次。
+准备好包含中文更新说明的 `vX.Y.Z` 带注释标签并推送后，手动运行 `Build packages`，在 `release_tag` 中填写该标签。Windows 解压环境到 `C:\livox-build-env`，Linux 在预制镜像中构建。Linux 的 DEB 和 AppImage 共用同一编译目录，主程序只需编译一次。
 
-手动运行只上传应用制包产物；应用版本标签的发布行为与原工作流一致。环境 Release 使用 `ci-env-*` 标签并标记为预发布，不会成为应用更新接口的最新正式版本。
+标签推送不触发构建。手动 CI 先核对 annotated tag、中文说明和项目版本，两平台固定构建同一提交；成功后自动将四种安装包和标签中的中文说明发布为正式 Release。已有 Release 会更新附件和正文，已有草稿会自动发布。无需维护仓库内的版本说明文件。
+
+如果仅发布阶段失败，使用 `Publish existing CI artifacts` 输入原构建 run ID，可复用产物直接发布。该流程要求源运行包含 `release-metadata`，以实际构建提交及标签对象为准，而非工作流所处分支的提交；标签或注释变化时停止发布。缺少该元数据的旧运行不适用。
+
+环境 Release 使用 `ci-env-*` 标签并标记为预发布，不会成为应用更新接口的最新正式版本。
 
 ## 更新固定环境
 

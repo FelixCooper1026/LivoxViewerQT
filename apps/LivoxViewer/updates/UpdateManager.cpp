@@ -4,28 +4,43 @@
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDir>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMessageBox>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QProcess>
 #include <QProgressDialog>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QTextBrowser>
 #include <QUrl>
+#include <QVBoxLayout>
 #include <QVersionNumber>
 
+#include <algorithm>
 #include <cmath>
 
 namespace {
 
 const QUrl kReleaseUrl(QStringLiteral(
     "https://api.github.com/repos/FelixCooper1026/LivoxViewerQT/releases/latest"));
+
+const QRegularExpression kVersionPattern(QStringLiteral("^v?(\\d+\\.\\d+\\.\\d+)$"));
+
+QVersionNumber releaseVersion(const QJsonObject& release)
+{
+    return QVersionNumber::fromString(kVersionPattern.match(
+        release.value(QStringLiteral("tag_name")).toString()).captured(1));
+}
 
 const QStringList kProxyPrefixes = {
     QStringLiteral("https://gh-proxy.com/"),
@@ -150,16 +165,13 @@ void UpdateManager::fetchRelease(int sourceIndex, bool manual, const QString& la
         }
 
         const QJsonObject release = QJsonDocument::fromJson(body).object();
-        const QString tag = release.value(QStringLiteral("tag_name")).toString();
-        const QRegularExpression versionPattern(QStringLiteral("^v?(\\d+\\.\\d+\\.\\d+)$"));
-        const QRegularExpressionMatch match = versionPattern.match(tag);
-        if (!match.hasMatch()) {
+        const QVersionNumber latestVersion = releaseVersion(release);
+        if (latestVersion.isNull()) {
             fetchRelease(sourceIndex + 1, manual, QStringLiteral("版本信息无效"));
             return;
         }
 
-        const QString version = match.captured(1);
-        if (QVersionNumber::fromString(version) <=
+        if (latestVersion <=
             QVersionNumber::fromString(QCoreApplication::applicationVersion())) {
             if (manual) {
                 QMessageBox::information(window_, QStringLiteral("检查更新"),
@@ -169,50 +181,147 @@ void UpdateManager::fetchRelease(int sourceIndex, bool manual, const QString& la
             return;
         }
 
-        if (!supportedArchitecture() || installerName(version).isEmpty()) {
-            showFailure(QStringLiteral("当前平台暂无可用的更新安装包"));
-            return;
-        }
-        const QString name = installerName(version);
-        QUrl assetUrl;
-        qint64 assetSize = 0;
-        QByteArray digest;
-        for (const QJsonValue& value : release.value(QStringLiteral("assets")).toArray()) {
-            const QJsonObject asset = value.toObject();
-            if (asset.value(QStringLiteral("name")).toString() == name) {
-                assetUrl = QUrl(asset.value(QStringLiteral("browser_download_url")).toString());
-                assetSize = static_cast<qint64>(asset.value(QStringLiteral("size")).toDouble());
-                const QRegularExpression digestPattern(QStringLiteral("^sha256:([0-9a-fA-F]{64})$"));
-                const QRegularExpressionMatch digestMatch = digestPattern.match(
-                    asset.value(QStringLiteral("digest")).toString());
-                if (digestMatch.hasMatch()) {
-                    digest = digestMatch.captured(1).toLatin1().toLower();
-                }
-                break;
-            }
-        }
-        if (assetUrl.scheme() != QStringLiteral("https") ||
-            assetUrl.host() != QStringLiteral("github.com") || assetSize <= 0) {
-            showFailure(QStringLiteral("发现新版本 %1，但发布页缺少适用于本机的安装包").arg(version));
+        fetchReleaseNotes(release, 1, QJsonArray{release});
+    });
+}
+
+void UpdateManager::fetchReleaseNotes(const QJsonObject& latest, int page,
+                                     const QJsonArray& releases, int sourceIndex,
+                                     const QString& lastError)
+{
+    const QUrl url(QStringLiteral(
+        "https://api.github.com/repos/FelixCooper1026/LivoxViewerQT/releases?per_page=100&page=%1")
+                       .arg(page));
+    const QVector<QUrl> sources = sourcesFor(url, true);
+    if (sourceIndex == sources.size()) {
+        showFailure(QStringLiteral("无法获取完整更新内容，请稍后重新检查更新。\n%1").arg(lastError));
+        return;
+    }
+
+    QNetworkReply* reply = network_.get(releaseRequest(sources[sourceIndex], 10000));
+    reply_ = reply;
+    connect(reply, &QNetworkReply::finished, this,
+            [this, reply, latest, page, releases, sourceIndex]() {
+        reply_ = nullptr;
+        const QNetworkReply::NetworkError error = reply->error();
+        const QString errorText = reply->errorString();
+        const QJsonDocument document = QJsonDocument::fromJson(reply->readAll());
+        const bool hasNextPage = reply->rawHeader("Link").contains("rel=\"next\"");
+        reply->deleteLater();
+        if (error != QNetworkReply::NoError || !document.isArray()) {
+            fetchReleaseNotes(latest, page, releases, sourceIndex + 1,
+                              error != QNetworkReply::NoError ? errorText
+                                  : QStringLiteral("发布说明格式无效"));
             return;
         }
 
-#ifdef Q_OS_LINUX
-        const bool appImage = qEnvironmentVariableIsSet("APPIMAGE");
-#else
-        const bool appImage = false;
-#endif
-        const QMessageBox::StandardButton choice = QMessageBox::question(
-            window_, QStringLiteral("检测到新版本"),
-            (appImage
-                ? QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载 AppImage？下载后需手动替换当前文件")
-                : QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载并更新？"))
-                    .arg(version, QCoreApplication::applicationVersion()),
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-        if (choice == QMessageBox::Yes) {
-            download(assetUrl, name, assetSize, digest);
+        const QVersionNumber currentVersion =
+            QVersionNumber::fromString(QCoreApplication::applicationVersion());
+        const QVersionNumber latestVersion = releaseVersion(latest);
+        QJsonArray notes = releases;
+        for (const QJsonValue& value : document.array()) {
+            const QJsonObject release = value.toObject();
+            if (release.value(QStringLiteral("draft")).toBool() ||
+                release.value(QStringLiteral("prerelease")).toBool()) {
+                continue;
+            }
+            const QVersionNumber version = releaseVersion(release);
+            // 最新版本已从 /latest 取得；其余页面按版本号筛选，不依赖发布时间排序。
+            if (!version.isNull() && version > currentVersion && version < latestVersion) {
+                notes.append(release);
+            }
         }
+        if (hasNextPage) {
+            fetchReleaseNotes(latest, page + 1, notes);
+            return;
+        }
+        showUpdateDialog(latest, notes);
     });
+}
+
+void UpdateManager::showUpdateDialog(const QJsonObject& latest, const QJsonArray& releases)
+{
+    const QString version = releaseVersion(latest).toString();
+
+    if (!supportedArchitecture() || installerName(version).isEmpty()) {
+        showFailure(QStringLiteral("当前平台暂无可用的更新安装包"));
+        return;
+    }
+    const QString name = installerName(version);
+    QUrl assetUrl;
+    qint64 assetSize = 0;
+    QByteArray digest;
+    for (const QJsonValue& value : latest.value(QStringLiteral("assets")).toArray()) {
+        const QJsonObject asset = value.toObject();
+        if (asset.value(QStringLiteral("name")).toString() == name) {
+            assetUrl = QUrl(asset.value(QStringLiteral("browser_download_url")).toString());
+            assetSize = static_cast<qint64>(asset.value(QStringLiteral("size")).toDouble());
+            const QRegularExpression digestPattern(QStringLiteral("^sha256:([0-9a-fA-F]{64})$"));
+            const QRegularExpressionMatch digestMatch = digestPattern.match(
+                asset.value(QStringLiteral("digest")).toString());
+            if (digestMatch.hasMatch()) {
+                digest = digestMatch.captured(1).toLatin1().toLower();
+            }
+            break;
+        }
+    }
+    if (assetUrl.scheme() != QStringLiteral("https") ||
+        assetUrl.host() != QStringLiteral("github.com") || assetSize <= 0) {
+        showFailure(QStringLiteral("发现新版本 %1，但发布页缺少适用于本机的安装包").arg(version));
+        return;
+    }
+
+#ifdef Q_OS_LINUX
+    const bool appImage = qEnvironmentVariableIsSet("APPIMAGE");
+#else
+    const bool appImage = false;
+#endif
+    QDialog dialog(window_);
+    dialog.setWindowTitle(QStringLiteral("检测到新版本"));
+    dialog.resize(720, 560);
+    dialog.setMinimumSize(520, 380);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* summary = new QLabel(
+        (appImage
+            ? QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载 AppImage？下载后需手动替换当前文件")
+            : QStringLiteral("检测到新版本 %1（当前版本 %2），是否下载并更新？"))
+                .arg(version, QCoreApplication::applicationVersion()), &dialog);
+    summary->setWordWrap(true);
+    layout->addWidget(summary);
+    layout->addWidget(new QLabel(QStringLiteral("更新内容"), &dialog));
+
+    QVector<QJsonObject> sortedReleases;
+    for (const QJsonValue& value : releases) {
+        sortedReleases.append(value.toObject());
+    }
+    std::sort(sortedReleases.begin(), sortedReleases.end(),
+              [](const QJsonObject& left, const QJsonObject& right) {
+        return releaseVersion(left) > releaseVersion(right);
+    });
+    QStringList sections;
+    for (const QJsonObject& release : sortedReleases) {
+        sections.append(QStringLiteral("## [%1](%2)\n\n%3")
+            .arg(release.value(QStringLiteral("tag_name")).toString(),
+                 release.value(QStringLiteral("html_url")).toString(),
+                 release.value(QStringLiteral("body")).toString()));
+    }
+    auto* notes = new QTextBrowser(&dialog);
+    notes->setOpenExternalLinks(true);
+    notes->setMarkdown(sections.join(QStringLiteral("\n\n---\n\n")));
+    layout->addWidget(notes, 1);
+
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Yes | QDialogButtonBox::No,
+                                         &dialog);
+    buttons->button(QDialogButtonBox::Yes)->setText(
+        appImage ? QStringLiteral("下载 AppImage") : QStringLiteral("下载并更新"));
+    buttons->button(QDialogButtonBox::No)->setText(QStringLiteral("暂不更新"));
+    buttons->button(QDialogButtonBox::Yes)->setDefault(true);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    if (dialog.exec() == QDialog::Accepted) {
+        download(assetUrl, name, assetSize, digest);
+    }
 }
 
 void UpdateManager::download(const QUrl& url, const QString& fileName, qint64 size,
