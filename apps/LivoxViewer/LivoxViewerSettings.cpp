@@ -740,6 +740,11 @@ LivoxViewerWindow::LivoxViewerWindow(QWidget *parent)
     setWindowTitle(QApplication::applicationDisplayName());
     QSettings themeSettings(QStringLiteral("Livox"), QStringLiteral("LivoxViewerQT"));
     themeMode = themeSettings.value(QStringLiteral("theme/mode"), themeMode).toInt();
+    pointOpacityPercent = std::clamp(
+        themeSettings.value(QStringLiteral("visualization/pointOpacityPercent"), pointOpacityPercent).toInt(),
+        10,
+        100);
+    pointOpacityPercent = ((pointOpacityPercent + 5) / 10) * 10;
     if (themeMode < ThemeFollowSystem || themeMode > ThemeDark) {
         themeMode = ThemeFollowSystem;
     }
@@ -1156,6 +1161,7 @@ void LivoxViewerWindow::loadViewPreferences()
     forEachPointCloudView([this](PointCloudView* view) {
         if (view) {
             view->setGridConfig(pointCloudGridConfig);
+            view->setPointOpacity(float(pointOpacityPercent) / 100.0f);
             view->setEdlConfig(pointCloudEdlConfig);
         }
     });
@@ -1219,6 +1225,7 @@ void LivoxViewerWindow::saveViewPreferences()
     settings.setValue("color/reflectivityScale", reflectivityColorScale);
     settings.setValue("color/solidColor", solidColor);
     settings.setValue("background/preset", pointCloudBackgroundPreset);
+    settings.setValue(QStringLiteral("visualization/pointOpacityPercent"), pointOpacityPercent);
     settings.setValue(QStringLiteral("visualization/edl/enabled"), pointCloudEdlConfig.enabled);
     settings.setValue(QStringLiteral("visualization/edl/qedlStrength"), pointCloudEdlConfig.strength);
     settings.setValue(QStringLiteral("visualization/edl/qedlRadiusPx"), pointCloudEdlConfig.radiusPx);

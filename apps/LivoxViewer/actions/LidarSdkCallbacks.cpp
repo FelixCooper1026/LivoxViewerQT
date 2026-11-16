@@ -571,7 +571,7 @@ void LivoxViewerWindow::onAsyncControlResponse(livox_status status, uint32_t han
 void LivoxViewerWindow::onQueryInternalInfoResponse(livox_status status, uint32_t handle, LivoxLidarDiagInternalInfoResponse* response, void* client_data)
 {
     LivoxViewerWindow* window = static_cast<LivoxViewerWindow*>(client_data);
-    if (window && !window->shutting_down && response && status == kLivoxLidarStatusSuccess && response->ret_code == 0) {
+    if (window && !window->shutting_down && response && status == kLivoxLidarStatusSuccess) {
         
         // 在回调线程中立即深拷贝数据，避免跨线程内存生命周期问题
         uint16_t param_num = response->param_num;

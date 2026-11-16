@@ -794,6 +794,7 @@ void PointCloudView::setupShaders()
         uniform int uEdlEligible;
         uniform int uEdlPass;
         uniform int uRoundPointSplat;
+        uniform float uPointOpacity;
 
         layout(location = 0) out vec4 SceneColor;
 
@@ -823,7 +824,7 @@ void PointCloudView::setupShaders()
             float category = uEdlPass == 1
                 ? (uEdlEligible == 1 ? 1.0 : 0.5)
                 : 1.0;
-            SceneColor = vec4(color, category);
+            SceneColor = vec4(color, category * (uPointPrimitive == 1 ? uPointOpacity : 1.0));
         }
     )";
 
@@ -1950,6 +1951,7 @@ void PointCloudView::paintGL()
     m_program->setUniformValue("projection", m_projection);
     m_program->setUniformValue("normalMatrix", normalMatrix);
     m_program->setUniformValue("uPointSize", m_pointSize);
+    m_program->setUniformValue("uPointOpacity", m_pointOpacity);
     m_program->setUniformValue("uModelLighting", 0);
     m_program->setUniformValue("uEdlPass", edlActive ? 1 : 0);
     auto setPrimitiveState = [this, edlActive](bool pointPrimitive, bool edlEligible) {
@@ -1997,6 +1999,8 @@ void PointCloudView::paintGL()
     
     // 4. 绘制点云
     setPrimitiveState(true, true);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     if (!m_points.isEmpty()) {
         m_vao.bind();
         glDrawArrays(GL_POINTS, 0, m_points.size());
@@ -2023,6 +2027,8 @@ void PointCloudView::paintGL()
             segment->vao.release();
         }
     }
+    glDisable(GL_BLEND);
+    m_program->setUniformValue("uPointOpacity", 1.0f);
 
     if (m_selectionLocked) {
         m_program->setUniformValue("uSelectionEnabled", 0);
@@ -3981,6 +3987,12 @@ void PointCloudView::resetView()
 void PointCloudView::setPointSize(float sizePixels)
 {
     m_pointSize = qBound(1.0f, sizePixels, 10.0f);
+    update();
+}
+
+void PointCloudView::setPointOpacity(float opacity)
+{
+    m_pointOpacity = opacity;
     update();
 }
 

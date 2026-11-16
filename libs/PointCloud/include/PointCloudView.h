@@ -121,6 +121,7 @@ public:
     void clearPointCloud();
     void resetView();
     void setPointSize(float sizePixels);
+    void setPointOpacity(float opacity);
     void setEdlConfig(const EdlConfig& config);
     EdlConfig edlConfig() const { return m_edlConfig; }
     bool isEdlSupported() const;
@@ -437,6 +438,7 @@ private:
     bool m_mousePressed;
 
     float m_pointSize = 2.0f;
+    float m_pointOpacity = 1.0f;
     ProjectionMode m_projectionMode = ProjectionMode::Perspective;
 
     bool m_legendVisible = false;

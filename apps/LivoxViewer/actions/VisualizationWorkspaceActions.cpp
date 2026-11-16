@@ -182,6 +182,7 @@ int LivoxViewerWindow::createOfflinePointCloudTab(const QString& filePath)
     view->installEventFilter(this);
     view->setMinimumSize(200, 200);
     view->setPointSize(pointSizePx);
+    view->setPointOpacity(float(pointOpacityPercent) / 100.0f);
     view->setEdlConfig(pointCloudEdlConfig);
     view->setGridConfig(pointCloudGridConfig);
     view->setGridVisible(realtimePointCloudView->isGridVisible());

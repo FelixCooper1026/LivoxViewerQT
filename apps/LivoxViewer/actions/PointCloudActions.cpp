@@ -56,6 +56,16 @@ void LivoxViewerWindow::onPointSizeChanged(int px)
     });
 }
 
+void LivoxViewerWindow::onPointOpacityChanged(int percent)
+{
+    pointOpacityPercent = percent;
+    const float opacity = float(percent) / 100.0f;
+    forEachPointCloudView([opacity](PointCloudView* view) {
+        view->setPointOpacity(opacity);
+    });
+    saveViewPreferences();
+}
+
 void LivoxViewerWindow::onColorModeClicked(int index)
 {
     colorMode = index;

@@ -805,10 +805,47 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     syncPointCloudEdlAction();
     displayGroup->addPrimaryWidget(createIconButton(pointCloudEdlAction, displayGroup, toolbarIconSize));
 
+    QAction* pointOpacityAction = new QAction(QStringLiteral("点云透明度"), this);
+    ThemeIconUtils::setThemedSvgIcon(pointOpacityAction, QStringLiteral(":/icons/opacity.svg"));
+    pointOpacityAction->setToolTip(QStringLiteral("点云透明度：%1%").arg(pointOpacityPercent));
+    QToolButton* pointOpacityButton = createIconButton(pointOpacityAction, displayGroup, toolbarIconSize);
+    QMenu* pointOpacityMenu = new QMenu(QStringLiteral("点云透明度"), pointOpacityButton);
+    pointOpacityMenu->setIcon(pointOpacityAction->icon());
+    pointOpacitySlider = new QSlider(Qt::Horizontal, pointOpacityMenu);
+    pointOpacitySlider->setRange(1, 10);
+    pointOpacitySlider->setSingleStep(1);
+    pointOpacitySlider->setPageStep(1);
+    pointOpacitySlider->setValue(pointOpacityPercent / 10);
+    pointOpacitySlider->setFixedWidth(160);
+    pointOpacitySlider->setToolTip(QStringLiteral("点云透明度：%1%").arg(pointOpacityPercent));
+    QWidget* pointOpacityControl = new QWidget(pointOpacityMenu);
+    QHBoxLayout* pointOpacityLayout = new QHBoxLayout(pointOpacityControl);
+    pointOpacityLayout->setContentsMargins(10, 8, 10, 8);
+    pointOpacityLayout->setSpacing(3);
+    QLabel* pointOpacityValueLabel = new QLabel(QStringLiteral("%1%").arg(pointOpacityPercent), pointOpacityControl);
+    pointOpacityValueLabel->setMinimumWidth(pointOpacityValueLabel->fontMetrics().horizontalAdvance(QStringLiteral("100%")));
+    pointOpacityLayout->addWidget(pointOpacitySlider);
+    pointOpacityLayout->addWidget(pointOpacityValueLabel);
+    connect(pointOpacitySlider, &QSlider::valueChanged, this, [this, pointOpacityAction, pointOpacityValueLabel](int step) {
+        const int percent = step * 10;
+        pointOpacitySlider->setToolTip(QStringLiteral("点云透明度：%1%").arg(percent));
+        pointOpacityAction->setToolTip(QStringLiteral("点云透明度：%1%").arg(percent));
+        pointOpacityValueLabel->setText(QStringLiteral("%1%").arg(percent));
+        onPointOpacityChanged(percent);
+    });
+    QWidgetAction* pointOpacityWidgetAction = new QWidgetAction(pointOpacityMenu);
+    pointOpacityWidgetAction->setDefaultWidget(pointOpacityControl);
+    pointOpacityMenu->addAction(pointOpacityWidgetAction);
+    connect(pointOpacityAction, &QAction::triggered, pointOpacityButton, [pointOpacityButton, pointOpacityMenu]() {
+        pointOpacityMenu->popup(pointOpacityButton->mapToGlobal(QPoint(0, pointOpacityButton->height())));
+    });
+    displayGroup->addPrimaryWidget(pointOpacityButton);
+
     frameIntervalSpin = new QSpinBox(displayGroup);
     frameIntervalSpin->setRange(100, 600000);
     frameIntervalSpin->setSingleStep(100);
     frameIntervalSpin->setSuffix(" ms");
+    frameIntervalSpin->setFixedWidth(80);
     frameIntervalSpin->setValue(static_cast<int>(frameIntervalMs));
     frameIntervalSpin->setToolTip("点云积分时间/帧间隔");
     connect(frameIntervalSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &LivoxViewerWindow::onFrameIntervalChanged);
@@ -844,6 +881,7 @@ QWidget* LivoxViewerWindow::createViewerToolbar(QWidget* parent)
     displayGroup->moreMenu()->addAction(stlModelAction);
     addWidgetAction(displayGroup->moreMenu(), "积分时间", cloneSpinBox(frameIntervalSpin, displayGroup->moreMenu()));
     addWidgetAction(displayGroup->moreMenu(), "点大小", cloneSpinBox(pointSizeSpin, displayGroup->moreMenu()));
+    displayGroup->moreMenu()->addMenu(pointOpacityMenu);
     QComboBox* overflowColorMode = new QComboBox(displayGroup->moreMenu());
     overflowColorMode->addItems({"反射率", "距离", "高度", "纯色", "线号"});
     overflowColorMode->setCurrentIndex(colorModeCombo->currentIndex());

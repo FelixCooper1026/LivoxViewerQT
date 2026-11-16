@@ -584,6 +584,7 @@ private:
     // 点云可视化控制（UI控件指针与状态）
     QSpinBox* frameIntervalSpin = nullptr;
     QSpinBox* pointSizeSpin = nullptr;
+    QSlider* pointOpacitySlider = nullptr;
     QComboBox* colorModeCombo = nullptr;
     QComboBox* reflectivityScaleCombo = nullptr;
     QComboBox* overflowReflectivityScaleCombo = nullptr;
@@ -628,6 +629,7 @@ private:
         QColor(156, 39, 176)
     };
     float pointSizePx = 2.0f;
+    int pointOpacityPercent = 100;
     PointCloudView::GridConfig pointCloudGridConfig;
     PointCloudView::EdlConfig pointCloudEdlConfig;
     float distanceLegendMin = 0.0f;
@@ -808,6 +810,7 @@ private slots:
     void onTabChanged(int index);  // 添加标签页切换槽函数
     void onRenderTick();           // 渲染定时器回调（滑动窗口）
     void onPointSizeChanged(int px);
+    void onPointOpacityChanged(int percent);
     void onColorModeClicked(int index);
     void onProjectionDepthToggled(bool enabled);
     void onProjectionDepthChanged(double meters);

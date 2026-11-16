@@ -778,6 +778,7 @@ int LivoxViewerWindow::ensureSlamVisualizationTab(const QString& sourcePath)
     slamPointCloudView->installEventFilter(this);
     slamPointCloudView->setMinimumSize(200, 200);
     slamPointCloudView->setPointSize(pointSizePx);
+    slamPointCloudView->setPointOpacity(float(pointOpacityPercent) / 100.0f);
     slamPointCloudView->setEdlConfig(pointCloudEdlConfig);
     slamPointCloudView->setGridConfig(pointCloudGridConfig);
     slamPointCloudView->setGridVisible(realtimePointCloudView->isGridVisible());
